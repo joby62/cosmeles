@@ -1,0 +1,14 @@
+# Python
+backend/.venv
+backend/__pycache__/
+backend/storage/app.db
+backend/storage/images/
+backend/storage/products/
+
+# Node
+frontend/node_modules
+frontend/.next
+
+# Env
+backend/.env
+frontend/.env.local
