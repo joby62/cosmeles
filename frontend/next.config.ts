@@ -1,31 +1,23 @@
 import type { NextConfig } from "next";
 
-const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8001";
-let apiHost = "127.0.0.1";
-let apiProtocol: "http" | "https" = "http";
-let apiPort = "8001";
-
-try {
-  const u = new URL(apiBase);
-  apiHost = u.hostname;
-  apiProtocol = (u.protocol.replace(":", "") as any) || "http";
-  apiPort = u.port || (apiProtocol === "https" ? "443" : "80");
-} catch {}
+const BACKEND_HOST = "127.0.0.1";
+const BACKEND_PORT = "8000";
 
 const nextConfig: NextConfig = {
-  images: {
-    remotePatterns: [
-      {
-        protocol: apiProtocol,
-        hostname: apiHost,
-        port: apiPort,
-        pathname: "/images/**",
-      },
-    ],
-  },
+  reactStrictMode: true,
 
-  // 你看到的 “Cross origin request detected...” 警告：这里显式允许 dev origin
-  allowedDevOrigins: ["127.0.0.1", "localhost"],
+  async rewrites() {
+    return [
+      {
+        source: "/api/:path*",
+        destination: `http://${BACKEND_HOST}:${BACKEND_PORT}/api/:path*`,
+      },
+      {
+        source: "/images/:path*",
+        destination: `http://${BACKEND_HOST}:${BACKEND_PORT}/images/:path*`,
+      },
+    ];
+  },
 };
 
 export default nextConfig;
