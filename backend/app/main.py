@@ -26,4 +26,7 @@ app.include_router(products_router)
 # static files: serve /storage as root
 # so frontend can access /images/xxx.jpg, /products/xxx.json (你也可只暴露 images)
 if os.path.isdir(settings.storage_dir):
-    app.mount("/", StaticFiles(directory=settings.storage_dir), name="storage")
+    images_dir = os.path.join(settings.storage_dir, "images")
+    os.makedirs(images_dir, exist_ok=True)
+
+    app.mount("/images", StaticFiles(directory=images_dir), name="images")

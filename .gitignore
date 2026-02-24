@@ -1,3 +1,5 @@
+.DS_Store
+
 # Python
 backend/.venv
 backend/__pycache__/

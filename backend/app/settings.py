@@ -1,18 +1,34 @@
-from pydantic_settings import BaseSettings
+from pathlib import Path
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# === 路径基准（backend 目录）===
+BACKEND_DIR = Path(__file__).resolve().parents[1]  # backend/
+DEFAULT_STORAGE_DIR = BACKEND_DIR / "storage"
 
 class Settings(BaseSettings):
+    # === 基础环境 ===
     app_env: str = "dev"
     cors_origins: str = "http://localhost:3000"
 
-    storage_dir: str = "./storage"
-    database_url: str = "sqlite:///./storage/app.db"
+    # === 存储路径（绝对路径，关键）===
+    storage_dir: str = str(DEFAULT_STORAGE_DIR)
 
+    # === 数据库 ===
+    # SQLite 文件将位于 backend/storage/app.db
+    database_url: str = f"sqlite:///{(DEFAULT_STORAGE_DIR / 'app.db').as_posix()}"
+
+    # === 豆包配置 ===
     doubao_mode: str = "mock"  # mock | real
     doubao_api_key: str = ""
     doubao_endpoint: str = ""
     doubao_model: str = ""
 
-    class Config:
-        env_file = ".env"
+    # === Pydantic v2 配置 ===
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",   # ✅ 忽略 .env 里多余字段，避免再炸
+    )
 
+# === 全局 settings 实例 ===
 settings = Settings()
