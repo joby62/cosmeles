@@ -2,10 +2,11 @@ import "./globals.css";
 import Link from "next/link";
 import Image from "next/image";
 import { TOP_CATEGORIES, CATEGORY_CONFIG } from "@/lib/catalog";
+import { BRAND } from "@/lib/brand";
 
 export const metadata = {
-  title: "Cosmeles",
-  description: "选购橱窗 Demo",
+  title: BRAND.zhName,
+  description: BRAND.slogan,
 };
 
 export default function RootLayout({
@@ -18,39 +19,39 @@ export default function RootLayout({
       <body>
         {/* Apple-like Top Nav */}
         <header className="site-nav">
-          <nav className="site-nav__inner" aria-label="Primary">
+          <div className="site-nav__inner">
             {/* Left: logo */}
-            <Link href="/" className="site-nav__logo" aria-label="Cosmeles Home">
+            <Link href="/" className="site-nav__logo" aria-label={BRAND.zhName}>
               <Image
                 src="/brand/logo.png"
-                alt="Cosmeles"
-                width={16}
-                height={16}
+                alt={BRAND.zhName}
+                width={18}
+                height={18}
                 priority
               />
             </Link>
 
             {/* Center: categories */}
-            <div className="site-nav__links">
+            <nav className="site-nav__links" aria-label="categories">
               {TOP_CATEGORIES.map((k) => (
-                <Link key={k} className="site-nav__link" href={`/c/${k}`}>
+                <Link key={k} href={`/c/${k}`} className="site-nav__link">
                   {CATEGORY_CONFIG[k].zh}
                 </Link>
               ))}
-              <Link className="site-nav__link" href="/compare">
+              <Link href="/compare" className="site-nav__link">
                 横向对比
               </Link>
-            </div>
+            </nav>
 
-            {/* Right: placeholder icons area (future) */}
-            <div className="site-nav__right" aria-hidden="true" />
-          </nav>
+            {/* Right: placeholder */}
+            <div className="site-nav__right" />
+          </div>
         </header>
 
-        <main>{children}</main>
+        <main className="page-shell">{children}</main>
 
         <footer className="site-footer">
-          Demo · Cosmeles · 仅用于橱窗体验验证
+          Demo · {BRAND.zhName} · {BRAND.slogan}
         </footer>
       </body>
     </html>

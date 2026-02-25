@@ -2,8 +2,9 @@ import Link from "next/link";
 import Image from "next/image";
 import { fetchProducts, resolveImageUrl } from "@/lib/api";
 import { TOP_CATEGORIES, CATEGORY_CONFIG } from "@/lib/catalog";
+import { BRAND } from "@/lib/brand";
 
-function t(v?: string | null) {
+function normalizeText(v?: string | null) {
   return (v ?? "").trim();
 }
 
@@ -11,76 +12,50 @@ export default async function HomePage() {
   const products = await fetchProducts();
 
   return (
-    <main>
+    <div className="container-apple">
+      {/* Hero */}
       <section className="hero">
-        <div className="container-apple">
-          <h1 className="hero__h1">Cosmeles</h1>
-          <p className="hero__sub">
-            以 Apple 式的克制美学，做一个“洗护选购”的极简橱窗。
-          </p>
+        <h1 className="hero__title">{BRAND.zhName}</h1>
+        <p className="hero__subtitle">{BRAND.slogan}</p>
+        <p className="hero__subline">{BRAND.heroSubline}</p>
 
-          <div style={{ marginTop: 18, display: "flex", gap: 10, flexWrap: "wrap" }}>
-            {TOP_CATEGORIES.map((k) => (
-              <Link key={k} href={`/c/${k}`} className="btn-apple">
-                {CATEGORY_CONFIG[k].zh}
-              </Link>
-            ))}
-            <Link href="/compare" className="btn-apple">
-              横向对比
+        {/* Category rail */}
+        <div className="hero__rail">
+          {TOP_CATEGORIES.map((k) => (
+            <Link key={k} href={`/c/${k}`} className="chip">
+              {CATEGORY_CONFIG[k].zh}
             </Link>
-          </div>
+          ))}
+          <Link href="/compare" className="chip chip--ghost">
+            横向对比
+          </Link>
         </div>
       </section>
 
-      <section style={{ paddingBottom: 56 }}>
-        <div className="container-apple">
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(12, 1fr)",
-              gap: 22,
-            }}
-          >
-            {products.map((p) => (
-              <Link
-                key={p.id}
-                href={`/products/${p.id}`}
-                className="group"
-                style={{
-                  gridColumn: "span 12",
-                  textDecoration: "none",
-                }}
-              >
-                <div className="card-apple">
-                  <div className="card-apple__media">
-                    <Image
-                      src={resolveImageUrl(p)}
-                      alt={t(p.name) || "product"}
-                      fill
-                      className="object-contain transition-transform duration-500 group-hover:scale-[1.02]"
-                    />
-                  </div>
-                </div>
+      {/* Grid */}
+      <section className="grid">
+        {products.map((p) => {
+          const img = resolveImageUrl(p);
+          return (
+            <Link key={p.id} href={`/products/${p.id}`} className="card">
+              <div className="card__media">
+                <Image
+                  src={img}
+                  alt={normalizeText(p.name) || "product"}
+                  fill
+                  sizes="(max-width: 768px) 100vw, 33vw"
+                  className="card__img"
+                />
+              </div>
 
-                <div className="card-apple__meta">
-                  <div className="card-apple__brand">{t(p.brand)}</div>
-                  <div className="card-apple__name">{t(p.name)}</div>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </div>
+              <div className="card__meta">
+                <div className="card__brand">{normalizeText(p.brand)}</div>
+                <div className="card__name">{normalizeText(p.name)}</div>
+              </div>
+            </Link>
+          );
+        })}
       </section>
-
-      {/* Responsive columns without fighting tailwind */}
-      <style>{`
-        @media (min-width: 640px) {
-          a.group { grid-column: span 6; }
-        }
-        @media (min-width: 1024px) {
-          a.group { grid-column: span 4; }
-        }
-      `}</style>
-    </main>
+    </div>
   );
 }

@@ -1,26 +1,62 @@
 @import "tailwindcss";
 
-/* ---------------- Apple-like Light System Tokens ---------------- */
+/* =========================================================
+   Apple-ish Design Tokens (Typography / Layout / Surface / Motion)
+   ========================================================= */
+
 :root {
-  --bg: #ffffff;
-  --surface: #f5f5f7;
-  --fg: rgba(0, 0, 0, 0.92);
+  /* Surface */
+  --bg: #f5f5f7;
+  --surface: rgba(255, 255, 255, 0.92);
+  --surface-2: rgba(255, 255, 255, 0.78);
 
-  --nav-bg: rgba(255, 255, 255, 0.86);
-  --nav-border: rgba(0, 0, 0, 0.12);
+  /* Text */
+  --text: #1d1d1f;
+  --muted: #6e6e73;
+  --muted-2: rgba(110, 110, 115, 0.82);
 
-  --muted: rgba(0, 0, 0, 0.68);
-  --muted-2: rgba(0, 0, 0, 0.56);
+  /* Border / Shadow */
+  --border: rgba(0, 0, 0, 0.08);
+  --border-hover: rgba(0, 0, 0, 0.14);
+  --shadow-1: 0 1px 0 rgba(0, 0, 0, 0.04);
 
-  --card-bg: rgba(255, 255, 255, 0.9);
-  --card-border: rgba(0, 0, 0, 0.10);
+  /* Nav */
+  --nav-bg: rgba(251, 251, 253, 0.78);
+  --nav-border: rgba(0, 0, 0, 0.08);
 
-  --radius-xl: 28px;
-  --radius-lg: 22px;
-  --radius-md: 16px;
+  /* Radius */
+  --r-card: 24px;
+  --r-media: 18px;
+  --r-chip: 9999px;
 
-  --hover: rgba(0, 0, 0, 0.06);
-  --active: rgba(0, 0, 0, 0.10);
+  /* Layout */
+  --content-max: 980px;
+  --gutter: 22px;
+  --nav-h: 44px;
+
+  /* Typography scale */
+  --hero-1: 56px;
+  --hero-2: 68px;
+  --hero-3: 80px;
+
+  --body: 17px;
+  --sub: 19px;
+  --caption: 12px;
+
+  /* Motion */
+  --ease-apple: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dur-1: 180ms;
+}
+
+@media (min-width: 768px) {
+  :root {
+    --hero-1: 68px;
+  }
+}
+@media (min-width: 1024px) {
+  :root {
+    --hero-1: 80px;
+  }
 }
 
 html,
@@ -29,21 +65,24 @@ body {
 }
 
 body {
-  background: var(--surface);
-  color: var(--fg);
+  background: var(--bg);
+  color: var(--text);
+
+  /* Apple-like system font stack */
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
     "SF Pro Display", "SF Pro Text", "Helvetica Neue", Arial, "PingFang SC",
     "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* ---------------- Top Nav (44px + Apple-ish width) ---------------- */
+/* ---------------- Top nav ---------------- */
 .site-nav {
   position: sticky;
   top: 0;
   z-index: 50;
-  height: 44px;
+  height: var(--nav-h);
   background: var(--nav-bg);
   backdrop-filter: saturate(180%) blur(20px);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
@@ -51,21 +90,26 @@ body {
 }
 
 .site-nav__inner {
-  height: 44px;
-  max-width: 980px;
+  height: var(--nav-h);
+  max-width: var(--content-max);
   margin: 0 auto;
-  padding: 0 22px;
+  padding: 0 var(--gutter);
+
   display: grid;
-  grid-template-columns: 44px 1fr 44px;
+  grid-template-columns: var(--nav-h) 1fr var(--nav-h);
   align-items: center;
 }
 
 .site-nav__logo {
-  width: 44px;
-  height: 44px;
+  width: var(--nav-h);
+  height: var(--nav-h);
   display: grid;
   place-items: center;
   opacity: 0.92;
+  transition: opacity var(--dur-1) var(--ease-apple);
+}
+.site-nav__logo:hover {
+  opacity: 1;
 }
 
 .site-nav__links {
@@ -76,148 +120,188 @@ body {
 }
 
 .site-nav__link {
-  font-size: 12px;
-  line-height: 44px;
+  font-size: var(--caption);
+  line-height: var(--nav-h);
   letter-spacing: -0.01em;
-  color: rgba(0, 0, 0, 0.88);
+  color: rgba(29, 29, 31, 0.86);
   text-decoration: none;
   white-space: nowrap;
-  transition: color 150ms ease, opacity 150ms ease;
+  transition: opacity var(--dur-1) var(--ease-apple);
 }
-
 .site-nav__link:hover {
-  color: rgba(0, 0, 0, 1);
+  opacity: 0.72;
 }
 
 .site-nav__right {
-  width: 44px;
-  height: 44px;
+  width: var(--nav-h);
+  height: var(--nav-h);
 }
 
-/* ✅ 顶栏下方 44px 呼吸空间：所有页面 main 自动下移 */
-main {
-  padding-top: 44px;
+/* ---------------- Page shell ---------------- */
+.page-shell {
+  padding-top: 28px; /* Nav 下第一段呼吸空间 */
+  padding-bottom: 40px;
 }
 
-/* ---------------- Layout helpers ---------------- */
+/* ---------------- Container ---------------- */
 .container-apple {
-  max-width: 980px;
+  max-width: 1200px;
   margin: 0 auto;
-  padding-left: 22px;
-  padding-right: 22px;
+  padding: 0 var(--gutter);
 }
 
-/* ---------------- Hero typography scale ---------------- */
+/* ---------------- Hero ---------------- */
 .hero {
-  padding-top: 44px; /* 再给 hero 一点呼吸 */
+  padding-top: 44px; /* 你要求的 44px 呼吸空间 */
   padding-bottom: 28px;
+  text-align: center;
 }
 
-.hero__h1 {
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  margin: 0;
-  /* 56/68/80 scale */
-  font-size: 56px;
-  line-height: 60px;
-}
-@media (min-width: 768px) {
-  .hero__h1 {
-    font-size: 68px;
-    line-height: 72px;
-  }
-}
-@media (min-width: 1024px) {
-  .hero__h1 {
-    font-size: 80px;
-    line-height: 84px;
-  }
+.hero__title {
+  font-size: var(--hero-1);
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  font-weight: 700;
 }
 
-.hero__sub {
-  margin-top: 14px;
-  font-size: 19px;
-  line-height: 27px;
+.hero__subtitle {
+  margin-top: 10px;
+  font-size: var(--sub);
+  line-height: 1.35;
   letter-spacing: -0.01em;
   color: var(--muted);
-  max-width: 46rem;
-}
-@media (min-width: 768px) {
-  .hero__sub {
-    font-size: 21px;
-    line-height: 29px;
-  }
+  font-weight: 600;
 }
 
-/* ---------------- Buttons (Apple-ish pill) ---------------- */
-.btn-apple {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 36px;
-  padding: 0 16px;
-  border-radius: 999px;
-  border: 1px solid rgba(0, 0, 0, 0.18);
-  background: rgba(255, 255, 255, 0.9);
-  color: rgba(0, 0, 0, 0.86);
-  font-size: 12px;
-  letter-spacing: -0.01em;
-  text-decoration: none;
-  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
-}
-
-.btn-apple:hover {
-  background: rgba(0, 0, 0, 0.04);
-  border-color: rgba(0, 0, 0, 0.26);
-}
-
-.btn-apple:active {
-  background: rgba(0, 0, 0, 0.06);
-  transform: translateY(1px);
-}
-
-/* ---------------- Cards: almost no shadow (border + gray) ---------------- */
-.card-apple {
-  background: var(--card-bg);
-  border: 1px solid var(--card-border);
-  border-radius: var(--radius-xl);
-  overflow: hidden;
-}
-
-.card-apple:hover {
-  border-color: rgba(0, 0, 0, 0.16);
-}
-
-.card-apple__media {
-  position: relative;
-  aspect-ratio: 1 / 1;
-  background: rgba(0, 0, 0, 0.02);
-}
-
-.card-apple__meta {
-  padding: 14px 2px 0 2px;
-}
-
-.card-apple__brand {
-  font-size: 12px;
+.hero__subline {
+  margin-top: 8px;
+  font-size: var(--body);
+  line-height: 1.55;
   letter-spacing: -0.01em;
   color: var(--muted-2);
 }
 
-.card-apple__name {
-  margin-top: 4px;
-  font-size: 17px;
-  line-height: 22px;
+.hero__rail {
+  margin-top: 18px;
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* ---------------- Chips ---------------- */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  height: 34px;
+  padding: 0 14px;
+
+  border-radius: var(--r-chip);
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.66);
+
+  font-size: 13px;
   letter-spacing: -0.01em;
+  color: rgba(29, 29, 31, 0.88);
+  text-decoration: none;
+
+  transition: transform var(--dur-1) var(--ease-apple),
+    border-color var(--dur-1) var(--ease-apple),
+    background var(--dur-1) var(--ease-apple);
+}
+
+.chip:hover {
+  transform: scale(1.01);
+  border-color: var(--border-hover);
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.chip--ghost {
+  background: transparent;
+}
+
+/* ---------------- Grid / Cards ---------------- */
+.grid {
+  margin-top: 18px;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+}
+
+@media (min-width: 768px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+  }
+}
+@media (min-width: 1024px) {
+  .grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+  }
+}
+
+.card {
+  display: block;
+  border-radius: var(--r-card);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  overflow: hidden;
+  text-decoration: none;
+  color: inherit;
+
+  transition: transform var(--dur-1) var(--ease-apple),
+    border-color var(--dur-1) var(--ease-apple);
+}
+
+.card:hover {
+  transform: scale(1.012);
+  border-color: var(--border-hover);
+}
+
+.card__media {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  background: rgba(0, 0, 0, 0.02);
+  border-bottom: 1px solid var(--border);
+}
+
+.card__img {
+  object-fit: cover;
+  transform: scale(1);
+  transition: transform var(--dur-1) var(--ease-apple);
+}
+
+.card:hover .card__img {
+  transform: scale(1.02);
+}
+
+.card__meta {
+  padding: 14px 16px 16px;
+}
+
+.card__brand {
+  font-size: 12px;
+  letter-spacing: -0.01em;
+  color: var(--muted);
+}
+
+.card__name {
+  margin-top: 4px;
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  color: rgba(29, 29, 31, 0.92);
   font-weight: 600;
-  color: rgba(0, 0, 0, 0.92);
 }
 
 /* ---------------- Footer ---------------- */
 .site-footer {
-  color: var(--muted-2);
+  color: var(--muted);
   font-size: 12px;
   letter-spacing: -0.01em;
   text-align: center;
-  padding: 28px 0 40px;
+  padding: 22px 0 40px;
 }

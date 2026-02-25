@@ -1,0 +1,16 @@
+services:
+  frontend-dev:
+    image: node:20-alpine
+    working_dir: /app
+    command: sh -lc "npm ci && npm run dev -- -H 0.0.0.0 -p 3000"
+    environment:
+      NODE_ENV: development
+      # 让 Next 在容器里热更新更稳定（尤其是云服务器/远程FS）
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+      # 你的前端如果读 NEXT_PUBLIC_API_BASE 之类，按你项目实际改
+      NEXT_PUBLIC_API_BASE: "http://127.0.0.1:5000"
+    volumes:
+      - ./frontend:/app
+    ports:
+      - "5001:3000"
