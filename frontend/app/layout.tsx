@@ -1,58 +1,27 @@
 import "./globals.css";
-import Link from "next/link";
-import Image from "next/image";
-import { TOP_CATEGORIES, CATEGORY_CONFIG } from "@/lib/catalog";
-import { BRAND } from "@/lib/brand";
+import type { Metadata } from "next";
 
-export const metadata = {
-  title: BRAND.zhName,
-  description: BRAND.slogan,
+import { BRAND } from "@/lib/brand";
+import TopNav from "@/components/TopNav";
+
+export const metadata: Metadata = {
+  title: `${BRAND.appNameZh} · ${BRAND.slogan}`,
+  description: BRAND.heroSubline,
 };
 
 export default function RootLayout({
   children,
-}: {
-  children: React.ReactNode;
-}) {
+}: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="zh-CN">
-      <body>
-        {/* Apple-like Top Nav */}
-        <header className="site-nav">
-          <div className="site-nav__inner">
-            {/* Left: logo */}
-            <Link href="/" className="site-nav__logo" aria-label={BRAND.zhName}>
-              <Image
-                src="/brand/logo.png"
-                alt={BRAND.zhName}
-                width={18}
-                height={18}
-                priority
-              />
-            </Link>
+      <body className="min-h-dvh bg-[#f5f5f7] text-black antialiased">
+        {/* Top Nav (44px breathing space) */}
+        <TopNav />
 
-            {/* Center: categories */}
-            <nav className="site-nav__links" aria-label="categories">
-              {TOP_CATEGORIES.map((k) => (
-                <Link key={k} href={`/c/${k}`} className="site-nav__link">
-                  {CATEGORY_CONFIG[k].zh}
-                </Link>
-              ))}
-              <Link href="/compare" className="site-nav__link">
-                横向对比
-              </Link>
-            </nav>
-
-            {/* Right: placeholder */}
-            <div className="site-nav__right" />
-          </div>
-        </header>
-
-        <main className="page-shell">{children}</main>
-
-        <footer className="site-footer">
-          Demo · {BRAND.zhName} · {BRAND.slogan}
-        </footer>
+        {/* Main */}
+        <main className="mx-auto max-w-[1024px] px-5 pt-10 md:pt-14">
+          {children}
+        </main>
       </body>
     </html>
   );
