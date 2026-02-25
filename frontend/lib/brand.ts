@@ -22,7 +22,7 @@ export const BRAND = {
    * 你说现在是 png，所以默认走 /logo.png
    * 之后你换成 svg，只需要改这里，不用改组件。
    */
-  logoSrc: "/logo.png",
+  logoSrc: "/brand/logo.svg",
   logoAltZh: "予选",
   logoAltEn: "MatchUp",
 } as const;
