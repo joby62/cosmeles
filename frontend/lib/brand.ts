@@ -11,7 +11,7 @@ export const BRAND = {
 
   // Hero subline（你指定的副文案）
   heroSublineZh: "省下挑花眼的时间，只留最对位的一件。",
-  heroSublineEn: "Save the time of comparing—keep the one that truly fits.",
+  heroSublineEn: "Less browsing. More matching.",
 
   // Footer
   footerZh: "Demo · 予选 · 浴室里的最终答案",
