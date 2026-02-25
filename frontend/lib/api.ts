@@ -1,67 +1,77 @@
-export interface Product {
+export type Product = {
   id: string;
+  category: string;
+  brand: string;
   name: string;
-  brand?: string;
-  category?: string;
-  description?: string;
-  image_url?: string;
-  tags?: string[];
-  highlights?: string[];
-}
+  description?: string | null;
+  one_sentence?: string | null;
+  tags?: string[] | null;
+  image_url?: string | null;
+  created_at?: string | null;
+};
 
-/**
- * 在 Server Component / Route Handler 里，Node fetch 不能用相对路径（/api/...），必须是绝对 URL
- * 在浏览器里，反而应该优先用相对路径以保持同域
- */
-function getApiBase(): string {
-  // 浏览器环境
+function getBaseForFetch(): string {
+  // 在浏览器里：用相对路径，走同域 nginx（/api/...）
   if (typeof window !== "undefined") return "";
 
-  // Node / Server 环境：优先用 env 指定的站点域名（上线时最稳）
-  const site =
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    process.env.SITE_URL ||
-    process.env.VERCEL_URL;
-
-  if (site) {
-    // VERCEL_URL 可能没有协议
-    if (site.startsWith("http://") || site.startsWith("https://")) return site;
-    return `https://${site}`;
-  }
-
-  // 本地开发 fallback：你的后端端口 8000
-  return "http://127.0.0.1:8000";
+  // 在 Next Server/SSR 里：Node fetch 需要绝对 URL
+  // 走 nginx 容器名（docker compose 内部 DNS）
+  return process.env.INTERNAL_API_BASE || "http://nginx";
 }
 
-async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const base = getApiBase();
-  const url = `${base}/api${path.startsWith("/") ? path : `/${path}`}`;
+async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const base = getBaseForFetch();
+
+  // path 统一要求以 / 开头
+  const url = base ? new URL(path, base).toString() : path;
 
   const res = await fetch(url, {
-    ...options,
+    ...init,
+    // 生产建议不缓存（你也可以按需调）
     cache: "no-store",
+    headers: {
+      "content-type": "application/json",
+      ...(init?.headers || {}),
+    },
   });
 
   if (!res.ok) {
-    throw new Error(`API error ${res.status}: ${url}`);
+    const text = await res.text().catch(() => "");
+    throw new Error(`API ${res.status}: ${text}`);
   }
-
-  return res.json();
+  return (await res.json()) as T;
 }
 
 export async function fetchProducts(): Promise<Product[]> {
-  return apiFetch<Product[]>("/products");
+  return apiFetch<Product[]>("/api/products");
 }
 
 export async function fetchProduct(id: string): Promise<Product> {
-  return apiFetch<Product>(`/products/${id}`);
+  return apiFetch<Product>(`/api/products/${id}`);
 }
 
+// 图片 URL：浏览器用相对 /images/...（同域 nginx -> backend）
+// SSR 也需要绝对 URL，走 nginx
 export function resolveImageUrl(product: Product): string {
-  if (product.image_url) return product.image_url;
+  const p = product.image_url || `/images/${product.id}.png`;
+  if (typeof window !== "undefined") return p.startsWith("http") ? p : p;
+  const base = process.env.INTERNAL_API_BASE || "http://nginx";
+  return p.startsWith("http") ? p : new URL(p, base).toString();
+}
 
-  const base = getApiBase();
-  // 浏览器返回 /images/... 同域；服务端返回绝对 URL
-  const prefix = typeof window !== "undefined" ? "" : base;
-  return `${prefix}/images/${product.id}.png`;
+// 上传（如果你已经删掉 upload 页面也没关系，这个导出不会害你）
+// 走 /api/ingest（你后端若不是这个路径，就按你后端实际路由改）
+export async function ingestImage(file: File): Promise<{ id: string }> {
+  const base = getBaseForFetch();
+  const url = base ? new URL("/api/ingest", base).toString() : "/api/ingest";
+
+  const fd = new FormData();
+  fd.append("file", file);
+
+  const res = await fetch(url, { method: "POST", body: fd });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`INGEST ${res.status}: ${text}`);
+  }
+  return (await res.json()) as { id: string };
 }
