@@ -13,24 +13,25 @@
   --hairline: rgba(0,0,0,.06);
   --nav-h: 44px;
 
-  /* Apple-ish surface（分类与分栏一体的颜色/雾化） */
   --nav-surface: rgba(251, 251, 253, 0.92);
 
-  /* Layout */
   --content-max: 980px;
   --gutter: 22px;
 
-  /* Motion */
   --ease-apple: cubic-bezier(0.2, 0.8, 0.2, 1);
   --dur: 180ms;
 
-  /* Hero scale（你原来那套） */
   --hero-80: 80px;
   --hero-68: 68px;
   --hero-56: 56px;
 }
 
-html, body { background: var(--bg); color: var(--text); }
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
 
 /* ✅ 只虚化 main，不影响 top nav / flyout */
 html[data-nav-open="1"] #app-main{
@@ -45,7 +46,7 @@ html[data-nav-open="1"] #app-main{
 }
 
 /* =========================
-   Hero Typography（保持）
+   Hero Typography（保持你基线）
    ========================= */
 .hero-title {
   font-size: var(--hero-56);
@@ -64,6 +65,7 @@ html[data-nav-open="1"] #app-main{
   letter-spacing: -0.01em;
   color: rgba(0,0,0,.7);
 }
+
 .hero-subline {
   margin-top: 10px;
   font-size: 19px;
@@ -77,30 +79,7 @@ html[data-nav-open="1"] #app-main{
 }
 
 /* =========================
-   Pills（保持）
-   ========================= */
-.pill {
-  display: inline-flex;
-  align-items: center;
-  height: 36px;
-  padding: 0 14px;
-  border-radius: 9999px;
-  border: 1px solid rgba(0,0,0,.10);
-  background: rgba(255,255,255,.6);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  color: rgba(0,0,0,.75);
-  transition: transform 180ms ease, background 180ms ease, opacity 180ms ease;
-}
-.pill:hover { transform: scale(1.02); background: rgba(255,255,255,.8); }
-.pill:active { transform: scale(0.99); opacity: .9; }
-.pill-strong { color: rgba(0,0,0,.85); border-color: rgba(0,0,0,.14); }
-
-/* =========================
-   Nav baseline（保持）
+   Nav baseline
    ========================= */
 .nav-item {
   height: var(--nav-h);
@@ -117,18 +96,14 @@ html[data-nav-open="1"] #app-main{
 .nav-item-active { color: rgba(0,0,0,.95); }
 
 /* =========================
-   Apple 一体导航域（关键）
-   - 分类与分栏同色
-   - 无边框
-   - 离开整体域 => scrim 消失 => 虚化撤销
+   Apple 一体导航域
    ========================= */
 .nav-zone{
   position: sticky;
   top: 0;
-  z-index: 60; /* 永远高于 main 的虚化 */
+  z-index: 60;
 }
 .nav-zone--open{
-  /* Apple 打开时：surface 更稳定（同色同雾化一体） */
   background: var(--nav-surface);
   backdrop-filter: saturate(180%) blur(20px);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
@@ -143,9 +118,8 @@ html[data-nav-open="1"] #app-main{
   -webkit-backdrop-filter: saturate(180%) blur(20px);
 }
 .nav-zone--open .nav-bar{
-  /* 打开时：bar 与 flyout 颜色一致，像一体 */
   background: transparent;
-  border-bottom-color: transparent; /* 去掉“分隔线感” */
+  border-bottom-color: transparent;
 }
 
 .nav-inner{
@@ -157,6 +131,7 @@ html[data-nav-open="1"] #app-main{
   grid-template-columns: var(--nav-h) 1fr var(--nav-h);
   align-items: center;
 }
+
 .nav-logo{
   width: var(--nav-h);
   height: var(--nav-h);
@@ -166,21 +141,47 @@ html[data-nav-open="1"] #app-main{
   transition: opacity var(--dur) var(--ease-apple);
 }
 .nav-logo:hover{ opacity: 1; }
+
 .nav-links{
   display: flex;
   justify-content: center;
   gap: 32px;
   align-items: center;
 }
-.nav-right{ width: var(--nav-h); height: var(--nav-h); }
 
-/* Flyout（fixed，不下推页面；无边框；与 bar 同色） */
+/* ✅ 关键：右侧区域要垂直居中，否则按钮会“飘” */
+.nav-right{
+  width: var(--nav-h);
+  height: var(--nav-h);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+/* ✅ 语言按钮：Apple 顶栏控件节奏（12px、44px内垂直居中、hover 仅改变透明度） */
+.nav-lang{
+  height: var(--nav-h);
+  line-height: var(--nav-h);
+  padding: 0 6px;
+  border: none;
+  background: transparent;
+  color: rgba(0,0,0,.8);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: opacity var(--dur) var(--ease-apple);
+}
+.nav-lang:hover{ opacity: .72; }
+.nav-lang:active{ opacity: .62; }
+
+/* Flyout */
 .flyout{
   position: fixed;
   left: 0;
   right: 0;
   top: var(--nav-h);
-  z-index: 61; /* 高于 nav-zone 背景 */
+  z-index: 61;
   pointer-events: none;
   opacity: 0;
   transform: translateY(-6px);
@@ -192,7 +193,7 @@ html[data-nav-open="1"] #app-main{
   transform: translateY(0);
 }
 
-/* “缓冲桥”：hover 从分类到分栏不掉线（无视觉元素） */
+/* hover 缓冲桥 */
 .flyout-bridge{
   position: absolute;
   left: 0;
@@ -202,7 +203,6 @@ html[data-nav-open="1"] #app-main{
   background: transparent;
 }
 
-/* Flyout 内容：同色同雾化 surface，且无边框 */
 .flyout-inner{
   max-width: var(--content-max);
   margin: 0 auto;
@@ -215,7 +215,6 @@ html[data-nav-open="1"] #app-main{
   backdrop-filter: saturate(180%) blur(20px);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
 
-  /* ❌ 不要卡片边框、不做圆角 */
   border: none;
   border-radius: 0;
 }
@@ -247,7 +246,7 @@ html[data-nav-open="1"] #app-main{
   color: rgba(110,110,115,.82);
 }
 
-/* 点击空白关闭（scrim）：只覆盖 nav/flyout 以下区域 */
+/* 点击空白关闭（scrim） */
 .nav-scrim{
   position: fixed;
   left: 0;

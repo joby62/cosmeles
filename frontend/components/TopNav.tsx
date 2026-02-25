@@ -3,7 +3,9 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BRAND } from "@/lib/brand";
+import type { Lang } from "@/lib/i18n";
+import { useLang } from "@/lib/i18n";
+import { brandByLang } from "@/lib/brand";
 import { TOP_CATEGORIES, CATEGORY_CONFIG, type CategoryKey } from "@/lib/catalog";
 
 type FlyoutItem = { label: string; href: string };
@@ -13,125 +15,112 @@ function cx(...arr: Array<string | false | null | undefined>) {
   return arr.filter(Boolean).join(" ");
 }
 
-/**
- * ✅ 全中文：不允许中英夹杂
- * ✅ 结构：左大列 + 两列小项（Apple 的信息层级）
- */
-function getFlyout(category: CategoryKey): FlyoutColumn[] {
+function flyoutTitles(lang: Lang) {
+  if (lang === "zh") return { explore: "探索", forWho: "适合人群", more: "更多" };
+  return { explore: "Explore", forWho: "For who", more: "More" };
+}
+
+function getFlyout(category: CategoryKey, lang: Lang): FlyoutColumn[] {
+  const t = flyoutTitles(lang);
+
   if (category === "shampoo") {
     return [
       {
-        title: "功能",
-        items: [
-          { label: "控油清爽", href: "/c/shampoo" },
-          { label: "去屑止痒", href: "/c/shampoo" },
-          { label: "修护受损", href: "/c/shampoo" },
-          { label: "蓬松丰盈", href: "/c/shampoo" },
-        ],
+        title: t.explore,
+        items:
+          lang === "zh"
+            ? [
+                { label: "控油清爽", href: "/c/shampoo" },
+                { label: "去屑止痒", href: "/c/shampoo" },
+                { label: "修护受损", href: "/c/shampoo" },
+                { label: "蓬松丰盈", href: "/c/shampoo" },
+              ]
+            : [
+                { label: "Oil control & fresh", href: "/c/shampoo" },
+                { label: "Anti-dandruff & itch", href: "/c/shampoo" },
+                { label: "Repair damaged hair", href: "/c/shampoo" },
+                { label: "Volume & lift", href: "/c/shampoo" },
+              ],
       },
       {
-        title: "适合人群",
-        items: [
-          { label: "油性头皮", href: "/c/shampoo" },
-          { label: "敏感头皮", href: "/c/shampoo" },
-          { label: "染烫受损", href: "/c/shampoo" },
-        ],
+        title: t.forWho,
+        items:
+          lang === "zh"
+            ? [
+                { label: "油性头皮", href: "/c/shampoo" },
+                { label: "敏感头皮", href: "/c/shampoo" },
+                { label: "染烫受损", href: "/c/shampoo" },
+              ]
+            : [
+                { label: "Oily scalp", href: "/c/shampoo" },
+                { label: "Sensitive scalp", href: "/c/shampoo" },
+                { label: "Colored & permed hair", href: "/c/shampoo" },
+              ],
       },
       {
-        title: "更多",
-        items: [
-          { label: "成分与配方逻辑", href: "/compare" },
-          { label: "如何选择洗发水", href: "/c/shampoo" },
-        ],
+        title: t.more,
+        items:
+          lang === "zh"
+            ? [
+                { label: "成分与配方逻辑", href: "/compare" },
+                { label: "如何选择洗发水", href: "/c/shampoo" },
+              ]
+            : [
+                { label: "Ingredients & formulas", href: "/compare" },
+                { label: "How to choose shampoo", href: "/c/shampoo" },
+              ],
       },
     ];
   }
 
-  if (category === "bodywash") {
-    return [
-      {
-        title: "功能",
-        items: [
-          { label: "清爽不假滑", href: "/c/bodywash" },
-          { label: "温和无刺激", href: "/c/bodywash" },
-          { label: "留香更克制", href: "/c/bodywash" },
-          { label: "敏感肌可用", href: "/c/bodywash" },
-        ],
-      },
-      {
-        title: "适合人群",
-        items: [
-          { label: "干皮", href: "/c/bodywash" },
-          { label: "油皮", href: "/c/bodywash" },
-          { label: "敏感肌", href: "/c/bodywash" },
-        ],
-      },
-      {
-        title: "更多",
-        items: [
-          { label: "香型与肤感指南", href: "/c/bodywash" },
-          { label: "常见使用误区", href: "/c/bodywash" },
-        ],
-      },
-    ];
-  }
-
-  if (category === "conditioner") {
-    return [
-      {
-        title: "功能",
-        items: [
-          { label: "柔顺抗毛躁", href: "/c/conditioner" },
-          { label: "修护断裂", href: "/c/conditioner" },
-          { label: "轻盈不塌", href: "/c/conditioner" },
-        ],
-      },
-      {
-        title: "适合人群",
-        items: [
-          { label: "细软发", href: "/c/conditioner" },
-          { label: "漂染发", href: "/c/conditioner" },
-          { label: "干枯分叉", href: "/c/conditioner" },
-        ],
-      },
-      {
-        title: "更多",
-        items: [
-          { label: "护发素与发膜区别", href: "/c/conditioner" },
-          { label: "正确使用时机", href: "/c/conditioner" },
-        ],
-      },
-    ];
-  }
-
-  // 其他品类：最小可用（保持中文）
+  // 其他品类：最小可用，保证 zh/en 都完整
   return [
     {
-      title: "功能",
-      items: [{ label: `查看${CATEGORY_CONFIG[category].zh}`, href: `/c/${category}` }],
+      title: t.explore,
+      items: [
+        {
+          label:
+            lang === "zh"
+              ? `查看${CATEGORY_CONFIG[category].zh}`
+              : `View ${CATEGORY_CONFIG[category].en}`,
+          href: `/c/${category}`,
+        },
+      ],
     },
     {
-      title: "适合人群",
-      items: [{ label: "敏感 / 日常 / 长期", href: `/c/${category}` }],
+      title: t.forWho,
+      items: [
+        {
+          label: lang === "zh" ? "敏感 / 日常 / 长期" : "Sensitive / Daily / Long-term",
+          href: `/c/${category}`,
+        },
+      ],
     },
     {
-      title: "更多",
-      items: [{ label: "横向对比", href: "/compare" }],
+      title: t.more,
+      items: [{ label: lang === "zh" ? "横向对比" : "Compare", href: "/compare" }],
     },
   ];
 }
 
 export default function TopNav() {
+  const [lang, setLang] = useLang();
+  const brand = useMemo(() => brandByLang(lang), [lang]);
+
   const [openKey, setOpenKey] = useState<CategoryKey | null>(null);
   const openTimer = useRef<number | null>(null);
   const closeTimer = useRef<number | null>(null);
 
   const isOpen = openKey !== null;
 
+  // ✅ logo：先解决“挂掉”
+  const [logoSrc, setLogoSrc] = useState<string>(brand.logoSrc);
+  useEffect(() => setLogoSrc(brand.logoSrc), [brand.logoSrc]);
+
   const flyout = useMemo(() => {
     if (!openKey) return null;
-    return getFlyout(openKey);
-  }, [openKey]);
+    return getFlyout(openKey, lang);
+  }, [openKey, lang]);
 
   function clearTimers() {
     if (openTimer.current) window.clearTimeout(openTimer.current);
@@ -142,14 +131,12 @@ export default function TopNav() {
 
   function requestOpen(k: CategoryKey) {
     clearTimers();
-    // Apple：轻微延迟，避免“一碰就炸开”
-    openTimer.current = window.setTimeout(() => setOpenKey(k), 110);
+    openTimer.current = window.setTimeout(() => setOpenKey(k), 120);
   }
 
   function requestClose() {
     clearTimers();
-    // Apple：离开整体导航域后，短暂容错再关闭
-    closeTimer.current = window.setTimeout(() => setOpenKey(null), 170);
+    closeTimer.current = window.setTimeout(() => setOpenKey(null), 220);
   }
 
   function hardClose() {
@@ -157,17 +144,15 @@ export default function TopNav() {
     setOpenKey(null);
   }
 
-  // ✅ 用你现有机制：只虚化 main（不影响 top nav / flyout）
+  // ✅ 打开时只虚化 main
   useEffect(() => {
     const html = document.documentElement;
     if (isOpen) html.setAttribute("data-nav-open", "1");
     else html.removeAttribute("data-nav-open");
-    return () => {
-      html.removeAttribute("data-nav-open");
-    };
+    return () => html.removeAttribute("data-nav-open");
   }, [isOpen]);
 
-  // ESC 关闭（Apple）
+  // ESC 关闭
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") hardClose();
@@ -176,30 +161,35 @@ export default function TopNav() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  const toggleLabel = lang === "zh" ? "EN" : "中文";
+  const nextLang: Lang = lang === "zh" ? "en" : "zh";
+
   return (
     <>
-      {/* 这个 zone = Apple 的“分类+分栏一体导航域”
-          离开整个 zone 才会关闭 -> 同时撤虚化 */}
       <div
         className={cx("nav-zone", isOpen && "nav-zone--open")}
-        onPointerEnter={() => {
-          clearTimers();
-        }}
-        onPointerLeave={() => {
-          requestClose();
-        }}
+        onPointerEnter={() => clearTimers()}
+        onPointerLeave={() => requestClose()}
       >
-        {/* Top bar */}
-        <header className="nav-bar" aria-label="主导航">
+        <header className="nav-bar" aria-label={lang === "zh" ? "主导航" : "Main navigation"}>
           <div className="nav-inner">
-            <Link className="nav-logo" href="/" aria-label={BRAND.appNameZh}>
+            <Link className="nav-logo" href="/" aria-label={brand.appName}>
               <Image
-                src="/logo.svg"
-                alt=""
+                src={logoSrc}
+                alt={brand.logoAlt}
                 width={18}
                 height={18}
                 priority
                 draggable={false}
+                onError={() => {
+                  // 最后兜底：如果 /logo.png 也不存在，避免显示坏图标
+                  setLogoSrc(
+                    "data:image/svg+xml;utf8," +
+                      encodeURIComponent(
+                        `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="7" fill="rgba(0,0,0,.75)"/></svg>`
+                      )
+                  );
+                }}
               />
             </Link>
 
@@ -211,30 +201,31 @@ export default function TopNav() {
                   className={cx("nav-item", openKey === k && "nav-item-active")}
                   onPointerEnter={() => requestOpen(k)}
                 >
-                  {CATEGORY_CONFIG[k].zh}
+                  {lang === "zh" ? CATEGORY_CONFIG[k].zh : CATEGORY_CONFIG[k].en}
                 </Link>
               ))}
-              <Link
-                href="/compare"
-                className="nav-item"
-                onPointerEnter={() => requestClose()}
-              >
-                横向对比
+
+              <Link href="/compare" className="nav-item" onPointerEnter={() => requestClose()}>
+                {lang === "zh" ? "横向对比" : "Compare"}
               </Link>
             </nav>
 
-            <div className="nav-right" />
+            {/* ✅ 右侧：必须与 nav-item 同一高度节奏（44px），垂直居中 */}
+            <div className="nav-right">
+              <button
+                type="button"
+                className="nav-lang"
+                aria-label={lang === "zh" ? "切换为英文" : "Switch to Chinese"}
+                onClick={() => setLang(nextLang)}
+              >
+                {toggleLabel}
+              </button>
+            </div>
           </div>
         </header>
 
-        {/* Flyout：不下推页面；和 nav 同色同雾化；无边框 */}
-        <div
-          className={cx("flyout", isOpen && "flyout--open")}
-          aria-hidden={!isOpen}
-        >
-          {/* 透明缓冲桥（Apple 的“容错缓冲区”） */}
+        <div className={cx("flyout", isOpen && "flyout--open")} aria-hidden={!isOpen}>
           <div className="flyout-bridge" aria-hidden="true" />
-
           <div className="flyout-inner">
             {flyout?.map((col) => (
               <div key={col.title} className="flyout-col">
@@ -251,16 +242,15 @@ export default function TopNav() {
               </div>
             ))}
 
-            <div className="flyout-foot">{BRAND.heroSublineZh}</div>
+            <div className="flyout-foot">{brand.heroSubline}</div>
           </div>
         </div>
       </div>
 
-      {/* 点击空白关闭（Apple：点页面任何地方，导航退出，虚化撤掉） */}
       {isOpen && (
         <button
           className="nav-scrim"
-          aria-label="关闭导航"
+          aria-label={lang === "zh" ? "关闭导航" : "Close navigation"}
           onClick={hardClose}
         />
       )}
