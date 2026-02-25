@@ -3,16 +3,36 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Design Tokens */
+/* =========================
+   Tokens
+   ========================= */
 :root{
   --bg: #f5f5f7;
-  --text: rgba(0,0,0,.88);
+  --text: #1d1d1f;
   --muted: rgba(0,0,0,.55);
-  --border: rgba(0,0,0,.06);
-  --shadow-1: 0 1px 2px rgba(0,0,0,.04);
+  --hairline: rgba(0,0,0,.06);
+  --nav-h: 44px;
+
+  /* Apple-ish surface（分类与分栏一体的颜色/雾化） */
+  --nav-surface: rgba(251, 251, 253, 0.92);
+
+  /* Layout */
+  --content-max: 980px;
+  --gutter: 22px;
+
+  /* Motion */
+  --ease-apple: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dur: 180ms;
+
+  /* Hero scale（你原来那套） */
+  --hero-80: 80px;
+  --hero-68: 68px;
+  --hero-56: 56px;
 }
 
-/* 只虚化 main，不影响 top nav / flyout */
+html, body { background: var(--bg); color: var(--text); }
+
+/* ✅ 只虚化 main，不影响 top nav / flyout */
 html[data-nav-open="1"] #app-main{
   filter: blur(14px);
   transform: translateZ(0);
@@ -20,50 +40,21 @@ html[data-nav-open="1"] #app-main{
   pointer-events: none;
   user-select: none;
 }
-
-/* 关闭时恢复过渡（防止“啪”一下） */
 #app-main{
   transition: filter 200ms ease-out;
 }
 
-/* ========= Design Tokens (Apple-ish) ========= */
-:root {
-  --bg: #f5f5f7;
-  --text: #1d1d1f;
-  --muted: rgba(0, 0, 0, 0.56);
-  --hairline: rgba(0, 0, 0, 0.06);
-
-  --nav-h: 44px;
-
-  /* Typography scale (approx Apple) */
-  --hero-80: 80px;
-  --hero-68: 68px;
-  --hero-56: 56px;
-}
-
-html,
-body {
-  background: var(--bg);
-  color: var(--text);
-}
-
-/* ========= Hero Typography ========= */
+/* =========================
+   Hero Typography（保持）
+   ========================= */
 .hero-title {
   font-size: var(--hero-56);
   line-height: 1.05;
   font-weight: 700;
   letter-spacing: -0.02em;
 }
-@media (min-width: 768px) {
-  .hero-title {
-    font-size: var(--hero-68);
-  }
-}
-@media (min-width: 1024px) {
-  .hero-title {
-    font-size: var(--hero-80);
-  }
-}
+@media (min-width: 768px) { .hero-title { font-size: var(--hero-68); } }
+@media (min-width: 1024px) { .hero-title { font-size: var(--hero-80); } }
 
 .hero-slogan {
   margin-top: 10px;
@@ -71,71 +62,202 @@ body {
   line-height: 1.35;
   font-weight: 600;
   letter-spacing: -0.01em;
-  color: rgba(0, 0, 0, 0.7);
+  color: rgba(0,0,0,.7);
 }
-
 .hero-subline {
   margin-top: 10px;
   font-size: 19px;
   line-height: 1.45;
   font-weight: 500;
   letter-spacing: -0.01em;
-  color: rgba(0, 0, 0, 0.55);
-  white-space: nowrap; /* 你要求：一行 */
+  color: rgba(0,0,0,.55);
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* ========= Pills ========= */
+/* =========================
+   Pills（保持）
+   ========================= */
 .pill {
   display: inline-flex;
   align-items: center;
   height: 36px;
   padding: 0 14px;
   border-radius: 9999px;
-  border: 1px solid rgba(0, 0, 0, 0.10);
-  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(0,0,0,.10);
+  background: rgba(255,255,255,.6);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.01em;
-  color: rgba(0, 0, 0, 0.75);
-
+  color: rgba(0,0,0,.75);
   transition: transform 180ms ease, background 180ms ease, opacity 180ms ease;
 }
-.pill:hover {
-  transform: scale(1.02);
-  background: rgba(255, 255, 255, 0.8);
-}
-.pill:active {
-  transform: scale(0.99);
-  opacity: 0.9;
-}
+.pill:hover { transform: scale(1.02); background: rgba(255,255,255,.8); }
+.pill:active { transform: scale(0.99); opacity: .9; }
+.pill-strong { color: rgba(0,0,0,.85); border-color: rgba(0,0,0,.14); }
 
-.pill-strong {
-  color: rgba(0, 0, 0, 0.85);
-  border-color: rgba(0, 0, 0, 0.14);
-}
-
-/* ========= Nav baseline ========= */
+/* =========================
+   Nav baseline（保持）
+   ========================= */
 .nav-item {
   height: var(--nav-h);
   line-height: var(--nav-h);
   font-size: 12px;
   font-weight: 500;
   letter-spacing: 0.02em;
-  color: rgba(0, 0, 0, 0.8);
-
+  color: rgba(0,0,0,.8);
   padding: 0 10px;
   border-radius: 9999px;
   transition: opacity 180ms ease, background 180ms ease;
 }
-.nav-item:hover {
-  opacity: 0.95;
-  background: rgba(0, 0, 0, 0.04);
+.nav-item:hover { opacity: 0.95; background: rgba(0,0,0,.04); }
+.nav-item-active { color: rgba(0,0,0,.95); }
+
+/* =========================
+   Apple 一体导航域（关键）
+   - 分类与分栏同色
+   - 无边框
+   - 离开整体域 => scrim 消失 => 虚化撤销
+   ========================= */
+.nav-zone{
+  position: sticky;
+  top: 0;
+  z-index: 60; /* 永远高于 main 的虚化 */
 }
-.nav-item-active {
-  color: rgba(0, 0, 0, 0.95);
+.nav-zone--open{
+  /* Apple 打开时：surface 更稳定（同色同雾化一体） */
+  background: var(--nav-surface);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+}
+
+/* Top bar */
+.nav-bar{
+  height: var(--nav-h);
+  border-bottom: 1px solid var(--hairline);
+  background: rgba(251,251,253,.78);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+}
+.nav-zone--open .nav-bar{
+  /* 打开时：bar 与 flyout 颜色一致，像一体 */
+  background: transparent;
+  border-bottom-color: transparent; /* 去掉“分隔线感” */
+}
+
+.nav-inner{
+  height: var(--nav-h);
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+  display: grid;
+  grid-template-columns: var(--nav-h) 1fr var(--nav-h);
+  align-items: center;
+}
+.nav-logo{
+  width: var(--nav-h);
+  height: var(--nav-h);
+  display: grid;
+  place-items: center;
+  opacity: .92;
+  transition: opacity var(--dur) var(--ease-apple);
+}
+.nav-logo:hover{ opacity: 1; }
+.nav-links{
+  display: flex;
+  justify-content: center;
+  gap: 32px;
+  align-items: center;
+}
+.nav-right{ width: var(--nav-h); height: var(--nav-h); }
+
+/* Flyout（fixed，不下推页面；无边框；与 bar 同色） */
+.flyout{
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: var(--nav-h);
+  z-index: 61; /* 高于 nav-zone 背景 */
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity var(--dur) var(--ease-apple), transform var(--dur) var(--ease-apple);
+}
+.flyout--open{
+  pointer-events: auto;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* “缓冲桥”：hover 从分类到分栏不掉线（无视觉元素） */
+.flyout-bridge{
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -16px;
+  height: 16px;
+  background: transparent;
+}
+
+/* Flyout 内容：同色同雾化 surface，且无边框 */
+.flyout-inner{
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 18px var(--gutter) 22px;
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr;
+  column-gap: 44px;
+
+  background: var(--nav-surface);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+
+  /* ❌ 不要卡片边框、不做圆角 */
+  border: none;
+  border-radius: 0;
+}
+
+.flyout-title{
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: rgba(110,110,115,.92);
+  margin-bottom: 10px;
+}
+.flyout-list{ list-style: none; padding: 0; margin: 0; }
+.flyout-li + .flyout-li{ margin-top: 10px; }
+.flyout-link{
+  text-decoration: none;
+  color: rgba(29,29,31,.92);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  transition: opacity var(--dur) var(--ease-apple);
+}
+.flyout-link:hover{ opacity: .72; }
+
+.flyout-foot{
+  grid-column: 1 / -1;
+  margin-top: 18px;
+  font-size: 12px;
+  letter-spacing: -0.01em;
+  color: rgba(110,110,115,.82);
+}
+
+/* 点击空白关闭（scrim）：只覆盖 nav/flyout 以下区域 */
+.nav-scrim{
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: var(--nav-h);
+  bottom: 0;
+  z-index: 50;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: default;
 }

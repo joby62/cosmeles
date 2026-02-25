@@ -3,28 +3,25 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
-
 import { BRAND } from "@/lib/brand";
 import { TOP_CATEGORIES, CATEGORY_CONFIG, type CategoryKey } from "@/lib/catalog";
 
-type FlyoutColumn = {
-  title: string; // Explore / For / More
-  items: { label: string; href: string }[];
-};
+type FlyoutItem = { label: string; href: string };
+type FlyoutColumn = { title: string; items: FlyoutItem[] };
 
-function cx(...arr: Array<string | false | undefined | null>) {
+function cx(...arr: Array<string | false | null | undefined>) {
   return arr.filter(Boolean).join(" ");
 }
 
 /**
- * 先挑一些放上去（后面你再慢慢补全）
- * 结构和 Apple 一样：左大列（Explore）+ 两列小项（For/More）
+ * ✅ 全中文：不允许中英夹杂
+ * ✅ 结构：左大列 + 两列小项（Apple 的信息层级）
  */
 function getFlyout(category: CategoryKey): FlyoutColumn[] {
   if (category === "shampoo") {
     return [
       {
-        title: "Explore",
+        title: "功能",
         items: [
           { label: "控油清爽", href: "/c/shampoo" },
           { label: "去屑止痒", href: "/c/shampoo" },
@@ -33,7 +30,7 @@ function getFlyout(category: CategoryKey): FlyoutColumn[] {
         ],
       },
       {
-        title: "For",
+        title: "适合人群",
         items: [
           { label: "油性头皮", href: "/c/shampoo" },
           { label: "敏感头皮", href: "/c/shampoo" },
@@ -41,10 +38,10 @@ function getFlyout(category: CategoryKey): FlyoutColumn[] {
         ],
       },
       {
-        title: "More",
+        title: "更多",
         items: [
-          { label: "Ingredients & Formulas", href: "/compare" },
-          { label: "How to choose shampoo", href: "/c/shampoo" },
+          { label: "成分与配方逻辑", href: "/compare" },
+          { label: "如何选择洗发水", href: "/c/shampoo" },
         ],
       },
     ];
@@ -53,16 +50,16 @@ function getFlyout(category: CategoryKey): FlyoutColumn[] {
   if (category === "bodywash") {
     return [
       {
-        title: "Explore",
+        title: "功能",
         items: [
           { label: "清爽不假滑", href: "/c/bodywash" },
           { label: "温和无刺激", href: "/c/bodywash" },
-          { label: "留香高级", href: "/c/bodywash" },
+          { label: "留香更克制", href: "/c/bodywash" },
           { label: "敏感肌可用", href: "/c/bodywash" },
         ],
       },
       {
-        title: "For",
+        title: "适合人群",
         items: [
           { label: "干皮", href: "/c/bodywash" },
           { label: "油皮", href: "/c/bodywash" },
@@ -70,10 +67,10 @@ function getFlyout(category: CategoryKey): FlyoutColumn[] {
         ],
       },
       {
-        title: "More",
+        title: "更多",
         items: [
-          { label: "Fragrance guide", href: "/c/bodywash" },
-          { label: "Common mistakes", href: "/c/bodywash" },
+          { label: "香型与肤感指南", href: "/c/bodywash" },
+          { label: "常见使用误区", href: "/c/bodywash" },
         ],
       },
     ];
@@ -82,7 +79,7 @@ function getFlyout(category: CategoryKey): FlyoutColumn[] {
   if (category === "conditioner") {
     return [
       {
-        title: "Explore",
+        title: "功能",
         items: [
           { label: "柔顺抗毛躁", href: "/c/conditioner" },
           { label: "修护断裂", href: "/c/conditioner" },
@@ -90,7 +87,7 @@ function getFlyout(category: CategoryKey): FlyoutColumn[] {
         ],
       },
       {
-        title: "For",
+        title: "适合人群",
         items: [
           { label: "细软发", href: "/c/conditioner" },
           { label: "漂染发", href: "/c/conditioner" },
@@ -98,35 +95,34 @@ function getFlyout(category: CategoryKey): FlyoutColumn[] {
         ],
       },
       {
-        title: "More",
+        title: "更多",
         items: [
-          { label: "Conditioner vs Mask", href: "/c/conditioner" },
-          { label: "Timing & technique", href: "/c/conditioner" },
+          { label: "护发素与发膜区别", href: "/c/conditioner" },
+          { label: "正确使用时机", href: "/c/conditioner" },
         ],
       },
     ];
   }
 
-  // 其他品类：先给最小可用（你后面再补）
+  // 其他品类：最小可用（保持中文）
   return [
     {
-      title: "Explore",
+      title: "功能",
       items: [{ label: `查看${CATEGORY_CONFIG[category].zh}`, href: `/c/${category}` }],
     },
     {
-      title: "For",
-      items: [{ label: "Sensitive / Daily / Long-term", href: `/c/${category}` }],
+      title: "适合人群",
+      items: [{ label: "敏感 / 日常 / 长期", href: `/c/${category}` }],
     },
     {
-      title: "More",
-      items: [{ label: "Compare", href: "/compare" }],
+      title: "更多",
+      items: [{ label: "横向对比", href: "/compare" }],
     },
   ];
 }
 
 export default function TopNav() {
   const [openKey, setOpenKey] = useState<CategoryKey | null>(null);
-
   const openTimer = useRef<number | null>(null);
   const closeTimer = useRef<number | null>(null);
 
@@ -146,14 +142,14 @@ export default function TopNav() {
 
   function requestOpen(k: CategoryKey) {
     clearTimers();
-    // Apple：轻微延迟再展开（避免“一碰就炸开”）
-    openTimer.current = window.setTimeout(() => setOpenKey(k), 120);
+    // Apple：轻微延迟，避免“一碰就炸开”
+    openTimer.current = window.setTimeout(() => setOpenKey(k), 110);
   }
 
   function requestClose() {
     clearTimers();
-    // Apple：离开后稍等再收（让用户能自然移到下拉面板）
-    closeTimer.current = window.setTimeout(() => setOpenKey(null), 260);
+    // Apple：离开整体导航域后，短暂容错再关闭
+    closeTimer.current = window.setTimeout(() => setOpenKey(null), 170);
   }
 
   function hardClose() {
@@ -161,17 +157,17 @@ export default function TopNav() {
     setOpenKey(null);
   }
 
-  // 仅锁住“页面滚动”（Nav/Flyout 仍可 hover）
+  // ✅ 用你现有机制：只虚化 main（不影响 top nav / flyout）
   useEffect(() => {
-    if (!isOpen) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    const html = document.documentElement;
+    if (isOpen) html.setAttribute("data-nav-open", "1");
+    else html.removeAttribute("data-nav-open");
     return () => {
-      document.body.style.overflow = prev;
+      html.removeAttribute("data-nav-open");
     };
   }, [isOpen]);
 
-  // ESC 关闭
+  // ESC 关闭（Apple）
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") hardClose();
@@ -181,70 +177,93 @@ export default function TopNav() {
   }, []);
 
   return (
-    <div
-      className="site-nav-wrap"
-      // ✅ 关键：把“离开判定”变成 Nav + Flyout 一体区域
-      onPointerEnter={() => clearTimers()}
-      onPointerLeave={() => requestClose()}
-    >
-      {/* Top bar */}
-      <header className="site-nav">
-        <div className="site-nav__inner">
-          <Link href="/" className="site-nav__logo" aria-label={BRAND.appNameZh} onPointerEnter={() => requestClose()}>
-            <Image src="/brand/logo.png" alt={BRAND.appNameZh} width={18} height={18} priority />
-          </Link>
-
-          <nav className="site-nav__links" aria-label="Primary">
-            {TOP_CATEGORIES.map((k) => (
-              <Link
-                key={k}
-                href={`/c/${k}`}
-                className={cx("site-nav__link", openKey === k && "site-nav__link--active")}
-                onPointerEnter={() => requestOpen(k)}
-              >
-                {CATEGORY_CONFIG[k].zh}
-              </Link>
-            ))}
-            <Link href="/compare" className="site-nav__link" onPointerEnter={() => requestClose()}>
-              横向对比
+    <>
+      {/* 这个 zone = Apple 的“分类+分栏一体导航域”
+          离开整个 zone 才会关闭 -> 同时撤虚化 */}
+      <div
+        className={cx("nav-zone", isOpen && "nav-zone--open")}
+        onPointerEnter={() => {
+          clearTimers();
+        }}
+        onPointerLeave={() => {
+          requestClose();
+        }}
+      >
+        {/* Top bar */}
+        <header className="nav-bar" aria-label="主导航">
+          <div className="nav-inner">
+            <Link className="nav-logo" href="/" aria-label={BRAND.appNameZh}>
+              <Image
+                src="/logo.svg"
+                alt=""
+                width={18}
+                height={18}
+                priority
+                draggable={false}
+              />
             </Link>
-          </nav>
 
-          <div className="site-nav__right" />
-        </div>
-      </header>
+            <nav className="nav-links">
+              {TOP_CATEGORIES.map((k) => (
+                <Link
+                  key={k}
+                  href={`/${k}`}
+                  className={cx("nav-item", openKey === k && "nav-item-active")}
+                  onPointerEnter={() => requestOpen(k)}
+                >
+                  {CATEGORY_CONFIG[k].zh}
+                </Link>
+              ))}
+              <Link
+                href="/compare"
+                className="nav-item"
+                onPointerEnter={() => requestClose()}
+              >
+                横向对比
+              </Link>
+            </nav>
 
-      {/* Blur overlay: 只虚化 nav 下面的页面内容，不盖住 nav */}
-      <div className={cx("nav-flyout__overlay", isOpen && "nav-flyout__overlay--on")} />
+            <div className="nav-right" />
+          </div>
+        </header>
 
-      {/* Flyout */}
-      <div className={cx("nav-flyout", isOpen && "nav-flyout--open")}>
-        <div className="nav-flyout__inner">
-          <div className="nav-flyout__grid">
-            {flyout?.map((col, idx) => (
-              <div key={col.title} className={cx("nav-flyout__col", idx === 0 && "nav-flyout__col--big")}>
-                <div className="nav-flyout__title">{col.title}</div>
-                <div className="nav-flyout__items">
+        {/* Flyout：不下推页面；和 nav 同色同雾化；无边框 */}
+        <div
+          className={cx("flyout", isOpen && "flyout--open")}
+          aria-hidden={!isOpen}
+        >
+          {/* 透明缓冲桥（Apple 的“容错缓冲区”） */}
+          <div className="flyout-bridge" aria-hidden="true" />
+
+          <div className="flyout-inner">
+            {flyout?.map((col) => (
+              <div key={col.title} className="flyout-col">
+                <div className="flyout-title">{col.title}</div>
+                <ul className="flyout-list">
                   {col.items.map((it) => (
-                    <Link
-                      key={it.label}
-                      href={it.href}
-                      onClick={hardClose}
-                      className={cx("nav-flyout__item", idx === 0 && "nav-flyout__item--big")}
-                    >
-                      {it.label}
-                    </Link>
+                    <li key={it.label} className="flyout-li">
+                      <Link className="flyout-link" href={it.href}>
+                        {it.label}
+                      </Link>
+                    </li>
                   ))}
-                </div>
+                </ul>
               </div>
             ))}
-          </div>
 
-          <div className="nav-flyout__bottom">
-            {BRAND.heroSubline /* Apple 风格：底部一句轻提示/宣言 */}
+            <div className="flyout-foot">{BRAND.heroSublineZh}</div>
           </div>
         </div>
       </div>
-    </div>
+
+      {/* 点击空白关闭（Apple：点页面任何地方，导航退出，虚化撤掉） */}
+      {isOpen && (
+        <button
+          className="nav-scrim"
+          aria-label="关闭导航"
+          onClick={hardClose}
+        />
+      )}
+    </>
   );
 }
