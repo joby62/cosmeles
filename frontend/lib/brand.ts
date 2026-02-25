@@ -1,14 +1,13 @@
 export const BRAND = {
-  // 项目命名
-  appNameEn: "MatchUp",
+  appName: "MatchUp",
   appNameZh: "予选",
 
-  // 主 Slogan（你选的方案一主文案）
+  // 主 slogan（Hero 第二行）
   slogan: "浴室里的最终答案",
 
-  // Hero 副文案（替换你提到那句）
-  heroSubline: "我们替你看完所有选择，只留下真正值得用的那一个。",
+  // 副文案（Hero 第三行，仅这一句会显示）
+  heroSubline: "省下挑花眼的时间，只留最对位的一件。",
 
-  // 页脚/辅助文案
-  footer: "Demo · 予选 · 浴室里的最终答案",
-} as const;
+  description:
+    "以 Apple 式的克制美学，把洗护选择做成低密度、可浏览、可对比的体验。",
+};

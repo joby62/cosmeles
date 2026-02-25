@@ -2,167 +2,249 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { BRAND } from "@/lib/brand";
-import { TOP_CATEGORIES, CATEGORY_CONFIG } from "@/lib/catalog";
+import { TOP_CATEGORIES, CATEGORY_CONFIG, type CategoryKey } from "@/lib/catalog";
 
-/* ---------------- Nav Link ---------------- */
-
-function NavLink({
-  href,
-  children,
-  onMouseEnter,
-}: {
-  href: string;
-  children: React.ReactNode;
-  onMouseEnter?: () => void;
-}) {
-  return (
-    <Link
-      href={href}
-      onMouseEnter={onMouseEnter}
-      className={[
-        "text-[12px] font-medium tracking-[0.02em] leading-[44px]",
-        "text-black/80 hover:text-black/95",
-        "transition-opacity duration-200 ease-out",
-        "hover:opacity-90 active:opacity-80",
-        "px-2 rounded-full hover:bg-black/[0.04]",
-      ].join(" ")}
-    >
-      {children}
-    </Link>
-  );
-}
-
-/* ---------------- Drawer Data (Demo) ---------------- */
-
-const DRAWER = {
-  shampoo: {
-    leftTitle: "探索",
-    left: ["控油清爽", "去屑止痒", "修护受损", "蓬松丰盈"],
-    midTitle: "适合谁",
-    mid: ["油性头皮", "敏感头皮", "染烫受损"],
-    rightTitle: "更多",
-    right: ["成分与配方逻辑", "如何选择洗发水"],
-  },
+type FlyoutColumn = {
+  title: string; // Explore / For / More
+  items: { label: string; href: string }[];
 };
 
-/* ---------------- Drawer UI ---------------- */
-
-function Column({
-  title,
-  items,
-}: {
-  title: string;
-  items: string[];
-}) {
-  return (
-    <div>
-      <h4 className="mb-5 text-[12px] font-medium tracking-[0.04em] text-black/45">
-        {title}
-      </h4>
-      <ul className="space-y-3">
-        {items.map((t) => (
-          <li key={t}>
-            <span className="text-[14px] font-medium text-black hover:opacity-60 transition">
-              {t}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
+function cx(...arr: Array<string | false | undefined | null>) {
+  return arr.filter(Boolean).join(" ");
 }
 
-function Drawer({
-  active,
-  open,
-}: {
-  active: string | null;
-  open: boolean;
-}) {
-  if (!open || !active || !(active in DRAWER)) return null;
+/**
+ * 先挑一些放上去（后面你再慢慢补全）
+ * 结构和 Apple 一样：左大列（Explore）+ 两列小项（For/More）
+ */
+function getFlyout(category: CategoryKey): FlyoutColumn[] {
+  if (category === "shampoo") {
+    return [
+      {
+        title: "Explore",
+        items: [
+          { label: "控油清爽", href: "/c/shampoo" },
+          { label: "去屑止痒", href: "/c/shampoo" },
+          { label: "修护受损", href: "/c/shampoo" },
+          { label: "蓬松丰盈", href: "/c/shampoo" },
+        ],
+      },
+      {
+        title: "For",
+        items: [
+          { label: "油性头皮", href: "/c/shampoo" },
+          { label: "敏感头皮", href: "/c/shampoo" },
+          { label: "染烫受损", href: "/c/shampoo" },
+        ],
+      },
+      {
+        title: "More",
+        items: [
+          { label: "Ingredients & Formulas", href: "/compare" },
+          { label: "How to choose shampoo", href: "/c/shampoo" },
+        ],
+      },
+    ];
+  }
 
-  const d = DRAWER[active as keyof typeof DRAWER];
+  if (category === "bodywash") {
+    return [
+      {
+        title: "Explore",
+        items: [
+          { label: "清爽不假滑", href: "/c/bodywash" },
+          { label: "温和无刺激", href: "/c/bodywash" },
+          { label: "留香高级", href: "/c/bodywash" },
+          { label: "敏感肌可用", href: "/c/bodywash" },
+        ],
+      },
+      {
+        title: "For",
+        items: [
+          { label: "干皮", href: "/c/bodywash" },
+          { label: "油皮", href: "/c/bodywash" },
+          { label: "敏感肌", href: "/c/bodywash" },
+        ],
+      },
+      {
+        title: "More",
+        items: [
+          { label: "Fragrance guide", href: "/c/bodywash" },
+          { label: "Common mistakes", href: "/c/bodywash" },
+        ],
+      },
+    ];
+  }
+
+  if (category === "conditioner") {
+    return [
+      {
+        title: "Explore",
+        items: [
+          { label: "柔顺抗毛躁", href: "/c/conditioner" },
+          { label: "修护断裂", href: "/c/conditioner" },
+          { label: "轻盈不塌", href: "/c/conditioner" },
+        ],
+      },
+      {
+        title: "For",
+        items: [
+          { label: "细软发", href: "/c/conditioner" },
+          { label: "漂染发", href: "/c/conditioner" },
+          { label: "干枯分叉", href: "/c/conditioner" },
+        ],
+      },
+      {
+        title: "More",
+        items: [
+          { label: "Conditioner vs Mask", href: "/c/conditioner" },
+          { label: "Timing & technique", href: "/c/conditioner" },
+        ],
+      },
+    ];
+  }
+
+  // 其他品类：先给最小可用（你后面再补）
+  return [
+    {
+      title: "Explore",
+      items: [{ label: `查看${CATEGORY_CONFIG[category].zh}`, href: `/c/${category}` }],
+    },
+    {
+      title: "For",
+      items: [{ label: "Sensitive / Daily / Long-term", href: `/c/${category}` }],
+    },
+    {
+      title: "More",
+      items: [{ label: "Compare", href: "/compare" }],
+    },
+  ];
+}
+
+export default function TopNav() {
+  const [openKey, setOpenKey] = useState<CategoryKey | null>(null);
+
+  const openTimer = useRef<number | null>(null);
+  const closeTimer = useRef<number | null>(null);
+
+  const isOpen = openKey !== null;
+
+  const flyout = useMemo(() => {
+    if (!openKey) return null;
+    return getFlyout(openKey);
+  }, [openKey]);
+
+  function clearTimers() {
+    if (openTimer.current) window.clearTimeout(openTimer.current);
+    if (closeTimer.current) window.clearTimeout(closeTimer.current);
+    openTimer.current = null;
+    closeTimer.current = null;
+  }
+
+  function requestOpen(k: CategoryKey) {
+    clearTimers();
+    // Apple：轻微延迟再展开（避免“一碰就炸开”）
+    openTimer.current = window.setTimeout(() => setOpenKey(k), 120);
+  }
+
+  function requestClose() {
+    clearTimers();
+    // Apple：离开后稍等再收（让用户能自然移到下拉面板）
+    closeTimer.current = window.setTimeout(() => setOpenKey(null), 260);
+  }
+
+  function hardClose() {
+    clearTimers();
+    setOpenKey(null);
+  }
+
+  // 仅锁住“页面滚动”（Nav/Flyout 仍可 hover）
+  useEffect(() => {
+    if (!isOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [isOpen]);
+
+  // ESC 关闭
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") hardClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   return (
     <div
-      className={[
-        // 🔑 Apple 关键：不是紧贴 header，而是“接在导航下方”
-        "absolute left-0 right-0 top-[44px]",
-        "z-40",
-        "border-t border-black/[0.06]",
-        "bg-[#f5f5f7]/95 backdrop-blur",
-      ].join(" ")}
+      className="site-nav-wrap"
+      // ✅ 关键：把“离开判定”变成 Nav + Flyout 一体区域
+      onPointerEnter={() => clearTimers()}
+      onPointerLeave={() => requestClose()}
     >
-      <div className="mx-auto grid max-w-[1024px] grid-cols-3 gap-16 px-5 py-16">
-        <Column title={d.leftTitle} items={d.left} />
-        <Column title={d.midTitle} items={d.mid} />
-        <Column title={d.rightTitle} items={d.right} />
-      </div>
-    </div>
-  );
-}
-
-/* ---------------- Top Nav ---------------- */
-
-export default function TopNav() {
-  const [active, setActive] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
-  const closeTimer = useRef<NodeJS.Timeout | null>(null);
-
-  const supportsDrawer = useMemo(() => new Set(["shampoo"]), []);
-
-  function enter(key: string) {
-    if (!supportsDrawer.has(key)) return;
-    if (closeTimer.current) clearTimeout(closeTimer.current);
-    setActive(key);
-    setOpen(true);
-  }
-
-  function leave() {
-    // 🧠 Apple 感的核心：延迟关闭
-    closeTimer.current = setTimeout(() => {
-      setOpen(false);
-      setActive(null);
-    }, 120);
-  }
-
-  return (
-    <header className="sticky top-0 z-50 h-11">
-      <div className="relative h-11 border-b border-black/[0.06] bg-[#f5f5f7]/85 backdrop-blur">
-        <div
-          className="mx-auto flex h-11 max-w-[1024px] items-center justify-between px-5"
-          onMouseLeave={leave}
-        >
-          {/* Logo */}
-          <Link href="/" className="flex items-center gap-2">
-            <Image src="/brand/logo.png" alt="" width={18} height={18} />
-            <span className="text-[12px] font-semibold tracking-[0.02em] text-black/85">
-              {BRAND.appNameZh}
-            </span>
+      {/* Top bar */}
+      <header className="site-nav">
+        <div className="site-nav__inner">
+          <Link href="/" className="site-nav__logo" aria-label={BRAND.appNameZh} onPointerEnter={() => requestClose()}>
+            <Image src="/brand/logo.png" alt={BRAND.appNameZh} width={18} height={18} priority />
           </Link>
 
-          {/* Nav */}
-          <nav className="hidden md:flex items-center gap-1">
+          <nav className="site-nav__links" aria-label="Primary">
             {TOP_CATEGORIES.map((k) => (
-              <NavLink
+              <Link
                 key={k}
                 href={`/c/${k}`}
-                onMouseEnter={() => enter(String(k))}
+                className={cx("site-nav__link", openKey === k && "site-nav__link--active")}
+                onPointerEnter={() => requestOpen(k)}
               >
                 {CATEGORY_CONFIG[k].zh}
-              </NavLink>
+              </Link>
             ))}
-            <NavLink href="/compare">横向对比</NavLink>
+            <Link href="/compare" className="site-nav__link" onPointerEnter={() => requestClose()}>
+              横向对比
+            </Link>
           </nav>
 
-          <div className="w-[96px]" />
+          <div className="site-nav__right" />
         </div>
+      </header>
 
-        <Drawer active={active} open={open} />
+      {/* Blur overlay: 只虚化 nav 下面的页面内容，不盖住 nav */}
+      <div className={cx("nav-flyout__overlay", isOpen && "nav-flyout__overlay--on")} />
+
+      {/* Flyout */}
+      <div className={cx("nav-flyout", isOpen && "nav-flyout--open")}>
+        <div className="nav-flyout__inner">
+          <div className="nav-flyout__grid">
+            {flyout?.map((col, idx) => (
+              <div key={col.title} className={cx("nav-flyout__col", idx === 0 && "nav-flyout__col--big")}>
+                <div className="nav-flyout__title">{col.title}</div>
+                <div className="nav-flyout__items">
+                  {col.items.map((it) => (
+                    <Link
+                      key={it.label}
+                      href={it.href}
+                      onClick={hardClose}
+                      className={cx("nav-flyout__item", idx === 0 && "nav-flyout__item--big")}
+                    >
+                      {it.label}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="nav-flyout__bottom">
+            {BRAND.heroSubline /* Apple 风格：底部一句轻提示/宣言 */}
+          </div>
+        </div>
       </div>
-    </header>
+    </div>
   );
 }

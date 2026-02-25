@@ -2,7 +2,7 @@ import "./globals.css";
 import type { Metadata } from "next";
 
 import { BRAND } from "@/lib/brand";
-import TopNav from "@/components/TopNav";
+import AppleNav from "@/components/AppleNav";
 
 export const metadata: Metadata = {
   title: `${BRAND.appNameZh} · ${BRAND.slogan}`,
@@ -15,11 +15,11 @@ export default function RootLayout({
   return (
     <html lang="zh-CN">
       <body className="min-h-dvh bg-[#f5f5f7] text-black antialiased">
-        {/* Top Nav (44px breathing space) */}
-        <TopNav />
+        {/* ✅ Top Nav + Flyout */}
+        <AppleNav />
 
-        {/* Main */}
-        <main className="mx-auto max-w-[1024px] px-5 pt-10 md:pt-14">
+        {/* ✅ Main（只虚化这里，不影响 top nav / flyout） */}
+        <main id="app-main" className="mx-auto max-w-[1024px] px-5 pt-10 md:pt-14">
           {children}
         </main>
       </body>
