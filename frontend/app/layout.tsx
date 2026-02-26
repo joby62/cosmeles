@@ -1,7 +1,7 @@
 import "./globals.css";
 import type { Metadata } from "next";
 import { BRAND } from "@/lib/brand";
-import TopNav from "@/components/TopNav";
+import DesktopTopNavGate from "@/components/DesktopTopNavGate";
 
 export const metadata: Metadata = {
   title: `${BRAND.appNameZh} · ${BRAND.sloganZh}`,
@@ -12,8 +12,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="zh-CN">
       <body>
-        {/* Top Nav：永远不被虚化 */}
-        <TopNav />
+        {/* Desktop 才显示顶部导航；/m 独立移动壳层 */}
+        <DesktopTopNavGate />
 
         {/* ✅ 只虚化 main（不影响 top nav / flyout） */}
         <main id="app-main">{children}</main>
