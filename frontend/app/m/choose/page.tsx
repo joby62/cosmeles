@@ -26,26 +26,32 @@ export default function MobileChoose() {
             <Link
               key={c.key}
               href={c.href}
-              className="w-[188px] shrink-0 rounded-3xl border border-black/10 bg-white p-3 active:bg-black/[0.03]"
+              className="relative h-[248px] w-[188px] shrink-0 overflow-hidden rounded-3xl border border-black/10 bg-white p-3 active:bg-black/[0.03]"
             >
-              <img src={c.image} alt={c.zh} className="h-[120px] w-full rounded-2xl object-cover" />
-              <div className="mt-3 inline-flex h-8 items-center rounded-full bg-black/[0.06] px-3 text-[12px] text-black/60">
+              <img src={c.image} alt={c.zh} className="pointer-events-none absolute inset-x-0 bottom-0 h-[132px] w-full object-cover" />
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[154px] bg-gradient-to-t from-white via-white/82 to-transparent" />
+              <div className="relative z-10 inline-flex h-8 items-center rounded-full bg-black/[0.06] px-3 text-[12px] text-black/60">
                 {c.note}
               </div>
-              <div className="mt-2.5 text-[22px] font-semibold tracking-[-0.02em] text-black/88">{c.zh}</div>
-              <div className="mt-2 text-[13px] text-black/45">进入唯一答案路径</div>
+              <div className="relative z-10 mt-2.5 text-[22px] font-semibold tracking-[-0.02em] text-black/88">{c.zh}</div>
+              <div className="relative z-10 mt-2 text-[13px] text-black/45">进入唯一答案路径</div>
             </Link>
           ) : (
             <div
               key={c.key}
-              className="w-[188px] shrink-0 rounded-3xl border border-black/8 bg-black/[0.015] p-3"
+              className="relative h-[248px] w-[188px] shrink-0 overflow-hidden rounded-3xl border border-black/8 bg-black/[0.015] p-3"
             >
-              <img src={c.image} alt={c.zh} className="h-[120px] w-full rounded-2xl object-cover opacity-55" />
-              <div className="mt-3 inline-flex h-8 items-center rounded-full bg-black/[0.05] px-3 text-[12px] text-black/45">
+              <img
+                src={c.image}
+                alt={c.zh}
+                className="pointer-events-none absolute inset-x-0 bottom-0 h-[132px] w-full object-cover opacity-58"
+              />
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[154px] bg-gradient-to-t from-[color:var(--bg)] via-[color:var(--bg)]/90 to-transparent" />
+              <div className="relative z-10 inline-flex h-8 items-center rounded-full bg-black/[0.05] px-3 text-[12px] text-black/45">
                 {c.note}
               </div>
-              <div className="mt-2.5 text-[22px] font-semibold tracking-[-0.02em] text-black/55">{c.zh}</div>
-              <div className="mt-2 text-[13px] text-black/35">暂未开放</div>
+              <div className="relative z-10 mt-2.5 text-[22px] font-semibold tracking-[-0.02em] text-black/55">{c.zh}</div>
+              <div className="relative z-10 mt-2 text-[13px] text-black/35">暂未开放</div>
             </div>
           )
         ))}
