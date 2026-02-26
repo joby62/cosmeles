@@ -8,6 +8,8 @@ function getSectionLabel(pathname: string | null): string {
   if (!pathname || pathname === "/m") return "予选";
   if (pathname.startsWith("/m/choose")) return "选品类";
   if (pathname.startsWith("/m/shampoo")) return "洗发水";
+  if (pathname.startsWith("/m/bodywash")) return "沐浴露";
+  if (pathname.startsWith("/m/conditioner")) return "护发素";
   return "予选";
 }
 
