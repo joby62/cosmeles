@@ -26,36 +26,22 @@ export default function MobileChoose() {
             <Link
               key={c.key}
               href={c.href}
-              className="relative aspect-square w-[188px] shrink-0 overflow-hidden rounded-3xl border border-black/10 bg-white p-3 active:bg-black/[0.03]"
+              className="flex h-[192px] w-[188px] shrink-0 flex-col rounded-3xl border border-black/10 bg-white px-3 pt-3 pb-4 active:bg-black/[0.03]"
             >
-              <img src={c.image} alt={c.zh} className="pointer-events-none absolute inset-0 h-full w-full object-cover" />
-              <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/72 via-white/20 to-transparent" />
-              <div className="relative z-10 flex h-full flex-col">
-                <div className="inline-flex h-8 w-fit items-center rounded-full bg-white/86 px-3 text-[12px] text-black/62">
-                  {c.note}
-                </div>
-                <div className="mt-4 text-[22px] font-semibold tracking-[-0.02em] text-black/90">{c.zh}</div>
-                <div className="mt-3 text-[13px] text-black/56">进入唯一答案路径</div>
+              <div className="flex min-h-0 flex-1 items-center justify-center">
+                <img src={c.image} alt={c.zh} className="h-[112px] w-[132px] object-contain" />
               </div>
+              <div className="mt-2 text-center text-[22px] font-medium tracking-[-0.015em] text-black/90">{c.zh}</div>
             </Link>
           ) : (
             <div
               key={c.key}
-              className="relative aspect-square w-[188px] shrink-0 overflow-hidden rounded-3xl border border-black/8 bg-black/[0.015] p-3"
+              className="flex h-[192px] w-[188px] shrink-0 flex-col rounded-3xl border border-black/8 bg-black/[0.015] px-3 pt-3 pb-4"
             >
-              <img
-                src={c.image}
-                alt={c.zh}
-                className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-62"
-              />
-              <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-white/74 via-white/30 to-transparent" />
-              <div className="relative z-10 flex h-full flex-col">
-                <div className="inline-flex h-8 w-fit items-center rounded-full bg-white/84 px-3 text-[12px] text-black/45">
-                  {c.note}
-                </div>
-                <div className="mt-4 text-[22px] font-semibold tracking-[-0.02em] text-black/58">{c.zh}</div>
-                <div className="mt-3 text-[13px] text-black/38">暂未开放</div>
+              <div className="flex min-h-0 flex-1 items-center justify-center">
+                <img src={c.image} alt={c.zh} className="h-[112px] w-[132px] object-contain opacity-58" />
               </div>
+              <div className="mt-2 text-center text-[22px] font-medium tracking-[-0.015em] text-black/58">{c.zh}</div>
             </div>
           )
         ))}
