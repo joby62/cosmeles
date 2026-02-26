@@ -1,5 +1,5 @@
 import "../globals.css";
-import MobileCategoryRail from "@/components/mobile/MobileCategoryRail";
+import MobileBottomNav from "@/components/mobile/MobileBottomNav";
 import MobileTopBar from "@/components/mobile/MobileTopBar";
 
 export const metadata = {
@@ -12,10 +12,10 @@ export default function MobileLayout({ children }: { children: React.ReactNode }
     <div className="min-h-dvh bg-[color:var(--bg)] text-black">
       <header className="sticky top-0 z-50">
         <MobileTopBar />
-        <MobileCategoryRail />
       </header>
 
-      <main className="mx-auto max-w-[680px] px-4 py-6">{children}</main>
+      <main className="mx-auto max-w-[680px] px-4 py-6 pb-28">{children}</main>
+      <MobileBottomNav />
     </div>
   );
 }
