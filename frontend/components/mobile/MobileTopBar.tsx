@@ -17,16 +17,16 @@ export default function MobileTopBar() {
   return (
     <div className="h-12 bg-[color:var(--bg)]/88 backdrop-blur supports-[backdrop-filter]:bg-[color:var(--bg)]/75">
       <div className="mx-auto flex h-12 max-w-[680px] items-center justify-between px-4">
-        <Link href="/m" className="inline-flex items-center gap-1.5 rounded-full px-1 py-0.5 active:bg-black/[0.03]">
+        <Link href="/m" className="inline-flex items-center gap-1 rounded-full px-1 py-0.5 active:bg-black/[0.03]">
           <img
-            src="/brand/logo.svg"
+            src="/brand/logo.png"
             alt="予选"
             width={16}
             height={16}
             onError={(e) => {
-              // iOS/Safari 若命中异常缓存，避免显示破图占位。
+              // 兜底到 svg，便于排查静态资源缓存问题。
               const img = e.currentTarget;
-              img.style.display = "none";
+              img.src = "/brand/logo.svg";
             }}
           />
           <span className="text-[12px] leading-none text-black/36">·</span>
