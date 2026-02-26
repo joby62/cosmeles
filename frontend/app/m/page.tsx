@@ -3,16 +3,16 @@ import Link from "next/link";
 type HomeTag = {
   key: "shampoo" | "bodywash" | "conditioner" | "lotion" | "cleanser";
   label: string;
-  short: string;
+  image: string;
   href?: string;
 };
 
 const TAGS: HomeTag[] = [
-  { key: "shampoo", label: "洗发水", short: "洗", href: "/m/shampoo/start" },
-  { key: "bodywash", label: "沐浴露", short: "沐" },
-  { key: "conditioner", label: "护发素", short: "护" },
-  { key: "lotion", label: "润肤霜", short: "润" },
-  { key: "cleanser", label: "洗面奶", short: "洁" },
+  { key: "shampoo", label: "洗发水", image: "/m/categories/shampoo.png", href: "/m/shampoo/start" },
+  { key: "bodywash", label: "沐浴露", image: "/m/categories/bodywash.png" },
+  { key: "conditioner", label: "护发素", image: "/m/categories/conditioner.png" },
+  { key: "lotion", label: "润肤霜", image: "/m/categories/lotion.png" },
+  { key: "cleanser", label: "洗面奶", image: "/m/categories/cleanser.png" },
 ];
 
 export default function MobileHome() {
@@ -30,9 +30,7 @@ export default function MobileHome() {
                   href={tag.href}
                   className="inline-flex h-9 items-center gap-2 rounded-full border border-black/80 bg-black px-3 text-[13px] text-white"
                 >
-                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/18 text-[11px]">
-                    {tag.short}
-                  </span>
+                  <img src={tag.image} alt={tag.label} className="h-5 w-5 rounded-full object-cover" />
                   {tag.label}
                 </Link>
               ) : (
@@ -40,9 +38,7 @@ export default function MobileHome() {
                   key={tag.key}
                   className="inline-flex h-9 items-center gap-2 rounded-full border border-black/8 bg-white/70 px-3 text-[13px] text-black/40"
                 >
-                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-black/[0.06] text-[11px] text-black/40">
-                    {tag.short}
-                  </span>
+                  <img src={tag.image} alt={tag.label} className="h-5 w-5 rounded-full object-cover opacity-60" />
                   {tag.label}
                 </span>
               ),

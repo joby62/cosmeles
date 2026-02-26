@@ -1,11 +1,11 @@
 import Link from "next/link";
 
 const CATS = [
-  { key: "shampoo", zh: "洗发水", note: "已开放", href: "/m/shampoo/start", open: true },
-  { key: "bodywash", zh: "沐浴露", note: "即将开放", href: "", open: false },
-  { key: "conditioner", zh: "护发素", note: "即将开放", href: "", open: false },
-  { key: "lotion", zh: "润肤霜", note: "即将开放", href: "", open: false },
-  { key: "cleanser", zh: "洗面奶", note: "即将开放", href: "", open: false },
+  { key: "shampoo", zh: "洗发水", note: "已开放", href: "/m/shampoo/start", open: true, image: "/m/categories/shampoo.png" },
+  { key: "bodywash", zh: "沐浴露", note: "即将开放", href: "", open: false, image: "/m/categories/bodywash.png" },
+  { key: "conditioner", zh: "护发素", note: "即将开放", href: "", open: false, image: "/m/categories/conditioner.png" },
+  { key: "lotion", zh: "润肤霜", note: "即将开放", href: "", open: false, image: "/m/categories/lotion.png" },
+  { key: "cleanser", zh: "洗面奶", note: "即将开放", href: "", open: false, image: "/m/categories/cleanser.png" },
 ] as const;
 
 export default function MobileChoose() {
@@ -26,24 +26,26 @@ export default function MobileChoose() {
             <Link
               key={c.key}
               href={c.href}
-              className="w-[170px] shrink-0 rounded-3xl border border-black/10 bg-white px-4 py-4 active:bg-black/[0.03]"
+              className="w-[188px] shrink-0 rounded-3xl border border-black/10 bg-white p-3 active:bg-black/[0.03]"
             >
-              <div className="inline-flex h-8 items-center rounded-full bg-black/[0.06] px-3 text-[12px] text-black/60">
+              <img src={c.image} alt={c.zh} className="h-[120px] w-full rounded-2xl object-cover" />
+              <div className="mt-3 inline-flex h-8 items-center rounded-full bg-black/[0.06] px-3 text-[12px] text-black/60">
                 {c.note}
               </div>
-              <div className="mt-3 text-[22px] font-semibold tracking-[-0.02em] text-black/88">{c.zh}</div>
-              <div className="mt-5 text-[13px] text-black/45">进入唯一答案路径</div>
+              <div className="mt-2.5 text-[22px] font-semibold tracking-[-0.02em] text-black/88">{c.zh}</div>
+              <div className="mt-2 text-[13px] text-black/45">进入唯一答案路径</div>
             </Link>
           ) : (
             <div
               key={c.key}
-              className="w-[170px] shrink-0 rounded-3xl border border-black/8 bg-black/[0.015] px-4 py-4"
+              className="w-[188px] shrink-0 rounded-3xl border border-black/8 bg-black/[0.015] p-3"
             >
-              <div className="inline-flex h-8 items-center rounded-full bg-black/[0.05] px-3 text-[12px] text-black/45">
+              <img src={c.image} alt={c.zh} className="h-[120px] w-full rounded-2xl object-cover opacity-55" />
+              <div className="mt-3 inline-flex h-8 items-center rounded-full bg-black/[0.05] px-3 text-[12px] text-black/45">
                 {c.note}
               </div>
-              <div className="mt-3 text-[22px] font-semibold tracking-[-0.02em] text-black/55">{c.zh}</div>
-              <div className="mt-5 text-[13px] text-black/35">暂未开放</div>
+              <div className="mt-2.5 text-[22px] font-semibold tracking-[-0.02em] text-black/55">{c.zh}</div>
+              <div className="mt-2 text-[13px] text-black/35">暂未开放</div>
             </div>
           )
         ))}
