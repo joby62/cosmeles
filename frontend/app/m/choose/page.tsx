@@ -4,7 +4,7 @@ const CATS = [
   { key: "shampoo", zh: "洗发水", note: "已开放", href: "/m/shampoo/start", open: true },
   { key: "bodywash", zh: "沐浴露", note: "即将开放", href: "", open: false },
   { key: "conditioner", zh: "护发素", note: "即将开放", href: "", open: false },
-  { key: "lotion", zh: "润肤露", note: "即将开放", href: "", open: false },
+  { key: "lotion", zh: "润肤霜", note: "即将开放", href: "", open: false },
   { key: "cleanser", zh: "洗面奶", note: "即将开放", href: "", open: false },
 ] as const;
 
