@@ -26,7 +26,7 @@ export default function MobileChoose() {
             <Link
               key={c.key}
               href={c.href}
-              className="flex h-[192px] w-[188px] shrink-0 flex-col rounded-3xl border border-black/10 bg-white px-3 pt-3 pb-4 active:bg-black/[0.03]"
+              className="flex h-[192px] w-[188px] shrink-0 flex-col rounded-3xl border border-[#d9dbe3] bg-[#ececf1] px-3 pt-3 pb-4 active:brightness-[0.98]"
             >
               <div className="flex min-h-0 flex-1 items-center justify-center">
                 <img src={c.image} alt={c.zh} className="h-[112px] w-[132px] object-contain" />
@@ -36,7 +36,7 @@ export default function MobileChoose() {
           ) : (
             <div
               key={c.key}
-              className="flex h-[192px] w-[188px] shrink-0 flex-col rounded-3xl border border-black/8 bg-black/[0.015] px-3 pt-3 pb-4"
+              className="flex h-[192px] w-[188px] shrink-0 flex-col rounded-3xl border border-[#d9dbe3] bg-[#ececf1] px-3 pt-3 pb-4"
             >
               <div className="flex min-h-0 flex-1 items-center justify-center">
                 <img src={c.image} alt={c.zh} className="h-[112px] w-[132px] object-contain opacity-58" />
