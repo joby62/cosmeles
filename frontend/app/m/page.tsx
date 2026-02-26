@@ -44,9 +44,11 @@ export default function MobileHome() {
         </div>
       </section>
 
-      <section className="mt-10 rounded-3xl border border-black/8 bg-white/65 px-6 py-8">
-        <h2 className="text-[32px] leading-[1.12] font-semibold tracking-[-0.025em] text-black/92">浴室里的最终答案。</h2>
-        <p className="mt-3 text-[17px] leading-[1.42] font-semibold tracking-[-0.01em] text-black/68">
+      <section className="mt-14">
+        <h2 className="slogan-breathe text-[46px] leading-[1.04] font-semibold tracking-[-0.032em] text-black/92">
+          浴室里的最终答案。
+        </h2>
+        <p className="mt-4 text-[21px] leading-[1.36] font-semibold tracking-[-0.012em] text-black/62">
           省下挑花眼的时间，只留最对位的一件。
         </p>
       </section>

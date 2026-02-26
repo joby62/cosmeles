@@ -260,3 +260,12 @@ html[data-nav-open="1"] #app-main{
   margin: 0;
   cursor: default;
 }
+
+@keyframes matchupBreathe {
+  0%, 100% { opacity: .92; transform: translateY(0px); }
+  50% { opacity: 1; transform: translateY(-1px); }
+}
+
+.slogan-breathe{
+  animation: matchupBreathe 4.8s ease-in-out infinite;
+}
