@@ -4,7 +4,7 @@ export default function ShampooStart() {
   return (
     <div>
       <div className="text-[22px] font-semibold tracking-[-0.02em] text-black/90">
-        洗发水 · 唯一答案模式
+        洗发水 · 浴室的最终的答案
       </div>
       <p className="mt-3 text-[15px] leading-[1.55] text-black/60">
         你不需要懂成分。用 4 个自然问题收齐信号，我们直接拍板，不给你备选项。

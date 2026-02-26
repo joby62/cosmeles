@@ -9,7 +9,7 @@ export default function MobileHome() {
         予选
       </h1>
       <div className="mt-2 text-[17px] leading-[1.35] font-semibold text-black/70">
-        浴室里的最终答案
+        省下挑花眼的时间，只留最对位的一件。
       </div>
 
       <p className="mt-4 text-[16px] leading-[1.55] text-black/60">
