@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 
 function getSectionLabel(pathname: string | null): string {
   if (!pathname || pathname === "/m") return "予选";
@@ -13,20 +14,29 @@ function getSectionLabel(pathname: string | null): string {
 export default function MobileTopBar() {
   const pathname = usePathname();
   const section = getSectionLabel(pathname);
+  const logoCandidates = [
+    "/brand/logo.svg?v=20260226",
+    "/brand/logo.png?v=20260226",
+    "/m/brand/logo.svg?v=20260226",
+    "/m/brand/logo.png?v=20260226",
+  ];
+  const [logoIndex, setLogoIndex] = useState(0);
 
   return (
     <div className="h-12 bg-[color:var(--bg)]/88 backdrop-blur supports-[backdrop-filter]:bg-[color:var(--bg)]/75">
       <div className="mx-auto flex h-12 max-w-[680px] items-center justify-between px-4">
         <Link href="/m" className="inline-flex items-center gap-0.5 rounded-full px-1 py-0.5 active:bg-black/[0.03]">
           <img
-            src="/brand/logo.png"
+            src={logoCandidates[Math.min(logoIndex, logoCandidates.length - 1)]}
             alt="予选"
             width={16}
             height={16}
             onError={(e) => {
-              // 兜底到 svg，便于排查静态资源缓存问题。
-              const img = e.currentTarget;
-              img.src = "/brand/logo.svg";
+              if (logoIndex < logoCandidates.length - 1) {
+                setLogoIndex((n) => n + 1);
+                return;
+              }
+              e.currentTarget.style.display = "none";
             }}
           />
           <span className="text-[11px] leading-none text-black/36">·</span>
