@@ -1,44 +1,79 @@
-## Backend
+# 予选（MatchUp）
+
+浴室里的最终答案。  
+省下挑花眼的时间，只留最对位的一件。
+
+## 项目定位
+- 产品类型：洗护用品决策工具（不是展示型官网）
+- 决策原则：`One Answer Policy`（每个品类只给一个最终推荐）
+- 交互原则：路径清晰、一屏一事、强引导、弱干扰
+- 端侧策略：`Desktop 冻结`，`Mobile (/m) 持续迭代`
+
+## 目录结构
+```text
+backend/                  FastAPI + SQLite + 文件存储
+frontend/                 Next.js App Router（desktop + mobile 双栈）
+deploy/nginx/             历史 nginx 反向代理配置
+docs/OPERATIONS_RUNBOOK.md  运维手册（Caddy / Docker / 502 排障）
+```
+
+## 开发与部署模式
+
+### 1) 前端开发模式（热更新）
+使用 `docker-compose.dev.yml`：
+- 容器：`frontend-dev`
+- 端口：`5001 -> 3000`
+
+```bash
+docker compose -f docker-compose.dev.yml up -d
+```
+
+### 2) 线上生产模式（当前推荐）
+使用 `docker-compose.prod.yml`：
+- 容器：`cosmeles-frontend`
+- 端口：`5001 -> 3000`
+- 反代：Caddy -> `172.17.0.1:5001`（当 Caddy 在 Docker 内）
+
+```bash
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+### 3) 历史全栈模式（backend + frontend + nginx）
+使用 `docker-compose.yml`：
+- 对外端口：`5000`（nginx）
+- 适合本地联调，不作为当前线上主方案
+
+```bash
+docker compose up -d --build
+```
+
+## 本地开发（不走 Docker）
+
+### Backend
+```bash
 cd backend
-uvicorn app.main:app --reload --port 8001
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+```
 
-## Frontend
+### Frontend
+```bash
 cd frontend
+npm ci
 npm run dev
+```
 
-TODO list
-把 storage 持久化 + 备份策略（最高 ROI）
+## Mobile IA（当前主线）
+- `/m`：为你推荐（入口）
+- `/m/choose`：开始选择（品类入口）
+- `/m/shampoo/start`
+- `/m/shampoo/profile`
+- `/m/shampoo/resolve`
+- `/m/shampoo/result`
 
-你未来启用 upload，所有用户上传、JSON、SQLite 都会落在 backend/storage。
-所以 “持久化 + 可备份” 是第一优先。
+说明：桌面端页面保留，不再作为主要迭代对象。
 
-你已经做了 volume：./backend/storage:/app/storage ✅
-
-现在加一个每天备份一次（极低成本，救命级别）
-
-立刻做：健康检查 + 自动重启策略（稳定性）
-
-你 compose 里已经 restart: unless-stopped 了 ✅
-再加一个轻量健康检查（不改业务也能做）：
-
-后端：检查 http://localhost:8000/api/products 是否返回 200
-
-前端：检查 http://localhost:3000/ 是否返回 200
-
-这能让容器在异常时更快恢复。
-（如果你愿意我给你“整文件覆盖版 docker-compose.yml”加 healthcheck，我可以直接给你完整文件。）
-
-浴室里的最终答案。
-
-予选/sudo systemctl status snap.caddy.caddy亦然
-MatchUp/PickIt
-
-
-予选
-浴室里的最终答案
-我们替你看完所有选择，
-只留下真正值得用的那一个。
-
-
-基于成分、适用人群与真实使用体验，
-我们给出每个品类唯一的推荐。
+## 文档导航
+- 总运维手册：[docs/OPERATIONS_RUNBOOK.md](docs/OPERATIONS_RUNBOOK.md)
+- 前端说明：[frontend/README.md](frontend/README.md)
+- 后端说明：[backend/README.md](backend/README.md)

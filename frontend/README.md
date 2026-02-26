@@ -1,36 +1,65 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Frontend（Next.js）
 
-## Getting Started
+## 技术栈
+- Next.js 16（App Router）
+- React 19
+- TypeScript
 
-First, run the development server:
+## 运行方式
 
+### 本地开发
 ```bash
+cd frontend
+npm ci
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+```
+默认端口：`3000`
+
+### 生产构建
+```bash
+cd frontend
+npm ci
+npm run build
+npm run start -- -p 3000 -H 0.0.0.0
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 路由分层（核心约束）
+- `app/`：Desktop（冻结）
+- `app/m/`：Mobile（主战场）
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+通过 `middleware.ts` 做移动端跳转：
+- 移动设备访问 `/` -> 重定向到 `/m`
+- 静态资源（如 `/brand/logo.svg`）跳过重定向
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Mobile 关键页面
+- `/m`：为你推荐
+- `/m/choose`：开始选择
+- `/m/shampoo/start`：洗发水入口
+- `/m/shampoo/profile`：多信号收集
+- `/m/shampoo/resolve`：收敛判断
+- `/m/shampoo/result`：唯一结果卡
+- `/m/about`：关于我们（底栏放大镜入口）
+- `/m/compare`：豆包比对
+- `/m/bag`：购物袋
 
-## Learn More
+## 关键组件
+- `components/mobile/MobileTopBar.tsx`
+  - 品牌区点击返回 `/m`
+  - logo 加载顺序：`svg -> png -> /m 下兜底`
+- `components/mobile/MobileBottomNav.tsx`
+  - 底部四栏 + 独立放大镜按钮
+- `components/DesktopTopNavGate.tsx`
+  - 控制 `/m` 页面不显示桌面顶栏
 
-To learn more about Next.js, take a look at the following resources:
+## 设计约束（必须遵守）
+- 不在同一页面硬塞 mobile/desktop 响应式 hack
+- 每页只做一件事
+- 不做复杂表单和专业术语堆叠
+- 优先验证“更快命中唯一答案”而不是视觉花哨
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 常见问题
+- Next.js 16 会提示 `middleware` 约定未来迁移到 `proxy`，当前是警告，不影响运行。
+- 若移动端 logo 丢失，优先检查：
+  - `public/brand/logo.svg`
+  - `public/brand/logo.png`
+  - `middleware.ts` 是否放行静态资源。
