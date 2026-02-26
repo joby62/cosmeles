@@ -56,18 +56,18 @@ export default function MobileBottomNav() {
 
   return (
     <nav className="fixed inset-x-0 bottom-2 z-[60] px-4 pb-[max(env(safe-area-inset-bottom),0px)]">
-      <div className="mx-auto flex max-w-[680px] items-center gap-2">
-        <div className="flex h-16 min-w-0 flex-1 items-center rounded-[22px] border border-black/10 bg-white/82 px-2 shadow-[0_8px_24px_rgba(0,0,0,0.08)] backdrop-blur-xl">
+      <div className="mx-auto flex max-w-[680px] items-center gap-2.5">
+        <div className="flex h-[64px] min-w-0 flex-1 items-center rounded-[32px] border border-black/[0.09] bg-white/84 px-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.11)] backdrop-blur-[20px]">
           {ITEMS.map((item) => {
             const isActive = active(pathname, item.href);
             return (
               <Link
                 key={item.key}
                 href={item.href}
-                className={`flex h-full min-w-0 flex-1 flex-col items-center justify-center rounded-2xl transition-colors ${
+                className={`flex h-[56px] min-w-0 flex-1 flex-col items-center justify-center rounded-[24px] transition-colors ${
                   isActive
-                    ? "bg-[#0071e3]/12 text-[#0071e3]"
-                    : "text-black/62 active:bg-black/[0.04] active:text-black/78"
+                    ? "bg-[#0071e3]/14 text-[#0071e3]"
+                    : "text-black/64 active:bg-black/[0.045] active:text-black/80"
                 }`}
               >
                 <span className="leading-none">
@@ -84,8 +84,8 @@ export default function MobileBottomNav() {
         <Link
           href="/m/about"
           aria-label="关于我们"
-          className={`flex h-16 w-16 shrink-0 items-center justify-center rounded-full border border-black/10 shadow-[0_8px_24px_rgba(0,0,0,0.08)] backdrop-blur-xl ${
-            aboutActive ? "bg-[#0071e3]/12 text-[#0071e3]" : "bg-white/86 text-black/78 active:bg-white"
+          className={`flex h-[64px] w-[64px] shrink-0 items-center justify-center rounded-full border border-black/[0.09] shadow-[0_10px_30px_rgba(0,0,0,0.11)] backdrop-blur-[20px] ${
+            aboutActive ? "bg-[#0071e3]/14 text-[#0071e3]" : "bg-white/84 text-black/78 active:bg-white"
           }`}
         >
           <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
