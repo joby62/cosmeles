@@ -18,7 +18,7 @@ const TAGS: HomeTag[] = [
 export default function MobileHome() {
   return (
     <div className="pb-10">
-      <h1 className="text-[44px] leading-[1.02] font-semibold tracking-[-0.03em] text-black/92">予选</h1>
+      <h1 className="text-[46px] leading-[1.02] font-semibold tracking-[-0.03em] text-black/92">予选</h1>
 
       <section className="mt-5">
         <div className="overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -47,11 +47,11 @@ export default function MobileHome() {
         </div>
       </section>
 
-      <section className="mt-14">
-        <h2 className="slogan-breathe text-[46px] leading-[1.04] font-semibold tracking-[-0.032em] text-black/92">
+      <section className="mt-12">
+        <h2 className="slogan-breathe max-w-[12ch] text-[34px] leading-[1.1] font-semibold tracking-[-0.026em] text-black/92">
           浴室里的最终答案。
         </h2>
-        <p className="mt-4 text-[21px] leading-[1.36] font-semibold tracking-[-0.012em] text-black/62">
+        <p className="mt-4 max-w-[18ch] text-[24px] leading-[1.38] font-normal tracking-[-0.01em] text-black/62">
           省下挑花眼的时间，只留最对位的一件。
         </p>
       </section>
