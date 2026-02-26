@@ -8,11 +8,16 @@ function isMobileUA(ua: string) {
 export function middleware(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
 
+  // 静态文件（如 /brand/logo.png、/icon.svg、/foo.js）必须跳过 UA 重定向。
+  const hasFileExt = /\.[a-zA-Z0-9]+$/.test(pathname);
+
   // 不处理 Next 内部、静态、API
   if (
+    hasFileExt ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/api") ||
     pathname.startsWith("/images") ||
+    pathname.startsWith("/brand") ||
     pathname.startsWith("/favicon") ||
     pathname.startsWith("/robots") ||
     pathname.startsWith("/sitemap")
