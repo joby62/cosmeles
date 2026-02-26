@@ -1,12 +1,19 @@
 import Link from "next/link";
 
-const TAGS = [
+type HomeTag = {
+  key: "shampoo" | "bodywash" | "conditioner" | "lotion" | "cleanser";
+  label: string;
+  short: string;
+  href?: string;
+};
+
+const TAGS: HomeTag[] = [
   { key: "shampoo", label: "洗发水", short: "洗", href: "/m/shampoo/start" },
   { key: "bodywash", label: "沐浴露", short: "沐" },
   { key: "conditioner", label: "护发素", short: "护" },
   { key: "lotion", label: "润肤霜", short: "润" },
   { key: "cleanser", label: "洗面奶", short: "洁" },
-] as const;
+];
 
 export default function MobileHome() {
   return (
