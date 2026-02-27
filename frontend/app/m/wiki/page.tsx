@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
-import { SHAMPOO_INGREDIENT_SHOWCASE } from "@/lib/mobile/shampooIngredients";
 import { WIKI_MAP, WIKI_ORDER, type WikiCategoryKey } from "@/lib/mobile/ingredientWiki";
+import { INGREDIENT_SHOWCASE_MAP } from "@/lib/mobile/ingredientShowcase";
 
 function SearchIcon({ className = "h-5 w-5" }: { className?: string }) {
   return (
@@ -19,19 +19,11 @@ export default function MobileWikiPage() {
   const [query, setQuery] = useState("");
   const normalized = query.trim().toLowerCase();
 
-  const shampooCards = useMemo(() => {
-    if (!normalized) return SHAMPOO_INGREDIENT_SHOWCASE;
-    return SHAMPOO_INGREDIENT_SHOWCASE.filter((item) => {
+  const cards = useMemo(() => {
+    const source = INGREDIENT_SHOWCASE_MAP[active];
+    if (!normalized) return source;
+    return source.filter((item) => {
       const haystack = `${item.name} ${item.tagline} ${item.preview} ${item.heroLabel}`.toLowerCase();
-      return haystack.includes(normalized);
-    });
-  }, [normalized]);
-
-  const genericCards = useMemo(() => {
-    const items = WIKI_MAP[active].items;
-    if (!normalized) return items;
-    return items.filter((item) => {
-      const haystack = `${item.name} ${item.effect} ${item.fit} ${item.caution}`.toLowerCase();
       return haystack.includes(normalized);
     });
   }, [active, normalized]);
@@ -88,51 +80,35 @@ export default function MobileWikiPage() {
         </div>
       </section>
 
-      {active === "shampoo" ? (
-        <section className="mt-5 space-y-4">
-          {shampooCards.map((item) => (
-            <Link
-              key={item.slug}
-              href={`/m/wiki/shampoo/${item.slug}`}
-              className="block overflow-hidden rounded-[28px] border border-black/10 bg-white shadow-[0_14px_30px_rgba(0,0,0,0.06)] active:scale-[0.997]"
-            >
-              <div className={`${item.heroClassName} relative h-[292px] w-full`}>
-                <div className="absolute inset-0 bg-[linear-gradient(175deg,rgba(255,255,255,0.1)_0%,rgba(255,255,255,0.0)_30%,rgba(0,0,0,0.18)_100%)]" />
-                <div className="absolute left-5 top-5 rounded-full border border-white/55 bg-white/65 px-3 py-1 text-[12px] font-semibold tracking-[0.08em] text-black/58 backdrop-blur-sm">
-                  {item.heroLabel}
-                </div>
-                <div className="absolute bottom-5 left-5 right-5 text-white">
-                  <p className="text-[13px] font-medium tracking-[0.04em] text-white/85">{item.heroSub}</p>
-                  <h3 className="mt-1 text-[34px] leading-[1.06] font-semibold tracking-[-0.03em]">{item.name}</h3>
-                </div>
+      <section className="mt-5 space-y-4">
+        {cards.map((item) => (
+          <Link
+            key={item.slug}
+            href={`/m/wiki/${active}/${item.slug}`}
+            className="block overflow-hidden rounded-[28px] border border-black/10 bg-white shadow-[0_14px_30px_rgba(0,0,0,0.06)] active:scale-[0.997]"
+          >
+            <div className={`${item.heroClassName} relative h-[292px] w-full`}>
+              <div className="absolute inset-0 bg-[linear-gradient(175deg,rgba(255,255,255,0.1)_0%,rgba(255,255,255,0.0)_30%,rgba(0,0,0,0.18)_100%)]" />
+              <div className="absolute left-5 top-5 rounded-full border border-white/55 bg-white/65 px-3 py-1 text-[12px] font-semibold tracking-[0.08em] text-black/58 backdrop-blur-sm">
+                {item.heroLabel}
               </div>
-
-              <div className="px-5 py-5">
-                <p className="text-[14px] font-medium text-black/52">{item.tagline}</p>
-                <p className="mt-2 text-[26px] leading-[1.22] font-semibold tracking-[-0.025em] text-black/88">{item.preview}</p>
+              <div className="absolute bottom-5 left-5 right-5 text-white">
+                <p className="text-[13px] font-medium tracking-[0.04em] text-white/85">{item.heroSub}</p>
+                <h3 className="mt-1 text-[34px] leading-[1.06] font-semibold tracking-[-0.03em]">{item.name}</h3>
               </div>
-            </Link>
-          ))}
+            </div>
 
-          {shampooCards.length === 0 && (
-            <div className="rounded-2xl border border-black/10 bg-white px-4 py-5 text-[14px] text-black/55">没有匹配到成分，换个关键词试试。</div>
-          )}
-        </section>
-      ) : (
-        <section className="mt-5 space-y-3">
-          {genericCards.map((item) => (
-            <article key={item.name} className="rounded-2xl border border-black/10 bg-white px-4 py-4">
-              <h2 className="text-[17px] font-semibold text-black/88">{item.name}</h2>
-              <p className="mt-2 text-[14px] leading-[1.55] text-black/70">作用：{item.effect}</p>
-              <p className="mt-1 text-[14px] leading-[1.55] text-black/70">适合：{item.fit}</p>
-            </article>
-          ))}
+            <div className="px-5 py-5">
+              <p className="text-[14px] font-medium text-black/52">{item.tagline}</p>
+              <p className="mt-2 text-[26px] leading-[1.22] font-semibold tracking-[-0.025em] text-black/88">{item.preview}</p>
+            </div>
+          </Link>
+        ))}
 
-          {genericCards.length === 0 && (
-            <div className="rounded-2xl border border-black/10 bg-white px-4 py-5 text-[14px] text-black/55">没有匹配到成分，换个关键词试试。</div>
-          )}
-        </section>
-      )}
+        {cards.length === 0 && (
+          <div className="rounded-2xl border border-black/10 bg-white px-4 py-5 text-[14px] text-black/55">没有匹配到成分，换个关键词试试。</div>
+        )}
+      </section>
     </section>
   );
 }

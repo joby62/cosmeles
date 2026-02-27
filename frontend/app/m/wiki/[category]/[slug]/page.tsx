@@ -1,20 +1,27 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getShampooIngredientBySlug } from "@/lib/mobile/shampooIngredients";
+import { getIngredientShowcaseBySlug } from "@/lib/mobile/ingredientShowcase";
+import { isWikiCategoryKey, WIKI_MAP } from "@/lib/mobile/ingredientWiki";
 
-type Params = { slug: string };
+type Params = { category: string; slug: string };
 
-export default async function ShampooIngredientDetailPage({
+export default async function IngredientDetailPage({
   params,
 }: {
   params: Params | Promise<Params>;
 }) {
   const raw = await Promise.resolve(params);
-  const item = getShampooIngredientBySlug(raw.slug);
 
+  if (!isWikiCategoryKey(raw.category)) {
+    notFound();
+  }
+
+  const item = getIngredientShowcaseBySlug(raw.category, raw.slug);
   if (!item) {
     notFound();
   }
+
+  const categoryLabel = WIKI_MAP[raw.category].label;
 
   return (
     <section className="pb-10">
@@ -32,7 +39,7 @@ export default async function ShampooIngredientDetailPage({
             {item.heroLabel}
           </div>
           <div className="absolute bottom-5 left-5 right-5 text-white">
-            <p className="text-[13px] font-medium tracking-[0.04em] text-white/85">{item.heroSub}</p>
+            <p className="text-[13px] font-medium tracking-[0.04em] text-white/85">{categoryLabel}</p>
             <h1 className="mt-1 text-[36px] leading-[1.04] font-semibold tracking-[-0.03em]">{item.name}</h1>
           </div>
         </div>
