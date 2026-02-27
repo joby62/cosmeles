@@ -32,22 +32,27 @@ npm run start -- -p 3000 -H 0.0.0.0
 - 静态资源（如 `/brand/logo.svg`）跳过重定向
 
 ## Mobile 关键页面
-- `/m`：为你推荐
+- `/m`：默认重定向到 `/m/choose`
+- `/m/wiki`：成份百科
 - `/m/choose`：开始选择
 - `/m/shampoo/start`：洗发水入口
 - `/m/shampoo/profile`：多信号收集
 - `/m/shampoo/resolve`：收敛判断
 - `/m/shampoo/result`：唯一结果卡
-- `/m/about`：关于我们（底栏放大镜入口）
-- `/m/compare`：豆包比对
+- `/m/bodywash/*`：沐浴露决策路径
+- `/m/conditioner/*`：护发素决策路径
+- `/m/lotion/*`：润肤霜决策路径
+- `/m/cleanser/*`：洗面奶决策路径
+- `/m/compare`：横向对比
 - `/m/bag`：购物袋
+- `/m/me`：我的（历史结果卡记录）
 
 ## 关键组件
 - `components/mobile/MobileTopBar.tsx`
   - 品牌区点击返回 `/m`
   - logo 加载顺序：`svg -> png -> /m 下兜底`
 - `components/mobile/MobileBottomNav.tsx`
-  - 底部四栏 + 独立放大镜按钮
+  - 底部四栏 + 右侧“我的”入口
 - `components/DesktopTopNavGate.tsx`
   - 控制 `/m` 页面不显示桌面顶栏
 

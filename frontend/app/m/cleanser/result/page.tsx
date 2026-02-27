@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import SelectionRecorder from "@/components/mobile/SelectionRecorder";
 import { fetchProducts, resolveImageUrl } from "@/lib/api";
 import {
   buildCleanserNotForLines,
@@ -12,6 +13,7 @@ import {
   isCompleteCleanserSignals,
   normalizeCleanserSignals,
   shouldFallbackCleanser,
+  toCleanserSearchParams,
 } from "@/lib/mobile/cleanserDecision";
 
 type Search = Record<string, string | string[] | undefined>;
@@ -47,6 +49,7 @@ export default async function CleanserResultPage({
   const usage = buildCleanserUsageLine(signals);
   const rollbackLine = buildCleanserRollbackLine(signals);
   const fallbackMode = shouldFallbackCleanser(signals);
+  const resultHref = `/m/cleanser/result?${toCleanserSearchParams(signals).toString()}`;
 
   let product = null as Awaited<ReturnType<typeof fetchProducts>>[number] | null;
   if (!fallbackMode) {
@@ -62,6 +65,16 @@ export default async function CleanserResultPage({
 
   return (
     <section className="pb-12">
+      <SelectionRecorder
+        record={{
+          categoryKey: "cleanser",
+          categoryLabel: "洗面奶",
+          resultTitle: `${picked.brand} ${picked.name}`,
+          resultSummary: whyNotOthers,
+          signals: [segmentLine, ...reasons],
+          resultHref,
+        }}
+      />
       <div className="text-[13px] font-medium text-black/45">洗面奶决策 · 最终答案</div>
       <h1 className="mt-2 text-[30px] leading-[1.12] font-semibold tracking-[-0.02em] text-black/92">这是你现在最对位的一件</h1>
       <p className="mt-3 text-[15px] leading-[1.55] text-black/60">不是“可选其一”，是我们替你拍板后的唯一推荐。</p>

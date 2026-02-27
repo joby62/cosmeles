@@ -1,7 +1,7 @@
 # 予选（MatchUp）
 
 浴室里的最终答案。  
-省下挑花眼的时间，只留最对位的一件。
+省下挑花眼的时间，只留最合适的一件。
 
 ## 项目定位
 - 产品类型：洗护用品决策工具（不是展示型官网）
@@ -64,12 +64,15 @@ npm run dev
 ```
 
 ## Mobile IA（当前主线）
-- `/m`：为你推荐（入口）
+- `/m`：默认重定向到 `/m/choose`
+- `/m/wiki`：成份百科（按类目查看成分作用）
 - `/m/choose`：开始选择（品类入口）
 - `/m/shampoo/start`
 - `/m/shampoo/profile`
 - `/m/shampoo/resolve`
 - `/m/shampoo/result`
+- `/m/bodywash/*`、`/m/conditioner/*`、`/m/lotion/*`、`/m/cleanser/*`
+- `/m/me`：我的（记录已完成挑选与结果卡）
 
 说明：桌面端页面保留，不再作为主要迭代对象。
 

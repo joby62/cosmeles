@@ -10,7 +10,7 @@ export const BRAND = {
   sloganEn: "The final answer for your bathroom.",
 
   // Hero subline（你指定的副文案）
-  heroSublineZh: "省下挑花眼的时间，只留最对位的一件。",
+  heroSublineZh: "省下挑花眼的时间，只留最合适的一件。",
   heroSublineEn: "Less browsing. More matching.",
 
   // Footer

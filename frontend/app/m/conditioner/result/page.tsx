@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import SelectionRecorder from "@/components/mobile/SelectionRecorder";
 import { fetchProducts, resolveImageUrl } from "@/lib/api";
 import {
   buildConditionerNotForLines,
@@ -9,6 +10,7 @@ import {
   buildConditionerWhyNotOthers,
   isCompleteConditionerSignals,
   normalizeConditionerSignals,
+  toConditionerSearchParams,
 } from "@/lib/mobile/conditionerDecision";
 
 type Search = Record<string, string | string[] | undefined>;
@@ -35,6 +37,7 @@ export default async function ConditionerResultPage({
   const notFor = buildConditionerNotForLines(signals);
   const whyNotOthers = buildConditionerWhyNotOthers(signals);
   const usage = buildConditionerUsageLine(signals);
+  const resultHref = `/m/conditioner/result?${toConditionerSearchParams(signals).toString()}`;
 
   let product = null as Awaited<ReturnType<typeof fetchProducts>>[number] | null;
   try {
@@ -48,6 +51,16 @@ export default async function ConditionerResultPage({
 
   return (
     <section className="pb-12">
+      <SelectionRecorder
+        record={{
+          categoryKey: "conditioner",
+          categoryLabel: "护发素",
+          resultTitle: `${picked.brand} ${picked.name}`,
+          resultSummary: whyNotOthers,
+          signals: reasons,
+          resultHref,
+        }}
+      />
       <div className="text-[13px] font-medium text-black/45">护发素决策 · 最终答案</div>
       <h1 className="mt-2 text-[30px] leading-[1.12] font-semibold tracking-[-0.02em] text-black/92">这是你现在最对位的一件</h1>
       <p className="mt-3 text-[15px] leading-[1.55] text-black/60">不是“可选其一”，是我们替你拍板后的唯一推荐。</p>

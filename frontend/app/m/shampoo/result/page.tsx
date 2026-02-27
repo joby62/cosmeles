@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import SelectionRecorder from "@/components/mobile/SelectionRecorder";
 import { fetchProducts, resolveImageUrl } from "@/lib/api";
 import {
   SHAMPOO_FEATURED_PRODUCT_ID,
@@ -10,6 +11,7 @@ import {
   buildShampooWhyNotOthers,
   isCompleteShampooSignals,
   normalizeShampooSignals,
+  toSignalSearchParams,
 } from "@/lib/mobile/shampooDecision";
 
 type Search = Record<string, string | string[] | undefined>;
@@ -36,6 +38,7 @@ export default async function ShampooResultPage({
   const notFor = buildShampooNotForLines(signals);
   const whyNotOthers = buildShampooWhyNotOthers(signals);
   const usage = buildShampooUsageLine(signals);
+  const resultHref = `/m/shampoo/result?${toSignalSearchParams(signals).toString()}`;
 
   let product = null as Awaited<ReturnType<typeof fetchProducts>>[number] | null;
   try {
@@ -49,6 +52,16 @@ export default async function ShampooResultPage({
 
   return (
     <section className="pb-12">
+      <SelectionRecorder
+        record={{
+          categoryKey: "shampoo",
+          categoryLabel: "洗发水",
+          resultTitle: `${picked.brand} ${picked.name}`,
+          resultSummary: whyNotOthers,
+          signals: reasons,
+          resultHref,
+        }}
+      />
       <div className="text-[13px] font-medium text-black/45">洗发水决策 · 最终答案</div>
       <h1 className="mt-2 text-[30px] leading-[1.12] font-semibold tracking-[-0.02em] text-black/92">
         这是你现在最对位的一件
