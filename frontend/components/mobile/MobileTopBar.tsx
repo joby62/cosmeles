@@ -50,7 +50,7 @@ export default function MobileTopBar() {
           <span className="text-[11px] leading-none text-black/36">·</span>
           <span className="text-[14px] font-semibold tracking-[0.005em] text-black/88">{section}</span>
         </Link>
-        <div className="text-[12px] text-black/45">浴室里的最终答案</div>
+        <div className="text-[12px] text-black/45">省下挑花眼的时间，只留最合适的一件。</div>
       </div>
     </div>
   );

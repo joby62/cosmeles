@@ -20,28 +20,28 @@ export default function MobileChoose() {
       </p>
 
       <div className="mt-6 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <div className="flex min-w-max gap-3">
+        <div className="flex min-w-max gap-2.5 pr-2">
         {CATS.map((c) => (
           c.open ? (
             <Link
               key={c.key}
               href={c.href}
-              className="flex h-[192px] w-[188px] shrink-0 flex-col rounded-3xl border border-[#d9dbe3] bg-[#ececf1] px-3 pt-3 pb-4 active:brightness-[0.98]"
+              className="flex aspect-square w-[96px] shrink-0 flex-col rounded-[22px] border border-[#d9dbe3] bg-[#ececf1] px-2 pt-2 pb-2 active:brightness-[0.98]"
             >
               <div className="flex min-h-0 flex-1 items-center justify-center">
-                <img src={c.image} alt={c.zh} className="h-[112px] w-[132px] object-contain" />
+                <img src={c.image} alt={c.zh} className="h-[58px] w-[74px] object-contain" />
               </div>
-              <div className="mt-2 text-center text-[22px] font-medium tracking-[-0.015em] text-black/90">{c.zh}</div>
+              <div className="mt-1 text-center text-[13px] leading-[1.15] font-medium tracking-[-0.01em] text-black/88">{c.zh}</div>
             </Link>
           ) : (
             <div
               key={c.key}
-              className="flex h-[192px] w-[188px] shrink-0 flex-col rounded-3xl border border-[#d9dbe3] bg-[#ececf1] px-3 pt-3 pb-4"
+              className="flex aspect-square w-[96px] shrink-0 flex-col rounded-[22px] border border-[#d9dbe3] bg-[#ececf1] px-2 pt-2 pb-2"
             >
               <div className="flex min-h-0 flex-1 items-center justify-center">
-                <img src={c.image} alt={c.zh} className="h-[112px] w-[132px] object-contain opacity-58" />
+                <img src={c.image} alt={c.zh} className="h-[58px] w-[74px] object-contain opacity-58" />
               </div>
-              <div className="mt-2 text-center text-[22px] font-medium tracking-[-0.015em] text-black/58">{c.zh}</div>
+              <div className="mt-1 text-center text-[13px] leading-[1.15] font-medium tracking-[-0.01em] text-black/58">{c.zh}</div>
             </div>
           )
         ))}

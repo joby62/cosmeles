@@ -3,7 +3,7 @@ import MobileBottomNav from "@/components/mobile/MobileBottomNav";
 import MobileTopBar from "@/components/mobile/MobileTopBar";
 
 export const metadata = {
-  title: "予选 · 省下挑花眼的时间，只留最合适的一件。",
+  title: "予选 · 浴室里的最终答案",
   description: "以 Apple 式的克制美学，把洗护选择做成低密度、可浏览、可对比的体验。",
 };
 
