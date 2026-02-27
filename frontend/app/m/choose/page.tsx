@@ -4,8 +4,8 @@ const CATS = [
   { key: "shampoo", zh: "洗发水", note: "已开放", href: "/m/shampoo/start", open: true, image: "/m/categories/shampoo.png" },
   { key: "bodywash", zh: "沐浴露", note: "已开放", href: "/m/bodywash/start", open: true, image: "/m/categories/bodywash.png" },
   { key: "conditioner", zh: "护发素", note: "已开放", href: "/m/conditioner/start", open: true, image: "/m/categories/conditioner.png" },
-  { key: "lotion", zh: "润肤霜", note: "即将开放", href: "", open: false, image: "/m/categories/lotion.png" },
-  { key: "cleanser", zh: "洗面奶", note: "即将开放", href: "", open: false, image: "/m/categories/cleanser.png" },
+  { key: "lotion", zh: "润肤霜", note: "已开放", href: "/m/lotion/start", open: true, image: "/m/categories/lotion.png" },
+  { key: "cleanser", zh: "洗面奶", note: "已开放", href: "/m/cleanser/start", open: true, image: "/m/categories/cleanser.png" },
 ] as const;
 
 export default function MobileChoose() {

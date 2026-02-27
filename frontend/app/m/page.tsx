@@ -11,8 +11,8 @@ const TAGS: HomeTag[] = [
   { key: "shampoo", label: "洗发水", image: "/m/categories/shampoo.png", href: "/m/shampoo/start" },
   { key: "bodywash", label: "沐浴露", image: "/m/categories/bodywash.png", href: "/m/bodywash/start" },
   { key: "conditioner", label: "护发素", image: "/m/categories/conditioner.png", href: "/m/conditioner/start" },
-  { key: "lotion", label: "润肤霜", image: "/m/categories/lotion.png" },
-  { key: "cleanser", label: "洗面奶", image: "/m/categories/cleanser.png" },
+  { key: "lotion", label: "润肤霜", image: "/m/categories/lotion.png", href: "/m/lotion/start" },
+  { key: "cleanser", label: "洗面奶", image: "/m/categories/cleanser.png", href: "/m/cleanser/start" },
 ];
 
 export default function MobileHome() {
