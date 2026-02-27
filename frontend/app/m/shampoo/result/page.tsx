@@ -5,12 +5,16 @@ import SelectionRecorder from "@/components/mobile/SelectionRecorder";
 import { fetchProducts, resolveImageUrl } from "@/lib/api";
 import {
   SHAMPOO_FEATURED_PRODUCT_ID,
+  buildShampooCoreIngredients,
+  buildShampooFitRule,
   buildShampooNotForLines,
   buildShampooReasonLines,
   buildShampooResultTitle,
   buildShampooTraceLines,
   buildShampooUsageLine,
   buildShampooWhyNotOthers,
+  buildShampooWhyRecommend,
+  buildShampooWikiDeepHref,
   isReadyShampooResult,
   normalizeShampooSignals,
   toSignalSearchParams,
@@ -37,11 +41,15 @@ export default async function ShampooResultPage({
   }
 
   const traceLines = buildShampooTraceLines(signals);
-  const reasons = buildShampooReasonLines(signals);
-  const notFor = buildShampooNotForLines(signals);
+  const reasonLines = buildShampooReasonLines(signals);
+  const whyRecommend = buildShampooWhyRecommend(signals);
   const whyNotOthers = buildShampooWhyNotOthers(signals);
+  const notFor = buildShampooNotForLines(signals);
   const usage = buildShampooUsageLine(signals);
+  const fitRule = buildShampooFitRule(signals);
   const resultTitle = buildShampooResultTitle(signals);
+  const coreIngredients = buildShampooCoreIngredients(signals);
+  const wikiHref = buildShampooWikiDeepHref(signals);
   const resultHref = `/m/shampoo/result?${toSignalSearchParams(signals).toString()}`;
 
   let product = null as Awaited<ReturnType<typeof fetchProducts>>[number] | null;
@@ -61,14 +69,15 @@ export default async function ShampooResultPage({
           categoryKey: "shampoo",
           categoryLabel: "洗发水",
           resultTitle: `${picked.brand} ${picked.name}`,
-          resultSummary: `${resultTitle}：${whyNotOthers}`,
-          signals: [...traceLines, ...reasons],
+          resultSummary: `${resultTitle}：${whyRecommend}`,
+          signals: [...traceLines, ...reasonLines],
           resultHref,
         }}
       />
+
       <div className="text-[13px] font-medium text-black/45">洗发挑选 · 最终答案</div>
       <h1 className="mt-2 text-[30px] leading-[1.12] font-semibold tracking-[-0.02em] text-black/92">{resultTitle}</h1>
-      <p className="mt-3 text-[15px] leading-[1.55] text-black/60">我们已经替你收敛完信号，现在直接给你一件最合适的。</p>
+      <p className="mt-2 text-[15px] leading-[1.55] text-black/62">{fitRule}</p>
 
       <article className="mt-6 rounded-3xl border border-black/10 bg-white p-5">
         <div className="flex items-start gap-4">
@@ -80,10 +89,9 @@ export default async function ShampooResultPage({
             )}
           </div>
           <div>
-            <div className="text-[12px] font-medium text-black/50">{picked.brand}</div>
-            <div className="mt-1 text-[19px] leading-[1.3] font-semibold tracking-[-0.01em] text-black/90">
-              {picked.name}
-            </div>
+            <div className="text-[12px] font-medium text-black/50">唯一主推</div>
+            <div className="mt-1 text-[19px] leading-[1.3] font-semibold tracking-[-0.01em] text-black/90">{picked.brand}</div>
+            <div className="mt-1 text-[15px] leading-[1.45] text-black/75">{picked.name}</div>
           </div>
         </div>
 
@@ -91,7 +99,7 @@ export default async function ShampooResultPage({
           <h2 className="text-[14px] font-semibold text-black/85">你的选择记录</h2>
           <ul className="mt-2 space-y-1.5">
             {traceLines.map((line) => (
-              <li key={line} className="text-[14px] leading-[1.5] text-black/72">
+              <li key={line} className="text-[13px] leading-[1.5] text-black/68">
                 {line}
               </li>
             ))}
@@ -100,25 +108,19 @@ export default async function ShampooResultPage({
 
         <section className="mt-6">
           <h2 className="text-[14px] font-semibold text-black/85">为什么推荐它</h2>
-          <ul className="mt-2 space-y-2">
-            {reasons.map((line) => (
-              <li key={line} className="text-[14px] leading-[1.5] text-black/70">
-                {line}
-              </li>
-            ))}
-          </ul>
+          <p className="mt-2 text-[14px] leading-[1.6] text-black/70">{whyRecommend}</p>
         </section>
 
         <section className="mt-6">
           <h2 className="text-[14px] font-semibold text-black/85">为什么不是别的</h2>
-          <p className="mt-2 text-[14px] leading-[1.55] text-black/70">{whyNotOthers}</p>
+          <p className="mt-2 text-[14px] leading-[1.6] text-black/70">{whyNotOthers}</p>
         </section>
 
         <section className="mt-6">
           <h2 className="text-[14px] font-semibold text-black/85">哪些情况不适合</h2>
           <ul className="mt-2 space-y-2">
             {notFor.map((line) => (
-              <li key={line} className="text-[14px] leading-[1.5] text-black/70">
+              <li key={line} className="text-[14px] leading-[1.55] text-black/70">
                 {line}
               </li>
             ))}
@@ -126,12 +128,41 @@ export default async function ShampooResultPage({
         </section>
 
         <section className="mt-6 rounded-2xl bg-black/[0.03] px-4 py-3">
-          <h2 className="text-[14px] font-semibold text-black/85">一句话用法建议</h2>
-          <p className="mt-1 text-[14px] leading-[1.5] text-black/70">{usage}</p>
+          <h2 className="text-[14px] font-semibold text-black/85">用法建议</h2>
+          <p className="mt-1 text-[14px] leading-[1.55] text-black/70">{usage}</p>
+        </section>
+
+        <section className="mt-6">
+          <h2 className="text-[14px] font-semibold text-black/85">核心成分作用机制</h2>
+          <div className="mt-2 space-y-2.5">
+            {coreIngredients.map((item) => (
+              <article key={item.name} className="rounded-xl border border-black/10 px-3.5 py-3">
+                <h3 className="text-[13px] font-semibold text-black/86">{item.name}</h3>
+                <p className="mt-1 text-[13px] leading-[1.55] text-black/65">{item.mechanism}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="mt-6">
+          <h2 className="text-[14px] font-semibold text-black/85">过滤器收敛过程</h2>
+          <ul className="mt-2 space-y-2">
+            {reasonLines.map((line) => (
+              <li key={line} className="text-[13px] leading-[1.55] text-black/67">
+                {line}
+              </li>
+            ))}
+          </ul>
         </section>
       </article>
 
-      <div className="mt-8">
+      <div className="mt-8 flex flex-wrap gap-2.5">
+        <Link
+          href={wikiHref}
+          className="inline-flex h-11 items-center justify-center rounded-full bg-black px-5 text-[15px] font-semibold tracking-[-0.01em] text-white active:opacity-90"
+        >
+          深层成份跳转
+        </Link>
         <Link
           href="/m/shampoo/start"
           className="inline-flex h-11 items-center justify-center rounded-full border border-black/15 px-5 text-[15px] font-semibold text-black/80 active:bg-black/[0.03]"

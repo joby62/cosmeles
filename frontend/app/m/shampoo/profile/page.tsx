@@ -59,7 +59,7 @@ function buildNextHref(signals: ShampooSignals, key: StepKey, value: "A" | "B" |
   }
 
   if (isReadyShampooResult(merged)) {
-    return `/m/shampoo/result?${qp.toString()}`;
+    return `/m/shampoo/resolve?${qp.toString()}`;
   }
 
   qp.set("step", String(nextStep));
@@ -89,7 +89,7 @@ export default async function ShampooProfilePage({
   }
 
   if (isReadyShampooResult(signals)) {
-    redirect(`/m/shampoo/result?${toSignalSearchParams(signals).toString()}`);
+    redirect(`/m/shampoo/resolve?${toSignalSearchParams(signals).toString()}`);
   }
 
   const stepNum = Number.isFinite(parsedStep) ? Math.min(Math.max(parsedStep, 1), STEPS.length) : 1;

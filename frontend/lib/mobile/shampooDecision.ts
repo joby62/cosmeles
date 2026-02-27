@@ -29,14 +29,35 @@ export type ShampooRouteKey =
   | "moisture-lightweight"
   | "moisture-gentle";
 
-type RoutePlan = {
-  key: ShampooRouteKey;
+export type ShampooBundleKey =
+  | "deep-oil-control"
+  | "anti-dandruff-itch"
+  | "gentle-soothing"
+  | "deep-repair"
+  | "volume-support";
+
+export type CoreIngredient = {
+  name: string;
+  mechanism: string;
+};
+
+export type ShampooBundle = {
+  key: ShampooBundleKey;
   title: string;
-  base: string;
-  addon: string;
-  why: string;
+  shortLabel: string;
+  fitRule: string;
+  whyRecommend: string;
+  whyNotOthers: string;
   notFor: string[];
   usage: string;
+  coreIngredients: CoreIngredient[];
+};
+
+type RouteDecision = {
+  bundleKey: ShampooBundleKey;
+  baseFilter: string;
+  painFilter: string;
+  bonusFilter?: string;
 };
 
 const q1Labels: Record<Q1OilSignal, string> = {
@@ -57,129 +78,226 @@ const q3Labels: Record<Q3DamageSignal, string> = {
   C: "原生发/健康",
 };
 
-const q1BaseLine: Record<Q1OilSignal, string> = {
-  A: "你的底色是高出油节奏，先把清洁效率做对位。",
-  B: "你的底色是温和平衡节奏，不走强清洁也不走厚重滋润。",
-  C: "你的底色是低出油节奏，优先舒适度与保湿稳定。",
-};
-
-const q2Line: Record<Q2ScalpSignal, string> = {
-  A: "你当前有头屑+发痒，先处理抗真菌去屑，再谈其他功能。",
-  B: "你当前有发红/刺痛信号，先回退刺激负担并做舒缓修护。",
-  C: "你当前没有明显头皮不适，继续按发质做细分收敛。",
-};
-
-const q3AddOnLine: Record<Q3DamageSignal, string> = {
-  A: "功能插件走修护路线：提高受损发丝管理能力。",
-  B: "功能插件走轻盈路线：避免压塌，保持发根支撑。",
-  C: "功能插件走简配路线：减少堆叠，保持长期稳定。",
-};
-
-const routePlans: Record<ShampooRouteKey, RoutePlan> = {
-  "fast-anti-dandruff": {
-    key: "fast-anti-dandruff",
-    title: "抗真菌去屑主推型洗发水",
-    base: "Base：中高强度清洁底色（不过度拔干）。",
-    addon: "Add-on：去屑抗真菌活性优先（快路径）。",
-    why: "你触发了“头屑且发痒”直接判定，先把头皮问题压住，效率最高。",
+const bundleMap: Record<ShampooBundleKey, ShampooBundle> = {
+  "deep-oil-control": {
+    key: "deep-oil-control",
+    title: "深层控油型：给头皮的“吸油面纸”",
+    shortLabel: "深层控油型",
+    fitRule: "适用：油头 + 无明显受损（A-C-C），或高出油优先控制油脂环境的人群。",
+    whyRecommend:
+      "针对油脂分泌过旺导致的溢脂性环境。这一型通过更强的清洁底色带走顽固油脂，再用锌盐和水杨酸压低皮脂活跃度，延长头发的蓬松寿命。",
+    whyNotOthers:
+      "滋润型或纯温和型洗剂对重油头往往是“隔靴搔痒”，洗完短时间内仍会有油垢感，甚至可能放大头皮异味问题。",
     notFor: [
-      "如果你只追求香味或顺滑手感，这条路线不适合。",
-      "若头皮炎症持续加重，应优先皮肤科处理。",
+      "干性头皮：可能出现起皮、紧绷。",
+      "严重受损发质：发丝可能更干涩，需做分区洗。",
+      "头皮湿疹/破损期：强清洁会加重刺激。",
     ],
-    usage: "先连续使用 2-4 周观察头屑和痒感变化，稳定后再决定是否切换日常线。",
+    usage:
+      "采用“双重洗发液法”：第一次带走表层油脂，第二次停留约 1 分钟让控油成分接触头皮，发尾务必配合护发素。",
+    coreIngredients: [
+      {
+        name: "PCA 锌 / 葡萄糖酸锌",
+        mechanism: "控油核心，抑制 5α-还原酶，降低油脂生成指令。",
+      },
+      {
+        name: "C14-16 烯烃磺酸钠 / 月桂酰肌氨酸钠",
+        mechanism: "高效去油洗剂，顽固油脂清除更彻底。",
+      },
+      {
+        name: "水杨酸",
+        mechanism: "疏通毛囊口老废角质，减少油脂栓和头皮痘风险。",
+      },
+    ],
+  },
+  "anti-dandruff-itch": {
+    key: "anti-dandruff-itch",
+    title: "去屑止痒型：针对真菌的“特种部队”",
+    shortLabel: "去屑止痒型",
+    fitRule: "适用：有屑且痒（-A-），无论油性或干性。",
+    whyRecommend:
+      "大多数头屑都与马拉色菌失衡相关。这一型会优先上抗真菌活性，从源头抑制真菌，而不是只做“把白屑洗掉”的表面清洁。",
+    whyNotOthers:
+      "普通洗发水只能暂时冲掉可见皮屑，真菌负荷不下降的话，24 小时内往往会反复。",
+    notFor: [
+      "无头屑人群：长期高频使用可能打乱头皮菌群。",
+      "头皮有开放性伤口：应先处理伤口和炎症。",
+    ],
+    usage:
+      "关键是接触时间：在头皮停留 3-5 分钟再冲洗，抗真菌成分才有发挥空间。",
+    coreIngredients: [
+      {
+        name: "吡罗克酮乙醇胺盐（OCT）",
+        mechanism: "广谱抗真菌，抑制头屑相关真菌生长。",
+      },
+      {
+        name: "吡硫鎓锌（ZPT）",
+        mechanism: "干扰真菌细胞膜运输，降低真菌存活率。",
+      },
+      {
+        name: "水杨酸 / 薄荷醇",
+        mechanism: "前者软化角质屑，后者提供快速止痒体感。",
+      },
+    ],
+  },
+  "gentle-soothing": {
+    key: "gentle-soothing",
+    title: "温和舒缓型：头皮的“维稳屏障”",
+    shortLabel: "温和舒缓型",
+    fitRule: "适用：敏感头皮（-B-）或想长期维持低刺激清洁的人群。",
+    whyRecommend:
+      "当头皮已经发红、刺痛或频繁不适时，第一目标不是“洗得更猛”，而是恢复屏障耐受。这一型会优先低刺激表活并叠加抗炎舒缓成分。",
+    whyNotOthers:
+      "控油或去屑强功效线通常带来更高刺激阈值，可能继续拉扯已经脆弱的头皮屏障。",
+    notFor: [
+      "重油发质：可能觉得不够“干净到位”。",
+      "长期大量造型品人群：清洁力可能不足以彻底卸残留。",
+    ],
+    usage:
+      "用 37°C 左右温水，按摩动作放轻，先把头皮舒适度稳定下来，再考虑进阶功能。",
+    coreIngredients: [
+      {
+        name: "APG / 氨基酸表活",
+        mechanism: "低刺激清洁，尽量不破坏头皮天然皮脂膜。",
+      },
+      {
+        name: "红没药醇 / 积雪草提取物",
+        mechanism: "缓和炎症反应，减轻泛红和刺痛感。",
+      },
+      {
+        name: "泛醇（Pro-V B5）/ 神经酰胺",
+        mechanism: "补水并辅助屏障修护，减少干燥性瘙痒反复。",
+      },
+    ],
+  },
+  "deep-repair": {
+    key: "deep-repair",
+    title: "深度修护型：发丝的“水泥填补剂”",
+    shortLabel: "深度修护型",
+    fitRule: "适用：干性/受损发丝（B/C-C-A），或油头+受损的分区护理人群。",
+    whyRecommend:
+      "染烫受损本质是毛鳞片结构损伤，这一型会优先补蛋白与脂质，封堵裂隙并降低断裂风险。若你是油头+受损，会采用“头皮清洁 + 发丝修护”并行策略。",
+    whyNotOthers:
+      "清爽控油型为了蓬松常会提高去脂力度，对受损发丝不友好，可能放大干枯和断裂。",
+    notFor: [
+      "细软塌发质：可能出现贴头皮或厚重感。",
+      "油性头皮且涂到头皮：可能加重毛囊负担。",
+    ],
+    usage:
+      "重点涂发中到发尾；若“头皮油+发尾干”，建议分区洗：头皮控油款，发丝修护款。",
+    coreIngredients: [
+      {
+        name: "水解角蛋白 / 蚕丝蛋白",
+        mechanism: "填补发丝蛋白缺口，提升韧性。",
+      },
+      {
+        name: "18-MEA / 植物油脂",
+        mechanism: "重建疏水层，恢复光泽和润滑。",
+      },
+      {
+        name: "聚季铵盐-10 / 适量硅油",
+        mechanism: "中和负电荷、降低静电与打结。",
+      },
+    ],
+  },
+  "volume-support": {
+    key: "volume-support",
+    title: "蓬松支撑型：发根的“骨骼支架”",
+    shortLabel: "蓬松支撑型",
+    fitRule: "适用：细软塌、视觉发量少（A/B-C-B）。",
+    whyRecommend:
+      "这一型目标是“减负 + 增硬”：降低沉积负担，同时让单根发丝支撑力提升，帮助发根更容易立起来。",
+    whyNotOthers:
+      "高硅油或重滋润路线会增加发丝重量，细软发更容易贴头皮，蓬松感掉得更快。",
+    notFor: [
+      "粗硬自然卷/沙发发质：可能出现更炸、更难打理。",
+      "重度干枯受损：单靠蓬松线不够，需要修护线配合。",
+    ],
+    usage:
+      "彻底冲净后逆着发根吹风，配合高分子支撑成分，蓬松持续时间会更稳定。",
+    coreIngredients: [
+      {
+        name: "咖啡因",
+        mechanism: "促进头皮微循环，帮助毛囊维持生长期。",
+      },
+      {
+        name: "水解小麦蛋白",
+        mechanism: "吸附发丝表面增加单根支撑度。",
+      },
+      {
+        name: "海盐 / 膨胀因子 + 无硅油体系",
+        mechanism: "拉开发丝间隙并减少重量负担，形成视觉发量感。",
+      },
+    ],
+  },
+};
+
+const routeDecisions: Record<ShampooRouteKey, RouteDecision> = {
+  "fast-anti-dandruff": {
+    bundleKey: "anti-dandruff-itch",
+    baseFilter: "Q1 底色保留当前清洁强度，优先保证抗真菌活性发挥。",
+    painFilter: "Q2 触发“有屑且痒”快路径，直接进入去屑止痒线。",
+    bonusFilter: "快路径已完成，不再继续 Q3。",
   },
   "fast-sensitive-soothe": {
-    key: "fast-sensitive-soothe",
-    title: "低刺激舒缓修护型洗发水",
-    base: "Base：氨基酸/APG 温和底色，避开 SLS/SLES。",
-    addon: "Add-on：舒缓修护插件优先（快路径）。",
-    why: "你触发了“发红/刺痛”直接判定，先把刺激源降下来，头皮更容易回稳。",
-    notFor: [
-      "如果你要强去油冲击感，这条路线不适合。",
-      "持续刺痛泛红请先停用并就医。",
-    ],
-    usage: "先把洗发频次和单次用量固定住，连续 1-2 周优先看舒适度是否回稳。",
+    bundleKey: "gentle-soothing",
+    baseFilter: "Q1 底色回退到低刺激清洁框架。",
+    painFilter: "Q2 触发“发红/刺痛”快路径，优先舒缓与屏障修护。",
+    bonusFilter: "快路径已完成，不再继续 Q3。",
   },
   "oil-repair-balance": {
-    key: "oil-repair-balance",
-    title: "头皮净澈 + 发丝修护组合型",
-    base: "Base：高效控油清洁底色。",
-    addon: "Add-on：阳离子聚合物修护插件。",
-    why: "你是“油性头皮 + 受损发丝”典型组合，必须同时解决头皮与发丝，不做单边取舍。",
-    notFor: ["如果你只要极轻薄无感顺滑，这条路线不适合。", "若有明显头皮炎症，先处理头皮问题。"],
-    usage: "重点揉洗头皮，泡沫带过发丝，避免发尾反复搓洗。",
+    bundleKey: "deep-repair",
+    baseFilter: "Q1=油性，清洁底色仍要保持对头皮油脂的控制。",
+    painFilter: "Q2 无特殊不适，继续以发丝状态做细化。",
+    bonusFilter: "Q3=受损，添加修护插件并建议分区洗。",
   },
   "oil-lightweight-volume": {
-    key: "oil-lightweight-volume",
-    title: "控油轻盈蓬松型",
-    base: "Base：控油清洁底色。",
-    addon: "Add-on：轻盈无硅或低负担蓬松插件。",
-    why: "你的目标是抑油同时避免贴头皮，关键是轻盈蓬松，而不是厚重顺滑。",
-    notFor: ["如果你偏好重度滋润膜感，这条路线不适合。", "重度受损发丝需额外修护步骤。"],
-    usage: "洗后重点吹起发根，护发产品避免碰头皮。",
+    bundleKey: "volume-support",
+    baseFilter: "Q1=油性，保持清爽底色。",
+    painFilter: "Q2 无特殊不适，进入发质插件阶段。",
+    bonusFilter: "Q3=细软塌，锁定蓬松支撑插件。",
   },
   "oil-control-clean": {
-    key: "oil-control-clean",
-    title: "高效控油简配型",
-    base: "Base：中高强度控油底色。",
-    addon: "Add-on：简化成分插件。",
-    why: "你更需要稳定控油和清爽感，优先可持续执行，而不是功能堆叠。",
-    notFor: ["如果你主要困扰是严重干枯受损，这条路线不适合。", "偏敏头皮要关注刺激反应。"],
-    usage: "按固定频次使用，避免一天多次强洗。",
+    bundleKey: "deep-oil-control",
+    baseFilter: "Q1=油性，底色走高效控油清洁。",
+    painFilter: "Q2 无特殊不适，不需要药理去屑或舒缓优先。",
+    bonusFilter: "Q3=健康发丝，以控油稳定为主。",
   },
   "balance-repair": {
-    key: "balance-repair",
-    title: "温和平衡修护型",
-    base: "Base：温和平衡底色。",
-    addon: "Add-on：修护插件优先。",
-    why: "你出油节奏中等，但发丝受损明显，温和与修护并行是更稳解法。",
-    notFor: ["如果你要极强去油力，这条路线不适合。", "极重度受损建议叠加发膜护理。"],
-    usage: "发尾停留时间略长于头皮区域，冲净后再决定是否叠加护发素。",
+    bundleKey: "deep-repair",
+    baseFilter: "Q1=平衡节奏，底色保持温和。",
+    painFilter: "Q2 无特殊不适，继续按发丝状态分流。",
+    bonusFilter: "Q3=受损，进入深度修护线。",
   },
   "balance-lightweight": {
-    key: "balance-lightweight",
-    title: "温和平衡轻盈型",
-    base: "Base：温和平衡底色。",
-    addon: "Add-on：轻盈蓬松插件。",
-    why: "你不需要极端清洁，也不适合厚重配方，轻盈平衡更稳。",
-    notFor: ["如果你追求明显厚重顺滑感，这条路线不适合。", "明显头屑痒需切换去屑线。"],
-    usage: "单次正常用量即可，重点保持稳定频次。",
+    bundleKey: "volume-support",
+    baseFilter: "Q1=平衡节奏，清洁不过度。",
+    painFilter: "Q2 无特殊不适，继续按发质定位。",
+    bonusFilter: "Q3=细软塌，进入蓬松支撑线。",
   },
   "balance-simple": {
-    key: "balance-simple",
-    title: "温和平衡简配型",
-    base: "Base：温和平衡底色。",
-    addon: "Add-on：简化功能插件。",
-    why: "你更适合低波动日常方案，减少复杂变量更容易长期稳定。",
-    notFor: ["如果你要强功能见效路线，这个方案不适合。", "出现敏感反应时应回退温和线。"],
-    usage: "把产品固定 2 周再判断，不要频繁横跳更换。",
+    bundleKey: "gentle-soothing",
+    baseFilter: "Q1=平衡节奏，优先稳定可持续。",
+    painFilter: "Q2 无头皮困扰，无需功效线加码。",
+    bonusFilter: "Q3=健康发丝，收敛到温和维稳线。",
   },
   "moisture-repair": {
-    key: "moisture-repair",
-    title: "滋润修护型",
-    base: "Base：滋润补水底色。",
-    addon: "Add-on：修护插件优先。",
-    why: "你本身不油且发丝受损，优先保湿修护比控油更重要。",
-    notFor: ["如果你头皮很快出油，这条路线不适合。", "若贴头皮明显，需减少用量。"],
-    usage: "重点照顾发中到发尾，头皮区域用量控制。",
+    bundleKey: "deep-repair",
+    baseFilter: "Q1=低出油，底色以滋润舒适为主。",
+    painFilter: "Q2 无头皮困扰，继续按发丝状态判断。",
+    bonusFilter: "Q3=受损，锁定修护与补脂。",
   },
   "moisture-lightweight": {
-    key: "moisture-lightweight",
-    title: "滋润轻盈型",
-    base: "Base：柔和滋润底色。",
-    addon: "Add-on：轻盈插件防止压塌。",
-    why: "你需要滋润但不想塌，关键是保湿与轻盈同时达成。",
-    notFor: ["如果你追求强控油，这条路线不适合。", "严重干枯仍需额外修护。"],
-    usage: "少量多次比一次大量更稳。",
+    bundleKey: "volume-support",
+    baseFilter: "Q1=低出油，仍需避免发根负担过重。",
+    painFilter: "Q2 无特殊不适，进入发质插件阶段。",
+    bonusFilter: "Q3=细软塌，优先轻盈与支撑。",
   },
   "moisture-gentle": {
-    key: "moisture-gentle",
-    title: "滋润温和简配型",
-    base: "Base：低刺激滋润底色。",
-    addon: "Add-on：简配维持插件。",
-    why: "你没有明显头皮问题，重点是温和舒适与长期稳定。",
-    notFor: ["如果你要强去油或强去屑，这条路线不适合。", "出现头皮异常时要重新判断。"],
-    usage: "按舒适频次使用即可，优先稳定，不追求刺激感。",
+    bundleKey: "gentle-soothing",
+    baseFilter: "Q1=低出油，底色优先温和舒适。",
+    painFilter: "Q2 无明显困扰，维持低刺激框架。",
+    bonusFilter: "Q3=健康发丝，避免功能堆叠。",
   },
 };
 
@@ -231,32 +349,58 @@ export function buildShampooTraceLines(s: ReadyShampooSignals): string[] {
 }
 
 export function buildShampooReasonLines(s: ReadyShampooSignals): string[] {
-  const lines = [q1BaseLine[s.q1], q2Line[s.q2]];
-  if (s.q3) lines.push(q3AddOnLine[s.q3]);
-  const plan = resolveShampooPlan(s);
-  lines.push(`${plan.base} ${plan.addon}`);
+  const decision = resolveRouteDecision(s);
+  const lines = [
+    `第一级过滤（底色）：${decision.baseFilter}`,
+    `第二级过滤（核心痛点）：${decision.painFilter}`,
+  ];
+  if (decision.bonusFilter) {
+    lines.push(`第三级过滤（加分项）：${decision.bonusFilter}`);
+  }
   return lines;
 }
 
+export function buildShampooWhyRecommend(s: ReadyShampooSignals): string {
+  return resolveShampooBundle(s).whyRecommend;
+}
+
 export function buildShampooNotForLines(s: ReadyShampooSignals): string[] {
-  return resolveShampooPlan(s).notFor;
+  return resolveShampooBundle(s).notFor;
 }
 
 export function buildShampooWhyNotOthers(s: ReadyShampooSignals): string {
-  return resolveShampooPlan(s).why;
+  return resolveShampooBundle(s).whyNotOthers;
 }
 
 export function buildShampooUsageLine(s: ReadyShampooSignals): string {
-  return resolveShampooPlan(s).usage;
+  return resolveShampooBundle(s).usage;
 }
 
 export function buildShampooResultTitle(s: ReadyShampooSignals): string {
-  return resolveShampooPlan(s).title;
+  return resolveShampooBundle(s).title;
 }
 
-export function resolveShampooPlan(s: ReadyShampooSignals): RoutePlan {
+export function buildShampooFitRule(s: ReadyShampooSignals): string {
+  return resolveShampooBundle(s).fitRule;
+}
+
+export function buildShampooCoreIngredients(s: ReadyShampooSignals): CoreIngredient[] {
+  return resolveShampooBundle(s).coreIngredients;
+}
+
+export function buildShampooWikiDeepHref(s: ReadyShampooSignals): string {
+  return `/m/wiki/shampoo?focus=${resolveShampooBundle(s).key}`;
+}
+
+export function resolveShampooBundle(s: ReadyShampooSignals): ShampooBundle {
   const route = resolveRouteKey(s);
-  return routePlans[route];
+  const decision = routeDecisions[route];
+  return bundleMap[decision.bundleKey];
+}
+
+function resolveRouteDecision(s: ReadyShampooSignals): RouteDecision {
+  const route = resolveRouteKey(s);
+  return routeDecisions[route];
 }
 
 function resolveRouteKey(s: ReadyShampooSignals): ShampooRouteKey {
