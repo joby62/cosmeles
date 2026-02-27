@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useSyncExternalStore } from "react";
 import { clearPickHistory, readPickHistory, type PickHistoryEntry } from "@/lib/mobile/pickHistory";
 
 function formatTime(iso: string): string {
@@ -16,11 +16,24 @@ function formatTime(iso: string): string {
 }
 
 export default function MobileMePage() {
-  const [entries, setEntries] = useState<PickHistoryEntry[]>(() => readPickHistory());
+  const entries = useSyncExternalStore(
+    // localStorage has no native event in same tab for set/remove by current page,
+    // so we manually trigger a synthetic event after writes below.
+    (onStoreChange) => {
+      const handler = () => onStoreChange();
+      window.addEventListener("matchup-history-change", handler);
+      window.addEventListener("storage", handler);
+      return () => {
+        window.removeEventListener("matchup-history-change", handler);
+        window.removeEventListener("storage", handler);
+      };
+    },
+    () => readPickHistory(),
+    () => [] as PickHistoryEntry[],
+  );
 
   const handleClear = () => {
     clearPickHistory();
-    setEntries([]);
   };
 
   return (

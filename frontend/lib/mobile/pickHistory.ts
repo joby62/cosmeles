@@ -40,9 +40,11 @@ export function pushPickHistory(entry: NewPickHistoryEntry): void {
   const deduped = old.filter((item) => !(item.categoryKey === entry.categoryKey && item.resultHref === entry.resultHref));
   const merged = [next, ...deduped].slice(0, 40);
   window.localStorage.setItem(KEY, JSON.stringify(merged));
+  window.dispatchEvent(new Event("matchup-history-change"));
 }
 
 export function clearPickHistory(): void {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(KEY);
+  window.dispatchEvent(new Event("matchup-history-change"));
 }
