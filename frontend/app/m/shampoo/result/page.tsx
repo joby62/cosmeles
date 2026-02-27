@@ -7,9 +7,11 @@ import {
   SHAMPOO_FEATURED_PRODUCT_ID,
   buildShampooNotForLines,
   buildShampooReasonLines,
+  buildShampooResultTitle,
+  buildShampooTraceLines,
   buildShampooUsageLine,
   buildShampooWhyNotOthers,
-  isCompleteShampooSignals,
+  isReadyShampooResult,
   normalizeShampooSignals,
   toSignalSearchParams,
 } from "@/lib/mobile/shampooDecision";
@@ -30,14 +32,16 @@ export default async function ShampooResultPage({
   const raw = (await Promise.resolve(searchParams)) || {};
   const signals = normalizeShampooSignals(raw);
 
-  if (!isCompleteShampooSignals(signals)) {
+  if (!isReadyShampooResult(signals)) {
     redirect("/m/shampoo/profile");
   }
 
+  const traceLines = buildShampooTraceLines(signals);
   const reasons = buildShampooReasonLines(signals);
   const notFor = buildShampooNotForLines(signals);
   const whyNotOthers = buildShampooWhyNotOthers(signals);
   const usage = buildShampooUsageLine(signals);
+  const resultTitle = buildShampooResultTitle(signals);
   const resultHref = `/m/shampoo/result?${toSignalSearchParams(signals).toString()}`;
 
   let product = null as Awaited<ReturnType<typeof fetchProducts>>[number] | null;
@@ -57,18 +61,14 @@ export default async function ShampooResultPage({
           categoryKey: "shampoo",
           categoryLabel: "洗发水",
           resultTitle: `${picked.brand} ${picked.name}`,
-          resultSummary: whyNotOthers,
-          signals: reasons,
+          resultSummary: `${resultTitle}：${whyNotOthers}`,
+          signals: [...traceLines, ...reasons],
           resultHref,
         }}
       />
-      <div className="text-[13px] font-medium text-black/45">洗发水决策 · 最终答案</div>
-      <h1 className="mt-2 text-[30px] leading-[1.12] font-semibold tracking-[-0.02em] text-black/92">
-        这是你现在最对位的一件
-      </h1>
-      <p className="mt-3 text-[15px] leading-[1.55] text-black/60">
-        不是“可选其一”，是我们替你拍板后的唯一推荐。
-      </p>
+      <div className="text-[13px] font-medium text-black/45">洗发挑选 · 最终答案</div>
+      <h1 className="mt-2 text-[30px] leading-[1.12] font-semibold tracking-[-0.02em] text-black/92">{resultTitle}</h1>
+      <p className="mt-3 text-[15px] leading-[1.55] text-black/60">我们已经替你收敛完信号，现在直接给你一件最合适的。</p>
 
       <article className="mt-6 rounded-3xl border border-black/10 bg-white p-5">
         <div className="flex items-start gap-4">
@@ -86,6 +86,17 @@ export default async function ShampooResultPage({
             </div>
           </div>
         </div>
+
+        <section className="mt-6 rounded-2xl bg-black/[0.03] px-4 py-3">
+          <h2 className="text-[14px] font-semibold text-black/85">你的选择记录</h2>
+          <ul className="mt-2 space-y-1.5">
+            {traceLines.map((line) => (
+              <li key={line} className="text-[14px] leading-[1.5] text-black/72">
+                {line}
+              </li>
+            ))}
+          </ul>
+        </section>
 
         <section className="mt-6">
           <h2 className="text-[14px] font-semibold text-black/85">为什么推荐它</h2>

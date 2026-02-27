@@ -1,24 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useSyncExternalStore } from "react";
-import { clearPickHistory, type PickHistoryEntry } from "@/lib/mobile/pickHistory";
-
-const HISTORY_KEY = "matchup.pick-history.v1";
-
-function readHistoryRaw(): string {
-  if (typeof window === "undefined") return "[]";
-  return window.localStorage.getItem(HISTORY_KEY) || "[]";
-}
-
-function parseHistory(raw: string): PickHistoryEntry[] {
-  try {
-    const parsed = JSON.parse(raw) as PickHistoryEntry[];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
+import { useEffect, useState } from "react";
+import { clearPickHistory, readPickHistory, type PickHistoryEntry } from "@/lib/mobile/pickHistory";
 
 function formatTime(iso: string): string {
   const date = new Date(iso);
@@ -32,22 +16,19 @@ function formatTime(iso: string): string {
 }
 
 export default function MobileMePage() {
-  const historyRaw = useSyncExternalStore(
-    // localStorage has no native event in same tab for set/remove by current page,
-    // so we manually trigger a synthetic event after writes below.
-    (onStoreChange) => {
-      const handler = () => onStoreChange();
-      window.addEventListener("matchup-history-change", handler);
-      window.addEventListener("storage", handler);
-      return () => {
-        window.removeEventListener("matchup-history-change", handler);
-        window.removeEventListener("storage", handler);
-      };
-    },
-    () => readHistoryRaw(),
-    () => "[]",
-  );
-  const entries = useMemo(() => parseHistory(historyRaw), [historyRaw]);
+  const [entries, setEntries] = useState<PickHistoryEntry[]>([]);
+
+  useEffect(() => {
+    const sync = () => setEntries(readPickHistory());
+    sync();
+
+    window.addEventListener("matchup-history-change", sync);
+    window.addEventListener("storage", sync);
+    return () => {
+      window.removeEventListener("matchup-history-change", sync);
+      window.removeEventListener("storage", sync);
+    };
+  }, []);
 
   const handleClear = () => {
     clearPickHistory();
