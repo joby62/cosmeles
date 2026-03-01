@@ -71,6 +71,32 @@ curl -I https://yuexuan.xyz
 
 返回 `HTTP/2 200` 为正常。
 
+## 2.3 Caddy upstream 快速切换（prod / dev）
+当 caddy 运行在 Docker 容器时，建议统一反代宿主机网关地址：
+
+### 生产模式（默认）
+```caddy
+yuexuan.xyz {
+    reverse_proxy 172.17.0.1:5001
+}
+```
+
+### 开发模式（临时联调）
+`dev` 与 `prod` 前端都在 `5001`，所以通常不需要改端口。  
+如果你改了 dev 前端端口（例如 5002），改成：
+```caddy
+yuexuan.xyz {
+    reverse_proxy 172.17.0.1:5002
+}
+```
+
+应用配置：
+```bash
+docker restart caddy
+docker logs --tail 100 caddy
+curl -I https://yuexuan.xyz
+```
+
 ## 3. 常用命令清单
 
 ### 3.1 查看状态与日志
@@ -162,9 +188,37 @@ docker restart caddy
 curl -I https://yuexuan.xyz
 ```
 
+## 5.1 服务器重启后固定恢复流程
+
+### 生产恢复（建议）
+```bash
+cd ~/cosmeles
+git pull origin main
+docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
+docker restart caddy
+
+# 自检
+curl -I http://127.0.0.1:5001
+curl -I http://127.0.0.1:8000/healthz
+curl -I https://yuexuan.xyz
+```
+
+### 开发恢复（热更新）
+```bash
+cd ~/cosmeles
+git pull origin main
+docker compose -f docker-compose.dev.yml down --remove-orphans
+docker compose -f docker-compose.dev.yml up -d --build --remove-orphans
+
+# 自检
+curl -I http://127.0.0.1:5001
+curl -I http://127.0.0.1:8000/healthz
+```
+
 ## 6. 常见坑位
 
 - `sudo nginx ...`：你现在不用 nginx，别再走这条命令。
 - `sudo systemctl reload caddy`：仅在 systemd 管理 caddy 时可用；你当前是 Docker 容器，不适用。
 - caddy 容器内反代 `127.0.0.1:5001`：会 502（指向容器自己）。
 - `docker-compose.yml` 和 `docker-compose.prod.yml` 混用：容易端口/架构错位，线上统一使用 `docker-compose.prod.yml`。
+- 前端页面正常但上传报错：先查 `curl -I http://127.0.0.1:8000/healthz`，通常是后端没起来。
