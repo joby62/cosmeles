@@ -1,7 +1,7 @@
 import ProductShowcase from "@/components/ProductShowcase";
 import { fetchProductDoc } from "@/lib/api";
 
-export default async function ProductPage({
+export default async function ProductShowcasePage({
   params,
 }: {
   params: { id: string };

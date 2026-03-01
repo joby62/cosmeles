@@ -1,8 +1,8 @@
 export type Product = {
   id: string;
   category: string;
-  brand: string;
-  name: string;
+  brand?: string | null;
+  name?: string | null;
   description?: string | null;
   one_sentence?: string | null;
   tags?: string[] | null;
@@ -10,11 +10,55 @@ export type Product = {
   created_at?: string | null;
 };
 
+export type ProductDoc = {
+  product: {
+    category: string;
+    brand?: string | null;
+    name?: string | null;
+  };
+  summary: {
+    one_sentence: string;
+    pros: string[];
+    cons: string[];
+    who_for: string[];
+    who_not_for: string[];
+  };
+  ingredients: Array<{
+    name: string;
+    type: string;
+    functions: string[];
+    risk: "low" | "mid" | "high";
+    notes: string;
+  }>;
+  evidence: {
+    image_path?: string | null;
+    doubao_raw?: string | null;
+    doubao_vision_text?: string | null;
+    doubao_pipeline_mode?: string | null;
+    doubao_models?: Record<string, string> | null;
+    doubao_artifacts?: Record<string, string> | null;
+  };
+};
+
 function getBaseForFetch(): string {
   // 在浏览器里优先直连后端，避免 /api 重写层在 multipart 上传时吞掉真实错误。
   if (typeof window !== "undefined") {
     const direct = process.env.NEXT_PUBLIC_API_BASE?.trim();
-    if (direct) return direct.replace(/\/$/, "");
+    if (direct) {
+      try {
+        const url = new URL(direct);
+        const currentHost = window.location.hostname;
+        const isLoopback = url.hostname === "127.0.0.1" || url.hostname === "localhost";
+        const isRemotePage = currentHost !== "127.0.0.1" && currentHost !== "localhost";
+        // 页面运行在远端 IP/域名时，避免把请求打到本机 loopback 导致 CORS 失败。
+        if (isLoopback && isRemotePage) {
+          url.hostname = currentHost;
+        }
+        return url.toString().replace(/\/$/, "");
+      } catch {
+        return direct.replace(/\/$/, "");
+      }
+    }
     return "";
   }
 
@@ -54,6 +98,10 @@ export async function fetchProduct(id: string): Promise<Product> {
   return apiFetch<Product>(`/api/products/${id}`);
 }
 
+export async function fetchProductDoc(id: string): Promise<ProductDoc> {
+  return apiFetch<ProductDoc>(`/api/products/${id}`);
+}
+
 // 图片 URL：浏览器用相对 /images/...（同域 nginx -> backend）
 // SSR 也需要绝对 URL，走 nginx
 export function resolveImageUrl(product: Product): string {
@@ -61,6 +109,15 @@ export function resolveImageUrl(product: Product): string {
   if (typeof window !== "undefined") return p.startsWith("http") ? p : p;
   const base = process.env.INTERNAL_API_BASE || "http://nginx";
   return p.startsWith("http") ? p : new URL(p, base).toString();
+}
+
+export function resolveStoredImageUrl(imagePath?: string | null): string | null {
+  if (!imagePath) return null;
+  if (imagePath.startsWith("http")) return imagePath;
+  const path = imagePath.startsWith("/") ? imagePath : `/${imagePath}`;
+  if (typeof window !== "undefined") return path;
+  const base = process.env.INTERNAL_API_BASE || "http://nginx";
+  return new URL(path, base).toString();
 }
 
 export type IngestInput = {
