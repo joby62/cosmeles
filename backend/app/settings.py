@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     # === 基础环境 ===
     app_env: str = "dev"
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5000,http://127.0.0.1:5000,http://localhost:5001,http://127.0.0.1:5001"
+    # 通用跨域兜底：允许任意域名/IP 的开发前端端口（3000/5000/5001）
+    cors_origin_regex: str = r"^https?://[a-zA-Z0-9.\-]+(?::(3000|5000|5001))$"
 
     # === 存储路径（绝对路径，关键）===
     storage_dir: str = str(DEFAULT_STORAGE_DIR)
