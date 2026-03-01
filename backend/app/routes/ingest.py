@@ -3,7 +3,7 @@ from typing import Any
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from app.constants import VALID_CATEGORIES, VALID_SOURCES
+from app.constants import DOUBAO_SUPPORTED_CONTENT_TYPES, VALID_CATEGORIES, VALID_SOURCES
 from app.db.session import get_db
 from app.db.models import ProductIndex
 from app.services.storage import (
@@ -53,6 +53,8 @@ async def ingest(
 
     if upload and (not upload.content_type or not upload.content_type.startswith("image/")):
         raise HTTPException(status_code=400, detail="Only image upload is supported.")
+    if upload and normalized_source in {"doubao", "auto"}:
+        _validate_doubao_image(upload)
 
     product_id = new_id()
     image_rel = None
@@ -149,6 +151,7 @@ async def ingest_stage1(
         raise HTTPException(status_code=400, detail="stage1 requires image/file.")
     if not upload.content_type or not upload.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Only image upload is supported.")
+    _validate_doubao_image(upload)
 
     category = (category or "").strip().lower() or "shampoo"
     if category not in VALID_CATEGORIES:
@@ -160,7 +163,12 @@ async def ingest_stage1(
         raise HTTPException(status_code=413, detail=f"Image too large. Max {settings.max_upload_bytes} bytes.")
     image_rel = save_image(product_id, upload.filename or "upload.jpg", content)
 
-    stage1 = _analyze_with_doubao_stage1(image_rel, product_id)
+    try:
+        stage1 = _analyze_with_doubao_stage1(image_rel, product_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Stage1 failed: {e}") from e
     context = {
         "trace_id": product_id,
         "image_path": image_rel,
@@ -341,6 +349,18 @@ def _extract_doubao_preview(normalized_doc: dict[str, Any]) -> dict[str, Any] | 
             "context": artifacts.get("context"),
         },
     }
+
+
+def _validate_doubao_image(upload: UploadFile) -> None:
+    content_type = (upload.content_type or "").strip().lower()
+    if content_type not in DOUBAO_SUPPORTED_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unsupported image type for doubao: {content_type or 'unknown'}. "
+                "Please upload jpg/png/webp/gif (HEIC/HEIF not supported)."
+            ),
+        )
 
 def _parse_meta_json(raw: str) -> dict[str, Any]:
     try:
