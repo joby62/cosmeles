@@ -33,6 +33,24 @@ const SAMPLE_JSON = `{
   ]
 }`;
 
+type BatchStatus = "queued" | "stage1" | "stage2" | "done" | "error";
+
+type BatchRunItem = {
+  index: number;
+  fileName: string;
+  traceId?: string;
+  status: BatchStatus;
+  error?: string;
+  resultId?: string;
+  category?: string;
+  imagePath?: string | null;
+  jsonPath?: string | null;
+  models?: { vision?: string; struct?: string } | null;
+  artifacts?: { vision?: string | null; struct?: string | null; context?: string | null } | null;
+  stage1Text?: string | null;
+  stage2Text?: string | null;
+};
+
 export default function UploadPage() {
   const [useJsonOverride, setUseJsonOverride] = useState(false);
   const [category, setCategory] = useState("shampoo");
@@ -40,16 +58,11 @@ export default function UploadPage() {
   const [name, setName] = useState("");
   const [source, setSource] = useState<"manual" | "doubao" | "auto">("doubao");
   const [jsonText, setJsonText] = useState("");
-  const [image, setImage] = useState<File | null>(null);
+  const [images, setImages] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [phase, setPhase] = useState<"idle" | "stage1" | "stage2" | "done">("idle");
   const [error, setError] = useState<string | null>(null);
-  const [stage1Preview, setStage1Preview] = useState<null | {
-    trace_id: string;
-    vision_text?: string | null;
-    models?: { vision?: string; struct?: string } | null;
-    artifacts?: { vision?: string | null; context?: string | null } | null;
-  }>(null);
+  const [batchRuns, setBatchRuns] = useState<BatchRunItem[]>([]);
   const [result, setResult] = useState<null | {
     id: string;
     status: string;
@@ -68,10 +81,14 @@ export default function UploadPage() {
 
   const canSubmit = useMemo(() => {
     if (submitting) return false;
+    if (images.length === 0) return false;
     if (useJsonOverride) return !!jsonText.trim();
-    if (!image) return false;
     return true;
-  }, [image, jsonText, submitting, useJsonOverride]);
+  }, [images.length, jsonText, submitting, useJsonOverride]);
+
+  function updateBatchRun(index: number, patch: Partial<BatchRunItem>) {
+    setBatchRuns((prev) => prev.map((item) => (item.index === index ? { ...item, ...patch } : item)));
+  }
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -80,8 +97,8 @@ export default function UploadPage() {
     setSubmitting(true);
     setPhase("idle");
     setError(null);
-    setStage1Preview(null);
     setResult(null);
+    setBatchRuns([]);
 
     try {
       const finalBrand = useJsonOverride ? brand.trim() || undefined : undefined;
@@ -89,28 +106,74 @@ export default function UploadPage() {
       const finalCategory = useJsonOverride ? category : undefined;
       const finalJson = useJsonOverride ? jsonText.trim() || undefined : undefined;
 
-      // Doubao 两阶段：先展示 mini 识别，再等待 mini 结构化
-      if (source === "doubao" && image && !finalJson) {
-        setPhase("stage1");
-        const stage1 = await ingestProductStage1({
-          image,
-        });
+      // Doubao 批量两阶段：严格串行（不并发），逐张跑 stage1 -> stage2
+      if (source === "doubao" && !finalJson) {
+        const initial = images.map((file, i) => ({
+          index: i,
+          fileName: file.name,
+          status: "queued" as BatchStatus,
+        }));
+        setBatchRuns(initial);
 
-        setStage1Preview({
-          trace_id: stage1.trace_id,
-          vision_text: stage1.doubao?.vision_text,
-          models: stage1.doubao?.models || null,
-          artifacts: stage1.doubao?.artifacts || null,
-        });
+        let failed = 0;
+        let lastResult: (typeof result) | null = null;
 
-        setPhase("stage2");
-        const ingestResult = await ingestProductStage2({
-          traceId: stage1.trace_id,
-        });
-        setResult(ingestResult);
+        for (let i = 0; i < images.length; i += 1) {
+          const file = images[i];
+          setPhase("stage1");
+          updateBatchRun(i, { status: "stage1", error: undefined });
+
+          let stage1TraceId: string | null = null;
+          try {
+            const stage1 = await ingestProductStage1({ image: file });
+            stage1TraceId = stage1.trace_id;
+            updateBatchRun(i, {
+              status: "stage2",
+              traceId: stage1.trace_id,
+              models: stage1.doubao?.models || null,
+              artifacts: stage1.doubao?.artifacts || null,
+              stage1Text: stage1.doubao?.vision_text,
+            });
+          } catch (err) {
+            failed += 1;
+            updateBatchRun(i, { status: "error", error: formatError(err) });
+            continue;
+          }
+
+          setPhase("stage2");
+          if (!stage1TraceId) {
+            failed += 1;
+            updateBatchRun(i, { status: "error", error: "Stage1 未返回有效 trace_id，已跳过该图片。" });
+            continue;
+          }
+          try {
+            const ingestResult = await ingestProductStage2({ traceId: stage1TraceId });
+            lastResult = ingestResult;
+            updateBatchRun(i, {
+              status: "done",
+              resultId: ingestResult.id,
+              category: ingestResult.category,
+              imagePath: ingestResult.image_path || null,
+              jsonPath: ingestResult.json_path || null,
+              models: ingestResult.doubao?.models || null,
+              artifacts: ingestResult.doubao?.artifacts || null,
+              stage1Text: ingestResult.doubao?.vision_text,
+              stage2Text: ingestResult.doubao?.struct_text,
+            });
+          } catch (err) {
+            failed += 1;
+            updateBatchRun(i, { status: "error", error: formatError(err) });
+          }
+        }
+
+        if (lastResult) setResult(lastResult);
+        if (failed > 0) {
+          setError(`批量完成：${images.length - failed}/${images.length} 成功，${failed} 失败。`);
+        }
       } else {
+        const firstImage = images[0];
         const ingestResult = await ingestProduct({
-          image: image || undefined,
+          image: firstImage || undefined,
           category: finalCategory,
           brand: finalBrand,
           name: finalName,
@@ -121,7 +184,7 @@ export default function UploadPage() {
       }
       setPhase("done");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "上传失败，请稍后再试。");
+      setError(formatError(err));
       setPhase("idle");
     } finally {
       setSubmitting(false);
@@ -154,9 +217,18 @@ export default function UploadPage() {
           <input
             type="file"
             accept="image/*"
-            onChange={(e) => setImage(e.target.files?.[0] || null)}
+            multiple={!useJsonOverride}
+            onChange={(e) => setImages(Array.from(e.target.files || []))}
             className="h-11 rounded-xl border border-black/12 bg-white px-3 py-2 text-[13px] text-black/76 file:mr-3 file:rounded-lg file:border-0 file:bg-black/6 file:px-2.5 file:py-1.5 file:text-[12px] file:font-medium"
           />
+          {images.length > 0 ? (
+            <div className="rounded-xl border border-black/8 bg-black/[0.02] px-3 py-2 text-[12px] text-black/66">
+              已选 {images.length} 张：{images.map((f) => f.name).join("、")}
+            </div>
+          ) : null}
+          {source === "doubao" && !useJsonOverride ? (
+            <div className="text-[12px] text-black/52">批量会按顺序逐张分析（stage1→stage2），不会并发。</div>
+          ) : null}
         </label>
 
         <label className="flex items-center gap-3 rounded-xl border border-black/10 bg-black/[0.02] px-3 py-2.5 text-[13px] text-black/78">
@@ -230,22 +302,65 @@ export default function UploadPage() {
 
         {error ? <p className="text-[13px] leading-[1.5] text-[#b42318]">{error}</p> : null}
 
-        {phase === "stage2" && stage1Preview ? (
-          <div className="rounded-2xl border border-[#8ea3ff]/30 bg-[#eef2ff] px-4 py-3.5 text-[13px] leading-[1.65] text-black/76">
-            <div className="font-medium text-black/80">阶段1完成：已提取图片文字</div>
-            <div className="mt-1">模型：{stage1Preview.models?.vision || "-"}</div>
-            <div>落盘(阶段1)：{stage1Preview.artifacts?.vision || "-"}</div>
-            <div className="mt-2 animate-pulse font-medium text-[#3151d8]">
-              正在进行阶段2结构化分析，请等待片刻...
+        {batchRuns.length > 0 ? (
+          <div className="rounded-2xl border border-[#8ea3ff]/30 bg-[#eef2ff] p-4">
+            <div className="flex items-center justify-between text-[13px]">
+              <span className="font-semibold text-black/82">批量分析进度</span>
+              <span className="text-black/58">
+                当前阶段：{phase === "stage1" ? "Stage1 识别" : phase === "stage2" ? "Stage2 结构化" : phase === "done" ? "完成" : "等待"}
+              </span>
             </div>
-            {stage1Preview.vision_text ? (
-              <details className="mt-2">
-                <summary className="cursor-pointer font-medium text-black/78">查看阶段1识别文本</summary>
-                <pre className="mt-1 max-h-48 overflow-auto rounded-xl border border-black/10 bg-white p-2 text-[12px] leading-[1.5] text-black/72 whitespace-pre-wrap">
-                  {stage1Preview.vision_text}
-                </pre>
-              </details>
-            ) : null}
+            <div className="mt-3 space-y-3">
+              {batchRuns.map((item) => (
+                <article key={`${item.fileName}-${item.index}`} className="rounded-xl border border-black/10 bg-white p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="truncate text-[13px] font-medium text-black/82">
+                      #{item.index + 1} {item.fileName}
+                    </div>
+                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${statusClassName(item.status)}`}>
+                      {statusLabel(item.status)}
+                    </span>
+                  </div>
+
+                  <div className="mt-1 text-[12px] text-black/58">
+                    trace_id: {item.traceId || "-"} | 入库ID: {item.resultId || "-"} | 分类: {item.category || "-"}
+                  </div>
+
+                  {item.models ? (
+                    <div className="mt-1 text-[12px] text-black/58">
+                      模型: vision={item.models.vision || "-"} / struct={item.models.struct || "-"}
+                    </div>
+                  ) : null}
+
+                  {item.error ? <div className="mt-2 text-[12px] text-[#b42318]">{item.error}</div> : null}
+
+                  {item.stage1Text ? (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-[12px] font-medium text-black/76">Stage1 识别文本（美化）</summary>
+                      <div className="mt-2 rounded-xl border border-black/8 bg-[#fbfcff] p-2.5">
+                        {toVisionSections(item.stage1Text).map((section, idx) => (
+                          <div key={`${section.title}-${idx}`} className="mb-2 last:mb-0">
+                            <div className="text-[11px] font-semibold text-[#3151d8]">{section.title}</div>
+                            <pre className="mt-0.5 whitespace-pre-wrap text-[12px] leading-[1.55] text-black/74">
+                              {section.body || "未识别"}
+                            </pre>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  ) : null}
+
+                  {item.stage2Text ? (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-[12px] font-medium text-black/76">Stage2 结构化文本（格式化）</summary>
+                      <pre className="mt-2 max-h-72 overflow-auto rounded-xl border border-black/10 bg-[#f8fafc] p-2.5 text-[12px] leading-[1.55] text-black/74 whitespace-pre-wrap">
+                        {toPrettyStructText(item.stage2Text)}
+                      </pre>
+                    </details>
+                  ) : null}
+                </article>
+              ))}
+            </div>
           </div>
         ) : null}
 
@@ -291,4 +406,60 @@ export default function UploadPage() {
       </form>
     </main>
   );
+}
+
+function formatError(err: unknown): string {
+  if (!(err instanceof Error)) return "上传失败，请稍后再试。";
+  return err.message || "上传失败，请稍后再试。";
+}
+
+function statusLabel(status: BatchStatus): string {
+  if (status === "queued") return "排队中";
+  if (status === "stage1") return "Stage1";
+  if (status === "stage2") return "Stage2";
+  if (status === "done") return "成功";
+  return "失败";
+}
+
+function statusClassName(status: BatchStatus): string {
+  if (status === "done") return "bg-[#e7f6ec] text-[#027a48]";
+  if (status === "error") return "bg-[#fdebec] text-[#b42318]";
+  if (status === "stage1" || status === "stage2") return "bg-[#eef2ff] text-[#3151d8]";
+  return "bg-black/6 text-black/60";
+}
+
+function toVisionSections(raw: string): Array<{ title: string; body: string }> {
+  const lines = raw.replace(/\r\n/g, "\n").split("\n");
+  const sections: Array<{ title: string; body: string }> = [];
+  let currentTitle = "识别文本";
+  let buffer: string[] = [];
+
+  const flush = () => {
+    sections.push({ title: currentTitle, body: buffer.join("\n").trim() });
+    buffer = [];
+  };
+
+  for (const line of lines) {
+    const match = line.match(/^【([^】]+)】\s*(.*)$/);
+    if (match) {
+      if (buffer.length > 0) flush();
+      currentTitle = match[1].trim();
+      if (match[2]) buffer.push(match[2]);
+      continue;
+    }
+    buffer.push(line);
+  }
+  if (buffer.length > 0) flush();
+  return sections.filter((s) => s.title || s.body);
+}
+
+function toPrettyStructText(raw: string): string {
+  const trimmed = raw.trim();
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  const candidate = fenced ? fenced[1].trim() : trimmed;
+  try {
+    return JSON.stringify(JSON.parse(candidate), null, 2);
+  } catch {
+    return raw;
+  }
 }
