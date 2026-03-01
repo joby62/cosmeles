@@ -1,11 +1,13 @@
 # backend/app/main.py
 import os
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 
 from app.db.init_db import init_db
+from app.db.session import engine
 from app.routes.ingest import router as ingest_router
 from app.routes.products import router as products_router
 from app.settings import settings
@@ -31,6 +33,25 @@ def _startup_init_db() -> None:
 # routes
 app.include_router(ingest_router)
 app.include_router(products_router)
+
+@app.get("/healthz")
+def healthz():
+    return {"status": "ok", "service": "backend", "env": settings.app_env}
+
+@app.get("/readyz")
+def readyz():
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Database not ready: {e}") from e
+
+    try:
+        os.makedirs(settings.storage_dir, exist_ok=True)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"Storage not ready: {e}") from e
+
+    return {"status": "ready"}
 
 # static files: serve /storage/images as /images
 if os.path.isdir(settings.storage_dir):

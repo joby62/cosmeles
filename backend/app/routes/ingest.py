@@ -3,11 +3,13 @@ from typing import Any
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.constants import VALID_CATEGORIES, VALID_SOURCES
 from app.db.session import get_db
 from app.db.models import ProductIndex
-from app.services.storage import new_id, now_iso, save_image, save_product_json
+from app.services.storage import new_id, now_iso, save_image, save_product_json, remove_rel_path
 from app.services.doubao_client import DoubaoClient
 from app.services.parser import normalize_doc
+from app.settings import settings
 
 router = APIRouter(prefix="/api", tags=["ingest"])
 
@@ -24,7 +26,17 @@ async def ingest(
     source: str = Form("manual"),  # manual | doubao | auto
     db: Session = Depends(get_db),
 ):
+    if image and file:
+        raise HTTPException(status_code=400, detail="Please provide only one file field: image or file.")
+
     upload = image or file
+    normalized_source = (source or "manual").strip().lower()
+    if normalized_source not in VALID_SOURCES:
+        raise HTTPException(status_code=400, detail=f"Invalid source: {source}.")
+
+    category = (category or "").strip().lower() or "shampoo"
+    if category not in VALID_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Invalid category: {category}.")
 
     if upload is None and not meta_json and not payload_json:
         raise HTTPException(status_code=400, detail="Please provide image/file or meta_json/payload_json.")
@@ -36,6 +48,8 @@ async def ingest(
     image_rel = None
     if upload:
         content = await upload.read()
+        if len(content) > settings.max_upload_bytes:
+            raise HTTPException(status_code=413, detail=f"Image too large. Max {settings.max_upload_bytes} bytes.")
         image_rel = save_image(product_id, upload.filename or "upload.jpg", content)
 
     # 1) choose document source
@@ -43,23 +57,25 @@ async def ingest(
     if meta_raw:
         doc = _parse_meta_json(meta_raw)
         ingest_mode = "manual_json"
-    elif source.lower() in {"doubao", "auto"}:
+    elif normalized_source in {"doubao", "auto"}:
         if not image_rel:
             raise HTTPException(status_code=400, detail="source=doubao requires image/file.")
-        client = DoubaoClient()
-        doc = client.analyze(image_rel)
+        doc = _analyze_with_doubao(image_rel)
         ingest_mode = "doubao"
     else:
         # manual upload without JSON: still allow, use doubao mock/real to bootstrap.
         if not image_rel:
             raise HTTPException(status_code=400, detail="manual upload without JSON still requires image/file.")
-        client = DoubaoClient()
-        doc = client.analyze(image_rel)
+        doc = _analyze_with_doubao(image_rel)
         ingest_mode = "manual_image_bootstrap"
 
     # 2) allow override minimal product fields
     doc.setdefault("product", {})
-    doc["product"]["category"] = category or doc["product"].get("category") or "shampoo"
+    doc_category = str(doc["product"].get("category") or "").strip().lower()
+    final_category = category or doc_category or "shampoo"
+    if final_category not in VALID_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Invalid category in payload: {final_category}.")
+    doc["product"]["category"] = final_category
     if brand:
         doc["product"]["brand"] = brand
     if name:
@@ -87,7 +103,13 @@ async def ingest(
         created_at=now_iso(),
     )
     db.add(rec)
-    db.commit()
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        remove_rel_path(json_rel)
+        remove_rel_path(image_rel)
+        raise HTTPException(status_code=500, detail=f"Failed to persist product index: {e}") from e
 
     return {
         "id": product_id,
@@ -98,6 +120,13 @@ async def ingest(
         "json_path": json_rel,
         "endpoint": "/api/upload",
     }
+
+def _analyze_with_doubao(image_rel: str) -> dict[str, Any]:
+    client = DoubaoClient()
+    try:
+        return client.analyze(image_rel)
+    except NotImplementedError as e:
+        raise HTTPException(status_code=503, detail="Doubao real mode is not configured yet.") from e
 
 def _parse_meta_json(raw: str) -> dict[str, Any]:
     try:

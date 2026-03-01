@@ -41,3 +41,23 @@ class ProductCard(BaseModel):
     tags: List[str] = []
     image_url: Optional[str] = None
     created_at: str
+
+class ProductUpdateRequest(BaseModel):
+    category: Optional[str] = None
+    brand: Optional[str] = None
+    name: Optional[str] = None
+    one_sentence: Optional[str] = None
+    tags: Optional[List[str]] = None
+
+class ProductListMeta(BaseModel):
+    total: int
+    offset: int
+    limit: int
+
+class ProductListResponse(BaseModel):
+    items: List[ProductCard]
+    meta: ProductListMeta
+
+class CategoryCount(BaseModel):
+    category: str
+    count: int

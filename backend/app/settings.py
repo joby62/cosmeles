@@ -8,7 +8,7 @@ DEFAULT_STORAGE_DIR = BACKEND_DIR / "storage"
 class Settings(BaseSettings):
     # === 基础环境 ===
     app_env: str = "dev"
-    cors_origins: str = "http://localhost:3000"
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5000,http://127.0.0.1:5000,http://localhost:5001,http://127.0.0.1:5001"
 
     # === 存储路径（绝对路径，关键）===
     storage_dir: str = str(DEFAULT_STORAGE_DIR)
@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     doubao_api_key: str = ""
     doubao_endpoint: str = ""
     doubao_model: str = ""
+
+    # === 上传安全边界 ===
+    max_upload_bytes: int = 8 * 1024 * 1024  # 8MB
 
     # === Pydantic v2 配置 ===
     model_config = SettingsConfigDict(

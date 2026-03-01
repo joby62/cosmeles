@@ -1,14 +1,14 @@
 import json
-import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
+from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.init_db import init_db
-from app.db.models import Product
+from app.db.models import ProductIndex
 from app.db.session import SessionLocal
 from app.settings import settings
 
@@ -25,8 +25,17 @@ def _pick(d: Dict[str, Any], keys: list[str], default: Any = None) -> Any:
 
 
 def _normalize_rel(path: str) -> str:
-    # store as relative path (e.g. "storage/products/xxx.json" or "storage/images/xxx.jpg")
-    return path.replace("\\", "/")
+    return path.replace("\\", "/").lstrip("/")
+
+def _as_storage_rel(path: str | Path) -> str:
+    p = Path(path)
+    base = Path(settings.storage_dir).resolve()
+    if p.is_absolute():
+        try:
+            return p.resolve().relative_to(base).as_posix()
+        except ValueError:
+            return p.name
+    return _normalize_rel(str(p))
 
 
 def _guess_image_path(json_file: Path) -> Optional[str]:
@@ -35,7 +44,7 @@ def _guess_image_path(json_file: Path) -> Optional[str]:
     for ext in [".jpg", ".jpeg", ".png", ".webp"]:
         cand = images_dir / (json_file.stem + ext)
         if cand.exists():
-            return _normalize_rel(str(cand))
+            return f"images/{cand.name}"
     return None
 
 
@@ -43,10 +52,13 @@ def upsert_one(db: Session, json_file: Path) -> None:
     data: Dict[str, Any] = json.loads(json_file.read_text(encoding="utf-8"))
 
     # basic fields with flexible key mapping
-    category = _pick(data, ["category", "cat", "type"], default="unknown")
-    brand = _pick(data, ["brand", "maker"], default="")
-    name = _pick(data, ["name", "title"], default=json_file.stem)
-    one_sentence = _pick(data, ["one_sentence", "slogan", "subtitle", "desc_short"], default="")
+    product = data.get("product") if isinstance(data.get("product"), dict) else {}
+    summary = data.get("summary") if isinstance(data.get("summary"), dict) else {}
+
+    category = _pick(product or data, ["category", "cat", "type"], default="shampoo")
+    brand = _pick(product or data, ["brand", "maker"], default="")
+    name = _pick(product or data, ["name", "title"], default=json_file.stem)
+    one_sentence = _pick(summary or data, ["one_sentence", "slogan", "subtitle", "desc_short"], default="")
 
     tags = _pick(data, ["tags", "tags_json"], default=[])
     if isinstance(tags, str):
@@ -55,20 +67,28 @@ def upsert_one(db: Session, json_file: Path) -> None:
     tags_json = json.dumps(tags, ensure_ascii=False)
 
     # image_path: from json fields or guess
-    image_path = _pick(data, ["image_path", "image", "cover", "img"], default=None)
+    evidence = data.get("evidence") if isinstance(data.get("evidence"), dict) else {}
+    image_path = _pick(evidence or data, ["image_path", "image", "cover", "img"], default=None)
     if image_path:
-        # if user stores just "/images/xxx.jpg", convert to storage path is not necessary.
-        # keep as-is but normalize slashes
-        image_path = _normalize_rel(str(image_path))
+        image_path = _as_storage_rel(str(image_path))
+        if image_path.startswith("storage/"):
+            image_path = image_path[len("storage/") :]
     else:
         g = _guess_image_path(json_file)
         image_path = g or ""
 
-    json_path = _normalize_rel(str(json_file))
+    json_path = _as_storage_rel(json_file)
+    if json_path.startswith("storage/"):
+        json_path = json_path[len("storage/") :]
 
-    # upsert by json_path (stable)
-    existing = db.execute(select(Product).where(Product.json_path == json_path)).scalars().first()
+    product_id = _pick(data, ["id", "product_id"], default=json_file.stem) or str(uuid4())
+
+    # upsert by id first, then json_path as fallback
+    existing = db.get(ProductIndex, product_id)
+    if not existing:
+        existing = db.execute(select(ProductIndex).where(ProductIndex.json_path == json_path)).scalars().first()
     if existing:
+        existing.id = existing.id or product_id
         existing.category = category
         existing.brand = brand
         existing.name = name
@@ -77,7 +97,8 @@ def upsert_one(db: Session, json_file: Path) -> None:
         existing.image_path = image_path
         existing.created_at = existing.created_at or _now_iso()
     else:
-        row = Product(
+        row = ProductIndex(
+            id=product_id,
             category=category,
             brand=brand,
             name=name,
