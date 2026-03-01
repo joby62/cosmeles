@@ -4,7 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Lang } from "@/lib/i18n";
-import { useLang } from "@/lib/i18n";
+import { getInitialLang, setLang as setStoredLang, subscribeLang } from "@/lib/i18n";
 import { brandByLang } from "@/lib/brand";
 import { TOP_CATEGORIES, CATEGORY_CONFIG, type CategoryKey } from "@/lib/catalog";
 
@@ -104,8 +104,12 @@ function getFlyout(category: CategoryKey, lang: Lang): FlyoutColumn[] {
 }
 
 export default function TopNav() {
-  const [lang, setLang] = useLang();
+  const [lang, setLangState] = useState<Lang>(() => getInitialLang());
   const brand = useMemo(() => brandByLang(lang), [lang]);
+
+  useEffect(() => {
+    return subscribeLang(() => setLangState(getInitialLang()));
+  }, []);
 
   const [openKey, setOpenKey] = useState<CategoryKey | null>(null);
   const openTimer = useRef<number | null>(null);
@@ -221,7 +225,10 @@ export default function TopNav() {
                 type="button"
                 className="nav-lang"
                 aria-label={lang === "zh" ? "切换为英文" : "Switch to Chinese"}
-                onClick={() => setLang(nextLang)}
+                onClick={() => {
+                  setStoredLang(nextLang);
+                  setLangState(nextLang);
+                }}
               >
                 {toggleLabel}
               </button>

@@ -157,7 +157,7 @@ function LangToggle({ lang }: { lang: Lang }) {
 
 export default function AppleNav() {
   const [openKey, setOpenKey] = useState<CategoryKey | null>(null);
-  const [lang, setLangState] = useState<Lang>("zh");
+  const [lang, setLangState] = useState<Lang>(() => getInitialLang());
 
   const openTimer = useRef<number | null>(null);
   const closeTimer = useRef<number | null>(null);
@@ -206,8 +206,6 @@ export default function AppleNav() {
   }, [isOpen, openKey]);
 
   useEffect(() => {
-    const init = getInitialLang();
-    setLangState(init);
     return subscribeLang(() => setLangState(getInitialLang()));
   }, []);
 

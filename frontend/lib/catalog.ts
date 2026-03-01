@@ -71,6 +71,6 @@ export const TOP_CATEGORIES: CategoryKey[] = [
   "cleanser",
 ];
 
-export function isCategoryKey(v: any): v is CategoryKey {
+export function isCategoryKey(v: unknown): v is CategoryKey {
   return typeof v === "string" && (TOP_CATEGORIES as string[]).includes(v);
 }

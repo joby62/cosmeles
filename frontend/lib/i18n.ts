@@ -19,10 +19,10 @@ export function setLang(next: Lang) {
 export function subscribeLang(cb: () => void) {
   if (typeof window === "undefined") return () => {};
   const on = () => cb();
-  window.addEventListener(EVENT, on as any);
+  window.addEventListener(EVENT, on as EventListener);
   window.addEventListener("storage", on);
   return () => {
-    window.removeEventListener(EVENT, on as any);
+    window.removeEventListener(EVENT, on as EventListener);
     window.removeEventListener("storage", on);
   };
 }
@@ -30,22 +30,4 @@ export function subscribeLang(cb: () => void) {
 /** 轻量取词：保证同屏只出一种语言 */
 export function pickLang<T>(lang: Lang, zh: T, en: T): T {
   return lang === "zh" ? zh : en;
-}
-
-/** Client hook：不引入状态机，只基于 subscribeLang 做同步 */
-export function useLang(): [Lang, (next: Lang) => void] {
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  const React = require("react") as typeof import("react");
-  const [lang, setState] = React.useState<Lang>(() => getInitialLang());
-
-  React.useEffect(() => {
-    return subscribeLang(() => setState(getInitialLang()));
-  }, []);
-
-  const set = React.useCallback((next: Lang) => {
-    setLang(next);
-    setState(next);
-  }, []);
-
-  return [lang, set];
 }
