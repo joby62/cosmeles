@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 
@@ -29,24 +30,29 @@ export default function MobileTopBar() {
     "/m/brand/logo.png?v=20260226",
   ];
   const [logoIndex, setLogoIndex] = useState(0);
+  const [logoHidden, setLogoHidden] = useState(false);
 
   return (
     <div className="h-12 bg-[color:var(--bg)]/88 backdrop-blur supports-[backdrop-filter]:bg-[color:var(--bg)]/75">
       <div className="mx-auto flex h-12 max-w-[680px] items-center justify-between px-4">
         <Link href="/m" className="inline-flex items-center gap-0.5 rounded-full px-1 py-0.5 active:bg-black/[0.03]">
-          <img
-            src={logoCandidates[Math.min(logoIndex, logoCandidates.length - 1)]}
-            alt="予选"
-            width={16}
-            height={16}
-            onError={(e) => {
-              if (logoIndex < logoCandidates.length - 1) {
-                setLogoIndex((n) => n + 1);
-                return;
-              }
-              e.currentTarget.style.display = "none";
-            }}
-          />
+          {!logoHidden ? (
+            <Image
+              key={logoCandidates[Math.min(logoIndex, logoCandidates.length - 1)]}
+              src={logoCandidates[Math.min(logoIndex, logoCandidates.length - 1)]}
+              alt="予选"
+              width={16}
+              height={16}
+              unoptimized
+              onError={() => {
+                if (logoIndex < logoCandidates.length - 1) {
+                  setLogoIndex((n) => n + 1);
+                  return;
+                }
+                setLogoHidden(true);
+              }}
+            />
+          ) : null}
           <span className="text-[11px] leading-none text-black/36">·</span>
           <span className="text-[14px] font-semibold tracking-[0.005em] text-black/88">{section}</span>
         </Link>

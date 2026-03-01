@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { notFound } from "next/navigation";
 import { isWikiCategoryKey, WIKI_MAP, WIKI_ORDER } from "@/lib/mobile/ingredientWiki";
 
@@ -98,7 +99,7 @@ export default async function WikiCategoryPage({
                   active ? "border border-black/80 bg-black text-white" : "border border-black/10 bg-white text-black/72"
                 }`}
               >
-                <img src={`/m/categories/${item.key}.png`} alt={item.label} className="h-5 w-5 rounded-full object-cover" />
+                <Image src={`/m/categories/${item.key}.png`} alt={item.label} width={20} height={20} className="h-5 w-5 rounded-full object-cover" />
                 {item.label}
               </Link>
             );

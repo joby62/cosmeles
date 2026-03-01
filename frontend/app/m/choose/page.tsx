@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 
 const CATS = [
   { key: "shampoo", zh: "洗发水", note: "已开放", href: "/m/shampoo/start", open: true, image: "/m/categories/shampoo.png" },
@@ -29,7 +30,7 @@ export default function MobileChoose() {
               className="flex aspect-square w-[96px] shrink-0 flex-col rounded-[22px] border border-[#d9dbe3] bg-[#ececf1] px-2 pt-2 pb-2 active:brightness-[0.98]"
             >
               <div className="flex min-h-0 flex-1 items-center justify-center">
-                <img src={c.image} alt={c.zh} className="h-[58px] w-[74px] object-contain" />
+                <Image src={c.image} alt={c.zh} width={74} height={58} className="h-[58px] w-[74px] object-contain" />
               </div>
               <div className="mt-1 text-center text-[13px] leading-[1.15] font-medium tracking-[-0.01em] text-black/88">{c.zh}</div>
             </Link>
@@ -39,7 +40,7 @@ export default function MobileChoose() {
               className="flex aspect-square w-[96px] shrink-0 flex-col rounded-[22px] border border-[#d9dbe3] bg-[#ececf1] px-2 pt-2 pb-2"
             >
               <div className="flex min-h-0 flex-1 items-center justify-center">
-                <img src={c.image} alt={c.zh} className="h-[58px] w-[74px] object-contain opacity-58" />
+                <Image src={c.image} alt={c.zh} width={74} height={58} className="h-[58px] w-[74px] object-contain opacity-58" />
               </div>
               <div className="mt-1 text-center text-[13px] leading-[1.15] font-medium tracking-[-0.01em] text-black/58">{c.zh}</div>
             </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useMemo, useState } from "react";
 import { WIKI_MAP, WIKI_ORDER, type WikiCategoryKey } from "@/lib/mobile/ingredientWiki";
 import { INGREDIENT_SHOWCASE_MAP } from "@/lib/mobile/ingredientShowcase";
@@ -72,7 +73,7 @@ export default function MobileWikiPage() {
                     : "border-black/12 bg-white text-black/72 active:bg-black/[0.04]"
                 }`}
               >
-                <img src={`/m/categories/${item.key}.png`} alt={item.label} className="h-5 w-5 rounded-full object-cover" />
+                <Image src={`/m/categories/${item.key}.png`} alt={item.label} width={20} height={20} className="h-5 w-5 rounded-full object-cover" />
                 {item.label}
               </button>
             );
