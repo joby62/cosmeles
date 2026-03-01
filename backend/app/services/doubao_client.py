@@ -7,19 +7,19 @@ from typing import Any
 
 from app.settings import settings
 from app.services.storage import read_rel_bytes
-from app.services.doubao_sdk import DoubaoSDK
+from app.services.doubao_ark_client import DoubaoArkClient
 
 class DoubaoClient:
     """
-    支持 mock / real 两种模式：
-    - mock：读取 sample_data/product_sample.json
+    支持 sample/mock / real 两种模式：
+    - sample/mock：读取 sample_data/product_sample.json，不调用外部网络
     - real：调用豆包 Ark 接口，返回结构化 ProductDoc dict
     """
     def __init__(self):
-        self.mode = settings.doubao_mode.lower()
+        self.mode = settings.doubao_mode.lower().strip()
 
     def analyze(self, image_path: str) -> dict:
-        if self.mode == "mock":
+        if self.mode in {"mock", "sample"}:
             sample = Path(__file__).resolve().parents[2] / "sample_data" / "product_sample.json"
             return json.loads(sample.read_text(encoding="utf-8"))
 
@@ -28,7 +28,7 @@ class DoubaoClient:
 
         endpoint = settings.doubao_endpoint or "https://ark.cn-beijing.volces.com/api/v3"
         model = settings.doubao_model or "doubao-seed-2-0-mini-260215"
-        sdk = DoubaoSDK(
+        sdk = DoubaoArkClient(
             api_key=settings.doubao_api_key,
             endpoint=endpoint,
             model=model,

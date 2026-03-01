@@ -3,7 +3,7 @@ import urllib.request
 from typing import Any
 
 
-class DoubaoSDK:
+class DoubaoArkClient:
     def __init__(self, api_key: str, endpoint: str, model: str, reasoning_effort: str = "medium", timeout: int = 60):
         self.api_key = api_key
         self.endpoint = endpoint.rstrip("/")

@@ -108,7 +108,7 @@ sample_data/             示例数据
 - `CORS_ORIGINS`：允许来源列表（逗号分隔）
 - `STORAGE_DIR`：默认 `backend/storage`
 - `DATABASE_URL`：默认 SQLite 文件（`backend/storage/app.db`）
-- `DOUBAO_MODE`：`mock | real`
+- `DOUBAO_MODE`：`sample/mock | real`
 - `DOUBAO_API_KEY` / `DOUBAO_ENDPOINT` / `DOUBAO_MODEL`
 - `DOUBAO_REASONING_EFFORT`：默认 `medium`
 - `DOUBAO_TIMEOUT_SECONDS`：默认 `60`
@@ -123,6 +123,10 @@ cp backend/.env.local.example backend/.env.local
 ```
 2. 在 `backend/.env.local` 填入 `DOUBAO_API_KEY`
 3. 该文件已被 `.gitignore` 忽略，不会提交到仓库
+
+### `DOUBAO_MODE` 说明
+- `real`：调用豆包 Ark 在线分析（生产推荐）
+- `mock` 或 `sample`：读取本地 `sample_data/product_sample.json`，不调用豆包（离线调试用）
 
 ## 存储与持久化
 - 图片：`storage/images/`
