@@ -11,9 +11,9 @@ class DoubaoArkClient:
         self.reasoning_effort = reasoning_effort
         self.timeout = timeout
 
-    def chat_with_image(self, image_url: str, prompt: str) -> dict[str, Any]:
+    def chat_with_image(self, image_url: str, prompt: str, model: str | None = None) -> dict[str, Any]:
         body = {
-            "model": self.model,
+            "model": model or self.model,
             "reasoning_effort": self.reasoning_effort,
             "messages": [
                 {
@@ -25,7 +25,22 @@ class DoubaoArkClient:
                 }
             ],
         }
+        return self._chat(body)
 
+    def chat_with_text(self, prompt: str, model: str | None = None) -> dict[str, Any]:
+        body = {
+            "model": model or self.model,
+            "reasoning_effort": self.reasoning_effort,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [{"type": "text", "text": prompt}],
+                }
+            ],
+        }
+        return self._chat(body)
+
+    def _chat(self, body: dict[str, Any]) -> dict[str, Any]:
         req = urllib.request.Request(
             url=f"{self.endpoint}/chat/completions",
             data=json.dumps(body).encode("utf-8"),

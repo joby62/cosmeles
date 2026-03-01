@@ -1,12 +1,19 @@
 import json
 from typing import Any
-from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.constants import VALID_CATEGORIES, VALID_SOURCES
 from app.db.session import get_db
 from app.db.models import ProductIndex
-from app.services.storage import new_id, now_iso, save_image, save_product_json, remove_rel_path
+from app.services.storage import (
+    cleanup_doubao_artifacts,
+    new_id,
+    now_iso,
+    save_image,
+    save_product_json,
+    remove_rel_path,
+)
 from app.services.doubao_client import DoubaoClient
 from app.services.parser import normalize_doc
 from app.settings import settings
@@ -60,13 +67,13 @@ async def ingest(
     elif normalized_source in {"doubao", "auto"}:
         if not image_rel:
             raise HTTPException(status_code=400, detail="source=doubao requires image/file.")
-        doc = _analyze_with_doubao(image_rel)
+        doc = _analyze_with_doubao(image_rel, product_id)
         ingest_mode = "doubao"
     else:
         # manual upload without JSON: still allow, use doubao mock/real to bootstrap.
         if not image_rel:
             raise HTTPException(status_code=400, detail="manual upload without JSON still requires image/file.")
-        doc = _analyze_with_doubao(image_rel)
+        doc = _analyze_with_doubao(image_rel, product_id)
         ingest_mode = "manual_image_bootstrap"
 
     # 2) allow override minimal product fields
@@ -118,17 +125,41 @@ async def ingest(
         "category": normalized["product"]["category"],
         "image_path": image_rel,
         "json_path": json_rel,
+        "doubao": _extract_doubao_preview(normalized),
         "endpoint": "/api/upload",
     }
 
-def _analyze_with_doubao(image_rel: str) -> dict[str, Any]:
+@router.post("/maintenance/cleanup-doubao")
+def cleanup_doubao(days: int = Query(14, ge=1, le=3650)):
+    result = cleanup_doubao_artifacts(days=days)
+    return {"status": "ok", **result}
+
+
+def _analyze_with_doubao(image_rel: str, trace_id: str) -> dict[str, Any]:
     client = DoubaoClient()
     try:
-        return client.analyze(image_rel)
+        return client.analyze(image_rel, trace_id=trace_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=f"Doubao configuration/response error: {e}") from e
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Doubao request failed: {e}") from e
+
+
+def _extract_doubao_preview(normalized_doc: dict[str, Any]) -> dict[str, Any] | None:
+    evidence = normalized_doc.get("evidence")
+    if not isinstance(evidence, dict):
+        return None
+    artifacts = evidence.get("doubao_artifacts") if isinstance(evidence.get("doubao_artifacts"), dict) else {}
+    return {
+        "pipeline_mode": evidence.get("doubao_pipeline_mode"),
+        "models": evidence.get("doubao_models"),
+        "vision_text": evidence.get("doubao_vision_text"),
+        "struct_text": evidence.get("doubao_raw"),
+        "artifacts": {
+            "vision": artifacts.get("vision"),
+            "struct": artifacts.get("struct"),
+        },
+    }
 
 def _parse_meta_json(raw: str) -> dict[str, Any]:
     try:

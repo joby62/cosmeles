@@ -1,6 +1,6 @@
 import os, json
 from uuid import uuid4
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from app.settings import settings
 from app.constants import ALLOWED_IMAGE_EXTS
@@ -12,6 +12,7 @@ def ensure_dirs():
     os.makedirs(settings.storage_dir, exist_ok=True)
     os.makedirs(os.path.join(settings.storage_dir, "images"), exist_ok=True)
     os.makedirs(os.path.join(settings.storage_dir, "products"), exist_ok=True)
+    os.makedirs(os.path.join(settings.storage_dir, "doubao_runs"), exist_ok=True)
 
 def new_id() -> str:
     return str(uuid4())
@@ -40,6 +41,16 @@ def save_product_json(product_id: str, doc: dict) -> str:
     abs_path = _resolve_rel_path(rel)
     with open(abs_path, "w", encoding="utf-8") as f:
         json.dump(doc, f, ensure_ascii=False, indent=2)
+    return rel
+
+def save_doubao_artifact(product_id: str, stage: str, payload: dict) -> str:
+    ensure_dirs()
+    safe_stage = "".join(ch for ch in stage if ch.isalnum() or ch in {"-", "_"}).strip("_") or "stage"
+    rel = f"doubao_runs/{product_id}/{safe_stage}.json"
+    abs_path = _resolve_rel_path(rel)
+    abs_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(abs_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
     return rel
 
 def load_json(rel_path: str) -> dict:
@@ -77,3 +88,34 @@ def exists_rel_path(rel_path: str | None) -> bool:
     except ValueError:
         return False
     return abs_path.exists()
+
+def cleanup_doubao_artifacts(days: int | None = None) -> dict:
+    ensure_dirs()
+    ttl_days = int(days if days is not None else settings.doubao_artifact_ttl_days)
+    ttl_days = max(1, ttl_days)
+    root = _resolve_rel_path("doubao_runs")
+    if not root.exists():
+        return {"removed_files": 0, "removed_dirs": 0, "ttl_days": ttl_days}
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=ttl_days)
+    removed_files = 0
+    removed_dirs = 0
+
+    # 删除过期文件
+    for path in sorted(root.rglob("*"), key=lambda p: len(p.parts), reverse=True):
+        try:
+            if path.is_file():
+                mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+                if mtime < cutoff:
+                    path.unlink()
+                    removed_files += 1
+            elif path.is_dir():
+                try:
+                    path.rmdir()
+                    removed_dirs += 1
+                except OSError:
+                    pass
+        except FileNotFoundError:
+            continue
+
+    return {"removed_files": removed_files, "removed_dirs": removed_dirs, "ttl_days": ttl_days}

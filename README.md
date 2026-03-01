@@ -88,6 +88,12 @@ npm run dev
 - 前端说明：[frontend/README.md](frontend/README.md)
 - 后端说明：[backend/README.md](backend/README.md)
 
+## 上传解析（当前）
+- `/upload` 走后端 `/api/upload`
+- 豆包链路：`mini(看图提字)` -> `lite(基于文本结构化 JSON)`
+- 两阶段原始输出会落盘到 `backend/storage/doubao_runs/`，并回传到前端上传页展示
+- 可定期调用清理接口：`POST /api/maintenance/cleanup-doubao?days=14`
+
 ## 服务器重启后快速恢复（必看）
 以下命令在服务器执行（`~/cosmeles`）：
 

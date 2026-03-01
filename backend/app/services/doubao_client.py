@@ -1,52 +1,82 @@
-import json
 import base64
+import json
 import mimetypes
 import re
 from pathlib import Path
 from typing import Any
 
 from app.settings import settings
-from app.services.storage import read_rel_bytes
 from app.services.doubao_ark_client import DoubaoArkClient
+from app.services.storage import read_rel_bytes, save_doubao_artifact
+
 
 class DoubaoClient:
     """
-    支持 sample/mock / real 两种模式：
-    - sample/mock：读取 sample_data/product_sample.json，不调用外部网络
-    - real：调用豆包 Ark 接口，返回结构化 ProductDoc dict
+    两阶段识别：
+    1) mini(vision): 图片 -> 文字抽取
+    2) lite(struct): 抽取文字 -> 严格 JSON 结构化
     """
+
     def __init__(self):
         self.mode = settings.doubao_mode.lower().strip()
 
-    def analyze(self, image_path: str) -> dict:
+    def analyze(self, image_path: str, trace_id: str | None = None) -> dict:
         if self.mode in {"mock", "sample"}:
             sample = Path(__file__).resolve().parents[2] / "sample_data" / "product_sample.json"
-            return json.loads(sample.read_text(encoding="utf-8"))
+            doc = json.loads(sample.read_text(encoding="utf-8"))
+            doc.setdefault("evidence", {})
+            doc["evidence"]["doubao_pipeline_mode"] = "sample"
+            return doc
 
         if self.mode != "real":
             raise ValueError(f"Invalid DOUBAO_MODE: {self.mode}. Expected one of: real, mock, sample.")
-
         if not settings.doubao_api_key:
             raise ValueError("DOUBAO_API_KEY is missing. Set backend/.env.local and keep DOUBAO_MODE=real.")
 
         endpoint = settings.doubao_endpoint or "https://ark.cn-beijing.volces.com/api/v3"
-        model = settings.doubao_model or "doubao-seed-2-0-mini-260215"
+        vision_model = settings.doubao_vision_model or settings.doubao_model or "doubao-seed-2-0-mini-260215"
+        struct_model = settings.doubao_struct_model or "doubao-seed-2-0-lite-260215"
+
         sdk = DoubaoArkClient(
             api_key=settings.doubao_api_key,
             endpoint=endpoint,
-            model=model,
+            model=vision_model,
             reasoning_effort=settings.doubao_reasoning_effort,
             timeout=settings.doubao_timeout_seconds,
         )
 
         image_data_url = _to_data_url(image_path)
-        prompt = _build_prompt()
-        raw = sdk.chat_with_image(image_data_url, prompt)
-        content = _extract_content(raw)
-        doc = _extract_json_object(content)
-        if "evidence" not in doc:
-            doc["evidence"] = {}
-        doc["evidence"]["doubao_raw"] = content
+
+        # Stage-1: 只做 OCR + 包装文字抽取
+        vision_prompt = _build_vision_prompt()
+        vision_raw = sdk.chat_with_image(image_data_url, vision_prompt, model=vision_model)
+        vision_text = _extract_content(vision_raw)
+
+        # Stage-2: 输入 stage-1 文本，做结构化
+        struct_prompt = _build_struct_prompt(vision_text)
+        struct_raw = sdk.chat_with_text(struct_prompt, model=struct_model)
+        struct_content = _extract_content(struct_raw)
+        doc = _extract_json_object(struct_content)
+
+        evidence = doc.setdefault("evidence", {})
+        evidence["doubao_raw"] = struct_content
+        evidence["doubao_vision_text"] = vision_text
+        evidence["doubao_pipeline_mode"] = "two-stage"
+        evidence["doubao_models"] = {"vision": vision_model, "struct": struct_model}
+
+        if trace_id:
+            vision_rel = save_doubao_artifact(
+                trace_id,
+                "stage1_vision",
+                {"model": vision_model, "prompt": vision_prompt, "response": vision_raw, "text": vision_text},
+            )
+            struct_rel = save_doubao_artifact(
+                trace_id,
+                "stage2_struct",
+                {"model": struct_model, "prompt": struct_prompt, "response": struct_raw, "text": struct_content},
+            )
+            evidence["doubao_artifacts"] = {"vision": vision_rel, "struct": struct_rel}
+
         return doc
 
 
@@ -58,15 +88,27 @@ def _to_data_url(image_rel_path: str) -> str:
     return f"data:{mime};base64,{b64}"
 
 
-def _build_prompt() -> str:
+def _build_vision_prompt() -> str:
     return (
-        "你是洗护产品成分分析助手。请基于图片识别结果，严格输出 JSON 对象，禁止输出任何额外文字。"
-        "字段结构必须为："
+        "你是洗护产品图像识别助手。请只输出图片中可读文字和关键视觉信息，禁止输出 JSON。"
+        "请按以下结构输出纯文本："
+        "【品牌】、【产品名】、【品类】、【包装文案原文】、【成分表原文】、【使用说明原文】、【其他可见信息】。"
+        "看不清请写“未识别”。不要编造。"
+    )
+
+
+def _build_struct_prompt(vision_text: str) -> str:
+    return (
+        "你是洗护产品成分分析助手。下面是图片识别得到的文本，请你基于它输出严格 JSON 对象，禁止任何额外文字。\n"
+        "【图片识别文本开始】\n"
+        f"{vision_text}\n"
+        "【图片识别文本结束】\n"
+        "JSON 字段结构必须为："
         '{"product":{"category":"shampoo|bodywash|conditioner|lotion|cleanser","brand":"",'
         '"name":""},"summary":{"one_sentence":"","pros":[],"cons":[],"who_for":[],"who_not_for":[]},'
         '"ingredients":[{"name":"","type":"","functions":[],"risk":"low|mid|high","notes":""}],'
         '"evidence":{"doubao_raw":""}}。'
-        "若字段缺失请给空字符串或空数组。"
+        "若字段缺失请给空字符串或空数组，不要省略字段。"
     )
 
 

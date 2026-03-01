@@ -3,6 +3,7 @@
 ## 当前后端能力（完整清单）
 - 健康检查与就绪检查（`/healthz`, `/readyz`）
 - 产品上传入库（图片、JSON、豆包分析模式）
+- 豆包双阶段识别（mini 图像识别 -> lite 结构化 JSON）
 - 产品列表查询（支持分类/关键词/分页）
 - 产品详情读取（返回完整产品 JSON）
 - 产品编辑（分类、品牌、名称、一句话、标签）
@@ -91,12 +92,25 @@ sample_data/             示例数据
     - `category/brand/name`（可选，覆盖 JSON 同名字段）
     - `source`（可选：`manual | doubao | auto`）
   - 行为：
-    - 仅图片：走豆包/样例分析生成结构化 JSON
+    - 仅图片：走豆包双阶段识别生成结构化 JSON
     - 仅 JSON：直接入库
     - 图片+JSON：JSON 为主，图片用于展示与证据
   - 上传限制：
     - `image/*` 才允许
     - 最大文件大小：`MAX_UPLOAD_BYTES`（默认 8MB）
+  - Doubao 双阶段（`source=doubao`）：
+    - Stage-1 (vision): `doubao-seed-2-0-mini-260215` 读取图片，提取包装文字/成分原文
+    - Stage-2 (struct): `doubao-seed-2-0-lite-260215` 输入 stage-1 文本，严格输出 JSON
+  - 本地落盘：
+    - `storage/doubao_runs/{product_id}/stage1_vision.json`
+    - `storage/doubao_runs/{product_id}/stage2_struct.json`
+    - 路径也会写入产品 JSON 的 `evidence.doubao_artifacts`
+
+### 4.1) Doubao 产物清理
+- `POST /api/maintenance/cleanup-doubao?days=14`
+  - 功能：删除 `storage/doubao_runs` 下超过 N 天的中间产物文件
+  - 参数：`days`（1~3650）
+  - 返回：删除文件数/目录数
 
 ### 5) 静态资源
 - `GET /images/{filename}`
@@ -110,8 +124,11 @@ sample_data/             示例数据
 - `DATABASE_URL`：默认 SQLite 文件（`backend/storage/app.db`）
 - `DOUBAO_MODE`：`real | sample/mock`（默认 `real`）
 - `DOUBAO_API_KEY` / `DOUBAO_ENDPOINT` / `DOUBAO_MODEL`
+- `DOUBAO_VISION_MODEL`：第一阶段图像识别模型（默认 mini）
+- `DOUBAO_STRUCT_MODEL`：第二阶段结构化模型（默认 lite）
 - `DOUBAO_REASONING_EFFORT`：默认 `medium`
 - `DOUBAO_TIMEOUT_SECONDS`：默认 `60`
+- `DOUBAO_ARTIFACT_TTL_DAYS`：清理默认保留天数，默认 `14`
 - `MAX_UPLOAD_BYTES`：上传图片大小限制，默认 `8388608`
 
 可通过 `.env` 注入，未使用字段会被忽略。
@@ -141,6 +158,7 @@ cp backend/.env.local.example backend/.env.local
 ## 存储与持久化
 - 图片：`storage/images/`
 - 产品 JSON：`storage/products/`
+- Doubao 中间产物：`storage/doubao_runs/`
 - 数据库：`storage/app.db`
 
 线上请保证 `backend/storage` 做 volume 挂载与备份。
@@ -161,4 +179,15 @@ curl -s http://127.0.0.1:8000/readyz
 - 查询某品类产品：
 ```bash
 curl -s "http://127.0.0.1:8000/api/products?category=shampoo&limit=20"
+```
+
+- 清理过期 Doubao 中间产物：
+```bash
+curl -X POST "http://127.0.0.1:8000/api/maintenance/cleanup-doubao?days=14"
+```
+
+- 脚本方式清理：
+```bash
+cd backend
+python -m app.scripts.cleanup_doubao_artifacts --days 14
 ```

@@ -75,6 +75,13 @@ export type IngestResult = {
   category?: string;
   image_path?: string | null;
   json_path?: string | null;
+  doubao?: {
+    pipeline_mode?: string | null;
+    models?: { vision?: string; struct?: string } | null;
+    vision_text?: string | null;
+    struct_text?: string | null;
+    artifacts?: { vision?: string | null; struct?: string | null } | null;
+  } | null;
 };
 
 // 上传入口（MVP）：支持 image + metaJson，后续直接对接豆包比对流

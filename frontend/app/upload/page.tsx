@@ -49,6 +49,13 @@ export default function UploadPage() {
     category?: string;
     image_path?: string | null;
     json_path?: string | null;
+    doubao?: {
+      pipeline_mode?: string | null;
+      models?: { vision?: string; struct?: string } | null;
+      vision_text?: string | null;
+      struct_text?: string | null;
+      artifacts?: { vision?: string | null; struct?: string | null } | null;
+    } | null;
   }>(null);
 
   const canSubmit = useMemo(() => {
@@ -181,6 +188,34 @@ export default function UploadPage() {
             <div>品类：{result.category || "-"}</div>
             <div>图片：{result.image_path || "-"}</div>
             <div>JSON：{result.json_path || "-"}</div>
+            {result.doubao ? (
+              <>
+                <div className="mt-2 border-t border-black/8 pt-2">
+                  Doubao 流程：{result.doubao.pipeline_mode || "-"}
+                </div>
+                <div>
+                  模型：vision={result.doubao.models?.vision || "-"} / struct={result.doubao.models?.struct || "-"}
+                </div>
+                <div>落盘(阶段1)：{result.doubao.artifacts?.vision || "-"}</div>
+                <div>落盘(阶段2)：{result.doubao.artifacts?.struct || "-"}</div>
+                {result.doubao.vision_text ? (
+                  <details className="mt-2">
+                    <summary className="cursor-pointer font-medium text-black/78">阶段1 图片识别文本</summary>
+                    <pre className="mt-1 max-h-48 overflow-auto rounded-xl border border-black/10 bg-white p-2 text-[12px] leading-[1.5] text-black/72 whitespace-pre-wrap">
+                      {result.doubao.vision_text}
+                    </pre>
+                  </details>
+                ) : null}
+                {result.doubao.struct_text ? (
+                  <details className="mt-2">
+                    <summary className="cursor-pointer font-medium text-black/78">阶段2 结构化输出文本</summary>
+                    <pre className="mt-1 max-h-48 overflow-auto rounded-xl border border-black/10 bg-white p-2 text-[12px] leading-[1.5] text-black/72 whitespace-pre-wrap">
+                      {result.doubao.struct_text}
+                    </pre>
+                  </details>
+                ) : null}
+              </>
+            ) : null}
           </div>
         ) : null}
       </form>

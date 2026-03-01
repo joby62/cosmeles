@@ -21,9 +21,12 @@ class Settings(BaseSettings):
     doubao_mode: str = "real"  # sample/mock | real
     doubao_api_key: str = ""
     doubao_endpoint: str = "https://ark.cn-beijing.volces.com/api/v3"
-    doubao_model: str = "doubao-seed-2-0-mini-260215"
+    doubao_model: str = "doubao-seed-2-0-mini-260215"  # legacy fallback
+    doubao_vision_model: str = "doubao-seed-2-0-mini-260215"
+    doubao_struct_model: str = "doubao-seed-2-0-lite-260215"
     doubao_reasoning_effort: str = "medium"
     doubao_timeout_seconds: int = 60
+    doubao_artifact_ttl_days: int = 14
 
     # === 上传安全边界 ===
     max_upload_bytes: int = 8 * 1024 * 1024  # 8MB
