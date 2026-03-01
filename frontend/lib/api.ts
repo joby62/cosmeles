@@ -11,8 +11,12 @@ export type Product = {
 };
 
 function getBaseForFetch(): string {
-  // 在浏览器里：用相对路径，走同域 nginx（/api/...）
-  if (typeof window !== "undefined") return "";
+  // 在浏览器里优先直连后端，避免 /api 重写层在 multipart 上传时吞掉真实错误。
+  if (typeof window !== "undefined") {
+    const direct = process.env.NEXT_PUBLIC_API_BASE?.trim();
+    if (direct) return direct.replace(/\/$/, "");
+    return "";
+  }
 
   // 在 Next Server/SSR 里：Node fetch 需要绝对 URL
   // 走 nginx 容器名（docker compose 内部 DNS）
