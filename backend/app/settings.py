@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     database_url: str = f"sqlite:///{(DEFAULT_STORAGE_DIR / 'app.db').as_posix()}"
 
     # === 豆包配置 ===
-    doubao_mode: str = "mock"  # sample/mock | real
+    doubao_mode: str = "real"  # sample/mock | real
     doubao_api_key: str = ""
     doubao_endpoint: str = "https://ark.cn-beijing.volces.com/api/v3"
     doubao_model: str = "doubao-seed-2-0-mini-260215"

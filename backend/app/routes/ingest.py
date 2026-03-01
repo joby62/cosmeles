@@ -125,8 +125,10 @@ def _analyze_with_doubao(image_rel: str) -> dict[str, Any]:
     client = DoubaoClient()
     try:
         return client.analyze(image_rel)
-    except NotImplementedError as e:
-        raise HTTPException(status_code=503, detail="Doubao real mode is not configured yet.") from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Doubao configuration/response error: {e}") from e
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Doubao request failed: {e}") from e
 
 def _parse_meta_json(raw: str) -> dict[str, Any]:
     try:

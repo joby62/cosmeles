@@ -7,7 +7,7 @@ services:
       APP_ENV: dev
       STORAGE_DIR: /app/storage
       DATABASE_URL: sqlite:////app/storage/app.db
-      DOUBAO_MODE: mock
+      DOUBAO_MODE: real
     volumes:
       - ./backend:/app
     ports:

@@ -108,7 +108,7 @@ sample_data/             示例数据
 - `CORS_ORIGINS`：允许来源列表（逗号分隔）
 - `STORAGE_DIR`：默认 `backend/storage`
 - `DATABASE_URL`：默认 SQLite 文件（`backend/storage/app.db`）
-- `DOUBAO_MODE`：`sample/mock | real`
+- `DOUBAO_MODE`：`real | sample/mock`（默认 `real`）
 - `DOUBAO_API_KEY` / `DOUBAO_ENDPOINT` / `DOUBAO_MODEL`
 - `DOUBAO_REASONING_EFFORT`：默认 `medium`
 - `DOUBAO_TIMEOUT_SECONDS`：默认 `60`
@@ -127,6 +127,16 @@ cp backend/.env.local.example backend/.env.local
 ### `DOUBAO_MODE` 说明
 - `real`：调用豆包 Ark 在线分析（生产推荐）
 - `mock` 或 `sample`：读取本地 `sample_data/product_sample.json`，不调用豆包（离线调试用）
+
+### Doubao 常见报错排查
+- 报错 `DOUBAO_API_KEY is missing`：
+  - 检查是否创建了 `backend/.env.local`
+  - 检查 `DOUBAO_API_KEY=...` 是否已填写
+  - 检查容器环境变量是否覆盖为空值
+- 报错 `Invalid DOUBAO_MODE`：
+  - 仅支持 `real` / `mock` / `sample`
+- 报错 `Doubao request failed`：
+  - 通常是网络不可达、超时或上游接口异常，先重试并检查服务器外网连通性
 
 ## 存储与持久化
 - 图片：`storage/images/`

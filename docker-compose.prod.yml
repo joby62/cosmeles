@@ -9,7 +9,7 @@ services:
       APP_ENV: prod
       STORAGE_DIR: /app/storage
       DATABASE_URL: sqlite:////app/storage/app.db
-      DOUBAO_MODE: mock
+      DOUBAO_MODE: real
     volumes:
       - ./backend/storage:/app/storage
     ports:

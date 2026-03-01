@@ -26,6 +26,7 @@ docs/OPERATIONS_RUNBOOK.md  运维手册（Caddy / Docker / 502 排障）
   - `5001 -> frontend-dev:3000`
   - `8000 -> backend-dev:8000`
 - 说明：前后端都支持热更新（`next dev` + `uvicorn --reload`）
+- Doubao：默认 `DOUBAO_MODE=real`（需配置 `backend/.env.local` 的 `DOUBAO_API_KEY`）
 
 ```bash
 docker compose -f docker-compose.dev.yml up -d --build --remove-orphans
@@ -37,6 +38,7 @@ docker compose -f docker-compose.dev.yml up -d --build --remove-orphans
 - 端口：`5001 -> 3000`
 - 本机后端健康检查：`127.0.0.1:8000`
 - 反代：Caddy -> `172.17.0.1:5001`（当 Caddy 在 Docker 内）
+- Doubao：默认 `DOUBAO_MODE=real`（建议在部署环境注入 `DOUBAO_API_KEY`）
 
 ```bash
 docker compose -f docker-compose.prod.yml up -d --build --remove-orphans

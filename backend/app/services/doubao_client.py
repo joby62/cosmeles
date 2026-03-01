@@ -23,8 +23,11 @@ class DoubaoClient:
             sample = Path(__file__).resolve().parents[2] / "sample_data" / "product_sample.json"
             return json.loads(sample.read_text(encoding="utf-8"))
 
+        if self.mode != "real":
+            raise ValueError(f"Invalid DOUBAO_MODE: {self.mode}. Expected one of: real, mock, sample.")
+
         if not settings.doubao_api_key:
-            raise NotImplementedError("DOUBAO_API_KEY is missing.")
+            raise ValueError("DOUBAO_API_KEY is missing. Set backend/.env.local and keep DOUBAO_MODE=real.")
 
         endpoint = settings.doubao_endpoint or "https://ark.cn-beijing.volces.com/api/v3"
         model = settings.doubao_model or "doubao-seed-2-0-mini-260215"
