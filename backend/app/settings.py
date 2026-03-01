@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     doubao_endpoint: str = "https://ark.cn-beijing.volces.com/api/v3"
     doubao_model: str = "doubao-seed-2-0-mini-260215"  # legacy fallback
     doubao_vision_model: str = "doubao-seed-2-0-mini-260215"
-    doubao_struct_model: str = "doubao-seed-2-0-lite-260215"
+    doubao_struct_model: str = "doubao-seed-2-0-mini-260215"
     doubao_reasoning_effort: str = "medium"
     doubao_timeout_seconds: int = 60
     doubao_artifact_ttl_days: int = 14

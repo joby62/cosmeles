@@ -14,7 +14,7 @@ class DoubaoClient:
     """
     两阶段识别：
     1) mini(vision): 图片 -> 文字抽取
-    2) lite(struct): 抽取文字 -> 严格 JSON 结构化
+    2) mini(struct): 抽取文字 -> 严格 JSON 结构化
     """
 
     def __init__(self):
@@ -96,7 +96,8 @@ class DoubaoClient:
 
         endpoint = settings.doubao_endpoint or "https://ark.cn-beijing.volces.com/api/v3"
         vision_model = settings.doubao_vision_model or settings.doubao_model or "doubao-seed-2-0-mini-260215"
-        struct_model = settings.doubao_struct_model or "doubao-seed-2-0-lite-260215"
+        # 为降低 stage2 超时风险，结构化阶段强制与视觉阶段使用同一模型（当前为 mini）。
+        struct_model = vision_model
         sdk = DoubaoArkClient(
             api_key=settings.doubao_api_key,
             endpoint=endpoint,

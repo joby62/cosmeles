@@ -101,7 +101,7 @@ sample_data/             示例数据
     - Doubao 图片格式建议：`jpg/png/webp/gif`（`heic/heif` 不支持）
   - Doubao 双阶段（`source=doubao`）：
     - Stage-1 (vision): `doubao-seed-2-0-mini-260215` 读取图片，提取包装文字/成分原文
-    - Stage-2 (struct): `doubao-seed-2-0-lite-260215` 输入 stage-1 文本，严格输出 JSON
+    - Stage-2 (struct): `doubao-seed-2-0-mini-260215` 输入 stage-1 文本，严格输出 JSON
   - 本地落盘：
     - `storage/doubao_runs/{product_id}/stage1_vision.json`
     - `storage/doubao_runs/{product_id}/stage2_struct.json`
