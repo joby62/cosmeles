@@ -44,6 +44,7 @@ npm run start -- -p 3000 -H 0.0.0.0
 - `/m/lotion/*`：润肤霜决策路径
 - `/m/cleanser/*`：洗面奶决策路径
 - `/m/compare`：横向对比
+  - 现含 MVP 上传入口：上传产品图片与 JSON 到后端 `/api/ingest`，用于后续豆包比对和结果页数据源
 - `/m/bag`：购物袋
 - `/m/me`：我的（历史结果卡记录）
 

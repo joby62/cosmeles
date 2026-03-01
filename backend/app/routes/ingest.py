@@ -1,4 +1,5 @@
 import json
+from typing import Any
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -12,22 +13,48 @@ router = APIRouter(prefix="/api", tags=["ingest"])
 
 @router.post("/ingest")
 async def ingest(
-    image: UploadFile = File(...),
+    image: UploadFile | None = File(None),
+    file: UploadFile | None = File(None),
+    meta_json: str | None = Form(None),
+    payload_json: str | None = Form(None),
     category: str = Form("shampoo"),
     brand: str | None = Form(None),
     name: str | None = Form(None),
+    source: str = Form("manual"),  # manual | doubao | auto
     db: Session = Depends(get_db),
 ):
-    if not image.content_type or not image.content_type.startswith("image/"):
+    upload = image or file
+
+    if upload is None and not meta_json and not payload_json:
+        raise HTTPException(status_code=400, detail="Please provide image/file or meta_json/payload_json.")
+
+    if upload and (not upload.content_type or not upload.content_type.startswith("image/")):
         raise HTTPException(status_code=400, detail="Only image upload is supported.")
 
     product_id = new_id()
-    content = await image.read()
-    image_rel = save_image(product_id, image.filename, content)
+    image_rel = None
+    if upload:
+        content = await upload.read()
+        image_rel = save_image(product_id, upload.filename or "upload.jpg", content)
 
-    # 1) call doubao (mock/real)
-    client = DoubaoClient()
-    doc = client.analyze(image_rel)
+    # 1) choose document source
+    meta_raw = meta_json or payload_json
+    if meta_raw:
+        doc = _parse_meta_json(meta_raw)
+        ingest_mode = "manual_json"
+    elif source.lower() in {"doubao", "auto"}:
+        if not image_rel:
+            raise HTTPException(status_code=400, detail="source=doubao requires image/file.")
+        client = DoubaoClient()
+        doc = client.analyze(image_rel)
+        ingest_mode = "doubao"
+    else:
+        # manual upload without JSON: still allow, use doubao mock/real to bootstrap.
+        if not image_rel:
+            raise HTTPException(status_code=400, detail="manual upload without JSON still requires image/file.")
+        client = DoubaoClient()
+        doc = client.analyze(image_rel)
+        ingest_mode = "manual_image_bootstrap"
 
     # 2) allow override minimal product fields
     doc.setdefault("product", {})
@@ -61,7 +88,100 @@ async def ingest(
     db.add(rec)
     db.commit()
 
-    return {"id": product_id, "status": "ok"}
+    return {
+        "id": product_id,
+        "status": "ok",
+        "mode": ingest_mode,
+        "category": normalized["product"]["category"],
+        "image_path": image_rel,
+        "json_path": json_rel,
+    }
+
+def _parse_meta_json(raw: str) -> dict[str, Any]:
+    try:
+        doc = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid meta_json/payload_json: {e.msg}") from e
+
+    if not isinstance(doc, dict):
+        raise HTTPException(status_code=400, detail="meta_json/payload_json must be a JSON object.")
+
+    return _to_product_doc_shape(doc)
+
+def _to_product_doc_shape(doc: dict[str, Any]) -> dict[str, Any]:
+    # Already in target shape
+    if "product" in doc and "summary" in doc:
+        return doc
+
+    product = {
+        "category": doc.get("category") or "shampoo",
+        "brand": doc.get("brand"),
+        "name": doc.get("name"),
+    }
+
+    summary_in = doc.get("summary")
+    if isinstance(summary_in, dict):
+        summary = {
+            "one_sentence": summary_in.get("one_sentence") or summary_in.get("oneSentence") or _fallback_summary(product),
+            "pros": _to_str_list(summary_in.get("pros")),
+            "cons": _to_str_list(summary_in.get("cons")),
+            "who_for": _to_str_list(summary_in.get("who_for") or summary_in.get("whoFor")),
+            "who_not_for": _to_str_list(summary_in.get("who_not_for") or summary_in.get("whoNotFor")),
+        }
+    else:
+        summary = {
+            "one_sentence": str(doc.get("one_sentence") or doc.get("oneSentence") or _fallback_summary(product)),
+            "pros": _to_str_list(doc.get("pros")),
+            "cons": _to_str_list(doc.get("cons")),
+            "who_for": _to_str_list(doc.get("who_for") or doc.get("whoFor")),
+            "who_not_for": _to_str_list(doc.get("who_not_for") or doc.get("whoNotFor")),
+        }
+
+    ingredients_raw = doc.get("ingredients")
+    ingredients = []
+    if isinstance(ingredients_raw, list):
+        for item in ingredients_raw:
+            if not isinstance(item, dict):
+                continue
+            risk = str(item.get("risk") or "low").lower()
+            if risk not in {"low", "mid", "high"}:
+                risk = "low"
+            ingredients.append(
+                {
+                    "name": str(item.get("name") or "").strip(),
+                    "type": str(item.get("type") or "未分类"),
+                    "functions": _to_str_list(item.get("functions")),
+                    "risk": risk,
+                    "notes": str(item.get("notes") or ""),
+                }
+            )
+
+    evidence_in = doc.get("evidence") if isinstance(doc.get("evidence"), dict) else {}
+    evidence = {
+        "image_path": evidence_in.get("image_path"),
+        "doubao_raw": evidence_in.get("doubao_raw"),
+    }
+
+    return {
+        "product": product,
+        "summary": summary,
+        "ingredients": ingredients,
+        "evidence": evidence,
+    }
+
+def _to_str_list(v: Any) -> list[str]:
+    if v is None:
+        return []
+    if isinstance(v, list):
+        return [str(x) for x in v if str(x).strip()]
+    s = str(v).strip()
+    return [s] if s else []
+
+def _fallback_summary(product: dict[str, Any]) -> str:
+    brand = product.get("brand") or "该产品"
+    name = product.get("name") or ""
+    full = f"{brand} {name}".strip()
+    return f"{full} 已完成入库，可在前端结果页用于展示成分与用法。"
 
 def _derive_tags(doc: dict) -> list[str]:
     """

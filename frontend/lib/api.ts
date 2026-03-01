@@ -59,19 +59,47 @@ export function resolveImageUrl(product: Product): string {
   return p.startsWith("http") ? p : new URL(p, base).toString();
 }
 
-// 上传（如果你已经删掉 upload 页面也没关系，这个导出不会害你）
-// 走 /api/ingest（你后端若不是这个路径，就按你后端实际路由改）
-export async function ingestImage(file: File): Promise<{ id: string }> {
+export type IngestInput = {
+  image?: File;
+  category?: string;
+  brand?: string;
+  name?: string;
+  source?: "manual" | "doubao" | "auto";
+  metaJson?: string;
+};
+
+export type IngestResult = {
+  id: string;
+  status: string;
+  mode?: string;
+  category?: string;
+  image_path?: string | null;
+  json_path?: string | null;
+};
+
+// 上传入口（MVP）：支持 image + metaJson，后续直接对接豆包比对流
+export async function ingestProduct(input: IngestInput): Promise<IngestResult> {
   const base = getBaseForFetch();
   const url = base ? new URL("/api/ingest", base).toString() : "/api/ingest";
 
   const fd = new FormData();
-  fd.append("file", file);
+  if (input.image) fd.append("image", input.image);
+  if (input.category) fd.append("category", input.category);
+  if (input.brand) fd.append("brand", input.brand);
+  if (input.name) fd.append("name", input.name);
+  if (input.source) fd.append("source", input.source);
+  if (input.metaJson) fd.append("meta_json", input.metaJson);
 
   const res = await fetch(url, { method: "POST", body: fd });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`INGEST ${res.status}: ${text}`);
   }
-  return (await res.json()) as { id: string };
+  return (await res.json()) as IngestResult;
+}
+
+// 兼容旧调用
+export async function ingestImage(file: File): Promise<{ id: string }> {
+  const result = await ingestProduct({ image: file, source: "auto" });
+  return { id: result.id };
 }

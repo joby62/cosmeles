@@ -37,7 +37,15 @@ sample_data/             示例数据
   - 可选参数：`category`, `q`
 - `GET /api/products/{product_id}`
 - `POST /api/ingest`
-  - 表单字段：`image`（必填），`category/brand/name`（可选）
+  - 表单字段（MVP）：
+    - `image` 或 `file`（二选一，图片文件）
+    - `meta_json` 或 `payload_json`（二选一，产品 JSON 字符串）
+    - `category/brand/name`（可选，覆盖 JSON 内同名字段）
+    - `source`（可选：`manual | doubao | auto`）
+  - 说明：
+    - 只传图片：会走豆包/样例分析生成结构化 JSON
+    - 只传 JSON：可直接入库（适合手工维护产品库）
+    - 图片 + JSON：以 JSON 为主，图片用于展示与证据存档
 
 ## 配置（`app/settings.py`）
 - `APP_ENV`：环境标识，默认 `dev`
