@@ -21,30 +21,35 @@ docs/OPERATIONS_RUNBOOK.md  运维手册（Caddy / Docker / 502 排障）
 
 ### 1) 前端开发模式（热更新）
 使用 `docker-compose.dev.yml`：
-- 容器：`frontend-dev`
-- 端口：`5001 -> 3000`
+- 容器：`backend-dev` + `frontend-dev`
+- 端口：
+  - `5001 -> frontend-dev:3000`
+  - `8000 -> backend-dev:8000`
+- 说明：前后端都支持热更新（`next dev` + `uvicorn --reload`）
 
 ```bash
-docker compose -f docker-compose.dev.yml up -d
+docker compose -f docker-compose.dev.yml up -d --build --remove-orphans
 ```
 
 ### 2) 线上生产模式（当前推荐）
 使用 `docker-compose.prod.yml`：
-- 容器：`cosmeles-frontend`
+- 容器：`cosmeles-backend` + `cosmeles-frontend`
 - 端口：`5001 -> 3000`
+- 本机后端健康检查：`127.0.0.1:8000`
 - 反代：Caddy -> `172.17.0.1:5001`（当 Caddy 在 Docker 内）
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
 ```
 
 ### 3) 历史全栈模式（backend + frontend + nginx）
 使用 `docker-compose.yml`：
 - 对外端口：`5000`（nginx）
-- 适合本地联调，不作为当前线上主方案
+- 本机后端健康检查：`127.0.0.1:8000`
+- 适合本地联调
 
 ```bash
-docker compose up -d --build
+docker compose up -d --build --remove-orphans
 ```
 
 ## 本地开发（不走 Docker）

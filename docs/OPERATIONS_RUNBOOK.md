@@ -5,23 +5,25 @@
 ## 1. 三套 compose 的用途
 
 - `docker-compose.dev.yml`
-  - 用途：前端开发热更新（Next dev）
-  - 端口：`5001 -> 3000`
-  - 启动：`docker compose -f docker-compose.dev.yml up -d`
+  - 用途：开发热更新（前后端一起）
+  - 容器：`backend-dev` + `frontend-dev`
+  - 端口：`5001 -> 3000`、`8000 -> 8000`
+  - 启动：`docker compose -f docker-compose.dev.yml up -d --build --remove-orphans`
 
 - `docker-compose.prod.yml`
-  - 用途：前端生产构建（当前线上主用）
+  - 用途：生产构建（前后端）
+  - 容器：`cosmeles-backend` + `cosmeles-frontend`
   - 端口：`5001 -> 3000`
-  - 启动：`docker compose -f docker-compose.prod.yml up -d --build`
+  - 启动：`docker compose -f docker-compose.prod.yml up -d --build --remove-orphans`
 
 - `docker-compose.yml`
-  - 用途：历史全栈方案（backend + frontend + nginx）
+  - 用途：全栈方案（backend + frontend + nginx）
   - 入口端口：`5000`（nginx）
-  - 启动：`docker compose up -d --build`
+  - 启动：`docker compose up -d --build --remove-orphans`
 
-## 2. 当前推荐线上方案（Caddy + frontend prod）
+## 2. 当前推荐线上方案（Caddy + prod compose）
 
-当前你线上是：`Caddy` 反代 `cosmeles frontend(prod)`。
+当前你线上是：`Caddy` 反代 `cosmeles-frontend(prod)`，`cosmeles-backend` 在同一 compose 网络内供前端调用。
 
 ### 2.1 启动前端容器
 
@@ -35,6 +37,7 @@ docker compose -f docker-compose.prod.yml up -d --build
 
 ```bash
 curl -I http://127.0.0.1:5001
+curl -I http://127.0.0.1:8000/healthz
 ```
 
 返回 `HTTP/1.1 200` 说明前端容器正常。
@@ -73,9 +76,9 @@ curl -I https://yuexuan.xyz
 ### 3.1 查看状态与日志
 
 ```bash
-# 前端 prod
+# prod 前后端
 docker compose -f docker-compose.prod.yml ps
-docker compose -f docker-compose.prod.yml logs --tail=200 frontend
+docker compose -f docker-compose.prod.yml logs --tail=200 backend frontend
 
 # caddy
 docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Ports}}"
@@ -85,11 +88,14 @@ docker logs --tail 200 caddy
 ### 3.2 重建与重启
 
 ```bash
-# 重建前端 prod
-docker compose -f docker-compose.prod.yml up -d --build
+# 重建 prod（前后端）
+docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
 
 # 只重启前端容器
 docker restart cosmeles-frontend
+
+# 只重启后端容器
+docker restart cosmeles-backend
 
 # 重启 caddy
 docker restart caddy
@@ -105,10 +111,11 @@ docker compose -f docker-compose.prod.yml up -d --remove-orphans
 
 ## 4. 502 快速排障（固定顺序）
 
-1. 先看前端是否活着：
+1. 先看前后端是否活着：
 
 ```bash
 curl -I http://127.0.0.1:5001
+curl -I http://127.0.0.1:8000/healthz
 ```
 
 2. 从 caddy 容器内看 upstream 是否可达：
@@ -150,7 +157,7 @@ git push origin main
 ```bash
 cd ~/cosmeles
 git pull origin main
-docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
 docker restart caddy
 curl -I https://yuexuan.xyz
 ```
@@ -161,4 +168,3 @@ curl -I https://yuexuan.xyz
 - `sudo systemctl reload caddy`：仅在 systemd 管理 caddy 时可用；你当前是 Docker 容器，不适用。
 - caddy 容器内反代 `127.0.0.1:5001`：会 502（指向容器自己）。
 - `docker-compose.yml` 和 `docker-compose.prod.yml` 混用：容易端口/架构错位，线上统一使用 `docker-compose.prod.yml`。
-
