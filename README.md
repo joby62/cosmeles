@@ -92,6 +92,7 @@ npm run dev
 - `/upload` 走后端 `/api/upload`
 - 豆包链路：`mini(看图提字)` -> `lite(基于文本结构化 JSON)`
 - 两阶段原始输出会落盘到 `backend/storage/doubao_runs/`，并回传到前端上传页展示
+- 若要前端分步展示，可走：`/api/upload/stage1` -> `/api/upload/stage2`
 - 可定期调用清理接口：`POST /api/maintenance/cleanup-doubao?days=14`
 
 ## 服务器重启后快速恢复（必看）

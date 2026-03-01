@@ -80,8 +80,22 @@ export type IngestResult = {
     models?: { vision?: string; struct?: string } | null;
     vision_text?: string | null;
     struct_text?: string | null;
-    artifacts?: { vision?: string | null; struct?: string | null } | null;
+    artifacts?: { vision?: string | null; struct?: string | null; context?: string | null } | null;
   } | null;
+};
+
+export type IngestStage1Result = {
+  status: string;
+  trace_id: string;
+  category?: string;
+  image_path?: string | null;
+  doubao?: {
+    pipeline_mode?: string | null;
+    models?: { vision?: string; struct?: string } | null;
+    vision_text?: string | null;
+    artifacts?: { vision?: string | null; context?: string | null } | null;
+  } | null;
+  next?: string;
 };
 
 // 上传入口（MVP）：支持 image + metaJson，后续直接对接豆包比对流
@@ -101,6 +115,40 @@ export async function ingestProduct(input: IngestInput): Promise<IngestResult> {
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`INGEST ${res.status}: ${text}`);
+  }
+  return (await res.json()) as IngestResult;
+}
+
+export async function ingestProductStage1(input: Pick<IngestInput, "image" | "category" | "brand" | "name">): Promise<IngestStage1Result> {
+  const base = getBaseForFetch();
+  const url = base ? new URL("/api/upload/stage1", base).toString() : "/api/upload/stage1";
+  const fd = new FormData();
+  if (input.image) fd.append("image", input.image);
+  if (input.category) fd.append("category", input.category);
+  if (input.brand) fd.append("brand", input.brand);
+  if (input.name) fd.append("name", input.name);
+
+  const res = await fetch(url, { method: "POST", body: fd });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`STAGE1 ${res.status}: ${text}`);
+  }
+  return (await res.json()) as IngestStage1Result;
+}
+
+export async function ingestProductStage2(input: Pick<IngestInput, "category" | "brand" | "name"> & { traceId: string }): Promise<IngestResult> {
+  const base = getBaseForFetch();
+  const url = base ? new URL("/api/upload/stage2", base).toString() : "/api/upload/stage2";
+  const fd = new FormData();
+  fd.append("trace_id", input.traceId);
+  if (input.category) fd.append("category", input.category);
+  if (input.brand) fd.append("brand", input.brand);
+  if (input.name) fd.append("name", input.name);
+
+  const res = await fetch(url, { method: "POST", body: fd });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`STAGE2 ${res.status}: ${text}`);
   }
   return (await res.json()) as IngestResult;
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
-import { ingestProduct } from "@/lib/api";
+import { ingestProduct, ingestProductStage1, ingestProductStage2 } from "@/lib/api";
 
 const CATEGORIES = [
   { value: "shampoo", label: "洗发水" },
@@ -41,7 +41,14 @@ export default function UploadPage() {
   const [jsonText, setJsonText] = useState("");
   const [image, setImage] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [phase, setPhase] = useState<"idle" | "stage1" | "stage2" | "done">("idle");
   const [error, setError] = useState<string | null>(null);
+  const [stage1Preview, setStage1Preview] = useState<null | {
+    trace_id: string;
+    vision_text?: string | null;
+    models?: { vision?: string; struct?: string } | null;
+    artifacts?: { vision?: string | null; context?: string | null } | null;
+  }>(null);
   const [result, setResult] = useState<null | {
     id: string;
     status: string;
@@ -69,21 +76,56 @@ export default function UploadPage() {
     if (!canSubmit) return;
 
     setSubmitting(true);
+    setPhase("idle");
     setError(null);
+    setStage1Preview(null);
     setResult(null);
 
     try {
-      const ingestResult = await ingestProduct({
-        image: image || undefined,
-        category,
-        brand: brand.trim() || undefined,
-        name: name.trim() || undefined,
-        source,
-        metaJson: jsonText.trim() || undefined,
-      });
-      setResult(ingestResult);
+      const finalBrand = brand.trim() || undefined;
+      const finalName = name.trim() || undefined;
+      const finalJson = jsonText.trim() || undefined;
+
+      // Doubao 两阶段：先展示 mini 识别，再等待 lite 结构化
+      if (source === "doubao" && image && !finalJson) {
+        setPhase("stage1");
+        const stage1 = await ingestProductStage1({
+          image,
+          category,
+          brand: finalBrand,
+          name: finalName,
+        });
+
+        setStage1Preview({
+          trace_id: stage1.trace_id,
+          vision_text: stage1.doubao?.vision_text,
+          models: stage1.doubao?.models || null,
+          artifacts: stage1.doubao?.artifacts || null,
+        });
+
+        setPhase("stage2");
+        const ingestResult = await ingestProductStage2({
+          traceId: stage1.trace_id,
+          category,
+          brand: finalBrand,
+          name: finalName,
+        });
+        setResult(ingestResult);
+      } else {
+        const ingestResult = await ingestProduct({
+          image: image || undefined,
+          category,
+          brand: finalBrand,
+          name: finalName,
+          source,
+          metaJson: finalJson,
+        });
+        setResult(ingestResult);
+      }
+      setPhase("done");
     } catch (err) {
       setError(err instanceof Error ? err.message : "上传失败，请稍后再试。");
+      setPhase("idle");
     } finally {
       setSubmitting(false);
     }
@@ -180,6 +222,25 @@ export default function UploadPage() {
 
         {error ? <p className="text-[13px] leading-[1.5] text-[#b42318]">{error}</p> : null}
 
+        {phase === "stage2" && stage1Preview ? (
+          <div className="rounded-2xl border border-[#8ea3ff]/30 bg-[#eef2ff] px-4 py-3.5 text-[13px] leading-[1.65] text-black/76">
+            <div className="font-medium text-black/80">阶段1完成：已提取图片文字</div>
+            <div className="mt-1">模型：{stage1Preview.models?.vision || "-"}</div>
+            <div>落盘(阶段1)：{stage1Preview.artifacts?.vision || "-"}</div>
+            <div className="mt-2 animate-pulse font-medium text-[#3151d8]">
+              正在进行阶段2结构化分析，请等待片刻...
+            </div>
+            {stage1Preview.vision_text ? (
+              <details className="mt-2">
+                <summary className="cursor-pointer font-medium text-black/78">查看阶段1识别文本</summary>
+                <pre className="mt-1 max-h-48 overflow-auto rounded-xl border border-black/10 bg-white p-2 text-[12px] leading-[1.5] text-black/72 whitespace-pre-wrap">
+                  {stage1Preview.vision_text}
+                </pre>
+              </details>
+            ) : null}
+          </div>
+        ) : null}
+
         {result ? (
           <div className="rounded-2xl border border-black/10 bg-black/[0.03] px-4 py-3.5 text-[13px] leading-[1.65] text-black/76">
             <div>状态：{result.status}</div>
@@ -198,6 +259,7 @@ export default function UploadPage() {
                 </div>
                 <div>落盘(阶段1)：{result.doubao.artifacts?.vision || "-"}</div>
                 <div>落盘(阶段2)：{result.doubao.artifacts?.struct || "-"}</div>
+                <div>落盘(context)：{result.doubao.artifacts?.context || "-"}</div>
                 {result.doubao.vision_text ? (
                   <details className="mt-2">
                     <summary className="cursor-pointer font-medium text-black/78">阶段1 图片识别文本</summary>

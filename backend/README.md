@@ -106,6 +106,14 @@ sample_data/             示例数据
     - `storage/doubao_runs/{product_id}/stage2_struct.json`
     - 路径也会写入产品 JSON 的 `evidence.doubao_artifacts`
 
+### 4.1) 分步上传（用于前端先展示 mini，再展示 lite）
+- `POST /api/upload/stage1`
+  - 功能：上传图片并执行 mini 识别
+  - 返回：`trace_id`、`doubao.vision_text`、阶段1落盘路径
+- `POST /api/upload/stage2`
+  - 功能：基于 `trace_id` 读取阶段1文本，执行 lite 结构化并最终入库
+  - 返回：最终产品入库结果 + 两阶段落盘路径
+
 ### 4.1) Doubao 产物清理
 - `POST /api/maintenance/cleanup-doubao?days=14`
   - 功能：删除 `storage/doubao_runs` 下超过 N 天的中间产物文件

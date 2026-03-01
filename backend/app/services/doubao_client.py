@@ -20,14 +20,75 @@ class DoubaoClient:
     def __init__(self):
         self.mode = settings.doubao_mode.lower().strip()
 
-    def analyze(self, image_path: str, trace_id: str | None = None) -> dict:
+    def analyze_stage1(self, image_path: str, trace_id: str | None = None) -> dict[str, Any]:
+        if self.mode in {"mock", "sample"}:
+            vision_text = "sample mode: skipped vision OCR."
+            artifact = None
+            if trace_id:
+                artifact = save_doubao_artifact(
+                    trace_id,
+                    "stage1_vision",
+                    {"model": "sample", "prompt": "sample", "response": {"mode": "sample"}, "text": vision_text},
+                )
+            return {"vision_text": vision_text, "model": "sample", "artifact": artifact}
+
+        sdk, vision_model, _ = self._build_sdk_and_models()
+        image_data_url = _to_data_url(image_path)
+        vision_prompt = _build_vision_prompt()
+        vision_raw = sdk.chat_with_image(image_data_url, vision_prompt, model=vision_model)
+        vision_text = _extract_content(vision_raw)
+
+        artifact = None
+        if trace_id:
+            artifact = save_doubao_artifact(
+                trace_id,
+                "stage1_vision",
+                {"model": vision_model, "prompt": vision_prompt, "response": vision_raw, "text": vision_text},
+            )
+        return {"vision_text": vision_text, "model": vision_model, "artifact": artifact}
+
+    def analyze_stage2(self, vision_text: str, trace_id: str | None = None) -> dict[str, Any]:
         if self.mode in {"mock", "sample"}:
             sample = Path(__file__).resolve().parents[2] / "sample_data" / "product_sample.json"
             doc = json.loads(sample.read_text(encoding="utf-8"))
-            doc.setdefault("evidence", {})
-            doc["evidence"]["doubao_pipeline_mode"] = "sample"
-            return doc
+            artifact = None
+            if trace_id:
+                artifact = save_doubao_artifact(
+                    trace_id,
+                    "stage2_struct",
+                    {"model": "sample", "prompt": "sample", "response": {"mode": "sample"}, "text": "sample"},
+                )
+            return {"doc": doc, "struct_text": json.dumps(doc, ensure_ascii=False), "model": "sample", "artifact": artifact}
 
+        sdk, _, struct_model = self._build_sdk_and_models()
+        struct_prompt = _build_struct_prompt(vision_text)
+        struct_raw = sdk.chat_with_text(struct_prompt, model=struct_model)
+        struct_content = _extract_content(struct_raw)
+        doc = _extract_json_object(struct_content)
+
+        artifact = None
+        if trace_id:
+            artifact = save_doubao_artifact(
+                trace_id,
+                "stage2_struct",
+                {"model": struct_model, "prompt": struct_prompt, "response": struct_raw, "text": struct_content},
+            )
+        return {"doc": doc, "struct_text": struct_content, "model": struct_model, "artifact": artifact}
+
+    def analyze(self, image_path: str, trace_id: str | None = None) -> dict:
+        stage1 = self.analyze_stage1(image_path, trace_id=trace_id)
+        stage2 = self.analyze_stage2(stage1["vision_text"], trace_id=trace_id)
+        doc = stage2["doc"]
+
+        evidence = doc.setdefault("evidence", {})
+        evidence["doubao_raw"] = stage2["struct_text"]
+        evidence["doubao_vision_text"] = stage1["vision_text"]
+        evidence["doubao_pipeline_mode"] = "two-stage"
+        evidence["doubao_models"] = {"vision": stage1["model"], "struct": stage2["model"]}
+        evidence["doubao_artifacts"] = {"vision": stage1.get("artifact"), "struct": stage2.get("artifact")}
+        return doc
+
+    def _build_sdk_and_models(self) -> tuple[DoubaoArkClient, str, str]:
         if self.mode != "real":
             raise ValueError(f"Invalid DOUBAO_MODE: {self.mode}. Expected one of: real, mock, sample.")
         if not settings.doubao_api_key:
@@ -36,7 +97,6 @@ class DoubaoClient:
         endpoint = settings.doubao_endpoint or "https://ark.cn-beijing.volces.com/api/v3"
         vision_model = settings.doubao_vision_model or settings.doubao_model or "doubao-seed-2-0-mini-260215"
         struct_model = settings.doubao_struct_model or "doubao-seed-2-0-lite-260215"
-
         sdk = DoubaoArkClient(
             api_key=settings.doubao_api_key,
             endpoint=endpoint,
@@ -44,40 +104,7 @@ class DoubaoClient:
             reasoning_effort=settings.doubao_reasoning_effort,
             timeout=settings.doubao_timeout_seconds,
         )
-
-        image_data_url = _to_data_url(image_path)
-
-        # Stage-1: 只做 OCR + 包装文字抽取
-        vision_prompt = _build_vision_prompt()
-        vision_raw = sdk.chat_with_image(image_data_url, vision_prompt, model=vision_model)
-        vision_text = _extract_content(vision_raw)
-
-        # Stage-2: 输入 stage-1 文本，做结构化
-        struct_prompt = _build_struct_prompt(vision_text)
-        struct_raw = sdk.chat_with_text(struct_prompt, model=struct_model)
-        struct_content = _extract_content(struct_raw)
-        doc = _extract_json_object(struct_content)
-
-        evidence = doc.setdefault("evidence", {})
-        evidence["doubao_raw"] = struct_content
-        evidence["doubao_vision_text"] = vision_text
-        evidence["doubao_pipeline_mode"] = "two-stage"
-        evidence["doubao_models"] = {"vision": vision_model, "struct": struct_model}
-
-        if trace_id:
-            vision_rel = save_doubao_artifact(
-                trace_id,
-                "stage1_vision",
-                {"model": vision_model, "prompt": vision_prompt, "response": vision_raw, "text": vision_text},
-            )
-            struct_rel = save_doubao_artifact(
-                trace_id,
-                "stage2_struct",
-                {"model": struct_model, "prompt": struct_prompt, "response": struct_raw, "text": struct_content},
-            )
-            evidence["doubao_artifacts"] = {"vision": vision_rel, "struct": struct_rel}
-
-        return doc
+        return sdk, vision_model, struct_model
 
 
 def _to_data_url(image_rel_path: str) -> str:

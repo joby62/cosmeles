@@ -25,6 +25,10 @@ class Ingredient(BaseModel):
 class Evidence(BaseModel):
     image_path: Optional[str] = None
     doubao_raw: Optional[str] = None
+    doubao_vision_text: Optional[str] = None
+    doubao_pipeline_mode: Optional[str] = None
+    doubao_models: Optional[dict[str, str]] = None
+    doubao_artifacts: Optional[dict[str, str]] = None
 
 class ProductDoc(BaseModel):
     product: ProductInfo

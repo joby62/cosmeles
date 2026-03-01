@@ -8,8 +8,11 @@ from app.db.session import get_db
 from app.db.models import ProductIndex
 from app.services.storage import (
     cleanup_doubao_artifacts,
+    exists_rel_path,
+    load_json,
     new_id,
     now_iso,
+    save_doubao_artifact,
     save_image,
     save_product_json,
     remove_rel_path,
@@ -129,6 +132,134 @@ async def ingest(
         "endpoint": "/api/upload",
     }
 
+
+@router.post("/upload/stage1")
+async def ingest_stage1(
+    image: UploadFile | None = File(None),
+    file: UploadFile | None = File(None),
+    category: str = Form("shampoo"),
+    brand: str | None = Form(None),
+    name: str | None = Form(None),
+):
+    if image and file:
+        raise HTTPException(status_code=400, detail="Please provide only one file field: image or file.")
+
+    upload = image or file
+    if upload is None:
+        raise HTTPException(status_code=400, detail="stage1 requires image/file.")
+    if not upload.content_type or not upload.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Only image upload is supported.")
+
+    category = (category or "").strip().lower() or "shampoo"
+    if category not in VALID_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Invalid category: {category}.")
+
+    product_id = new_id()
+    content = await upload.read()
+    if len(content) > settings.max_upload_bytes:
+        raise HTTPException(status_code=413, detail=f"Image too large. Max {settings.max_upload_bytes} bytes.")
+    image_rel = save_image(product_id, upload.filename or "upload.jpg", content)
+
+    stage1 = _analyze_with_doubao_stage1(image_rel, product_id)
+    context = {
+        "trace_id": product_id,
+        "image_path": image_rel,
+        "category": category,
+        "brand": brand,
+        "name": name,
+        "vision_text": stage1["vision_text"],
+        "vision_model": stage1["model"],
+        "vision_artifact": stage1.get("artifact"),
+        "created_at": now_iso(),
+    }
+    context_rel = save_doubao_artifact(product_id, "stage1_context", context)
+
+    return {
+        "status": "ok",
+        "trace_id": product_id,
+        "category": category,
+        "image_path": image_rel,
+        "doubao": {
+            "pipeline_mode": "stage1_done",
+            "models": {"vision": stage1["model"], "struct": settings.doubao_struct_model},
+            "vision_text": stage1["vision_text"],
+            "artifacts": {
+                "vision": stage1.get("artifact"),
+                "context": context_rel,
+            },
+        },
+        "next": "/api/upload/stage2",
+    }
+
+
+@router.post("/upload/stage2")
+def ingest_stage2(
+    trace_id: str = Form(...),
+    category: str | None = Form(None),
+    brand: str | None = Form(None),
+    name: str | None = Form(None),
+    db: Session = Depends(get_db),
+):
+    if not trace_id.strip():
+        raise HTTPException(status_code=400, detail="trace_id is required.")
+    product_id = trace_id.strip()
+    context_rel = f"doubao_runs/{product_id}/stage1_context.json"
+    if not exists_rel_path(context_rel):
+        raise HTTPException(status_code=404, detail="Stage1 context not found. Please run /api/upload/stage1 first.")
+
+    context = load_json(context_rel)
+    image_rel = context.get("image_path")
+    if not image_rel:
+        raise HTTPException(status_code=400, detail="Invalid stage1 context: missing image_path.")
+
+    stage2 = _analyze_with_doubao_stage2(str(context.get("vision_text") or ""), product_id)
+    doc = stage2["doc"]
+    if db.get(ProductIndex, product_id):
+        raise HTTPException(status_code=409, detail="This trace_id has already been finalized.")
+
+    resolved_category = (category or context.get("category") or "shampoo").strip().lower()
+    resolved_brand = brand if brand is not None else context.get("brand")
+    resolved_name = name if name is not None else context.get("name")
+
+    _apply_product_overrides(doc, resolved_category, resolved_brand, resolved_name)
+    _attach_stage_evidence(doc, context, stage2)
+
+    normalized = normalize_doc(doc, image_rel_path=image_rel, doubao_raw=doc.get("evidence", {}).get("doubao_raw"))
+    json_rel = save_product_json(product_id, normalized)
+
+    one_sentence = normalized.get("summary", {}).get("one_sentence")
+    tags = _derive_tags(normalized)
+
+    rec = ProductIndex(
+        id=product_id,
+        category=normalized["product"]["category"],
+        brand=normalized["product"].get("brand"),
+        name=normalized["product"].get("name"),
+        one_sentence=one_sentence,
+        tags_json=json.dumps(tags, ensure_ascii=False),
+        image_path=image_rel,
+        json_path=json_rel,
+        created_at=now_iso(),
+    )
+    db.add(rec)
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        remove_rel_path(json_rel)
+        raise HTTPException(status_code=500, detail=f"Failed to persist product index: {e}") from e
+
+    return {
+        "id": product_id,
+        "status": "ok",
+        "mode": "doubao_two_stage",
+        "category": normalized["product"]["category"],
+        "image_path": image_rel,
+        "json_path": json_rel,
+        "doubao": _extract_doubao_preview(normalized),
+        "endpoint": "/api/upload/stage2",
+    }
+
 @router.post("/maintenance/cleanup-doubao")
 def cleanup_doubao(days: int = Query(14, ge=1, le=3650)):
     result = cleanup_doubao_artifacts(days=days)
@@ -145,6 +276,55 @@ def _analyze_with_doubao(image_rel: str, trace_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=502, detail=f"Doubao request failed: {e}") from e
 
 
+def _analyze_with_doubao_stage1(image_rel: str, trace_id: str) -> dict[str, Any]:
+    client = DoubaoClient()
+    try:
+        return client.analyze_stage1(image_rel, trace_id=trace_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Doubao configuration/response error: {e}") from e
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Doubao request failed: {e}") from e
+
+
+def _analyze_with_doubao_stage2(vision_text: str, trace_id: str) -> dict[str, Any]:
+    if not vision_text.strip():
+        raise HTTPException(status_code=400, detail="Stage1 output is empty, cannot run stage2.")
+    client = DoubaoClient()
+    try:
+        return client.analyze_stage2(vision_text, trace_id=trace_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Doubao configuration/response error: {e}") from e
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Doubao request failed: {e}") from e
+
+
+def _apply_product_overrides(doc: dict[str, Any], category: str, brand: str | None, name: str | None) -> None:
+    if category not in VALID_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Invalid category in payload: {category}.")
+    doc.setdefault("product", {})
+    doc["product"]["category"] = category
+    if brand:
+        doc["product"]["brand"] = brand
+    if name:
+        doc["product"]["name"] = name
+
+
+def _attach_stage_evidence(doc: dict[str, Any], stage1_ctx: dict[str, Any], stage2: dict[str, Any]) -> None:
+    evidence = doc.setdefault("evidence", {})
+    evidence["doubao_raw"] = stage2.get("struct_text")
+    evidence["doubao_vision_text"] = stage1_ctx.get("vision_text")
+    evidence["doubao_pipeline_mode"] = "two-stage"
+    evidence["doubao_models"] = {
+        "vision": stage1_ctx.get("vision_model"),
+        "struct": stage2.get("model"),
+    }
+    evidence["doubao_artifacts"] = {
+        "vision": stage1_ctx.get("vision_artifact"),
+        "struct": stage2.get("artifact"),
+        "context": f"doubao_runs/{stage1_ctx.get('trace_id')}/stage1_context.json",
+    }
+
+
 def _extract_doubao_preview(normalized_doc: dict[str, Any]) -> dict[str, Any] | None:
     evidence = normalized_doc.get("evidence")
     if not isinstance(evidence, dict):
@@ -158,6 +338,7 @@ def _extract_doubao_preview(normalized_doc: dict[str, Any]) -> dict[str, Any] | 
         "artifacts": {
             "vision": artifacts.get("vision"),
             "struct": artifacts.get("struct"),
+            "context": artifacts.get("context"),
         },
     }
 
@@ -224,6 +405,10 @@ def _to_product_doc_shape(doc: dict[str, Any]) -> dict[str, Any]:
     evidence = {
         "image_path": evidence_in.get("image_path"),
         "doubao_raw": evidence_in.get("doubao_raw"),
+        "doubao_vision_text": evidence_in.get("doubao_vision_text"),
+        "doubao_pipeline_mode": evidence_in.get("doubao_pipeline_mode"),
+        "doubao_models": evidence_in.get("doubao_models"),
+        "doubao_artifacts": evidence_in.get("doubao_artifacts"),
     }
 
     return {
