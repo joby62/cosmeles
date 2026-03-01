@@ -6,11 +6,11 @@ from pathlib import Path
 from typing import Any
 
 from app.settings import settings
-from app.services.doubao_ark_client import DoubaoArkClient
+from app.services.doubao_openai_client import DoubaoOpenAIClient
 from app.services.storage import read_rel_bytes, save_doubao_artifact
 
 
-class DoubaoClient:
+class DoubaoPipelineService:
     """
     两阶段识别：
     1) mini(vision): 图片 -> 文字抽取
@@ -88,21 +88,21 @@ class DoubaoClient:
         evidence["doubao_artifacts"] = {"vision": stage1.get("artifact"), "struct": stage2.get("artifact")}
         return doc
 
-    def _build_sdk_and_models(self) -> tuple[DoubaoArkClient, str, str]:
+    def _build_sdk_and_models(self) -> tuple[DoubaoOpenAIClient, str, str]:
         if self.mode != "real":
             raise ValueError(f"Invalid DOUBAO_MODE: {self.mode}. Expected one of: real, mock, sample.")
-        if not settings.doubao_api_key:
-            raise ValueError("DOUBAO_API_KEY is missing. Set backend/.env.local and keep DOUBAO_MODE=real.")
+        api_key = settings.doubao_api_key or settings.ark_api_key
+        if not api_key:
+            raise ValueError("Missing API key. Set DOUBAO_API_KEY or ARK_API_KEY in backend/.env.local.")
 
         endpoint = settings.doubao_endpoint or "https://ark.cn-beijing.volces.com/api/v3"
         vision_model = settings.doubao_vision_model or settings.doubao_model or "doubao-seed-2-0-mini-260215"
         # 为降低 stage2 超时风险，结构化阶段强制与视觉阶段使用同一模型（当前为 mini）。
         struct_model = vision_model
-        sdk = DoubaoArkClient(
-            api_key=settings.doubao_api_key,
+        sdk = DoubaoOpenAIClient(
+            api_key=api_key,
             endpoint=endpoint,
             model=vision_model,
-            reasoning_effort=settings.doubao_reasoning_effort,
             timeout=settings.doubao_timeout_seconds,
         )
         return sdk, vision_model, struct_model

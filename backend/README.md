@@ -3,7 +3,7 @@
 ## 当前后端能力（完整清单）
 - 健康检查与就绪检查（`/healthz`, `/readyz`）
 - 产品上传入库（图片、JSON、豆包分析模式）
-- 豆包双阶段识别（mini 图像识别 -> lite 结构化 JSON）
+- 豆包双阶段识别（mini 图像识别 -> mini 结构化 JSON）
 - 产品列表查询（支持分类/关键词/分页）
 - 产品详情读取（返回完整产品 JSON）
 - 产品编辑（分类、品牌、名称、一句话、标签）
@@ -107,12 +107,12 @@ sample_data/             示例数据
     - `storage/doubao_runs/{product_id}/stage2_struct.json`
     - 路径也会写入产品 JSON 的 `evidence.doubao_artifacts`
 
-### 4.1) 分步上传（用于前端先展示 mini，再展示 lite）
+### 4.1) 分步上传（用于前端先展示 stage1，再展示 stage2）
 - `POST /api/upload/stage1`
   - 功能：上传图片并执行 mini 识别
   - 返回：`trace_id`、`doubao.vision_text`、阶段1落盘路径
 - `POST /api/upload/stage2`
-  - 功能：基于 `trace_id` 读取阶段1文本，执行 lite 结构化并最终入库
+  - 功能：基于 `trace_id` 读取阶段1文本，执行结构化并最终入库
   - 返回：最终产品入库结果 + 两阶段落盘路径
 
 ### 4.1) Doubao 产物清理
@@ -132,10 +132,9 @@ sample_data/             示例数据
 - `STORAGE_DIR`：默认 `backend/storage`
 - `DATABASE_URL`：默认 SQLite 文件（`backend/storage/app.db`）
 - `DOUBAO_MODE`：`real | sample/mock`（默认 `real`）
-- `DOUBAO_API_KEY` / `DOUBAO_ENDPOINT` / `DOUBAO_MODEL`
+- `ARK_API_KEY` / `DOUBAO_API_KEY` / `DOUBAO_ENDPOINT` / `DOUBAO_MODEL`
 - `DOUBAO_VISION_MODEL`：第一阶段图像识别模型（默认 mini）
-- `DOUBAO_STRUCT_MODEL`：第二阶段结构化模型（默认 lite）
-- `DOUBAO_REASONING_EFFORT`：默认 `medium`
+- `DOUBAO_STRUCT_MODEL`：第二阶段结构化模型（当前实现与第一阶段一致，默认 mini）
 - `DOUBAO_TIMEOUT_SECONDS`：默认 `60`
 - `DOUBAO_ARTIFACT_TTL_DAYS`：清理默认保留天数，默认 `14`
 - `MAX_UPLOAD_BYTES`：上传图片大小限制，默认 `8388608`
@@ -147,7 +146,7 @@ sample_data/             示例数据
 ```bash
 cp backend/.env.local.example backend/.env.local
 ```
-2. 在 `backend/.env.local` 填入 `DOUBAO_API_KEY`
+2. 在 `backend/.env.local` 填入 `ARK_API_KEY`（或 `DOUBAO_API_KEY`）
 3. 该文件已被 `.gitignore` 忽略，不会提交到仓库
 
 ### `DOUBAO_MODE` 说明
@@ -155,9 +154,9 @@ cp backend/.env.local.example backend/.env.local
 - `mock` 或 `sample`：读取本地 `sample_data/product_sample.json`，不调用豆包（离线调试用）
 
 ### Doubao 常见报错排查
-- 报错 `DOUBAO_API_KEY is missing`：
+- 报错 `Missing API key`：
   - 检查是否创建了 `backend/.env.local`
-  - 检查 `DOUBAO_API_KEY=...` 是否已填写
+  - 检查 `ARK_API_KEY=...`（或 `DOUBAO_API_KEY=...`）是否已填写
   - 检查容器环境变量是否覆盖为空值
 - 报错 `Invalid DOUBAO_MODE`：
   - 仅支持 `real` / `mock` / `sample`

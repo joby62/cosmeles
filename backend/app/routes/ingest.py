@@ -18,7 +18,7 @@ from app.services.storage import (
     save_product_json,
     remove_rel_path,
 )
-from app.services.doubao_client import DoubaoClient
+from app.services.doubao_pipeline_service import DoubaoPipelineService
 from app.services.parser import normalize_doc
 from app.settings import settings
 
@@ -282,7 +282,7 @@ def cleanup_doubao(days: int = Query(14, ge=1, le=3650)):
 
 
 def _analyze_with_doubao(image_rel: str, trace_id: str) -> dict[str, Any]:
-    client = DoubaoClient()
+    client = DoubaoPipelineService()
     try:
         return client.analyze(image_rel, trace_id=trace_id)
     except ValueError as e:
@@ -292,7 +292,7 @@ def _analyze_with_doubao(image_rel: str, trace_id: str) -> dict[str, Any]:
 
 
 def _analyze_with_doubao_stage1(image_rel: str, trace_id: str) -> dict[str, Any]:
-    client = DoubaoClient()
+    client = DoubaoPipelineService()
     try:
         return client.analyze_stage1(image_rel, trace_id=trace_id)
     except ValueError as e:
@@ -304,7 +304,7 @@ def _analyze_with_doubao_stage1(image_rel: str, trace_id: str) -> dict[str, Any]
 def _analyze_with_doubao_stage2(vision_text: str, trace_id: str) -> dict[str, Any]:
     if not vision_text.strip():
         raise HTTPException(status_code=400, detail="Stage1 output is empty, cannot run stage2.")
-    client = DoubaoClient()
+    client = DoubaoPipelineService()
     try:
         return client.analyze_stage2(vision_text, trace_id=trace_id)
     except ValueError as e:
