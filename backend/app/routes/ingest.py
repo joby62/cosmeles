@@ -12,6 +12,7 @@ from app.services.parser import normalize_doc
 router = APIRouter(prefix="/api", tags=["ingest"])
 
 @router.post("/ingest")
+@router.post("/upload")
 async def ingest(
     image: UploadFile | None = File(None),
     file: UploadFile | None = File(None),
@@ -95,6 +96,7 @@ async def ingest(
         "category": normalized["product"]["category"],
         "image_path": image_rel,
         "json_path": json_rel,
+        "endpoint": "/api/upload",
     }
 
 def _parse_meta_json(raw: str) -> dict[str, Any]:

@@ -36,10 +36,11 @@ sample_data/             示例数据
 - `GET /api/products`
   - 可选参数：`category`, `q`
 - `GET /api/products/{product_id}`
-- `POST /api/ingest`
+- `POST /api/upload`（推荐）
+- `POST /api/ingest`（兼容旧入口）
   - 表单字段（MVP）：
-    - `image` 或 `file`（二选一，图片文件）
-    - `meta_json` 或 `payload_json`（二选一，产品 JSON 字符串）
+    - `image` 或 `file`（二选一，图片文件；推荐 `image`）
+    - `meta_json` 或 `payload_json`（二选一，产品 JSON 字符串；推荐 `meta_json`）
     - `category/brand/name`（可选，覆盖 JSON 内同名字段）
     - `source`（可选：`manual | doubao | auto`）
   - 说明：

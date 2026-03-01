@@ -106,6 +106,18 @@ export default function HomePage() {
           >
             横向对比
           </Link>
+          <Link
+            href="/upload"
+            className={cx(
+              "px-4 py-2 rounded-full",
+              "text-[12px] font-medium tracking-[0.02em]",
+              "border border-black/[0.08]",
+              "bg-white/60 hover:bg-white/75",
+              "transition-colors"
+            )}
+          >
+            上传产品
+          </Link>
         </div>
 
         <div className="mt-12 text-[12px] text-black/35">{footer}</div>

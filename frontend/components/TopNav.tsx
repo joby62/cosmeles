@@ -208,6 +208,9 @@ export default function TopNav() {
               <Link href="/compare" className="nav-item" onPointerEnter={() => requestClose()}>
                 {lang === "zh" ? "横向对比" : "Compare"}
               </Link>
+              <Link href="/upload" className="nav-item" onPointerEnter={() => requestClose()}>
+                {lang === "zh" ? "上传" : "Upload"}
+              </Link>
             </nav>
 
             {/* ✅ 右侧：必须与 nav-item 同一高度节奏（44px），垂直居中 */}

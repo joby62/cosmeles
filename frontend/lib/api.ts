@@ -80,7 +80,7 @@ export type IngestResult = {
 // 上传入口（MVP）：支持 image + metaJson，后续直接对接豆包比对流
 export async function ingestProduct(input: IngestInput): Promise<IngestResult> {
   const base = getBaseForFetch();
-  const url = base ? new URL("/api/ingest", base).toString() : "/api/ingest";
+  const url = base ? new URL("/api/upload", base).toString() : "/api/upload";
 
   const fd = new FormData();
   if (input.image) fd.append("image", input.image);
