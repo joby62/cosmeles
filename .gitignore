@@ -2,14 +2,19 @@
 
 # Python
 backend/.venv
-backend/__pycache__/
+**/__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
 backend/storage/app.db
 backend/storage/images/
 backend/storage/products/
+backend/storage/doubao_runs/
 
 # Node
 frontend/node_modules
 frontend/.next
+frontend/tsconfig.tsbuildinfo
 
 # Env
 backend/.env

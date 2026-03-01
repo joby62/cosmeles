@@ -1,5 +1,4 @@
-import ProductShowcase from "@/components/ProductShowcase";
-import { fetchProductDoc } from "@/lib/api";
+import { redirect } from "next/navigation";
 
 export default async function ProductPage({
   params,
@@ -7,6 +6,5 @@ export default async function ProductPage({
   params: { id: string } | Promise<{ id: string }>;
 }) {
   const { id } = await Promise.resolve(params);
-  const doc = await fetchProductDoc(id);
-  return <ProductShowcase id={id} doc={doc} />;
+  redirect(`/product/${id}`);
 }

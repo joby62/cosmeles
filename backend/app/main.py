@@ -54,8 +54,8 @@ def readyz():
 
     return {"status": "ready"}
 
-# static files: serve /storage/images as /images
-if os.path.isdir(settings.storage_dir):
-    images_dir = os.path.join(settings.storage_dir, "images")
-    os.makedirs(images_dir, exist_ok=True)
-    app.mount("/images", StaticFiles(directory=images_dir), name="images")
+# static files: always mount /images so route is stable even on first boot
+os.makedirs(settings.storage_dir, exist_ok=True)
+images_dir = os.path.join(settings.storage_dir, "images")
+os.makedirs(images_dir, exist_ok=True)
+app.mount("/images", StaticFiles(directory=images_dir), name="images")

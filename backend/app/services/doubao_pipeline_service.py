@@ -13,8 +13,8 @@ from app.services.storage import read_rel_bytes, save_doubao_artifact
 class DoubaoPipelineService:
     """
     两阶段识别：
-    1) mini(vision): 图片 -> 文字抽取
-    2) mini(struct): 抽取文字 -> 严格 JSON 结构化
+    1) vision model: 图片 -> 文字抽取
+    2) struct model: 抽取文字 -> 严格 JSON 结构化
     """
 
     def __init__(self):
@@ -97,8 +97,8 @@ class DoubaoPipelineService:
 
         endpoint = settings.doubao_endpoint or "https://ark.cn-beijing.volces.com/api/v3"
         vision_model = settings.doubao_vision_model or settings.doubao_model or "doubao-seed-2-0-mini-260215"
-        # 为降低 stage2 超时风险，结构化阶段强制与视觉阶段使用同一模型（当前为 mini）。
-        struct_model = vision_model
+        # 显式可配置，避免硬编码；未配置时再回退到通用模型/视觉模型。
+        struct_model = settings.doubao_struct_model or settings.doubao_model or vision_model
         sdk = DoubaoOpenAIClient(
             api_key=api_key,
             endpoint=endpoint,
