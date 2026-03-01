@@ -23,7 +23,7 @@ async def ingest(
     category: str = Form("shampoo"),
     brand: str | None = Form(None),
     name: str | None = Form(None),
-    source: str = Form("manual"),  # manual | doubao | auto
+    source: str = Form("doubao"),  # manual | doubao | auto
     db: Session = Depends(get_db),
 ):
     if image and file:

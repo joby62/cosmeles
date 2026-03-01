@@ -84,6 +84,7 @@ sample_data/             示例数据
 - `POST /api/upload`（推荐）
 - `POST /api/ingest`（兼容旧入口）
   - 功能：接收上传并落库到 `storage + sqlite`
+  - 默认来源：`source=doubao`（优先走图片识别）
   - 表单字段：
     - `image` 或 `file`（二选一，图片文件）
     - `meta_json` 或 `payload_json`（二选一，产品 JSON 字符串）
@@ -109,9 +110,19 @@ sample_data/             示例数据
 - `DATABASE_URL`：默认 SQLite 文件（`backend/storage/app.db`）
 - `DOUBAO_MODE`：`mock | real`
 - `DOUBAO_API_KEY` / `DOUBAO_ENDPOINT` / `DOUBAO_MODEL`
+- `DOUBAO_REASONING_EFFORT`：默认 `medium`
+- `DOUBAO_TIMEOUT_SECONDS`：默认 `60`
 - `MAX_UPLOAD_BYTES`：上传图片大小限制，默认 `8388608`
 
 可通过 `.env` 注入，未使用字段会被忽略。
+
+### 豆包配置文件（推荐）
+1. 复制模板：
+```bash
+cp backend/.env.local.example backend/.env.local
+```
+2. 在 `backend/.env.local` 填入 `DOUBAO_API_KEY`
+3. 该文件已被 `.gitignore` 忽略，不会提交到仓库
 
 ## 存储与持久化
 - 图片：`storage/images/`

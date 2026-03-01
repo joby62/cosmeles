@@ -20,15 +20,17 @@ class Settings(BaseSettings):
     # === 豆包配置 ===
     doubao_mode: str = "mock"  # mock | real
     doubao_api_key: str = ""
-    doubao_endpoint: str = ""
-    doubao_model: str = ""
+    doubao_endpoint: str = "https://ark.cn-beijing.volces.com/api/v3"
+    doubao_model: str = "doubao-seed-2-0-mini-260215"
+    doubao_reasoning_effort: str = "medium"
+    doubao_timeout_seconds: int = 60
 
     # === 上传安全边界 ===
     max_upload_bytes: int = 8 * 1024 * 1024  # 8MB
 
     # === Pydantic v2 配置 ===
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(".env", ".env.local"),
         env_file_encoding="utf-8",
         extra="ignore",   # ✅ 忽略 .env 里多余字段，避免再炸
     )

@@ -47,6 +47,11 @@ def load_json(rel_path: str) -> dict:
     with open(abs_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
+def read_rel_bytes(rel_path: str) -> bytes:
+    abs_path = _resolve_rel_path(rel_path)
+    with open(abs_path, "rb") as f:
+        return f.read()
+
 def save_json_at(rel_path: str, doc: dict) -> None:
     abs_path = _resolve_rel_path(rel_path)
     with open(abs_path, "w", encoding="utf-8") as f:

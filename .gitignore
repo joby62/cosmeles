@@ -13,4 +13,5 @@ frontend/.next
 
 # Env
 backend/.env
+backend/.env.local
 frontend/.env.local

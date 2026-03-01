@@ -37,7 +37,7 @@ export default function UploadPage() {
   const [category, setCategory] = useState("shampoo");
   const [brand, setBrand] = useState("");
   const [name, setName] = useState("");
-  const [source, setSource] = useState<"manual" | "doubao" | "auto">("manual");
+  const [source, setSource] = useState<"manual" | "doubao" | "auto">("doubao");
   const [jsonText, setJsonText] = useState("");
   const [image, setImage] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -114,8 +114,8 @@ export default function UploadPage() {
               onChange={(e) => setSource(e.target.value as "manual" | "doubao" | "auto")}
               className="h-11 rounded-xl border border-black/12 bg-white px-3 text-[14px] text-black/86 outline-none focus:border-black/35"
             >
-              <option value="manual">manual（手工 JSON 优先）</option>
               <option value="doubao">doubao（图片走豆包解析）</option>
+              <option value="manual">manual（手工 JSON 优先）</option>
               <option value="auto">auto（自动）</option>
             </select>
           </label>
