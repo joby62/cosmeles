@@ -166,8 +166,10 @@ async def ingest_stage1(
     try:
         stage1 = _analyze_with_doubao_stage1(image_rel, product_id)
     except HTTPException:
+        remove_rel_path(image_rel)
         raise
     except Exception as e:
+        remove_rel_path(image_rel)
         raise HTTPException(status_code=500, detail=f"Stage1 failed: {e}") from e
     context = {
         "trace_id": product_id,
@@ -180,7 +182,12 @@ async def ingest_stage1(
         "vision_artifact": stage1.get("artifact"),
         "created_at": now_iso(),
     }
-    context_rel = save_doubao_artifact(product_id, "stage1_context", context)
+    try:
+        context_rel = save_doubao_artifact(product_id, "stage1_context", context)
+    except Exception as e:
+        remove_rel_path(stage1.get("artifact"))
+        remove_rel_path(image_rel)
+        raise HTTPException(status_code=500, detail=f"Stage1 context persistence failed: {e}") from e
 
     return {
         "status": "ok",

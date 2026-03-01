@@ -140,20 +140,76 @@ def _build_struct_prompt(vision_text: str) -> str:
 
 
 def _extract_content(raw: dict[str, Any]) -> str:
+    # Ark /responses 格式优先
+    output_text = raw.get("output_text")
+    if isinstance(output_text, str) and output_text.strip():
+        return output_text.strip()
+
+    output = raw.get("output")
+    if isinstance(output, list):
+        collected: list[str] = []
+        for item in output:
+            collected.extend(_collect_text(item))
+        merged = _merge_texts(collected)
+        if merged:
+            return merged
+
+    # 兼容 /chat/completions 格式
     choices = raw.get("choices") or []
-    if not choices:
-        raise ValueError("Doubao response has no choices.")
-    message = choices[0].get("message") or {}
-    content = message.get("content")
-    if isinstance(content, list):
-        texts: list[str] = []
-        for part in content:
-            if isinstance(part, dict) and isinstance(part.get("text"), str):
-                texts.append(part["text"])
-        content = "\n".join(texts).strip()
-    if not isinstance(content, str) or not content.strip():
-        raise ValueError("Doubao response content is empty.")
-    return content.strip()
+    if isinstance(choices, list) and choices:
+        message = choices[0].get("message") if isinstance(choices[0], dict) else {}
+        if not isinstance(message, dict):
+            message = {}
+        content = message.get("content")
+        if isinstance(content, list):
+            texts = _collect_text(content)
+            merged = _merge_texts(texts)
+            if merged:
+                return merged
+        if isinstance(content, str) and content.strip():
+            return content.strip()
+
+    raise ValueError(f"Doubao response content is empty. top-level keys={list(raw.keys())}")
+
+
+def _collect_text(node: Any) -> list[str]:
+    texts: list[str] = []
+    if isinstance(node, str):
+        val = node.strip()
+        if val:
+            texts.append(val)
+        return texts
+
+    if isinstance(node, list):
+        for item in node:
+            texts.extend(_collect_text(item))
+        return texts
+
+    if not isinstance(node, dict):
+        return texts
+
+    for key in ("text", "output_text"):
+        value = node.get(key)
+        if isinstance(value, str) and value.strip():
+            texts.append(value.strip())
+
+    content = node.get("content")
+    if content is not None:
+        texts.extend(_collect_text(content))
+
+    return texts
+
+
+def _merge_texts(texts: list[str]) -> str:
+    merged: list[str] = []
+    seen = set()
+    for item in texts:
+        val = item.strip()
+        if not val or val in seen:
+            continue
+        seen.add(val)
+        merged.append(val)
+    return "\n".join(merged).strip()
 
 
 def _extract_json_object(text: str) -> dict[str, Any]:

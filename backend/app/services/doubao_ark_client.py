@@ -1,4 +1,5 @@
 import json
+import urllib.error
 import urllib.request
 from typing import Any
 
@@ -14,35 +15,33 @@ class DoubaoArkClient:
     def chat_with_image(self, image_url: str, prompt: str, model: str | None = None) -> dict[str, Any]:
         body = {
             "model": model or self.model,
-            "reasoning_effort": self.reasoning_effort,
-            "messages": [
+            "input": [
                 {
                     "role": "user",
                     "content": [
-                        {"type": "image_url", "image_url": {"url": image_url}},
-                        {"type": "text", "text": prompt},
+                        {"type": "input_image", "image_url": image_url},
+                        {"type": "input_text", "text": prompt},
                     ],
                 }
             ],
         }
-        return self._chat(body)
+        return self._responses(body)
 
     def chat_with_text(self, prompt: str, model: str | None = None) -> dict[str, Any]:
         body = {
             "model": model or self.model,
-            "reasoning_effort": self.reasoning_effort,
-            "messages": [
+            "input": [
                 {
                     "role": "user",
-                    "content": [{"type": "text", "text": prompt}],
+                    "content": [{"type": "input_text", "text": prompt}],
                 }
             ],
         }
-        return self._chat(body)
+        return self._responses(body)
 
-    def _chat(self, body: dict[str, Any]) -> dict[str, Any]:
+    def _responses(self, body: dict[str, Any]) -> dict[str, Any]:
         req = urllib.request.Request(
-            url=f"{self.endpoint}/chat/completions",
+            url=f"{self.endpoint}/responses",
             data=json.dumps(body).encode("utf-8"),
             headers={
                 "Content-Type": "application/json",
@@ -50,6 +49,27 @@ class DoubaoArkClient:
             },
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-            raw = resp.read().decode("utf-8")
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                raw = resp.read().decode("utf-8")
+        except urllib.error.HTTPError as e:
+            payload = ""
+            try:
+                payload = e.read().decode("utf-8", errors="ignore")
+            except Exception:
+                payload = ""
+            detail = (payload or str(e.reason or "")).strip()
+            if len(detail) > 1200:
+                detail = detail[:1200] + "...(truncated)"
+            raise RuntimeError(f"Doubao API HTTP {e.code}: {detail}") from e
+        except urllib.error.URLError as e:
+            reason = str(getattr(e, "reason", "") or "unknown")
+            raise RuntimeError(f"Doubao API network error: {reason}") from e
+        except TimeoutError as e:
+            raise RuntimeError("Doubao API timeout.") from e
+
+        try:
             return json.loads(raw)
+        except json.JSONDecodeError as e:
+            preview = raw[:300] + ("...(truncated)" if len(raw) > 300 else "")
+            raise RuntimeError(f"Doubao API returned non-JSON payload: {preview}") from e
