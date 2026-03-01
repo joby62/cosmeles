@@ -1,6 +1,7 @@
 import json
 from typing import Any
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException, Query
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.constants import DOUBAO_SUPPORTED_CONTENT_TYPES, VALID_CATEGORIES, VALID_SOURCES
@@ -30,7 +31,7 @@ async def ingest(
     file: UploadFile | None = File(None),
     meta_json: str | None = Form(None),
     payload_json: str | None = Form(None),
-    category: str = Form("shampoo"),
+    category: str | None = Form(None),
     brand: str | None = Form(None),
     name: str | None = Form(None),
     source: str = Form("doubao"),  # manual | doubao | auto
@@ -44,9 +45,9 @@ async def ingest(
     if normalized_source not in VALID_SOURCES:
         raise HTTPException(status_code=400, detail=f"Invalid source: {source}.")
 
-    category = (category or "").strip().lower() or "shampoo"
-    if category not in VALID_CATEGORIES:
-        raise HTTPException(status_code=400, detail=f"Invalid category: {category}.")
+    category_override = _normalize_optional_text(category, lower=True)
+    if category_override and category_override not in VALID_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Invalid category: {category_override}.")
 
     if upload is None and not meta_json and not payload_json:
         raise HTTPException(status_code=400, detail="Please provide image/file or meta_json/payload_json.")
@@ -82,19 +83,15 @@ async def ingest(
         ingest_mode = "manual_image_bootstrap"
 
     # 2) allow override minimal product fields
-    doc.setdefault("product", {})
-    doc_category = str(doc["product"].get("category") or "").strip().lower()
-    final_category = category or doc_category or "shampoo"
-    if final_category not in VALID_CATEGORIES:
-        raise HTTPException(status_code=400, detail=f"Invalid category in payload: {final_category}.")
-    doc["product"]["category"] = final_category
-    if brand:
-        doc["product"]["brand"] = brand
-    if name:
-        doc["product"]["name"] = name
+    _apply_product_overrides(
+        doc,
+        category=category_override,
+        brand=_normalize_optional_text(brand),
+        name=_normalize_optional_text(name),
+    )
 
     # 3) normalize + validate
-    normalized = normalize_doc(doc, image_rel_path=image_rel, doubao_raw=doc.get("evidence", {}).get("doubao_raw"))
+    normalized = _normalize_with_error_reporting(doc, image_rel=image_rel)
 
     # 4) save json
     json_rel = save_product_json(product_id, normalized)
@@ -139,7 +136,7 @@ async def ingest(
 async def ingest_stage1(
     image: UploadFile | None = File(None),
     file: UploadFile | None = File(None),
-    category: str = Form("shampoo"),
+    category: str | None = Form(None),
     brand: str | None = Form(None),
     name: str | None = Form(None),
 ):
@@ -153,9 +150,9 @@ async def ingest_stage1(
         raise HTTPException(status_code=400, detail="Only image upload is supported.")
     _validate_doubao_image(upload)
 
-    category = (category or "").strip().lower() or "shampoo"
-    if category not in VALID_CATEGORIES:
-        raise HTTPException(status_code=400, detail=f"Invalid category: {category}.")
+    category_override = _normalize_optional_text(category, lower=True)
+    if category_override and category_override not in VALID_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Invalid category: {category_override}.")
 
     product_id = new_id()
     content = await upload.read()
@@ -174,9 +171,9 @@ async def ingest_stage1(
     context = {
         "trace_id": product_id,
         "image_path": image_rel,
-        "category": category,
-        "brand": brand,
-        "name": name,
+        "category": category_override,
+        "brand": _normalize_optional_text(brand),
+        "name": _normalize_optional_text(name),
         "vision_text": stage1["vision_text"],
         "vision_model": stage1["model"],
         "vision_artifact": stage1.get("artifact"),
@@ -192,11 +189,11 @@ async def ingest_stage1(
     return {
         "status": "ok",
         "trace_id": product_id,
-        "category": category,
+        "category": category_override,
         "image_path": image_rel,
         "doubao": {
             "pipeline_mode": "stage1_done",
-            "models": {"vision": stage1["model"], "struct": settings.doubao_struct_model},
+            "models": {"vision": stage1["model"], "struct": stage1["model"]},
             "vision_text": stage1["vision_text"],
             "artifacts": {
                 "vision": stage1.get("artifact"),
@@ -232,14 +229,17 @@ def ingest_stage2(
     if db.get(ProductIndex, product_id):
         raise HTTPException(status_code=409, detail="This trace_id has already been finalized.")
 
-    resolved_category = (category or context.get("category") or "shampoo").strip().lower()
-    resolved_brand = brand if brand is not None else context.get("brand")
-    resolved_name = name if name is not None else context.get("name")
+    resolved_category = _normalize_optional_text(category, lower=True)
+    if resolved_category is None:
+        resolved_category = _normalize_optional_text(context.get("category"), lower=True)
+
+    resolved_brand = _normalize_optional_text(brand) if brand is not None else _normalize_optional_text(context.get("brand"))
+    resolved_name = _normalize_optional_text(name) if name is not None else _normalize_optional_text(context.get("name"))
 
     _apply_product_overrides(doc, resolved_category, resolved_brand, resolved_name)
     _attach_stage_evidence(doc, context, stage2)
 
-    normalized = normalize_doc(doc, image_rel_path=image_rel, doubao_raw=doc.get("evidence", {}).get("doubao_raw"))
+    normalized = _normalize_with_error_reporting(doc, image_rel=image_rel)
     json_rel = save_product_json(product_id, normalized)
 
     one_sentence = normalized.get("summary", {}).get("one_sentence")
@@ -313,11 +313,33 @@ def _analyze_with_doubao_stage2(vision_text: str, trace_id: str) -> dict[str, An
         raise HTTPException(status_code=502, detail=f"Doubao request failed: {e}") from e
 
 
-def _apply_product_overrides(doc: dict[str, Any], category: str, brand: str | None, name: str | None) -> None:
-    if category not in VALID_CATEGORIES:
-        raise HTTPException(status_code=400, detail=f"Invalid category in payload: {category}.")
+def _apply_product_overrides(doc: dict[str, Any], category: str | None, brand: str | None, name: str | None) -> None:
     doc.setdefault("product", {})
-    doc["product"]["category"] = category
+
+    if category:
+        if category not in VALID_CATEGORIES:
+            raise HTTPException(status_code=400, detail=f"Invalid category in payload: {category}.")
+        doc["product"]["category"] = category
+    else:
+        model_category = _normalize_optional_text(doc["product"].get("category"), lower=True)
+        if not model_category:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Structured result missing required field: product.category. "
+                    f"Allowed values: {', '.join(sorted(VALID_CATEGORIES))}."
+                ),
+            )
+        if model_category not in VALID_CATEGORIES:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Structured result has invalid product.category='{model_category}'. "
+                    f"Allowed values: {', '.join(sorted(VALID_CATEGORIES))}."
+                ),
+            )
+        doc["product"]["category"] = model_category
+
     if brand:
         doc["product"]["brand"] = brand
     if name:
@@ -386,7 +408,7 @@ def _to_product_doc_shape(doc: dict[str, Any]) -> dict[str, Any]:
         return doc
 
     product = {
-        "category": doc.get("category") or "shampoo",
+        "category": doc.get("category"),
         "brand": doc.get("brand"),
         "name": doc.get("name"),
     }
@@ -394,7 +416,7 @@ def _to_product_doc_shape(doc: dict[str, Any]) -> dict[str, Any]:
     summary_in = doc.get("summary")
     if isinstance(summary_in, dict):
         summary = {
-            "one_sentence": summary_in.get("one_sentence") or summary_in.get("oneSentence") or _fallback_summary(product),
+            "one_sentence": summary_in.get("one_sentence") or summary_in.get("oneSentence"),
             "pros": _to_str_list(summary_in.get("pros")),
             "cons": _to_str_list(summary_in.get("cons")),
             "who_for": _to_str_list(summary_in.get("who_for") or summary_in.get("whoFor")),
@@ -402,7 +424,7 @@ def _to_product_doc_shape(doc: dict[str, Any]) -> dict[str, Any]:
         }
     else:
         summary = {
-            "one_sentence": str(doc.get("one_sentence") or doc.get("oneSentence") or _fallback_summary(product)),
+            "one_sentence": doc.get("one_sentence") or doc.get("oneSentence"),
             "pros": _to_str_list(doc.get("pros")),
             "cons": _to_str_list(doc.get("cons")),
             "who_for": _to_str_list(doc.get("who_for") or doc.get("whoFor")),
@@ -453,12 +475,6 @@ def _to_str_list(v: Any) -> list[str]:
     s = str(v).strip()
     return [s] if s else []
 
-def _fallback_summary(product: dict[str, Any]) -> str:
-    brand = product.get("brand") or "该产品"
-    name = product.get("name") or ""
-    full = f"{brand} {name}".strip()
-    return f"{full} 已完成入库，可在前端结果页用于展示成分与用法。"
-
 def _derive_tags(doc: dict) -> list[str]:
     """
     MVP：非常朴素的标签提取。
@@ -475,3 +491,32 @@ def _derive_tags(doc: dict) -> list[str]:
     if "香精" in one:
         tags.append("含香精")
     return tags[:6]
+
+
+def _normalize_optional_text(value: Any, lower: bool = False) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    return text.lower() if lower else text
+
+
+def _normalize_with_error_reporting(doc: dict[str, Any], image_rel: str | None) -> dict[str, Any]:
+    evidence = doc.get("evidence")
+    doubao_raw = evidence.get("doubao_raw") if isinstance(evidence, dict) else None
+    try:
+        return normalize_doc(doc, image_rel_path=image_rel, doubao_raw=doubao_raw)
+    except ValidationError as e:
+        issues: list[str] = []
+        for err in e.errors():
+            loc = ".".join(str(p) for p in err.get("loc", []))
+            msg = str(err.get("msg", "invalid value"))
+            issues.append(f"{loc}: {msg}" if loc else msg)
+        summary = "; ".join(issues[:8]) if issues else "unknown validation error"
+        if len(issues) > 8:
+            summary += f"; ...(+{len(issues) - 8} more)"
+        raise HTTPException(
+            status_code=422,
+            detail=f"Structured result validation failed: {summary}",
+        ) from e

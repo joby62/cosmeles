@@ -34,6 +34,7 @@ const SAMPLE_JSON = `{
 }`;
 
 export default function UploadPage() {
+  const [useJsonOverride, setUseJsonOverride] = useState(false);
   const [category, setCategory] = useState("shampoo");
   const [brand, setBrand] = useState("");
   const [name, setName] = useState("");
@@ -67,9 +68,10 @@ export default function UploadPage() {
 
   const canSubmit = useMemo(() => {
     if (submitting) return false;
-    if (!image && !jsonText.trim()) return false;
+    if (useJsonOverride) return !!jsonText.trim();
+    if (!image) return false;
     return true;
-  }, [image, jsonText, submitting]);
+  }, [image, jsonText, submitting, useJsonOverride]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -82,18 +84,16 @@ export default function UploadPage() {
     setResult(null);
 
     try {
-      const finalBrand = brand.trim() || undefined;
-      const finalName = name.trim() || undefined;
-      const finalJson = jsonText.trim() || undefined;
+      const finalBrand = useJsonOverride ? brand.trim() || undefined : undefined;
+      const finalName = useJsonOverride ? name.trim() || undefined : undefined;
+      const finalCategory = useJsonOverride ? category : undefined;
+      const finalJson = useJsonOverride ? jsonText.trim() || undefined : undefined;
 
-      // Doubao 两阶段：先展示 mini 识别，再等待 lite 结构化
+      // Doubao 两阶段：先展示 mini 识别，再等待 mini 结构化
       if (source === "doubao" && image && !finalJson) {
         setPhase("stage1");
         const stage1 = await ingestProductStage1({
           image,
-          category,
-          brand: finalBrand,
-          name: finalName,
         });
 
         setStage1Preview({
@@ -106,15 +106,12 @@ export default function UploadPage() {
         setPhase("stage2");
         const ingestResult = await ingestProductStage2({
           traceId: stage1.trace_id,
-          category,
-          brand: finalBrand,
-          name: finalName,
         });
         setResult(ingestResult);
       } else {
         const ingestResult = await ingestProduct({
           image: image || undefined,
-          category,
+          category: finalCategory,
           brand: finalBrand,
           name: finalName,
           source,
@@ -135,65 +132,25 @@ export default function UploadPage() {
     <main className="mx-auto min-h-screen w-full max-w-[960px] px-6 py-12">
       <h1 className="text-[40px] leading-[1.08] font-semibold tracking-[-0.02em] text-black/92">产品上传</h1>
       <p className="mt-3 max-w-[760px] text-[17px] leading-[1.6] text-black/62">
-        统一走后端 <span className="font-medium text-black/78">/api/upload</span>。支持图片、产品 JSON 或二者同时上传；
-        用于后续豆包解析、产品比对和结果页展示。
+        默认只上传图片，由豆包自动识别品类与信息。勾选 JSON 覆盖后，才会提交品类/品牌/产品名与 JSON。
       </p>
 
       <form onSubmit={onSubmit} className="mt-8 space-y-5 rounded-[28px] border border-black/10 bg-white p-6">
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <label className="flex flex-col gap-2">
-            <span className="text-[13px] font-semibold text-black/72">品类</span>
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="h-11 rounded-xl border border-black/12 bg-white px-3 text-[14px] text-black/86 outline-none focus:border-black/35"
-            >
-              {CATEGORIES.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="flex flex-col gap-2">
-            <span className="text-[13px] font-semibold text-black/72">来源模式</span>
-            <select
-              value={source}
-              onChange={(e) => setSource(e.target.value as "manual" | "doubao" | "auto")}
-              className="h-11 rounded-xl border border-black/12 bg-white px-3 text-[14px] text-black/86 outline-none focus:border-black/35"
-            >
-              <option value="doubao">doubao（图片走豆包解析）</option>
-              <option value="manual">manual（手工 JSON 优先）</option>
-              <option value="auto">auto（自动）</option>
-            </select>
-          </label>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <label className="flex flex-col gap-2">
-            <span className="text-[13px] font-semibold text-black/72">品牌（可选）</span>
-            <input
-              value={brand}
-              onChange={(e) => setBrand(e.target.value)}
-              className="h-11 rounded-xl border border-black/12 bg-white px-3 text-[14px] text-black/86 outline-none placeholder:text-black/30 focus:border-black/35"
-              placeholder="如：CeraVe"
-            />
-          </label>
-
-          <label className="flex flex-col gap-2">
-            <span className="text-[13px] font-semibold text-black/72">产品名（可选）</span>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="h-11 rounded-xl border border-black/12 bg-white px-3 text-[14px] text-black/86 outline-none placeholder:text-black/30 focus:border-black/35"
-              placeholder="如：温和保湿沐浴露"
-            />
-          </label>
-        </div>
+        <label className="flex flex-col gap-2">
+          <span className="text-[13px] font-semibold text-black/72">来源模式</span>
+          <select
+            value={source}
+            onChange={(e) => setSource(e.target.value as "manual" | "doubao" | "auto")}
+            className="h-11 rounded-xl border border-black/12 bg-white px-3 text-[14px] text-black/86 outline-none focus:border-black/35"
+          >
+            <option value="doubao">doubao（图片走豆包解析）</option>
+            <option value="manual">manual（手工 JSON 优先）</option>
+            <option value="auto">auto（自动）</option>
+          </select>
+        </label>
 
         <label className="flex flex-col gap-2">
-          <span className="text-[13px] font-semibold text-black/72">产品图片（可选）</span>
+          <span className="text-[13px] font-semibold text-black/72">产品图片（默认必传）</span>
           <input
             type="file"
             accept="image/*"
@@ -202,15 +159,66 @@ export default function UploadPage() {
           />
         </label>
 
-        <label className="flex flex-col gap-2">
-          <span className="text-[13px] font-semibold text-black/72">产品 JSON（可选）</span>
-          <textarea
-            value={jsonText}
-            onChange={(e) => setJsonText(e.target.value)}
-            className="min-h-[220px] rounded-2xl border border-black/12 bg-white px-3 py-2.5 text-[13px] leading-[1.6] text-black/82 outline-none placeholder:text-black/30 focus:border-black/35"
-            placeholder={SAMPLE_JSON}
+        <label className="flex items-center gap-3 rounded-xl border border-black/10 bg-black/[0.02] px-3 py-2.5 text-[13px] text-black/78">
+          <input
+            type="checkbox"
+            checked={useJsonOverride}
+            onChange={(e) => setUseJsonOverride(e.target.checked)}
+            className="h-4 w-4 rounded border border-black/25"
           />
+          <span className="font-medium">使用 JSON 覆盖（才会提交品类/品牌/产品名）</span>
         </label>
+
+        {useJsonOverride ? (
+          <>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <label className="flex flex-col gap-2">
+                <span className="text-[13px] font-semibold text-black/72">品类</span>
+                <select
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  className="h-11 rounded-xl border border-black/12 bg-white px-3 text-[14px] text-black/86 outline-none focus:border-black/35"
+                >
+                  {CATEGORIES.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="flex flex-col gap-2">
+                <span className="text-[13px] font-semibold text-black/72">品牌（可选）</span>
+                <input
+                  value={brand}
+                  onChange={(e) => setBrand(e.target.value)}
+                  className="h-11 rounded-xl border border-black/12 bg-white px-3 text-[14px] text-black/86 outline-none placeholder:text-black/30 focus:border-black/35"
+                  placeholder="如：CeraVe"
+                />
+              </label>
+            </div>
+
+            <label className="flex flex-col gap-2">
+              <span className="text-[13px] font-semibold text-black/72">产品名（可选）</span>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="h-11 rounded-xl border border-black/12 bg-white px-3 text-[14px] text-black/86 outline-none placeholder:text-black/30 focus:border-black/35"
+                placeholder="如：温和保湿沐浴露"
+              />
+            </label>
+
+            <label className="flex flex-col gap-2">
+              <span className="text-[13px] font-semibold text-black/72">产品 JSON（必填）</span>
+              <textarea
+                value={jsonText}
+                onChange={(e) => setJsonText(e.target.value)}
+                className="min-h-[220px] rounded-2xl border border-black/12 bg-white px-3 py-2.5 text-[13px] leading-[1.6] text-black/82 outline-none placeholder:text-black/30 focus:border-black/35"
+                placeholder={SAMPLE_JSON}
+              />
+            </label>
+          </>
+        ) : null}
 
         <button
           type="submit"
