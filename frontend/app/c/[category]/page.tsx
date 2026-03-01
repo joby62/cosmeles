@@ -28,7 +28,7 @@ export default async function CategoryPage({
 
         <div className="mt-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-10">
           {filtered.map((p) => (
-            <Link key={p.id} href={`/products/${p.id}`} className="group block">
+            <Link key={p.id} href={`/product/${p.id}`} className="group block">
               <div className="relative aspect-square bg-black/5 border border-black/10 overflow-hidden">
                 <Image
                   src={resolveImageUrl(p)}

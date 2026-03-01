@@ -4,8 +4,9 @@ import { fetchProductDoc } from "@/lib/api";
 export default async function ProductPage({
   params,
 }: {
-  params: { id: string };
+  params: { id: string } | Promise<{ id: string }>;
 }) {
-  const doc = await fetchProductDoc(params.id);
-  return <ProductShowcase id={params.id} doc={doc} />;
+  const { id } = await Promise.resolve(params);
+  const doc = await fetchProductDoc(id);
+  return <ProductShowcase id={id} doc={doc} />;
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useMemo, useState } from "react";
+import Link from "next/link";
 import { ingestProduct, ingestProductStage1, ingestProductStage2 } from "@/lib/api";
 
 const CATEGORIES = [
@@ -364,6 +365,29 @@ export default function UploadPage() {
           </div>
         ) : null}
 
+        {phase === "done" && batchRuns.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/product"
+              className="inline-flex h-9 items-center rounded-full border border-black/14 bg-white px-4 text-[12px] font-semibold text-black/78 transition-colors hover:bg-black/[0.03]"
+            >
+              查看全部产品
+            </Link>
+            {batchRuns
+              .filter((item) => item.resultId)
+              .slice(0, 1)
+              .map((item) => (
+                <Link
+                  key={item.resultId}
+                  href={`/product/${item.resultId}`}
+                  className="inline-flex h-9 items-center rounded-full border border-black/14 bg-black px-4 text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
+                >
+                  查看最新详情
+                </Link>
+              ))}
+          </div>
+        ) : null}
+
         {result ? (
           <div className="rounded-2xl border border-black/10 bg-black/[0.03] px-4 py-3.5 text-[13px] leading-[1.65] text-black/76">
             <div>状态：{result.status}</div>
@@ -401,6 +425,21 @@ export default function UploadPage() {
                 ) : null}
               </>
             ) : null}
+
+            <div className="mt-3 flex flex-wrap gap-2 border-t border-black/10 pt-3">
+              <Link
+                href="/product"
+                className="inline-flex h-8 items-center rounded-full border border-black/14 bg-white px-3.5 text-[12px] font-semibold text-black/78 transition-colors hover:bg-black/[0.03]"
+              >
+                查看全部产品
+              </Link>
+              <Link
+                href={`/product/${result.id}`}
+                className="inline-flex h-8 items-center rounded-full border border-black/14 bg-black px-3.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
+              >
+                查看该产品详情
+              </Link>
+            </div>
           </div>
         ) : null}
       </form>

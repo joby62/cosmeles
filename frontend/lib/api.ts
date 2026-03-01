@@ -10,6 +10,17 @@ export type Product = {
   created_at?: string | null;
 };
 
+export type ProductListMeta = {
+  total: number;
+  offset: number;
+  limit: number;
+};
+
+export type ProductListResponse = {
+  items: Product[];
+  meta: ProductListMeta;
+};
+
 export type ProductDoc = {
   product: {
     category: string;
@@ -94,6 +105,23 @@ export async function fetchProducts(): Promise<Product[]> {
   return apiFetch<Product[]>("/api/products");
 }
 
+export async function fetchAllProducts(): Promise<Product[]> {
+  const limit = 200;
+  let offset = 0;
+  let total = Number.POSITIVE_INFINITY;
+  const out: Product[] = [];
+
+  while (offset < total) {
+    const page = await apiFetch<ProductListResponse>(`/api/products/page?offset=${offset}&limit=${limit}`);
+    out.push(...page.items);
+    total = page.meta.total;
+    offset += page.meta.limit;
+    if (page.items.length === 0) break;
+  }
+
+  return out;
+}
+
 export async function fetchProduct(id: string): Promise<Product> {
   return apiFetch<Product>(`/api/products/${id}`);
 }
@@ -102,22 +130,20 @@ export async function fetchProductDoc(id: string): Promise<ProductDoc> {
   return apiFetch<ProductDoc>(`/api/products/${id}`);
 }
 
-// 图片 URL：浏览器用相对 /images/...（同域 nginx -> backend）
-// SSR 也需要绝对 URL，走 nginx
+function normalizePublicImagePath(path: string): string {
+  if (path.startsWith("http://") || path.startsWith("https://")) return path;
+  return path.startsWith("/") ? path : `/${path}`;
+}
+
+// 图片 URL：统一返回浏览器可访问地址（优先同域相对路径）
 export function resolveImageUrl(product: Product): string {
   const p = product.image_url || `/images/${product.id}.png`;
-  if (typeof window !== "undefined") return p.startsWith("http") ? p : p;
-  const base = process.env.INTERNAL_API_BASE || "http://nginx";
-  return p.startsWith("http") ? p : new URL(p, base).toString();
+  return normalizePublicImagePath(p);
 }
 
 export function resolveStoredImageUrl(imagePath?: string | null): string | null {
   if (!imagePath) return null;
-  if (imagePath.startsWith("http")) return imagePath;
-  const path = imagePath.startsWith("/") ? imagePath : `/${imagePath}`;
-  if (typeof window !== "undefined") return path;
-  const base = process.env.INTERNAL_API_BASE || "http://nginx";
-  return new URL(path, base).toString();
+  return normalizePublicImagePath(imagePath);
 }
 
 export type IngestInput = {

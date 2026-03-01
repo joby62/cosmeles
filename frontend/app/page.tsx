@@ -12,17 +12,17 @@ function cx(...arr: Array<string | false | undefined | null>) {
 }
 
 export default function HomePage() {
-  const [lang, setLang] = useState<Lang>("zh");
+  const [lang, setLang] = useState<Lang>(() => getInitialLang());
   const [navKey, setNavKey] = useState<CategoryKey | null>(null);
 
   useEffect(() => {
-    setLang(getInitialLang());
     return subscribeLang(() => setLang(getInitialLang()));
   }, []);
 
   useEffect(() => {
-    const on = (e: any) => {
-      const k = (e?.detail?.key ?? null) as CategoryKey | null;
+    const on = (event: Event) => {
+      const customEvent = event as CustomEvent<{ key?: CategoryKey | null }>;
+      const k = customEvent.detail?.key ?? null;
       setNavKey(k);
     };
     window.addEventListener("matchup:nav", on);
@@ -117,6 +117,18 @@ export default function HomePage() {
             )}
           >
             上传产品
+          </Link>
+          <Link
+            href="/product"
+            className={cx(
+              "px-4 py-2 rounded-full",
+              "text-[12px] font-medium tracking-[0.02em]",
+              "border border-black/[0.08]",
+              "bg-white/60 hover:bg-white/75",
+              "transition-colors"
+            )}
+          >
+            产品展示
           </Link>
         </div>
 

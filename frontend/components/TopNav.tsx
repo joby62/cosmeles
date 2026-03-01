@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Lang } from "@/lib/i18n";
 import { useLang } from "@/lib/i18n";
 import { brandByLang } from "@/lib/brand";
@@ -113,21 +113,25 @@ export default function TopNav() {
 
   const isOpen = openKey !== null;
 
-  // ✅ logo：先解决“挂掉”
-  const [logoSrc, setLogoSrc] = useState<string>(brand.logoSrc);
-  useEffect(() => setLogoSrc(brand.logoSrc), [brand.logoSrc]);
+  const [brokenLogoSrc, setBrokenLogoSrc] = useState<string | null>(null);
+  const fallbackLogo =
+    "data:image/svg+xml;utf8," +
+    encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="7" fill="rgba(0,0,0,.75)"/></svg>`
+    );
+  const logoSrc = brokenLogoSrc === brand.logoSrc ? fallbackLogo : brand.logoSrc;
 
   const flyout = useMemo(() => {
     if (!openKey) return null;
     return getFlyout(openKey, lang);
   }, [openKey, lang]);
 
-  function clearTimers() {
+  const clearTimers = useCallback(() => {
     if (openTimer.current) window.clearTimeout(openTimer.current);
     if (closeTimer.current) window.clearTimeout(closeTimer.current);
     openTimer.current = null;
     closeTimer.current = null;
-  }
+  }, []);
 
   function requestOpen(k: CategoryKey) {
     clearTimers();
@@ -139,10 +143,10 @@ export default function TopNav() {
     closeTimer.current = window.setTimeout(() => setOpenKey(null), 220);
   }
 
-  function hardClose() {
+  const hardClose = useCallback(() => {
     clearTimers();
     setOpenKey(null);
-  }
+  }, [clearTimers]);
 
   // ✅ 打开时只虚化 main
   useEffect(() => {
@@ -159,7 +163,7 @@ export default function TopNav() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [hardClose]);
 
   const toggleLabel = lang === "zh" ? "EN" : "中文";
   const nextLang: Lang = lang === "zh" ? "en" : "zh";
@@ -182,13 +186,8 @@ export default function TopNav() {
                 priority
                 draggable={false}
                 onError={() => {
-                  // 最后兜底：如果 /logo.png 也不存在，避免显示坏图标
-                  setLogoSrc(
-                    "data:image/svg+xml;utf8," +
-                      encodeURIComponent(
-                        `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18"><circle cx="9" cy="9" r="7" fill="rgba(0,0,0,.75)"/></svg>`
-                      )
-                  );
+                  // 如果 logo 文件不存在，降级为内置圆点图标
+                  setBrokenLogoSrc(brand.logoSrc);
                 }}
               />
             </Link>
@@ -207,6 +206,9 @@ export default function TopNav() {
 
               <Link href="/compare" className="nav-item" onPointerEnter={() => requestClose()}>
                 {lang === "zh" ? "横向对比" : "Compare"}
+              </Link>
+              <Link href="/product" className="nav-item" onPointerEnter={() => requestClose()}>
+                {lang === "zh" ? "产品" : "Products"}
               </Link>
               <Link href="/upload" className="nav-item" onPointerEnter={() => requestClose()}>
                 {lang === "zh" ? "上传" : "Upload"}
