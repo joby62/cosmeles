@@ -39,6 +39,29 @@ const CATEGORY_THEME: Record<WikiCategoryKey, CategoryTheme> = {
   },
 };
 
+type NameParts = {
+  main: string;
+  sub: string | null;
+};
+
+function splitIngredientName(raw: string): NameParts {
+  const text = raw.trim();
+  const idx = text.indexOf("(");
+  if (idx <= 0) {
+    return { main: text, sub: null };
+  }
+  return {
+    main: text.slice(0, idx).trim(),
+    sub: text.slice(idx).trim() || null,
+  };
+}
+
+function titleClassByLength(length: number): string {
+  if (length > 56) return "text-[34px] leading-[1.04]";
+  if (length > 34) return "text-[40px] leading-[1.03]";
+  return "text-[46px] leading-[1.01]";
+}
+
 export default async function IngredientDetailPage({
   params,
 }: {
@@ -71,9 +94,10 @@ export default async function IngredientDetailPage({
   const profile = item.profile;
   const categoryLabel = WIKI_MAP[category].label;
   const theme = CATEGORY_THEME[category];
+  const name = splitIngredientName(item.ingredient_name);
 
   return (
-    <section className="-mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[#0b0d12] pb-28 pt-4 text-white">
+    <section className="-mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[#0b0d12] pb-32 pt-4 text-white">
       <div className="px-4">
         <Link
           href="/m/wiki"
@@ -86,19 +110,26 @@ export default async function IngredientDetailPage({
       <article className="mt-4 overflow-hidden rounded-[32px] border border-white/10 bg-[#121722] shadow-[0_28px_70px_rgba(0,0,0,0.48)]">
         <div className={`${theme.heroClass} relative h-[380px] w-full`}>
           <div className={`absolute inset-0 ${theme.hazeClass}`} />
-          <div className="absolute inset-0 bg-[linear-gradient(176deg,rgba(255,255,255,0.16)_0%,rgba(255,255,255,0)_35%,rgba(0,0,0,0.36)_100%)]" />
+          <div className="absolute inset-0 bg-[linear-gradient(176deg,rgba(255,255,255,0.16)_0%,rgba(255,255,255,0)_35%,rgba(0,0,0,0.38)_100%)]" />
 
-          <div className="absolute left-5 top-5 rounded-full border border-white/35 bg-black/20 px-3 py-1 text-[12px] font-semibold tracking-[0.03em] text-white/92 backdrop-blur-xl">
-            {item.ingredient_id}
-          </div>
-
-          <div className="absolute left-5 top-16 rounded-full border border-white/35 bg-white/12 px-2.5 py-0.5 text-[12px] font-medium text-white/88 backdrop-blur-lg">
+          <div className="absolute left-5 top-5 rounded-full border border-white/35 bg-white/12 px-2.5 py-0.5 text-[12px] font-medium text-white/88 backdrop-blur-lg">
             {categoryLabel}
           </div>
 
           <div className="absolute bottom-6 left-5 right-5">
             <p className="text-[13px] font-medium tracking-[0.04em] text-white/84">成分详情</p>
-            <h1 className="mt-1 text-[44px] leading-[0.98] font-semibold tracking-[-0.04em] text-white">{item.ingredient_name}</h1>
+            <h1
+              className={`mt-1 line-clamp-2 break-words font-semibold tracking-[-0.04em] text-white ${titleClassByLength(
+                item.ingredient_name.length,
+              )}`}
+            >
+              {name.main}
+            </h1>
+            {name.sub ? (
+              <p className="mt-1 line-clamp-2 break-words text-[22px] leading-[1.05] font-semibold tracking-[-0.02em] text-white/94">
+                {name.sub}
+              </p>
+            ) : null}
           </div>
         </div>
 
@@ -108,11 +139,11 @@ export default async function IngredientDetailPage({
             <p className="mt-1 text-[18px] font-semibold text-white">{item.source_count}</p>
           </div>
           <div className="bg-black/28 px-2 py-3 backdrop-blur-xl">
-            <p className="text-[11px] text-white/55">置信度</p>
+            <p className="text-[11px] text-white/55">模型把握</p>
             <p className="mt-1 text-[18px] font-semibold text-white">{profile.confidence}</p>
           </div>
           <div className="bg-black/28 px-2 py-3 backdrop-blur-xl">
-            <p className="text-[11px] text-white/55">分类</p>
+            <p className="text-[11px] text-white/55">所属分类</p>
             <p className="mt-1 text-[16px] font-semibold text-white">{categoryLabel}</p>
           </div>
         </div>
@@ -147,7 +178,6 @@ export default async function IngredientDetailPage({
                   <div className="text-[13px] font-medium text-white/82">
                     {sample.brand || "未知品牌"} · {sample.name || "未知产品"}
                   </div>
-                  <div className="mt-1 text-[12px] text-white/52">trace_id: {sample.trace_id || "n/a"}</div>
                   <p className="mt-2 text-[13px] leading-[1.55] text-white/68">{sample.one_sentence || "无一句话描述"}</p>
                 </div>
               ))}

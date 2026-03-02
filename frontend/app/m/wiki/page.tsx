@@ -16,34 +16,57 @@ const CATEGORY_THEME: Record<WikiCategoryKey, CategoryTheme> = {
   shampoo: {
     heroClass:
       "bg-[radial-gradient(circle_at_24%_20%,rgba(235,250,255,0.94),rgba(184,222,238,0.88)_44%,rgba(138,186,210,0.93)_100%)]",
-    hazeClass: "bg-[radial-gradient(circle_at_70%_78%,rgba(18,55,86,0.46),rgba(10,20,36,0)_64%)]",
+    hazeClass: "bg-[radial-gradient(circle_at_70%_78%,rgba(18,55,86,0.44),rgba(10,20,36,0)_64%)]",
     accentClass: "bg-[#8fd3f2]",
   },
   bodywash: {
     heroClass:
       "bg-[radial-gradient(circle_at_72%_20%,rgba(239,247,255,0.94),rgba(191,210,244,0.88)_42%,rgba(122,146,214,0.93)_100%)]",
-    hazeClass: "bg-[radial-gradient(circle_at_20%_82%,rgba(32,41,98,0.44),rgba(10,20,36,0)_64%)]",
+    hazeClass: "bg-[radial-gradient(circle_at_20%_82%,rgba(32,41,98,0.42),rgba(10,20,36,0)_64%)]",
     accentClass: "bg-[#9fb5ff]",
   },
   conditioner: {
     heroClass:
       "bg-[radial-gradient(circle_at_20%_18%,rgba(248,244,255,0.95),rgba(214,198,246,0.9)_44%,rgba(154,132,220,0.93)_100%)]",
-    hazeClass: "bg-[radial-gradient(circle_at_70%_80%,rgba(56,24,102,0.46),rgba(10,20,36,0)_64%)]",
+    hazeClass: "bg-[radial-gradient(circle_at_70%_80%,rgba(56,24,102,0.44),rgba(10,20,36,0)_64%)]",
     accentClass: "bg-[#bea1ff]",
   },
   lotion: {
     heroClass:
       "bg-[radial-gradient(circle_at_26%_20%,rgba(255,248,232,0.95),rgba(245,219,170,0.9)_45%,rgba(217,167,95,0.93)_100%)]",
-    hazeClass: "bg-[radial-gradient(circle_at_72%_82%,rgba(90,56,18,0.42),rgba(10,20,36,0)_64%)]",
+    hazeClass: "bg-[radial-gradient(circle_at_72%_82%,rgba(90,56,18,0.4),rgba(10,20,36,0)_64%)]",
     accentClass: "bg-[#e7bd72]",
   },
   cleanser: {
     heroClass:
       "bg-[radial-gradient(circle_at_26%_18%,rgba(241,252,255,0.95),rgba(187,223,236,0.89)_44%,rgba(117,176,205,0.93)_100%)]",
-    hazeClass: "bg-[radial-gradient(circle_at_74%_82%,rgba(18,70,87,0.44),rgba(10,20,36,0)_64%)]",
+    hazeClass: "bg-[radial-gradient(circle_at_74%_82%,rgba(18,70,87,0.42),rgba(10,20,36,0)_64%)]",
     accentClass: "bg-[#87c7dd]",
   },
 };
+
+type NameParts = {
+  main: string;
+  sub: string | null;
+};
+
+function splitIngredientName(raw: string): NameParts {
+  const text = raw.trim();
+  const idx = text.indexOf("(");
+  if (idx <= 0) {
+    return { main: text, sub: null };
+  }
+  return {
+    main: text.slice(0, idx).trim(),
+    sub: text.slice(idx).trim() || null,
+  };
+}
+
+function titleClassByLength(length: number): string {
+  if (length > 56) return "text-[34px] leading-[1.04]";
+  if (length > 34) return "text-[40px] leading-[1.03]";
+  return "text-[46px] leading-[1.01]";
+}
 
 function SearchIcon({ className = "h-5 w-5" }: { className?: string }) {
   return (
@@ -94,16 +117,21 @@ export default function MobileWikiPage() {
   const featured = useMemo(() => items[0], [items]);
   const rest = useMemo(() => items.slice(1), [items]);
 
+  const featuredName = useMemo(
+    () => (featured ? splitIngredientName(featured.ingredient_name) : null),
+    [featured],
+  );
+
   return (
-    <section className="-mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[#0b0d12] px-4 pb-28 pt-4 text-white">
-      <div className="rounded-[24px] border border-white/10 bg-white/[0.04] p-3 shadow-[0_20px_45px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+    <section className="-mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[#0b0d12] px-4 pb-32 pt-4 text-white">
+      <div className="rounded-[24px] border border-white/10 bg-white/[0.04] p-3 shadow-[0_18px_42px_rgba(0,0,0,0.34)] backdrop-blur-xl">
         <form
           onSubmit={(e) => {
             e.preventDefault();
           }}
         >
-          <div className="flex h-11 items-center rounded-2xl border border-white/10 bg-white/[0.08] px-3 text-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]">
-            <SearchIcon className="h-[17px] w-[17px] text-white/55" />
+          <div className="flex h-11 items-center rounded-2xl border border-white/10 bg-white/[0.07] px-3 text-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]">
+            <SearchIcon className="h-[17px] w-[17px] text-white/52" />
             <input
               id="wiki-search"
               value={query}
@@ -116,7 +144,7 @@ export default function MobileWikiPage() {
                 setQuery(next);
               }}
               placeholder="搜索成分名称"
-              className="ml-2.5 h-full w-full bg-transparent text-[16px] text-white/92 outline-none placeholder:text-white/38"
+              className="ml-2.5 h-full w-full bg-transparent text-[16px] text-white/92 outline-none placeholder:text-white/36"
             />
             {query ? (
               <button
@@ -126,7 +154,7 @@ export default function MobileWikiPage() {
                   setLoading(true);
                   setError(null);
                 }}
-                className="rounded-full bg-white/10 px-2.5 py-1 text-[12px] text-white/72 active:bg-white/20"
+                className="rounded-full bg-white/10 px-2.5 py-1 text-[12px] text-white/72 active:bg-white/18"
               >
                 清除
               </button>
@@ -152,8 +180,8 @@ export default function MobileWikiPage() {
                   }}
                   className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12px] transition-colors ${
                     activeTag
-                      ? "border-white/35 bg-white/16 text-white"
-                      : "border-white/12 bg-white/[0.03] text-white/70 active:bg-white/[0.09]"
+                      ? "border-white/36 bg-white/16 text-white"
+                      : "border-white/12 bg-white/[0.03] text-white/72 active:bg-white/[0.08]"
                   }`}
                 >
                   <Image src={`/m/categories/${item.key}.png`} alt={item.label} width={18} height={18} className="h-[18px] w-[18px] rounded-full object-cover" />
@@ -166,34 +194,40 @@ export default function MobileWikiPage() {
       </div>
 
       <section className="mt-6">
-        <div className="mb-3 flex items-end justify-between">
-          <div>
-            <p className="text-[14px] font-medium text-[#4ea0ff]">现已推出</p>
-            <h1 className="mt-1 text-[34px] leading-[1.08] font-semibold tracking-[-0.03em]">成份百科</h1>
-            <p className="mt-1 text-[15px] leading-[1.5] text-white/66">{WIKI_MAP[active].summary}</p>
-          </div>
+        <div className="mb-3">
+          <p className="text-[14px] font-medium text-[#4ea0ff]">现已推出</p>
+          <h1 className="mt-1 text-[34px] leading-[1.08] font-semibold tracking-[-0.03em]">成份百科</h1>
+          <p className="mt-1 text-[15px] leading-[1.5] text-white/66">{WIKI_MAP[active].summary}</p>
         </div>
 
-        {featured ? (
+        {featured && featuredName ? (
           <Link
             href={`/m/wiki/${active}/${featured.ingredient_id}`}
-            className="block overflow-hidden rounded-[32px] border border-white/12 bg-[#121722] shadow-[0_26px_60px_rgba(0,0,0,0.5)] transition-transform active:scale-[0.996]"
+            className="block overflow-hidden rounded-[34px] border border-white/12 bg-[#121722] shadow-[0_26px_60px_rgba(0,0,0,0.5)] transition-transform active:scale-[0.996]"
           >
-            <div className={`${theme.heroClass} relative h-[340px] w-full`}>
+            <div className={`${theme.heroClass} relative h-[356px] w-full`}>
               <div className={`absolute inset-0 ${theme.hazeClass}`} />
-              <div className="absolute inset-0 bg-[linear-gradient(178deg,rgba(255,255,255,0.18)_0%,rgba(255,255,255,0.0)_35%,rgba(0,0,0,0.36)_100%)]" />
+              <div className={`absolute right-[-50px] top-[-60px] h-[190px] w-[190px] rounded-full ${theme.accentClass} opacity-35 blur-3xl`} />
+              <div className="absolute inset-0 bg-[linear-gradient(178deg,rgba(255,255,255,0.15)_0%,rgba(255,255,255,0)_30%,rgba(0,0,0,0.4)_100%)]" />
 
-              <div className="absolute left-5 top-5 inline-flex items-center rounded-full border border-white/35 bg-black/20 px-3 py-1 text-[12px] font-semibold tracking-[0.03em] text-white/92 backdrop-blur-xl">
-                {featured.ingredient_id}
-              </div>
-
-              <div className="absolute left-5 top-16 rounded-full border border-white/35 bg-white/10 px-2.5 py-0.5 text-[12px] font-medium text-white/84 backdrop-blur-lg">
+              <div className="absolute left-5 top-5 rounded-full border border-white/35 bg-white/10 px-2.5 py-0.5 text-[12px] font-medium text-white/86 backdrop-blur-lg">
                 {WIKI_MAP[active].label}
               </div>
 
               <div className="absolute bottom-6 left-5 right-5">
-                <p className="text-[13px] font-medium tracking-[0.04em] text-white/84">必备精选</p>
-                <h2 className="mt-1 text-[44px] leading-[0.98] font-semibold tracking-[-0.04em] text-white">{featured.ingredient_name}</h2>
+                <p className="text-[13px] font-medium tracking-[0.04em] text-white/82">必备精选</p>
+                <h2
+                  className={`mt-1 break-words font-semibold tracking-[-0.04em] text-white ${titleClassByLength(
+                    featured.ingredient_name.length,
+                  )} line-clamp-2`}
+                >
+                  {featuredName.main}
+                </h2>
+                {featuredName.sub ? (
+                  <p className="mt-1 line-clamp-2 break-words text-[22px] leading-[1.05] font-semibold tracking-[-0.02em] text-white/96">
+                    {featuredName.sub}
+                  </p>
+                ) : null}
               </div>
             </div>
 
@@ -210,33 +244,39 @@ export default function MobileWikiPage() {
       </section>
 
       <section className="mt-4 space-y-4">
-        {rest.map((item, idx) => (
-          <Link
-            key={item.ingredient_id}
-            href={`/m/wiki/${active}/${item.ingredient_id}`}
-            className="block overflow-hidden rounded-[30px] border border-white/10 bg-[#121722] shadow-[0_20px_44px_rgba(0,0,0,0.36)] transition-transform active:scale-[0.997]"
-          >
-            <div className={`${theme.heroClass} relative h-[210px] w-full`}>
-              <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.14)_0%,rgba(255,255,255,0.0)_34%,rgba(0,0,0,0.34)_100%)]" />
-              <div className={`absolute right-[-40px] top-[-36px] h-[130px] w-[130px] rounded-full ${theme.accentClass} opacity-40 blur-3xl`} />
+        {rest.map((item) => {
+          const name = splitIngredientName(item.ingredient_name);
+          return (
+            <Link
+              key={item.ingredient_id}
+              href={`/m/wiki/${active}/${item.ingredient_id}`}
+              className="block overflow-hidden rounded-[30px] border border-white/10 bg-[#121722] shadow-[0_20px_44px_rgba(0,0,0,0.36)] transition-transform active:scale-[0.997]"
+            >
+              <div className={`${theme.heroClass} relative h-[200px] w-full`}>
+                <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.12)_0%,rgba(255,255,255,0)_30%,rgba(0,0,0,0.35)_100%)]" />
+                <div className={`absolute right-[-42px] top-[-34px] h-[130px] w-[130px] rounded-full ${theme.accentClass} opacity-34 blur-3xl`} />
 
-              <div className="absolute left-4 top-4 rounded-full border border-white/35 bg-black/20 px-2.5 py-1 text-[11px] font-semibold text-white/88 backdrop-blur-lg">
-                #{idx + 2}
+                <div className="absolute left-4 top-4 rounded-full border border-white/30 bg-white/10 px-2.5 py-0.5 text-[11px] font-medium text-white/82 backdrop-blur-md">
+                  {WIKI_MAP[active].label}
+                </div>
+
+                <div className="absolute bottom-4 left-4 right-4">
+                  <h3 className="line-clamp-2 break-words text-[30px] leading-[1.05] font-semibold tracking-[-0.03em] text-white">
+                    {name.main}
+                  </h3>
+                  {name.sub ? <p className="mt-1 line-clamp-1 text-[18px] leading-[1.08] font-semibold tracking-[-0.015em] text-white/94">{name.sub}</p> : null}
+                </div>
               </div>
 
-              <div className="absolute bottom-5 left-4 right-4">
-                <h3 className="text-[34px] leading-[1.03] font-semibold tracking-[-0.035em] text-white">{item.ingredient_name}</h3>
+              <div className="px-4 py-4">
+                <p className="line-clamp-2 text-[16px] leading-[1.5] text-white/84">
+                  {item.summary || "该成分暂无 AI 摘要，请检查成分库构建流程。"}
+                </p>
+                <p className="mt-2 text-[12px] text-white/56">来源样本 {item.source_count} 条</p>
               </div>
-            </div>
-
-            <div className="px-4 py-4">
-              <p className="line-clamp-2 text-[16px] leading-[1.5] text-white/84">
-                {item.summary || "该成分暂无 AI 摘要，请检查成分库构建流程。"}
-              </p>
-              <p className="mt-2 text-[12px] text-white/56">来源样本 {item.source_count} 条</p>
-            </div>
-          </Link>
-        ))}
+            </Link>
+          );
+        })}
 
         {loading && (
           <div className="rounded-[24px] border border-white/10 bg-white/[0.05] px-4 py-5 text-[14px] text-white/65">
