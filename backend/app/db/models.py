@@ -20,6 +20,29 @@ class ProductIndex(Base):
     created_at: Mapped[str] = mapped_column(String(32), index=True)
 
 
+class IngredientLibraryIndex(Base):
+    __tablename__ = "ingredient_library_index"
+
+    # 稳定 ID：ing-<sha1(category::normalized_ingredient)>
+    ingredient_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    category: Mapped[str] = mapped_column(String(32), index=True)
+    ingredient_name: Mapped[str] = mapped_column(String(256))
+    ingredient_key: Mapped[str] = mapped_column(String(256), index=True)
+
+    # pending | ready | failed
+    status: Mapped[str] = mapped_column(String(32), index=True, default="pending")
+    storage_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+    source_trace_ids_json: Mapped[str] = mapped_column(Text, default="[]")
+    hit_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    first_seen_at: Mapped[str] = mapped_column(String(32), index=True)
+    last_seen_at: Mapped[str] = mapped_column(String(32), index=True)
+    last_generated_at: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class AIJob(Base):
     __tablename__ = "ai_jobs"
 

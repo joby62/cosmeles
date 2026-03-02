@@ -117,6 +117,8 @@ class IngredientLibraryBuildResponse(BaseModel):
     status: str
     scanned_products: int = 0
     unique_ingredients: int = 0
+    backfilled_from_storage: int = 0
+    submitted_to_model: int = 0
     created: int = 0
     updated: int = 0
     skipped: int = 0

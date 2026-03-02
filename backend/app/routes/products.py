@@ -15,7 +15,7 @@ from sqlalchemy.orm import sessionmaker
 from app.ai.orchestrator import run_capability_now
 from app.constants import VALID_CATEGORIES
 from app.db.session import get_db
-from app.db.models import ProductIndex
+from app.db.models import ProductIndex, IngredientLibraryIndex
 from app.settings import settings
 from app.services.storage import (
     load_json,
@@ -411,6 +411,9 @@ def _build_ingredient_library_impl(
     if category and category not in VALID_CATEGORIES:
         raise HTTPException(status_code=400, detail=f"Invalid category: {category}.")
 
+    _ensure_ingredient_index_table(db)
+    backfilled_from_storage = _backfill_ingredient_index_from_storage(db=db, category=category)
+
     stmt = select(ProductIndex).order_by(ProductIndex.created_at.desc())
     if category:
         stmt = stmt.where(ProductIndex.category == category)
@@ -428,10 +431,18 @@ def _build_ingredient_library_impl(
             "step": "ingredient_build_start",
             "scanned_products": len(rows),
             "unique_ingredients": len(grouped_items),
-            "text": f"开始生成成分库：产品 {len(rows)} 条，唯一成分 {len(grouped_items)} 条。",
+            "backfilled_from_storage": backfilled_from_storage,
+            "text": (
+                f"开始生成成分库：产品 {len(rows)} 条，唯一成分 {len(grouped_items)} 条，"
+                f"历史回填 {backfilled_from_storage} 条。"
+            ),
         },
     )
 
+    ingredient_ids = [str(item["ingredient_id"]) for item in grouped_items]
+    index_map = _load_ingredient_index_map(db=db, ingredient_ids=ingredient_ids)
+
+    submitted_to_model = 0
     created = 0
     updated = 0
     skipped = 0
@@ -449,8 +460,25 @@ def _build_ingredient_library_impl(
         source_count = len(source_trace_ids)
 
         storage_rel = ingredient_profile_rel_path(category_name, ingredient_id)
-        exists_before = exists_rel_path(storage_rel)
-        if exists_before and not force_regenerate:
+        index_rec = _upsert_ingredient_index_from_scan(
+            existing=index_map.get(ingredient_id),
+            category=category_name,
+            ingredient_id=ingredient_id,
+            ingredient_name=ingredient_name,
+            ingredient_key=str(item["ingredient_key"]),
+            source_trace_ids=source_trace_ids,
+        )
+        index_map[ingredient_id] = index_rec
+        db.add(index_rec)
+
+        ready_storage_path = str(index_rec.storage_path or "").strip()
+        if ready_storage_path and not exists_rel_path(ready_storage_path) and exists_rel_path(storage_rel):
+            ready_storage_path = storage_rel
+        if not ready_storage_path:
+            ready_storage_path = storage_rel
+        is_ready = str(index_rec.status or "").strip().lower() == "ready"
+        if is_ready and exists_rel_path(ready_storage_path) and not force_regenerate:
+            index_rec.storage_path = ready_storage_path
             skipped += 1
             build_item = IngredientLibraryBuildItem(
                 ingredient_id=ingredient_id,
@@ -458,9 +486,9 @@ def _build_ingredient_library_impl(
                 ingredient_name=ingredient_name,
                 source_count=source_count,
                 source_trace_ids=source_trace_ids,
-                storage_path=storage_rel,
+                storage_path=ready_storage_path,
                 status="skipped",
-                model=None,
+                model=index_rec.model,
                 error=None,
             )
             items.append(build_item)
@@ -477,6 +505,7 @@ def _build_ingredient_library_impl(
             )
             continue
 
+        submitted_to_model += 1
         _emit_progress(
             event_callback,
             {
@@ -530,12 +559,21 @@ def _build_ingredient_library_impl(
                     "analysis_text": str(ai_result.get("analysis_text") or "").strip(),
                 },
             }
+            existed_before = exists_rel_path(storage_rel)
             storage_path = save_ingredient_profile(category_name, ingredient_id, profile_doc)
-            status = "updated" if exists_before else "created"
+            status = "updated" if existed_before else "created"
             if status == "updated":
                 updated += 1
             else:
                 created += 1
+
+            index_rec.status = "ready"
+            index_rec.storage_path = storage_path
+            index_rec.model = str(ai_result.get("model") or "").strip() or None
+            index_rec.last_generated_at = now_iso()
+            index_rec.last_error = None
+            db.add(index_rec)
+
             items.append(
                 IngredientLibraryBuildItem(
                     ingredient_id=ingredient_id,
@@ -545,7 +583,7 @@ def _build_ingredient_library_impl(
                     source_trace_ids=source_trace_ids,
                     storage_path=storage_path,
                     status=status,
-                    model=(str(ai_result.get("model")).strip() if ai_result.get("model") is not None else None),
+                    model=index_rec.model,
                     error=None,
                 )
             )
@@ -565,6 +603,9 @@ def _build_ingredient_library_impl(
             failed += 1
             message = f"{ingredient_id} ({category_name}/{ingredient_name}): {e}"
             failures.append(message)
+            index_rec.status = "failed"
+            index_rec.last_error = str(e)
+            db.add(index_rec)
             items.append(
                 IngredientLibraryBuildItem(
                     ingredient_id=ingredient_id,
@@ -590,23 +631,33 @@ def _build_ingredient_library_impl(
                 },
             )
 
+    db.commit()
+
     status = "ok" if failed == 0 else "partial_failed"
     _emit_progress(
         event_callback,
         {
             "step": "ingredient_build_done",
             "status": status,
+            "backfilled_from_storage": backfilled_from_storage,
+            "submitted_to_model": submitted_to_model,
             "created": created,
             "updated": updated,
             "skipped": skipped,
             "failed": failed,
-            "text": f"成分库生成完成：created={created}, updated={updated}, skipped={skipped}, failed={failed}",
+            "text": (
+                "成分库生成完成："
+                f"backfilled={backfilled_from_storage}, submitted={submitted_to_model}, "
+                f"created={created}, updated={updated}, skipped={skipped}, failed={failed}"
+            ),
         },
     )
     return IngredientLibraryBuildResponse(
         status=status,
         scanned_products=len(rows),
         unique_ingredients=len(grouped_items),
+        backfilled_from_storage=backfilled_from_storage,
+        submitted_to_model=submitted_to_model,
         created=created,
         updated=updated,
         skipped=skipped,
@@ -1481,6 +1532,160 @@ def _safe_str_list(value: Any) -> list[str]:
         out.append(text)
         if len(out) >= 30:
             break
+    return out
+
+
+def _ensure_ingredient_index_table(db: Session) -> None:
+    bind = db.get_bind()
+    IngredientLibraryIndex.__table__.create(bind=bind, checkfirst=True)
+
+
+def _load_ingredient_index_map(db: Session, ingredient_ids: list[str]) -> dict[str, IngredientLibraryIndex]:
+    ids = [str(item or "").strip() for item in ingredient_ids if str(item or "").strip()]
+    if not ids:
+        return {}
+    out: dict[str, IngredientLibraryIndex] = {}
+    chunk_size = 500
+    for idx in range(0, len(ids), chunk_size):
+        chunk = ids[idx : idx + chunk_size]
+        rows = db.execute(
+            select(IngredientLibraryIndex).where(IngredientLibraryIndex.ingredient_id.in_(chunk))
+        ).scalars().all()
+        for row in rows:
+            out[str(row.ingredient_id)] = row
+    return out
+
+
+def _upsert_ingredient_index_from_scan(
+    *,
+    existing: IngredientLibraryIndex | None,
+    category: str,
+    ingredient_id: str,
+    ingredient_name: str,
+    ingredient_key: str,
+    source_trace_ids: list[str],
+) -> IngredientLibraryIndex:
+    now = now_iso()
+    rec = existing
+    if rec is None:
+        rec = IngredientLibraryIndex(
+            ingredient_id=ingredient_id,
+            category=category,
+            ingredient_name=ingredient_name,
+            ingredient_key=ingredient_key,
+            status="pending",
+            storage_path=None,
+            model=None,
+            source_trace_ids_json="[]",
+            hit_count=0,
+            first_seen_at=now,
+            last_seen_at=now,
+            last_generated_at=None,
+            last_error=None,
+        )
+    else:
+        rec.category = category
+        rec.ingredient_name = ingredient_name
+        rec.ingredient_key = ingredient_key
+        if not str(rec.first_seen_at or "").strip():
+            rec.first_seen_at = now
+        rec.last_seen_at = now
+
+    merged_trace_ids = _merge_unique_trace_ids(
+        _parse_trace_ids_json(rec.source_trace_ids_json),
+        source_trace_ids,
+    )
+    rec.source_trace_ids_json = json.dumps(merged_trace_ids, ensure_ascii=False)
+    rec.hit_count = len(merged_trace_ids)
+    return rec
+
+
+def _backfill_ingredient_index_from_storage(db: Session, category: str | None) -> int:
+    rel_paths = _iter_ingredient_profile_rel_paths(category=category)
+    if not rel_paths:
+        return 0
+
+    docs: list[tuple[str, dict[str, Any]]] = []
+    ingredient_ids: list[str] = []
+    for rel_path in rel_paths:
+        doc = _load_ingredient_profile_doc(rel_path=rel_path)
+        ingredient_id = _required_text_field(doc, "id")
+        ingredient_ids.append(ingredient_id)
+        docs.append((rel_path, doc))
+
+    index_map = _load_ingredient_index_map(db=db, ingredient_ids=ingredient_ids)
+    touched = 0
+
+    for rel_path, doc in docs:
+        ingredient_id = _required_text_field(doc, "id")
+        category_name = _required_text_field(doc, "category").lower()
+        if category_name not in VALID_CATEGORIES:
+            raise HTTPException(status_code=500, detail=f"Invalid category in ingredient profile: {category_name}.")
+        ingredient_name = _required_text_field(doc, "ingredient_name")
+        ingredient_key = str(doc.get("ingredient_key") or "").strip() or _normalize_ingredient_key(ingredient_name)
+        source_trace_ids = _strict_str_list(doc.get("source_trace_ids"), field_name="source_trace_ids")
+        generated_at = str(doc.get("generated_at") or "").strip() or now_iso()
+
+        generator = doc.get("generator")
+        if generator is None:
+            generator = {}
+        if not isinstance(generator, dict):
+            raise HTTPException(status_code=500, detail=f"Invalid generator format in ingredient profile: {rel_path}.")
+        model = str(generator.get("model") or "").strip() or None
+
+        existing = index_map.get(ingredient_id)
+        rec = _upsert_ingredient_index_from_scan(
+            existing=existing,
+            category=category_name,
+            ingredient_id=ingredient_id,
+            ingredient_name=ingredient_name,
+            ingredient_key=ingredient_key,
+            source_trace_ids=source_trace_ids,
+        )
+        rec.status = "ready"
+        rec.storage_path = rel_path
+        rec.model = model
+        rec.last_generated_at = generated_at
+        rec.last_error = None
+        if not str(rec.first_seen_at or "").strip():
+            rec.first_seen_at = generated_at
+        db.add(rec)
+        index_map[ingredient_id] = rec
+        touched += 1
+
+    if touched:
+        db.commit()
+    return touched
+
+
+def _parse_trace_ids_json(value: str | None) -> list[str]:
+    raw = str(value or "").strip()
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    out: list[str] = []
+    for item in parsed:
+        text = str(item or "").strip()
+        if not text:
+            continue
+        out.append(text)
+    return list(dict.fromkeys(out))
+
+
+def _merge_unique_trace_ids(left: list[str], right: list[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in [*left, *right]:
+        text = str(item or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        out.append(text)
     return out
 
 

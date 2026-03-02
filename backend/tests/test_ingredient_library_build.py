@@ -313,3 +313,131 @@ def test_get_ingredient_library_item_returns_profile_detail(test_client, monkeyp
     assert item["profile"]["confidence"] == 95
     assert item["source_count"] == 1
     assert item["source_samples"]
+
+
+def test_build_ingredient_library_second_scan_skips_without_model_call(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, _ = test_client
+    plans = [
+        {
+            "category": "bodywash",
+            "brand": "Dove",
+            "name": "Body Wash Incremental",
+            "one_sentence": "Incremental",
+            "ingredients": ["甘油"],
+        }
+    ]
+    _install_fake_ingest_pipeline(monkeypatch, plans)
+    _ingest_one(client, "inc.jpg")
+
+    call_count = {"value": 0}
+
+    def fake_run_capability_now(capability: str, input_payload: dict, trace_id: str | None = None, event_callback=None):
+        assert capability == "doubao.ingredient_category_profile"
+        call_count["value"] += 1
+        return {
+            "ingredient_name": input_payload["ingredient"],
+            "category": input_payload["category"],
+            "summary": "ok",
+            "benefits": [],
+            "risks": [],
+            "usage_tips": [],
+            "suitable_for": [],
+            "avoid_for": [],
+            "confidence": 90,
+            "reason": "ok",
+            "analysis_text": "{}",
+            "model": "doubao-seed-2-0-pro-260215",
+        }
+
+    monkeypatch.setattr(products_routes, "run_capability_now", fake_run_capability_now)
+
+    first = client.post("/api/products/ingredients/library/build", json={"category": "bodywash"})
+    assert first.status_code == 200
+    first_body = first.json()
+    assert first_body["submitted_to_model"] == 1
+    assert first_body["created"] == 1
+    assert call_count["value"] == 1
+
+    def should_not_call(*args, **kwargs):
+        raise AssertionError("model should not be called on second incremental scan")
+
+    monkeypatch.setattr(products_routes, "run_capability_now", should_not_call)
+    second = client.post("/api/products/ingredients/library/build", json={"category": "bodywash"})
+    assert second.status_code == 200
+    second_body = second.json()
+    assert second_body["submitted_to_model"] == 0
+    assert second_body["created"] == 0
+    assert second_body["updated"] == 0
+    assert second_body["failed"] == 0
+    assert second_body["skipped"] == 1
+
+
+def test_build_ingredient_library_backfills_history_and_skips_model(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, storage_dir = test_client
+    plans = [
+        {
+            "category": "bodywash",
+            "brand": "Dove",
+            "name": "Body Wash History",
+            "one_sentence": "History",
+            "ingredients": ["烟酰胺"],
+        }
+    ]
+    _install_fake_ingest_pipeline(monkeypatch, plans)
+    trace_id = _ingest_one(client, "history.jpg")
+
+    ingredient_name = "烟酰胺"
+    category = "bodywash"
+    ingredient_key = products_routes._normalize_ingredient_key(ingredient_name)
+    ingredient_id = products_routes._build_ingredient_id(category=category, ingredient_key=ingredient_key)
+    rel_path = f"ingredients/{category}/{ingredient_id}.json"
+    abs_path = Path(storage_dir) / rel_path
+    abs_path.parent.mkdir(parents=True, exist_ok=True)
+    abs_path.write_text(
+        json.dumps(
+            {
+                "id": ingredient_id,
+                "category": category,
+                "ingredient_name": ingredient_name,
+                "ingredient_key": ingredient_key,
+                "source_count": 1,
+                "source_trace_ids": [trace_id],
+                "source_samples": [],
+                "generated_at": "2026-01-01T00:00:00Z",
+                "generator": {
+                    "capability": "doubao.ingredient_category_profile",
+                    "model": "doubao-seed-2-0-pro-260215",
+                    "prompt_key": "doubao.ingredient_category_profile",
+                },
+                "profile": {
+                    "summary": "历史沉淀条目",
+                    "benefits": [],
+                    "risks": [],
+                    "usage_tips": [],
+                    "suitable_for": [],
+                    "avoid_for": [],
+                    "confidence": 88,
+                    "reason": "history",
+                    "analysis_text": "{}",
+                },
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    def should_not_call(*args, **kwargs):
+        raise AssertionError("model should not be called for history backfilled profile")
+
+    monkeypatch.setattr(products_routes, "run_capability_now", should_not_call)
+
+    resp = client.post("/api/products/ingredients/library/build", json={"category": "bodywash"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["backfilled_from_storage"] >= 1
+    assert body["submitted_to_model"] == 0
+    assert body["skipped"] == 1
+    assert body["created"] == 0
+    assert body["updated"] == 0

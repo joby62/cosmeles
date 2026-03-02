@@ -71,6 +71,8 @@ export type IngredientLibraryBuildResponse = {
   status: string;
   scanned_products: number;
   unique_ingredients: number;
+  backfilled_from_storage: number;
+  submitted_to_model: number;
   created: number;
   updated: number;
   skipped: number;
