@@ -1,7 +1,14 @@
 import json
+import queue
+import threading
+from collections import defaultdict
+from typing import Any, Callable
+
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func
+from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import sessionmaker
 
 from app.ai.orchestrator import run_capability_now
 from app.constants import VALID_CATEGORIES
@@ -161,110 +168,36 @@ def delete_product(product_id: str, db: Session = Depends(get_db)):
 
 @router.post("/products/dedup/suggest", response_model=ProductDedupSuggestResponse)
 def suggest_product_duplicates(payload: ProductDedupSuggestRequest, db: Session = Depends(get_db)):
-    rows = db.execute(select(ProductIndex).order_by(ProductIndex.created_at.desc())).scalars().all()
-    docs: list[dict] = []
-    for row in rows:
-        if not exists_rel_path(row.json_path):
-            continue
+    return _suggest_product_duplicates_impl(payload, db, event_callback=None)
+
+
+@router.post("/products/dedup/suggest/stream")
+def suggest_product_duplicates_stream(payload: ProductDedupSuggestRequest, db: Session = Depends(get_db)):
+    events: queue.Queue[tuple[str, dict[str, Any]] | None] = queue.Queue()
+    SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=db.get_bind())
+
+    def emit(event: str, body: dict[str, Any]) -> None:
+        events.put((event, body))
+
+    def worker() -> None:
+        local_db = SessionMaker()
         try:
-            doc = load_json(row.json_path)
-        except Exception:
-            continue
-        docs.append({"row": row, "doc": doc})
+            result = _suggest_product_duplicates_impl(payload, local_db, event_callback=lambda e: emit("progress", e))
+            emit("result", result.model_dump())
+        except HTTPException as e:
+            emit("error", {"status": e.status_code, "detail": e.detail})
+        except Exception as e:  # pragma: no cover
+            emit("error", {"status": 500, "detail": f"dedup suggest failed: {e}"})
+        finally:
+            emit("done", {"status": "done"})
+            events.put(None)
+            local_db.close()
 
-    filtered = _filter_docs_for_dedup(
-        docs,
-        title_query=(payload.title_query or "").strip(),
-        ingredient_hints=payload.ingredient_hints or [],
-    )
-    filtered = filtered[: payload.max_scan_products]
-
-    suggestions: list[ProductDedupSuggestion] = []
-    involved_ids: set[str] = set()
-    failures: list[str] = []
-    visited_ids: set[str] = set()
-
-    for anchor in filtered:
-        anchor_id = anchor["row"].id
-        if anchor_id in visited_ids:
-            continue
-        candidates = _pick_similar_candidates(anchor, filtered, payload.max_compare_per_product)
-        if not candidates:
-            continue
-
-        ai_input = {
-            "anchor_product": _compact_product_for_dedup(anchor),
-            "candidate_products": [_compact_product_for_dedup(item) for item in candidates],
-        }
-        trace_id = f"dedup-{anchor_id}"
-        try:
-            ai_result = run_capability_now(
-                capability="doubao.product_dedup_group",
-                input_payload=ai_input,
-                trace_id=trace_id,
-            )
-        except Exception as e:
-            failures.append(f"{anchor_id}: {e}")
-            continue
-
-        duplicates_raw = ai_result.get("duplicates")
-        if not isinstance(duplicates_raw, list):
-            failures.append(f"{anchor_id}: invalid dedup output (duplicates).")
-            continue
-
-        keep_id = str(ai_result.get("keep_id") or "").strip()
-        reason = str(ai_result.get("reason") or "").strip()
-        analysis_text = str(ai_result.get("analysis_text") or "").strip()
-        if not keep_id:
-            failures.append(f"{anchor_id}: invalid dedup output (keep_id).")
-            continue
-
-        remove_ids: list[str] = []
-        max_confidence = 0
-        for item in duplicates_raw:
-            if not isinstance(item, dict):
-                continue
-            pid = str(item.get("id") or "").strip()
-            if not pid or pid == keep_id:
-                continue
-            try:
-                confidence = int(item.get("confidence"))
-            except Exception:
-                confidence = 0
-            confidence = max(0, min(100, confidence))
-            if confidence < payload.min_confidence:
-                continue
-            remove_ids.append(pid)
-            if confidence > max_confidence:
-                max_confidence = confidence
-
-        remove_ids = list(dict.fromkeys(remove_ids))
-        if not remove_ids:
-            continue
-
-        group_members = [keep_id, *remove_ids]
-        visited_ids.update(group_members)
-        involved_ids.update(group_members)
-
-        suggestions.append(
-            ProductDedupSuggestion(
-                group_id=f"group-{len(suggestions) + 1}",
-                keep_id=keep_id,
-                remove_ids=remove_ids,
-                confidence=max_confidence,
-                reason=reason,
-                analysis_text=analysis_text or None,
-                compared_ids=[anchor_id, *[c["row"].id for c in candidates]],
-            )
-        )
-
-    involved_rows = [item["row"] for item in filtered if item["row"].id in involved_ids]
-    return ProductDedupSuggestResponse(
-        status="ok",
-        scanned_products=len(filtered),
-        suggestions=suggestions,
-        involved_products=[_row_to_card(row) for row in involved_rows],
-        failures=failures[:20],
+    threading.Thread(target=worker, daemon=True).start()
+    return StreamingResponse(
+        _sse_iter(events),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
     )
 
 
@@ -313,6 +246,162 @@ def batch_delete_products(payload: ProductBatchDeleteRequest, db: Session = Depe
     )
 
 
+def _suggest_product_duplicates_impl(
+    payload: ProductDedupSuggestRequest,
+    db: Session,
+    event_callback: Callable[[dict[str, Any]], None] | None,
+) -> ProductDedupSuggestResponse:
+    category = (payload.category or "").strip().lower()
+    if category and category not in VALID_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Invalid category: {category}.")
+
+    stmt = select(ProductIndex).order_by(ProductIndex.created_at.desc())
+    if category:
+        stmt = stmt.where(ProductIndex.category == category)
+
+    rows = db.execute(stmt).scalars().all()
+    docs: list[dict[str, Any]] = []
+    for row in rows:
+        if not exists_rel_path(row.json_path):
+            continue
+        try:
+            doc = load_json(row.json_path)
+        except Exception:
+            continue
+        docs.append({"row": row, "doc": doc})
+
+    filtered = _filter_docs_for_dedup(
+        docs,
+        title_query=(payload.title_query or "").strip(),
+        ingredient_hints=payload.ingredient_hints or [],
+    )
+    filtered = filtered[: payload.max_scan_products]
+    grouped = _group_docs_by_category(filtered)
+    batch_size = int(payload.compare_batch_size or payload.max_compare_per_product or 20)
+    min_confidence = max(0, min(100, int(payload.min_confidence)))
+
+    _emit_progress(
+        event_callback,
+        {
+            "step": "dedup_scan_start",
+            "category": category or None,
+            "scanned_products": len(filtered),
+            "category_groups": len(grouped),
+            "min_confidence": min_confidence,
+            "batch_size": batch_size,
+        },
+    )
+
+    directed_relations: list[dict[str, Any]] = []
+    failures: list[str] = []
+
+    for cat, items in grouped.items():
+        if len(items) < 2:
+            continue
+        _emit_progress(
+            event_callback,
+            {
+                "step": "dedup_category_start",
+                "category": cat,
+                "products": len(items),
+            },
+        )
+        anchor_total = len(items) - 1
+        for idx, anchor in enumerate(items[:-1]):
+            anchor_id = str(anchor["row"].id)
+            candidates = items[idx + 1 :]
+            if not candidates:
+                continue
+            _emit_progress(
+                event_callback,
+                {
+                    "step": "dedup_anchor_start",
+                    "category": cat,
+                    "anchor_id": anchor_id,
+                    "anchor_index": idx + 1,
+                    "anchor_total": anchor_total,
+                    "candidate_total": len(candidates),
+                },
+            )
+
+            chunk_hits = 0
+            for chunk_start in range(0, len(candidates), batch_size):
+                chunk = candidates[chunk_start : chunk_start + batch_size]
+                chunk_ids = [str(item["row"].id) for item in chunk]
+                ai_input = {
+                    "anchor_product": _compact_product_for_dedup(anchor),
+                    "candidate_products": [_compact_product_for_dedup(item) for item in chunk],
+                }
+                try:
+                    ai_result = run_capability_now(
+                        capability="doubao.product_dedup_group",
+                        input_payload=ai_input,
+                        trace_id=f"dedup-{anchor_id}",
+                        event_callback=lambda e, _cat=cat, _anchor=anchor_id: _emit_progress(
+                            event_callback,
+                            {"step": "dedup_model_event", "category": _cat, "anchor_id": _anchor, **e},
+                        ),
+                    )
+                    relations = _extract_dedup_relations(
+                        ai_result=ai_result,
+                        anchor_id=anchor_id,
+                        candidate_ids=chunk_ids,
+                        min_confidence=min_confidence,
+                    )
+                    directed_relations.extend(relations)
+                    chunk_hits += len(relations)
+                except Exception as e:
+                    failures.append(f"{anchor_id}: {e}")
+                finally:
+                    _emit_progress(
+                        event_callback,
+                        {
+                            "step": "dedup_chunk_done",
+                            "category": cat,
+                            "anchor_id": anchor_id,
+                            "chunk_start": chunk_start,
+                            "chunk_size": len(chunk),
+                            "chunk_hits": chunk_hits,
+                        },
+                    )
+
+            _emit_progress(
+                event_callback,
+                {
+                    "step": "dedup_anchor_done",
+                    "category": cat,
+                    "anchor_id": anchor_id,
+                    "high_conf_pairs": chunk_hits,
+                },
+            )
+
+    row_by_id = {str(item["row"].id): item["row"] for item in filtered}
+    suggestions = _build_suggestions_from_relations(relations=directed_relations, row_by_id=row_by_id)
+    involved_ids: set[str] = set()
+    for item in suggestions:
+        involved_ids.add(item.keep_id)
+        involved_ids.update(item.remove_ids)
+
+    _emit_progress(
+        event_callback,
+        {
+            "step": "dedup_scan_done",
+            "suggestions": len(suggestions),
+            "high_conf_relations": len(directed_relations),
+            "failures": len(failures),
+        },
+    )
+
+    involved_rows = [item["row"] for item in filtered if str(item["row"].id) in involved_ids]
+    return ProductDedupSuggestResponse(
+        status="ok",
+        scanned_products=len(filtered),
+        suggestions=suggestions,
+        involved_products=[_row_to_card(row) for row in involved_rows],
+        failures=failures[:50],
+    )
+
+
 def _filter_docs_for_dedup(docs: list[dict], title_query: str, ingredient_hints: list[str]) -> list[dict]:
     query = title_query.strip().lower()
     hints = [h.strip().lower() for h in ingredient_hints if h and h.strip()]
@@ -335,46 +424,207 @@ def _filter_docs_for_dedup(docs: list[dict], title_query: str, ingredient_hints:
     return out
 
 
-def _pick_similar_candidates(anchor: dict, all_items: list[dict], max_count: int) -> list[dict]:
-    anchor_row = anchor["row"]
-    scored: list[tuple[float, dict]] = []
-    for item in all_items:
+def _group_docs_by_category(items: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for item in items:
         row = item["row"]
-        if row.id == anchor_row.id:
+        category = str(getattr(row, "category", "") or "").strip().lower() or "unknown"
+        grouped[category].append(item)
+    return grouped
+
+
+def _extract_dedup_relations(
+    ai_result: dict[str, Any],
+    anchor_id: str,
+    candidate_ids: list[str],
+    min_confidence: int,
+) -> list[dict[str, Any]]:
+    allowed_ids = {anchor_id, *candidate_ids}
+    keep_id = str(ai_result.get("keep_id") or "").strip()
+    if not keep_id or keep_id not in allowed_ids:
+        raise ValueError("invalid dedup output (keep_id).")
+
+    duplicates_raw = ai_result.get("duplicates")
+    if not isinstance(duplicates_raw, list):
+        raise ValueError("invalid dedup output (duplicates).")
+
+    analysis_text = str(ai_result.get("analysis_text") or "").strip()
+    relations: list[dict[str, Any]] = []
+    for item in duplicates_raw:
+        if not isinstance(item, dict):
             continue
-        score = _similarity_score(anchor, item)
-        if score < 0.2:
+        remove_id = str(item.get("id") or "").strip()
+        if not remove_id or remove_id == keep_id or remove_id not in allowed_ids:
             continue
-        scored.append((score, item))
-    scored.sort(key=lambda pair: pair[0], reverse=True)
-    return [item for _, item in scored[:max_count]]
+        try:
+            confidence = int(item.get("confidence"))
+        except Exception:
+            confidence = 0
+        confidence = max(0, min(100, confidence))
+        if confidence < min_confidence:
+            continue
+        relations.append(
+            {
+                "keep_id": keep_id,
+                "remove_id": remove_id,
+                "confidence": confidence,
+                "reason": str(item.get("reason") or "").strip(),
+                "analysis_text": analysis_text,
+            }
+        )
+    return relations
 
 
-def _similarity_score(a: dict, b: dict) -> float:
-    a_row, b_row = a["row"], b["row"]
-    if a_row.category != b_row.category:
-        return 0.0
+def _build_suggestions_from_relations(
+    relations: list[dict[str, Any]],
+    row_by_id: dict[str, ProductIndex],
+) -> list[ProductDedupSuggestion]:
+    directed_best: dict[tuple[str, str], dict[str, Any]] = {}
+    for item in relations:
+        keep_id = str(item.get("keep_id") or "").strip()
+        remove_id = str(item.get("remove_id") or "").strip()
+        if not keep_id or not remove_id or keep_id == remove_id:
+            continue
+        key = (remove_id, keep_id)
+        old = directed_best.get(key)
+        if old is None or int(item.get("confidence") or 0) > int(old.get("confidence") or 0):
+            directed_best[key] = item
 
-    score = 0.15
-    a_brand = (a_row.brand or "").strip().lower()
-    b_brand = (b_row.brand or "").strip().lower()
-    if a_brand and b_brand and a_brand == b_brand:
-        score += 0.25
+    adjacency: dict[str, set[str]] = defaultdict(set)
+    for rel in directed_best.values():
+        keep_id = str(rel["keep_id"])
+        remove_id = str(rel["remove_id"])
+        adjacency[keep_id].add(remove_id)
+        adjacency[remove_id].add(keep_id)
 
-    a_name = _token_set(a_row.name or "")
-    b_name = _token_set(b_row.name or "")
-    score += _jaccard(a_name, b_name) * 0.35
+    suggestions: list[ProductDedupSuggestion] = []
+    visited: set[str] = set()
+    for start in sorted(adjacency.keys()):
+        if start in visited:
+            continue
+        stack = [start]
+        component: list[str] = []
+        while stack:
+            node = stack.pop()
+            if node in visited:
+                continue
+            visited.add(node)
+            component.append(node)
+            stack.extend(list(adjacency.get(node, set()) - visited))
 
-    a_ings = set(_ingredient_names(a["doc"]))
-    b_ings = set(_ingredient_names(b["doc"]))
-    score += _jaccard(a_ings, b_ings) * 0.25
+        if len(component) < 2:
+            continue
 
-    a_desc = (a_row.one_sentence or "").strip().lower()
-    b_desc = (b_row.one_sentence or "").strip().lower()
-    if a_desc and b_desc and (a_desc in b_desc or b_desc in a_desc):
-        score += 0.1
+        comp_set = set(component)
+        comp_relations = [
+            rel
+            for rel in directed_best.values()
+            if str(rel["keep_id"]) in comp_set and str(rel["remove_id"]) in comp_set
+        ]
+        if not comp_relations:
+            continue
 
-    return min(score, 1.0)
+        keep_id = _pick_keep_id(component, comp_relations, row_by_id)
+        remove_ids = sorted(
+            [pid for pid in component if pid != keep_id],
+            key=lambda pid: (str(getattr(row_by_id.get(pid), "created_at", "") or ""), pid),
+            reverse=True,
+        )
+
+        max_confidence = max(max(0, min(100, int(rel.get("confidence") or 0))) for rel in comp_relations)
+        reason = _component_reason(comp_relations)
+        analysis_text = _component_analysis_text(comp_relations)
+        compared_ids = sorted(
+            component,
+            key=lambda pid: (str(getattr(row_by_id.get(pid), "created_at", "") or ""), pid),
+            reverse=True,
+        )
+
+        suggestions.append(
+            ProductDedupSuggestion(
+                group_id=f"group-{len(suggestions) + 1}",
+                keep_id=keep_id,
+                remove_ids=remove_ids,
+                confidence=max_confidence,
+                reason=reason,
+                analysis_text=analysis_text or None,
+                compared_ids=compared_ids,
+            )
+        )
+
+    suggestions.sort(key=lambda item: item.confidence, reverse=True)
+    return suggestions
+
+
+def _pick_keep_id(
+    component: list[str],
+    comp_relations: list[dict[str, Any]],
+    row_by_id: dict[str, ProductIndex],
+) -> str:
+    incoming: dict[str, int] = defaultdict(int)
+    outgoing: dict[str, int] = defaultdict(int)
+    for rel in comp_relations:
+        keep_id = str(rel.get("keep_id") or "").strip()
+        remove_id = str(rel.get("remove_id") or "").strip()
+        confidence = max(0, min(100, int(rel.get("confidence") or 0)))
+        incoming[keep_id] += confidence
+        outgoing[remove_id] += confidence
+
+    ranked = sorted(
+        component,
+        key=lambda pid: (
+            -incoming.get(pid, 0),
+            outgoing.get(pid, 0),
+            str(getattr(row_by_id.get(pid), "created_at", "") or ""),
+            pid,
+        ),
+    )
+    return ranked[0]
+
+
+def _component_reason(comp_relations: list[dict[str, Any]]) -> str:
+    reasons: list[str] = []
+    for rel in sorted(comp_relations, key=lambda item: int(item.get("confidence") or 0), reverse=True):
+        reason = str(rel.get("reason") or "").strip()
+        if reason and reason not in reasons:
+            reasons.append(reason)
+        if len(reasons) >= 3:
+            break
+    return "；".join(reasons)
+
+
+def _component_analysis_text(comp_relations: list[dict[str, Any]]) -> str:
+    lines: list[str] = []
+    for rel in sorted(comp_relations, key=lambda item: int(item.get("confidence") or 0), reverse=True):
+        keep_id = str(rel.get("keep_id") or "").strip()
+        remove_id = str(rel.get("remove_id") or "").strip()
+        confidence = max(0, min(100, int(rel.get("confidence") or 0)))
+        reason = str(rel.get("reason") or "").strip()
+        line = f"{remove_id} -> {keep_id} | confidence={confidence}"
+        if reason:
+            line += f" | reason={reason}"
+        lines.append(line)
+        if len(lines) >= 12:
+            break
+
+    ai_texts: list[str] = []
+    for rel in comp_relations:
+        text = str(rel.get("analysis_text") or "").strip()
+        if not text or text in ai_texts:
+            continue
+        ai_texts.append(text)
+        if len(ai_texts) >= 2:
+            break
+
+    if not lines and not ai_texts:
+        return ""
+
+    out = ["同品类两两重合分析（高置信命中）", *lines]
+    if ai_texts:
+        out.append("")
+        out.append("模型原文片段：")
+        out.extend(ai_texts)
+    return "\n".join(out).strip()
 
 
 def _compact_product_for_dedup(item: dict) -> dict:
@@ -404,23 +654,26 @@ def _ingredient_names(doc: dict) -> list[str]:
     return list(dict.fromkeys(out))
 
 
-def _token_set(text: str) -> set[str]:
-    value = str(text or "").strip().lower()
-    if not value:
-        return set()
-    for ch in ("-", "_", "/", ",", ".", "（", "）", "(", ")", "·"):
-        value = value.replace(ch, " ")
-    return {token for token in value.split() if token}
+def _emit_progress(event_callback: Callable[[dict[str, Any]], None] | None, payload: dict[str, Any]) -> None:
+    if not event_callback:
+        return
+    try:
+        event_callback(payload)
+    except Exception:
+        return
 
 
-def _jaccard(a: set[str], b: set[str]) -> float:
-    if not a or not b:
-        return 0.0
-    inter = len(a & b)
-    union = len(a | b)
-    if union == 0:
-        return 0.0
-    return inter / union
+def _sse_iter(events: queue.Queue[tuple[str, dict[str, Any]] | None]):
+    while True:
+        try:
+            item = events.get(timeout=10)
+        except queue.Empty:
+            yield ": keep-alive\n\n"
+            continue
+        if item is None:
+            break
+        event, payload = item
+        yield f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
 def _normalize_tags(tags: list[str]) -> list[str]:

@@ -22,10 +22,12 @@ export type ProductListResponse = {
 };
 
 export type ProductDedupSuggestRequest = {
+  category?: string;
   title_query?: string;
   ingredient_hints?: string[];
   max_scan_products?: number;
   max_compare_per_product?: number;
+  compare_batch_size?: number;
   min_confidence?: number;
 };
 
@@ -253,6 +255,21 @@ export async function suggestProductDuplicates(payload: ProductDedupSuggestReque
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export async function suggestProductDuplicatesStream(
+  payload: ProductDedupSuggestRequest,
+  onEvent: (event: SSEEvent) => void,
+): Promise<ProductDedupSuggestResponse> {
+  return postSSE<ProductDedupSuggestResponse>(
+    "/api/products/dedup/suggest/stream",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+      headers: { "content-type": "application/json" },
+    },
+    onEvent,
+  );
 }
 
 export async function deleteProductsBatch(payload: ProductBatchDeleteRequest): Promise<ProductBatchDeleteResponse> {

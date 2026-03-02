@@ -1,7 +1,5 @@
-import ProductDedupManager from "@/components/ProductDedupManager";
-import { fetchAllProducts } from "@/lib/api";
+import { redirect } from "next/navigation";
 
-export default async function ProductDedupPage() {
-  const products = await fetchAllProducts();
-  return <ProductDedupManager initialProducts={products} />;
+export default function ProductDedupPage() {
+  redirect("/product");
 }

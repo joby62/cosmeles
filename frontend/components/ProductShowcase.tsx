@@ -1,7 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
 import { ProductDoc, resolveStoredImageUrl } from "@/lib/api";
-import ProductAIConsole from "@/components/ProductAIConsole";
 
 export default function ProductShowcase({ id, doc }: { id: string; doc: ProductDoc }) {
   const imageUrl = resolveStoredImageUrl(doc.evidence?.image_path);
@@ -93,8 +92,6 @@ export default function ProductShowcase({ id, doc }: { id: string; doc: ProductD
           )}
         </div>
       </section>
-
-      <ProductAIConsole productId={id} doc={doc} />
 
       <section className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
         <article className="rounded-[24px] border border-black/10 bg-white p-[18px]">

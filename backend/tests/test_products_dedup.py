@@ -109,10 +109,12 @@ def test_products_dedup_suggest_groups_duplicates(test_client, monkeypatch: pyte
         _ingest_one(client, "c.jpg"),
     ]
 
-    def fake_run_capability_now(capability: str, input_payload: dict, trace_id: str | None = None):
+    def fake_run_capability_now(capability: str, input_payload: dict, trace_id: str | None = None, event_callback=None):
         assert capability == "doubao.product_dedup_group"
         anchor_id = input_payload["anchor_product"]["id"]
-        if anchor_id == product_ids[0]:
+        candidate_ids = [item["id"] for item in input_payload["candidate_products"]]
+        related_ids = {anchor_id, *candidate_ids}
+        if product_ids[0] in related_ids and product_ids[1] in related_ids:
             return {
                 "keep_id": product_ids[0],
                 "duplicates": [{"id": product_ids[1], "confidence": 95, "reason": "品牌与主名称高度重合"}],
@@ -131,9 +133,9 @@ def test_products_dedup_suggest_groups_duplicates(test_client, monkeypatch: pyte
     resp = client.post(
         "/api/products/dedup/suggest",
         json={
-            "title_query": "dove",
+            "category": "bodywash",
             "max_scan_products": 50,
-            "max_compare_per_product": 6,
+            "compare_batch_size": 10,
             "min_confidence": 70,
         },
     )
@@ -145,6 +147,52 @@ def test_products_dedup_suggest_groups_duplicates(test_client, monkeypatch: pyte
     assert body["suggestions"][0]["keep_id"] == product_ids[0]
     assert body["suggestions"][0]["remove_ids"] == [product_ids[1]]
     assert body["suggestions"][0]["confidence"] == 95
+
+
+def test_products_dedup_suggest_stream_returns_progress_and_result(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, _ = test_client
+    plans = [
+        {
+            "category": "bodywash",
+            "brand": "Dove",
+            "name": "DEEP MOISTURE BODY WASH",
+            "one_sentence": "保湿沐浴露",
+            "ingredients": ["甘氨酸", "香精", "椰油酰胺丙基甜菜碱"],
+        },
+        {
+            "category": "bodywash",
+            "brand": "DOVE",
+            "name": "Deep Moisture Body Wash",
+            "one_sentence": "深层保湿沐浴露",
+            "ingredients": ["甘氨酸", "香精", "椰油酰胺丙基甜菜碱"],
+        },
+    ]
+    _install_fake_ingest_pipeline(monkeypatch, plans)
+    first_id = _ingest_one(client, "s1.jpg")
+    second_id = _ingest_one(client, "s2.jpg")
+
+    def fake_run_capability_now(capability: str, input_payload: dict, trace_id: str | None = None, event_callback=None):
+        assert capability == "doubao.product_dedup_group"
+        if event_callback:
+            event_callback({"type": "delta", "stage": "product_dedup_group", "delta": "stream-text"})
+        return {
+            "keep_id": first_id,
+            "duplicates": [{"id": second_id, "confidence": 98, "reason": "高度重合"}],
+            "reason": "同款重复",
+            "analysis_text": "建议删除第二条。",
+        }
+
+    monkeypatch.setattr(products_routes, "run_capability_now", fake_run_capability_now)
+
+    resp = client.post(
+        "/api/products/dedup/suggest/stream",
+        json={"category": "bodywash", "min_confidence": 95},
+    )
+    assert resp.status_code == 200
+    assert "event: progress" in resp.text
+    assert "event: result" in resp.text
+    assert first_id in resp.text
+    assert second_id in resp.text
 
 
 def test_products_batch_delete_keeps_selected_and_removes_artifacts(test_client, monkeypatch: pytest.MonkeyPatch):

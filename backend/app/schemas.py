@@ -68,11 +68,13 @@ class CategoryCount(BaseModel):
 
 
 class ProductDedupSuggestRequest(BaseModel):
+    category: Optional[str] = None
     title_query: Optional[str] = None
     ingredient_hints: List[str] = []
-    max_scan_products: int = Field(default=80, ge=1, le=300)
-    max_compare_per_product: int = Field(default=6, ge=1, le=20)
-    min_confidence: int = Field(default=70, ge=0, le=100)
+    max_scan_products: int = Field(default=200, ge=1, le=500)
+    max_compare_per_product: int = Field(default=20, ge=1, le=20)
+    compare_batch_size: Optional[int] = Field(default=None, ge=1, le=20)
+    min_confidence: int = Field(default=95, ge=0, le=100)
 
 
 class ProductDedupSuggestion(BaseModel):
