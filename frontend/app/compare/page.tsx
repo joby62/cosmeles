@@ -21,12 +21,12 @@ export default async function ComparePage({
             <div className="relative aspect-square bg-neutral-100 mb-4">
               <Image
                 src={resolveImageUrl(p)}
-                alt={p.name}
+                alt={p.name ?? p.brand ?? "产品图片"}
                 fill
                 className="object-contain"
               />
             </div>
-            <h2 className="font-medium">{p.name}</h2>
+            <h2 className="font-medium">{p.name ?? "未命名产品"}</h2>
           </div>
         ))}
       </div>

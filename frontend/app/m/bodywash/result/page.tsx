@@ -91,7 +91,7 @@ export default async function BodyWashResultPage({
         <div className="mt-6 flex items-start gap-4">
           <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-2xl bg-black/[0.03]">
             {product ? (
-              <Image src={resolveImageUrl(product)} alt={picked.name} fill className="object-contain p-2" />
+              <Image src={resolveImageUrl(product)} alt={picked.name ?? picked.brand ?? "产品图片"} fill className="object-contain p-2" />
             ) : (
               <div className="flex h-full items-center justify-center text-[12px] text-black/40">Body Wash</div>
             )}
