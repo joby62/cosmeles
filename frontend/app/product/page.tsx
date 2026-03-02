@@ -3,6 +3,7 @@ import Image from "next/image";
 import { fetchAIMetricsSummary, fetchAllProducts, resolveImageUrl } from "@/lib/api";
 import { CATEGORY_CONFIG } from "@/lib/catalog";
 import ProductDedupManager from "@/components/ProductDedupManager";
+import ProductCleanupWorkbench from "@/components/ProductCleanupWorkbench";
 
 function categoryLabel(category?: string | null): string {
   if (!category) return "-";
@@ -80,6 +81,7 @@ export default async function ProductGalleryPage() {
       </section>
 
       <ProductDedupManager initialProducts={products} />
+      <ProductCleanupWorkbench initialProducts={products} />
 
       {products.length === 0 ? (
         <section className="mt-8 rounded-[28px] border border-dashed border-black/16 bg-white px-8 py-14 text-center">

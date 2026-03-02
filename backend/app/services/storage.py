@@ -81,6 +81,37 @@ def remove_rel_path(rel_path: str | None) -> bool:
         return True
     return False
 
+def remove_product_images(product_id: str, image_path: str | None = None) -> tuple[int, list[str]]:
+    """
+    删除产品主图 + 同 trace_id 的图片变体（例如 .jpg/.png/.webp）。
+    返回 (删除数量, 删除的相对路径列表)。
+    """
+    ensure_dirs()
+    removed_paths: list[str] = []
+
+    if image_path and remove_rel_path(image_path):
+        removed_paths.append(image_path.lstrip("/"))
+
+    images_root = _resolve_rel_path("images")
+    base = Path(settings.storage_dir).resolve()
+    prefix = f"{product_id}."
+
+    for path in images_root.iterdir():
+        if not path.is_file():
+            continue
+        name = path.name
+        if not name.startswith(prefix):
+            continue
+        try:
+            path.unlink()
+            rel = path.resolve().relative_to(base).as_posix()
+            if rel not in removed_paths:
+                removed_paths.append(rel)
+        except FileNotFoundError:
+            continue
+
+    return (len(removed_paths), removed_paths)
+
 def remove_rel_dir(rel_path: str | None) -> tuple[int, int]:
     if not rel_path:
         return (0, 0)
@@ -142,3 +173,155 @@ def cleanup_doubao_artifacts(days: int | None = None) -> dict:
             continue
 
     return {"removed_files": removed_files, "removed_dirs": removed_dirs, "ttl_days": ttl_days}
+
+
+def cleanup_orphan_images(
+    *,
+    keep_product_ids: set[str],
+    keep_image_paths: set[str],
+    min_age_minutes: int = 120,
+    dry_run: bool = True,
+    max_delete: int = 500,
+) -> dict:
+    """
+    清理 images 目录中不被产品索引引用的孤儿图片。
+    为防止误删上传中的图片，默认只清理超过 min_age_minutes 的文件。
+    """
+    ensure_dirs()
+    base = Path(settings.storage_dir).resolve()
+    images_root = _resolve_rel_path("images")
+    min_age_minutes = max(0, int(min_age_minutes))
+    max_delete = max(1, min(5000, int(max_delete)))
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=min_age_minutes)
+
+    normalized_keep_paths: set[str] = set()
+    for item in keep_image_paths:
+        value = str(item or "").strip().lstrip("/")
+        if value:
+            normalized_keep_paths.add(value)
+
+    scanned = 0
+    kept = 0
+    orphan_paths: list[str] = []
+    deleted_paths: list[str] = []
+
+    for path in sorted(images_root.rglob("*")):
+        if not path.is_file():
+            continue
+        scanned += 1
+        rel = path.resolve().relative_to(base).as_posix()
+        stem = path.stem
+        mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+
+        is_referenced_path = rel in normalized_keep_paths
+        is_referenced_product = stem in keep_product_ids
+        is_too_new = mtime >= cutoff
+        if is_referenced_path or is_referenced_product or is_too_new:
+            kept += 1
+            continue
+
+        orphan_paths.append(rel)
+        if dry_run:
+            continue
+        if len(deleted_paths) >= max_delete:
+            continue
+        try:
+            path.unlink()
+            deleted_paths.append(rel)
+        except FileNotFoundError:
+            continue
+
+    return {
+        "status": "ok",
+        "dry_run": bool(dry_run),
+        "min_age_minutes": min_age_minutes,
+        "max_delete": max_delete,
+        "scanned_images": scanned,
+        "kept_images": kept,
+        "orphan_images": len(orphan_paths),
+        "deleted_images": len(deleted_paths),
+        "orphan_paths": orphan_paths[:200],
+        "deleted_paths": deleted_paths[:200],
+    }
+
+
+def cleanup_orphan_storage(
+    *,
+    keep_product_ids: set[str],
+    keep_image_paths: set[str],
+    min_age_minutes: int = 120,
+    dry_run: bool = True,
+    max_delete: int = 500,
+) -> dict:
+    """
+    一次性清理：
+    1) images 下无产品引用的孤儿图片
+    2) doubao_runs 下无产品对应 trace_id 的孤儿目录
+    """
+    image_result = cleanup_orphan_images(
+        keep_product_ids=keep_product_ids,
+        keep_image_paths=keep_image_paths,
+        min_age_minutes=min_age_minutes,
+        dry_run=dry_run,
+        max_delete=max_delete,
+    )
+
+    ensure_dirs()
+    base = Path(settings.storage_dir).resolve()
+    runs_root = _resolve_rel_path("doubao_runs")
+    min_age_minutes = max(0, int(min_age_minutes))
+    max_delete = max(1, min(5000, int(max_delete)))
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=min_age_minutes)
+
+    scanned_runs = 0
+    kept_runs = 0
+    orphan_run_dirs: list[str] = []
+    deleted_run_dirs: list[str] = []
+    deleted_run_files = 0
+
+    for path in sorted(runs_root.iterdir()):
+        if not path.is_dir():
+            continue
+        scanned_runs += 1
+        trace_id = path.name
+        try:
+            mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+        except FileNotFoundError:
+            continue
+
+        is_referenced_product = trace_id in keep_product_ids
+        is_too_new = mtime >= cutoff
+        if is_referenced_product or is_too_new:
+            kept_runs += 1
+            continue
+
+        rel = path.resolve().relative_to(base).as_posix()
+        orphan_run_dirs.append(rel)
+        if dry_run:
+            continue
+        if len(deleted_run_dirs) >= max_delete:
+            continue
+        file_count = 0
+        for child in path.rglob("*"):
+            if child.is_file():
+                file_count += 1
+        shutil.rmtree(path, ignore_errors=True)
+        deleted_run_dirs.append(rel)
+        deleted_run_files += file_count
+
+    return {
+        "status": "ok",
+        "dry_run": bool(dry_run),
+        "min_age_minutes": min_age_minutes,
+        "max_delete": max_delete,
+        "images": image_result,
+        "runs": {
+            "scanned_runs": scanned_runs,
+            "kept_runs": kept_runs,
+            "orphan_runs": len(orphan_run_dirs),
+            "deleted_runs": len(deleted_run_dirs),
+            "deleted_run_files": deleted_run_files,
+            "orphan_run_dirs": orphan_run_dirs[:200],
+            "deleted_run_dirs": deleted_run_dirs[:200],
+        },
+    }

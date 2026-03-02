@@ -110,6 +110,40 @@ class ProductBatchDeleteResponse(BaseModel):
     removed_dirs: int = 0
 
 
+class OrphanStorageCleanupRequest(BaseModel):
+    dry_run: bool = True
+    min_age_minutes: int = Field(default=120, ge=0, le=24 * 60 * 7)
+    max_delete: int = Field(default=500, ge=1, le=5000)
+
+
+class OrphanImageCleanupResult(BaseModel):
+    scanned_images: int = 0
+    kept_images: int = 0
+    orphan_images: int = 0
+    deleted_images: int = 0
+    orphan_paths: List[str] = []
+    deleted_paths: List[str] = []
+
+
+class OrphanRunsCleanupResult(BaseModel):
+    scanned_runs: int = 0
+    kept_runs: int = 0
+    orphan_runs: int = 0
+    deleted_runs: int = 0
+    deleted_run_files: int = 0
+    orphan_run_dirs: List[str] = []
+    deleted_run_dirs: List[str] = []
+
+
+class OrphanStorageCleanupResponse(BaseModel):
+    status: str
+    dry_run: bool
+    min_age_minutes: int
+    max_delete: int
+    images: OrphanImageCleanupResult
+    runs: OrphanRunsCleanupResult
+
+
 class AIJobCreateRequest(BaseModel):
     capability: str
     input: dict[str, Any] = Field(default_factory=dict)

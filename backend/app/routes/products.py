@@ -14,7 +14,15 @@ from app.ai.orchestrator import run_capability_now
 from app.constants import VALID_CATEGORIES
 from app.db.session import get_db
 from app.db.models import ProductIndex
-from app.services.storage import load_json, save_json_at, exists_rel_path, remove_rel_path, remove_rel_dir
+from app.services.storage import (
+    load_json,
+    save_json_at,
+    exists_rel_path,
+    remove_rel_path,
+    remove_rel_dir,
+    remove_product_images,
+    cleanup_orphan_storage,
+)
 from app.schemas import (
     ProductCard,
     ProductListResponse,
@@ -26,6 +34,8 @@ from app.schemas import (
     ProductDedupSuggestion,
     ProductBatchDeleteRequest,
     ProductBatchDeleteResponse,
+    OrphanStorageCleanupRequest,
+    OrphanStorageCleanupResponse,
 )
 
 router = APIRouter(prefix="/api", tags=["products"])
@@ -158,8 +168,10 @@ def delete_product(product_id: str, db: Session = Depends(get_db)):
     removed = 0
     if remove_rel_path(rec.json_path):
         removed += 1
-    if remove_rel_path(rec.image_path):
-        removed += 1
+    image_removed, _ = remove_product_images(product_id=product_id, image_path=rec.image_path)
+    removed += image_removed
+    run_files, run_dirs = remove_rel_dir(f"doubao_runs/{product_id}")
+    removed += run_files + run_dirs
 
     db.delete(rec)
     db.commit()
@@ -230,8 +242,8 @@ def batch_delete_products(payload: ProductBatchDeleteRequest, db: Session = Depe
 
         if remove_rel_path(rec.json_path):
             removed_files += 1
-        if remove_rel_path(rec.image_path):
-            removed_files += 1
+        image_removed, _ = remove_product_images(product_id=product_id, image_path=rec.image_path)
+        removed_files += image_removed
         if payload.remove_doubao_artifacts:
             f_count, d_count = remove_rel_dir(f"doubao_runs/{product_id}")
             removed_files += f_count
@@ -249,6 +261,30 @@ def batch_delete_products(payload: ProductBatchDeleteRequest, db: Session = Depe
         removed_files=removed_files,
         removed_dirs=removed_dirs,
     )
+
+
+@router.post("/maintenance/storage/orphans/cleanup", response_model=OrphanStorageCleanupResponse)
+def cleanup_orphan_storage_assets(payload: OrphanStorageCleanupRequest, db: Session = Depends(get_db)):
+    rows = db.execute(select(ProductIndex.id, ProductIndex.image_path)).all()
+    keep_product_ids: set[str] = set()
+    keep_image_paths: set[str] = set()
+    for pid, image_path in rows:
+        pid_text = str(pid or "").strip()
+        if not pid_text:
+            continue
+        keep_product_ids.add(pid_text)
+        image_rel = str(image_path or "").strip().lstrip("/")
+        if image_rel:
+            keep_image_paths.add(image_rel)
+
+    result = cleanup_orphan_storage(
+        keep_product_ids=keep_product_ids,
+        keep_image_paths=keep_image_paths,
+        min_age_minutes=payload.min_age_minutes,
+        dry_run=payload.dry_run,
+        max_delete=payload.max_delete,
+    )
+    return OrphanStorageCleanupResponse.model_validate(result)
 
 
 def _suggest_product_duplicates_impl(

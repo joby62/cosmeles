@@ -64,6 +64,36 @@ export type ProductBatchDeleteResponse = {
   removed_dirs: number;
 };
 
+export type OrphanStorageCleanupRequest = {
+  dry_run?: boolean;
+  min_age_minutes?: number;
+  max_delete?: number;
+};
+
+export type OrphanStorageCleanupResponse = {
+  status: string;
+  dry_run: boolean;
+  min_age_minutes: number;
+  max_delete: number;
+  images: {
+    scanned_images: number;
+    kept_images: number;
+    orphan_images: number;
+    deleted_images: number;
+    orphan_paths: string[];
+    deleted_paths: string[];
+  };
+  runs: {
+    scanned_runs: number;
+    kept_runs: number;
+    orphan_runs: number;
+    deleted_runs: number;
+    deleted_run_files: number;
+    orphan_run_dirs: string[];
+    deleted_run_dirs: string[];
+  };
+};
+
 export type ProductDoc = {
   product: {
     category: string;
@@ -274,6 +304,13 @@ export async function suggestProductDuplicatesStream(
 
 export async function deleteProductsBatch(payload: ProductBatchDeleteRequest): Promise<ProductBatchDeleteResponse> {
   return apiFetch<ProductBatchDeleteResponse>("/api/products/batch-delete", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function cleanupOrphanStorage(payload: OrphanStorageCleanupRequest): Promise<OrphanStorageCleanupResponse> {
+  return apiFetch<OrphanStorageCleanupResponse>("/api/maintenance/storage/orphans/cleanup", {
     method: "POST",
     body: JSON.stringify(payload),
   });
