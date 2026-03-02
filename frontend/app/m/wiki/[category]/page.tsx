@@ -1,6 +1,7 @@
-import Link from "next/link";
 import Image from "next/image";
+import Link from "next/link";
 import { notFound } from "next/navigation";
+import { fetchIngredientLibrary } from "@/lib/api";
 import { isWikiCategoryKey, WIKI_MAP, WIKI_ORDER } from "@/lib/mobile/ingredientWiki";
 
 type Params = { category: string };
@@ -62,6 +63,12 @@ export default async function WikiCategoryPage({
   const current = WIKI_MAP[category];
   const focusKey = queryValue(search.focus);
   const focus = current.key === "shampoo" && focusKey ? SHAMPOO_FOCUS_MAP[focusKey] : undefined;
+  const query = queryValue(search.q);
+  const library = await fetchIngredientLibrary({
+    category,
+    q: query,
+    limit: 200,
+  });
 
   return (
     <section className="pb-10">
@@ -108,14 +115,25 @@ export default async function WikiCategoryPage({
       </div>
 
       <div className="mt-7 space-y-3">
-        {current.items.map((item) => (
-          <article key={item.name} className="rounded-2xl border border-black/10 bg-white px-4 py-4">
-            <h2 className="text-[16px] font-semibold text-black/88">{item.name}</h2>
-            <p className="mt-2 text-[14px] leading-[1.5] text-black/72">作用：{item.effect}</p>
-            <p className="mt-1 text-[14px] leading-[1.5] text-black/72">更适合：{item.fit}</p>
-            <p className="mt-1 text-[13px] leading-[1.5] text-black/55">注意：{item.caution}</p>
-          </article>
+        {library.items.map((item) => (
+          <Link
+            key={item.ingredient_id}
+            href={`/m/wiki/${category}/${item.ingredient_id}`}
+            className="block rounded-2xl border border-black/10 bg-white px-4 py-4"
+          >
+            <h2 className="text-[16px] font-semibold text-black/88">{item.ingredient_name}</h2>
+            <p className="mt-2 text-[14px] leading-[1.55] text-black/72">
+              {item.summary || "该成分暂无 AI 摘要，请检查成分库构建流程。"}
+            </p>
+            <p className="mt-2 text-[12px] text-black/50">来源样本：{item.source_count} 条</p>
+          </Link>
         ))}
+
+        {library.items.length === 0 && (
+          <article className="rounded-2xl border border-black/10 bg-white px-4 py-5 text-[14px] leading-[1.6] text-black/60">
+            当前分类暂无已生成成分，请先在后台执行成分库构建。
+          </article>
+        )}
       </div>
 
       <div className="mt-8">

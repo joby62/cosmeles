@@ -195,3 +195,121 @@ def test_build_ingredient_library_stream_has_progress_and_result(test_client, mo
     assert "ingredient_build_start" in resp.text
     assert "ingredient_model_delta" in resp.text
     assert "event: result" in resp.text
+
+
+def test_list_ingredient_library_reads_real_storage_profiles(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, _ = test_client
+    plans = [
+        {
+            "category": "bodywash",
+            "brand": "Dove",
+            "name": "Body Wash A",
+            "one_sentence": "A",
+            "ingredients": ["PEG-150 季戊四醇四硬脂酸酯", "烟酰胺"],
+        },
+        {
+            "category": "bodywash",
+            "brand": "Dove",
+            "name": "Body Wash B",
+            "one_sentence": "B",
+            "ingredients": ["甘油"],
+        },
+    ]
+    _install_fake_ingest_pipeline(monkeypatch, plans)
+    _ingest_one(client, "list-a.jpg")
+    _ingest_one(client, "list-b.jpg")
+
+    def fake_run_capability_now(capability: str, input_payload: dict, trace_id: str | None = None, event_callback=None):
+        assert capability == "doubao.ingredient_category_profile"
+        return {
+            "ingredient_name": input_payload["ingredient"],
+            "category": input_payload["category"],
+            "summary": f"{input_payload['ingredient']} summary",
+            "benefits": ["保湿"],
+            "risks": [],
+            "usage_tips": ["按需使用"],
+            "suitable_for": ["普通人群"],
+            "avoid_for": [],
+            "confidence": 91,
+            "reason": "mock",
+            "analysis_text": "{}",
+            "model": "doubao-seed-2-0-pro-260215",
+        }
+
+    monkeypatch.setattr(products_routes, "run_capability_now", fake_run_capability_now)
+
+    build = client.post("/api/products/ingredients/library/build", json={"category": "bodywash"})
+    assert build.status_code == 200
+
+    resp = client.get("/api/products/ingredients/library", params={"category": "bodywash", "limit": 50})
+    assert resp.status_code == 200
+    body = resp.json()
+
+    assert body["status"] == "ok"
+    assert body["category"] == "bodywash"
+    assert body["total"] >= 3
+    assert len(body["items"]) == body["total"]
+    assert all(item["category"] == "bodywash" for item in body["items"])
+    assert all(item["storage_path"].startswith("ingredients/bodywash/") for item in body["items"])
+    assert all(isinstance(item["source_trace_ids"], list) for item in body["items"])
+
+    query_resp = client.get("/api/products/ingredients/library", params={"category": "bodywash", "q": "烟酰"})
+    assert query_resp.status_code == 200
+    query_body = query_resp.json()
+    assert query_body["total"] == 1
+    assert query_body["items"][0]["ingredient_name"] == "烟酰胺"
+
+
+def test_get_ingredient_library_item_returns_profile_detail(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, _ = test_client
+    plans = [
+        {
+            "category": "bodywash",
+            "brand": "Dove",
+            "name": "Body Wash Detail",
+            "one_sentence": "Detail",
+            "ingredients": ["甘油"],
+        }
+    ]
+    _install_fake_ingest_pipeline(monkeypatch, plans)
+    _ingest_one(client, "detail.jpg")
+
+    def fake_run_capability_now(capability: str, input_payload: dict, trace_id: str | None = None, event_callback=None):
+        assert capability == "doubao.ingredient_category_profile"
+        return {
+            "ingredient_name": input_payload["ingredient"],
+            "category": input_payload["category"],
+            "summary": "甘油用于保湿与肤感平衡",
+            "benefits": ["保湿"],
+            "risks": ["高浓度可能粘腻"],
+            "usage_tips": ["与温和清洁体系搭配"],
+            "suitable_for": ["中性肌肤"],
+            "avoid_for": ["极端油敏肌需先测"],
+            "confidence": 95,
+            "reason": "mock",
+            "analysis_text": "{\"ok\":true}",
+            "model": "doubao-seed-2-0-pro-260215",
+        }
+
+    monkeypatch.setattr(products_routes, "run_capability_now", fake_run_capability_now)
+
+    build = client.post("/api/products/ingredients/library/build", json={"category": "bodywash"})
+    assert build.status_code == 200
+    build_body = build.json()
+    assert build_body["items"]
+    target = build_body["items"][0]
+
+    resp = client.get(f"/api/products/ingredients/library/{target['category']}/{target['ingredient_id']}")
+    assert resp.status_code == 200
+    body = resp.json()
+    item = body["item"]
+
+    assert body["status"] == "ok"
+    assert item["ingredient_id"] == target["ingredient_id"]
+    assert item["category"] == "bodywash"
+    assert item["ingredient_name"] == "甘油"
+    assert item["profile"]["summary"] == "甘油用于保湿与肤感平衡"
+    assert item["profile"]["benefits"] == ["保湿"]
+    assert item["profile"]["confidence"] == 95
+    assert item["source_count"] == 1
+    assert item["source_samples"]

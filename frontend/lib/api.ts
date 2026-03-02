@@ -79,6 +79,66 @@ export type IngredientLibraryBuildResponse = {
   failures: string[];
 };
 
+export type IngredientLibraryListItem = {
+  ingredient_id: string;
+  category: string;
+  ingredient_name: string;
+  summary: string;
+  source_count: number;
+  source_trace_ids: string[];
+  generated_at?: string | null;
+  storage_path: string;
+};
+
+export type IngredientLibraryListResponse = {
+  status: string;
+  category?: string | null;
+  query?: string | null;
+  total: number;
+  offset: number;
+  limit: number;
+  items: IngredientLibraryListItem[];
+};
+
+export type IngredientLibrarySourceSample = {
+  trace_id: string;
+  brand: string;
+  name: string;
+  one_sentence: string;
+  ingredient: Record<string, unknown>;
+};
+
+export type IngredientLibraryProfile = {
+  summary: string;
+  benefits: string[];
+  risks: string[];
+  usage_tips: string[];
+  suitable_for: string[];
+  avoid_for: string[];
+  confidence: number;
+  reason: string;
+  analysis_text: string;
+};
+
+export type IngredientLibraryDetailItem = {
+  ingredient_id: string;
+  category: string;
+  ingredient_name: string;
+  ingredient_key?: string | null;
+  source_count: number;
+  source_trace_ids: string[];
+  source_samples: IngredientLibrarySourceSample[];
+  generated_at?: string | null;
+  generator: Record<string, unknown>;
+  profile: IngredientLibraryProfile;
+  storage_path: string;
+};
+
+export type IngredientLibraryDetailResponse = {
+  status: string;
+  item: IngredientLibraryDetailItem;
+};
+
 export type ProductBatchDeleteRequest = {
   ids: string[];
   keep_ids?: string[];
@@ -330,6 +390,35 @@ export async function suggestProductDuplicatesStream(
     },
     onEvent,
   );
+}
+
+export async function fetchIngredientLibrary(params?: {
+  category?: string;
+  q?: string;
+  offset?: number;
+  limit?: number;
+}): Promise<IngredientLibraryListResponse> {
+  const search = new URLSearchParams();
+  if (params?.category) search.set("category", params.category);
+  if (params?.q) search.set("q", params.q);
+  if (typeof params?.offset === "number") search.set("offset", String(params.offset));
+  if (typeof params?.limit === "number") search.set("limit", String(params.limit));
+  const query = search.toString();
+  const path = query ? `/api/products/ingredients/library?${query}` : "/api/products/ingredients/library";
+  return apiFetch<IngredientLibraryListResponse>(path);
+}
+
+export async function fetchIngredientLibraryItem(
+  category: string,
+  ingredientId: string,
+): Promise<IngredientLibraryDetailResponse> {
+  const categoryValue = category.trim();
+  const ingredientValue = ingredientId.trim();
+  if (!categoryValue || !ingredientValue) {
+    throw new Error("category and ingredientId are required.");
+  }
+  const path = `/api/products/ingredients/library/${encodeURIComponent(categoryValue)}/${encodeURIComponent(ingredientValue)}`;
+  return apiFetch<IngredientLibraryDetailResponse>(path);
 }
 
 export async function buildIngredientLibraryStream(

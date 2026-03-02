@@ -2,6 +2,7 @@ import json
 import queue
 import threading
 import hashlib
+from pathlib import Path
 from collections import defaultdict
 from typing import Any, Callable
 
@@ -15,6 +16,7 @@ from app.ai.orchestrator import run_capability_now
 from app.constants import VALID_CATEGORIES
 from app.db.session import get_db
 from app.db.models import ProductIndex
+from app.settings import settings
 from app.services.storage import (
     load_json,
     save_json_at,
@@ -43,6 +45,12 @@ from app.schemas import (
     IngredientLibraryBuildRequest,
     IngredientLibraryBuildResponse,
     IngredientLibraryBuildItem,
+    IngredientLibraryListResponse,
+    IngredientLibraryListItem,
+    IngredientLibrarySourceSample,
+    IngredientLibraryProfile,
+    IngredientLibraryDetailItem,
+    IngredientLibraryDetailResponse,
 )
 
 router = APIRouter(prefix="/api", tags=["products"])
@@ -263,6 +271,66 @@ def build_ingredient_library_stream(payload: IngredientLibraryBuildRequest, db: 
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.get("/products/ingredients/library", response_model=IngredientLibraryListResponse)
+def list_ingredient_library(
+    category: str | None = Query(None),
+    q: str | None = Query(None, description="search ingredient name/summary"),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(80, ge=1, le=500),
+):
+    normalized_category = _normalize_optional_category(category)
+    query = str(q or "").strip()
+    query_lc = query.lower()
+
+    items: list[IngredientLibraryListItem] = []
+    for rel_path in _iter_ingredient_profile_rel_paths(category=normalized_category):
+        try:
+            doc = _load_ingredient_profile_doc(rel_path=rel_path)
+            item = _to_ingredient_library_list_item(doc=doc, rel_path=rel_path)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Invalid ingredient profile '{rel_path}': {e}") from e
+
+        haystack = f"{item.ingredient_name} {item.summary}".lower()
+        if query_lc and query_lc not in haystack:
+            continue
+        items.append(item)
+
+    items.sort(key=lambda item: (item.generated_at or "", item.ingredient_name.lower(), item.ingredient_id), reverse=True)
+    total = len(items)
+    paged = items[offset : offset + limit]
+    return IngredientLibraryListResponse(
+        status="ok",
+        category=normalized_category,
+        query=(query or None),
+        total=total,
+        offset=offset,
+        limit=limit,
+        items=paged,
+    )
+
+
+@router.get("/products/ingredients/library/{category}/{ingredient_id}", response_model=IngredientLibraryDetailResponse)
+def get_ingredient_library_item(category: str, ingredient_id: str):
+    normalized_category = _normalize_required_category(category)
+    normalized_ingredient_id = str(ingredient_id or "").strip().lower()
+    if not normalized_ingredient_id:
+        raise HTTPException(status_code=400, detail="ingredient_id is required.")
+
+    rel_path = ingredient_profile_rel_path(normalized_category, normalized_ingredient_id)
+    if not exists_rel_path(rel_path):
+        raise HTTPException(status_code=404, detail=f"Ingredient profile not found: {normalized_category}/{normalized_ingredient_id}.")
+
+    try:
+        doc = _load_ingredient_profile_doc(rel_path=rel_path)
+        item = _to_ingredient_library_detail_item(doc=doc, rel_path=rel_path)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Invalid ingredient profile '{rel_path}': {e}") from e
+
+    return IngredientLibraryDetailResponse(status="ok", item=item)
 
 
 @router.post("/products/batch-delete", response_model=ProductBatchDeleteResponse)
@@ -1225,6 +1293,181 @@ def _build_ingredient_id(category: str, ingredient_key: str) -> str:
     base = f"{category}::{ingredient_key}"
     digest = hashlib.sha1(base.encode("utf-8")).hexdigest()[:20]
     return f"ing-{digest}"
+
+
+def _normalize_optional_category(category: str | None) -> str | None:
+    value = str(category or "").strip().lower()
+    if not value:
+        return None
+    if value not in VALID_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Invalid category: {value}.")
+    return value
+
+
+def _normalize_required_category(category: str) -> str:
+    value = _normalize_optional_category(category)
+    if not value:
+        raise HTTPException(status_code=400, detail="category is required.")
+    return value
+
+
+def _iter_ingredient_profile_rel_paths(category: str | None) -> list[str]:
+    base = Path(settings.storage_dir).resolve()
+    root = (base / "ingredients").resolve()
+    if not str(root).startswith(str(base)):
+        raise HTTPException(status_code=500, detail="Invalid ingredients storage root.")
+    if not root.exists():
+        return []
+
+    target_dir = root
+    if category:
+        target_dir = (root / category).resolve()
+        if not str(target_dir).startswith(str(root)):
+            raise HTTPException(status_code=500, detail="Invalid ingredients category path.")
+        if not target_dir.exists():
+            return []
+
+    rel_paths: list[str] = []
+    for path in sorted(target_dir.rglob("*.json")):
+        if not path.is_file():
+            continue
+        rel_paths.append(path.resolve().relative_to(base).as_posix())
+    return rel_paths
+
+
+def _load_ingredient_profile_doc(rel_path: str) -> dict[str, Any]:
+    doc = load_json(rel_path)
+    if not isinstance(doc, dict):
+        raise ValueError("document is not an object.")
+    return doc
+
+
+def _required_text_field(doc: dict[str, Any], key: str) -> str:
+    value = str(doc.get(key) or "").strip()
+    if not value:
+        raise ValueError(f"missing required field '{key}'.")
+    return value
+
+
+def _strict_str_list(value: Any, field_name: str) -> list[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError(f"{field_name} should be a list.")
+    out: list[str] = []
+    for idx, item in enumerate(value):
+        text = str(item or "").strip()
+        if not text:
+            raise ValueError(f"{field_name}[{idx}] is empty.")
+        out.append(text)
+    return out
+
+
+def _strict_non_negative_int(value: Any, field_name: str, fallback: int | None = None) -> int:
+    if value is None and fallback is not None:
+        return max(0, int(fallback))
+    try:
+        parsed = int(value)
+    except Exception as e:
+        raise ValueError(f"{field_name} should be an integer.") from e
+    if parsed < 0:
+        raise ValueError(f"{field_name} should be >= 0.")
+    return parsed
+
+
+def _to_ingredient_library_list_item(doc: dict[str, Any], rel_path: str) -> IngredientLibraryListItem:
+    ingredient_id = _required_text_field(doc, "id")
+    category = _required_text_field(doc, "category").lower()
+    if category not in VALID_CATEGORIES:
+        raise ValueError(f"invalid category in profile: {category}.")
+    ingredient_name = _required_text_field(doc, "ingredient_name")
+    source_trace_ids = _strict_str_list(doc.get("source_trace_ids"), field_name="source_trace_ids")
+    source_count = _strict_non_negative_int(
+        doc.get("source_count"),
+        field_name="source_count",
+        fallback=len(source_trace_ids),
+    )
+
+    profile_raw = doc.get("profile")
+    if not isinstance(profile_raw, dict):
+        raise ValueError("profile should be an object.")
+    summary = str(profile_raw.get("summary") or "").strip()
+    generated_at = str(doc.get("generated_at") or "").strip() or None
+
+    return IngredientLibraryListItem(
+        ingredient_id=ingredient_id,
+        category=category,
+        ingredient_name=ingredient_name,
+        summary=summary,
+        source_count=source_count,
+        source_trace_ids=source_trace_ids,
+        generated_at=generated_at,
+        storage_path=rel_path,
+    )
+
+
+def _to_ingredient_library_detail_item(doc: dict[str, Any], rel_path: str) -> IngredientLibraryDetailItem:
+    base = _to_ingredient_library_list_item(doc=doc, rel_path=rel_path)
+    ingredient_key = str(doc.get("ingredient_key") or "").strip() or None
+
+    generator = doc.get("generator")
+    if generator is None:
+        generator = {}
+    if not isinstance(generator, dict):
+        raise ValueError("generator should be an object.")
+
+    profile_raw = doc.get("profile")
+    if not isinstance(profile_raw, dict):
+        raise ValueError("profile should be an object.")
+    profile = IngredientLibraryProfile(
+        summary=str(profile_raw.get("summary") or "").strip(),
+        benefits=_strict_str_list(profile_raw.get("benefits"), field_name="profile.benefits"),
+        risks=_strict_str_list(profile_raw.get("risks"), field_name="profile.risks"),
+        usage_tips=_strict_str_list(profile_raw.get("usage_tips"), field_name="profile.usage_tips"),
+        suitable_for=_strict_str_list(profile_raw.get("suitable_for"), field_name="profile.suitable_for"),
+        avoid_for=_strict_str_list(profile_raw.get("avoid_for"), field_name="profile.avoid_for"),
+        confidence=_strict_non_negative_int(profile_raw.get("confidence"), field_name="profile.confidence", fallback=0),
+        reason=str(profile_raw.get("reason") or "").strip(),
+        analysis_text=str(profile_raw.get("analysis_text") or "").strip(),
+    )
+
+    source_samples_raw = doc.get("source_samples")
+    if source_samples_raw is None:
+        source_samples_raw = []
+    if not isinstance(source_samples_raw, list):
+        raise ValueError("source_samples should be a list.")
+    source_samples: list[IngredientLibrarySourceSample] = []
+    for idx, sample in enumerate(source_samples_raw):
+        if not isinstance(sample, dict):
+            raise ValueError(f"source_samples[{idx}] should be an object.")
+        ingredient_raw = sample.get("ingredient")
+        if ingredient_raw is None:
+            ingredient_raw = {}
+        if not isinstance(ingredient_raw, dict):
+            raise ValueError(f"source_samples[{idx}].ingredient should be an object.")
+        source_samples.append(
+            IngredientLibrarySourceSample(
+                trace_id=str(sample.get("trace_id") or "").strip(),
+                brand=str(sample.get("brand") or "").strip(),
+                name=str(sample.get("name") or "").strip(),
+                one_sentence=str(sample.get("one_sentence") or "").strip(),
+                ingredient=ingredient_raw,
+            )
+        )
+
+    return IngredientLibraryDetailItem(
+        ingredient_id=base.ingredient_id,
+        category=base.category,
+        ingredient_name=base.ingredient_name,
+        ingredient_key=ingredient_key,
+        source_count=base.source_count,
+        source_trace_ids=base.source_trace_ids,
+        source_samples=source_samples,
+        generated_at=base.generated_at,
+        generator=generator,
+        profile=profile,
+        storage_path=base.storage_path,
+    )
 
 
 def _safe_str_list(value: Any) -> list[str]:
