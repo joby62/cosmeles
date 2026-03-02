@@ -51,6 +51,48 @@ export type ProductDoc = {
   };
 };
 
+export type AIJobCreateRequest = {
+  capability: string;
+  input: Record<string, unknown>;
+  trace_id?: string;
+  run_immediately?: boolean;
+};
+
+export type AIJobView = {
+  id: string;
+  capability: string;
+  status: string;
+  trace_id?: string | null;
+  input: Record<string, unknown>;
+  output?: Record<string, unknown> | null;
+  prompt_key?: string | null;
+  prompt_version?: string | null;
+  model?: string | null;
+  error_code?: string | null;
+  error_http_status?: number | null;
+  error_message?: string | null;
+  created_at: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+};
+
+export type AIRunView = {
+  id: string;
+  job_id: string;
+  capability: string;
+  status: string;
+  prompt_key?: string | null;
+  prompt_version?: string | null;
+  model?: string | null;
+  request: Record<string, unknown>;
+  response?: Record<string, unknown> | null;
+  latency_ms?: number | null;
+  error_code?: string | null;
+  error_http_status?: number | null;
+  error_message?: string | null;
+  created_at: string;
+};
+
 function getBaseForFetch(): string {
   // 在浏览器里优先直连后端，避免 /api 重写层在 multipart 上传时吞掉真实错误。
   if (typeof window !== "undefined") {
@@ -128,6 +170,32 @@ export async function fetchProduct(id: string): Promise<Product> {
 
 export async function fetchProductDoc(id: string): Promise<ProductDoc> {
   return apiFetch<ProductDoc>(`/api/products/${id}`);
+}
+
+export async function createAIJob(payload: AIJobCreateRequest): Promise<AIJobView> {
+  return apiFetch<AIJobView>("/api/ai/jobs", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchAIRuns(params?: {
+  jobId?: string;
+  offset?: number;
+  limit?: number;
+}): Promise<AIRunView[]> {
+  const search = new URLSearchParams();
+  if (params?.jobId) search.set("job_id", params.jobId);
+  if (typeof params?.offset === "number") search.set("offset", String(params.offset));
+  if (typeof params?.limit === "number") search.set("limit", String(params.limit));
+  const query = search.toString();
+  const path = query ? `/api/ai/runs?${query}` : "/api/ai/runs";
+  return apiFetch<AIRunView[]>(path);
+}
+
+export async function fetchLatestAIRunByJobId(jobId: string): Promise<AIRunView | null> {
+  const runs = await fetchAIRuns({ jobId, limit: 1, offset: 0 });
+  return runs[0] || null;
 }
 
 function normalizePublicImagePath(path: string): string {
