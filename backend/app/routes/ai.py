@@ -8,7 +8,7 @@ from app.ai.errors import AIServiceError
 from app.ai.orchestrator import AIOrchestrator
 from app.db.models import AIJob, AIRun
 from app.db.session import get_db
-from app.schemas import AIJobCreateRequest, AIJobView, AIRunView
+from app.schemas import AIJobCreateRequest, AIJobView, AIRunView, AIMetricsSummaryView
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
@@ -70,6 +70,19 @@ def list_ai_runs(
     orchestrator = AIOrchestrator(db)
     runs = orchestrator.list_runs(job_id=job_id, limit=limit, offset=offset)
     return [_to_run_view(run) for run in runs]
+
+
+@router.get("/metrics/summary", response_model=AIMetricsSummaryView)
+def get_ai_metrics_summary(
+    capability: str | None = Query(None),
+    since_hours: int = Query(168, ge=1, le=24 * 365),
+    db: Session = Depends(get_db),
+):
+    orchestrator = AIOrchestrator(db)
+    try:
+        return orchestrator.metrics_summary(capability=capability, since_hours=since_hours)
+    except AIServiceError as e:
+        raise HTTPException(status_code=e.http_status, detail=e.message) from e
 
 
 def _to_job_view(job: AIJob) -> AIJobView:

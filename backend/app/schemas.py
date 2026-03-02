@@ -107,3 +107,30 @@ class AIRunView(BaseModel):
     error_http_status: Optional[int] = None
     error_message: Optional[str] = None
     created_at: str
+
+
+class AIMetricsSummaryView(BaseModel):
+    capability: Optional[str] = None
+    since_hours: int
+    window_start: str
+
+    total_jobs: int
+    succeeded_jobs: int
+    failed_jobs: int
+    running_jobs: int
+    queued_jobs: int
+    success_rate: float
+
+    timeout_failures: int
+    timeout_rate: float
+
+    total_runs: int
+    succeeded_runs: int
+    failed_runs: int
+    avg_latency_ms: Optional[float] = None
+    p95_latency_ms: Optional[int] = None
+
+    total_estimated_cost: float
+    avg_task_cost: Optional[float] = None
+    priced_runs: int
+    cost_coverage_rate: float

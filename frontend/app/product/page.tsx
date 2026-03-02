@@ -1,6 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
-import { fetchAllProducts, resolveImageUrl } from "@/lib/api";
+import { fetchAIMetricsSummary, fetchAllProducts, resolveImageUrl } from "@/lib/api";
 import { CATEGORY_CONFIG } from "@/lib/catalog";
 
 function categoryLabel(category?: string | null): string {
@@ -25,6 +25,7 @@ function formatTime(value?: string | null): string {
 
 export default async function ProductGalleryPage() {
   const products = await fetchAllProducts();
+  const aiMetrics = await fetchAIMetricsSummary({ sinceHours: 24 * 7 }).catch(() => null);
 
   const categoryCounts = new Map<string, number>();
   for (const item of products) {
@@ -61,6 +62,19 @@ export default async function ProductGalleryPage() {
               去上传
             </Link>
           </div>
+
+          {aiMetrics ? (
+            <div className="mt-5 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+              <MetricsBadge label="AI成功率(7d)" value={pct(aiMetrics.success_rate)} />
+              <MetricsBadge label="AI超时率(7d)" value={pct(aiMetrics.timeout_rate)} />
+              <MetricsBadge label="P95时延(ms)" value={num(aiMetrics.p95_latency_ms)} />
+              <MetricsBadge
+                label="单任务成本(估)"
+                value={aiMetrics.avg_task_cost == null ? "-" : aiMetrics.avg_task_cost.toFixed(4)}
+                sub={`覆盖率 ${pct(aiMetrics.cost_coverage_rate)}`}
+              />
+            </div>
+          ) : null}
         </div>
       </section>
 
@@ -136,4 +150,23 @@ export default async function ProductGalleryPage() {
       )}
     </main>
   );
+}
+
+function MetricsBadge({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="rounded-2xl border border-black/10 bg-white px-3 py-2.5">
+      <div className="text-[11px] text-black/46">{label}</div>
+      <div className="mt-0.5 text-[15px] font-semibold text-black/82">{value}</div>
+      {sub ? <div className="mt-0.5 text-[11px] text-black/44">{sub}</div> : null}
+    </div>
+  );
+}
+
+function pct(value: number): string {
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+function num(value?: number | null): string {
+  if (typeof value !== "number") return "-";
+  return String(Math.round(value));
 }

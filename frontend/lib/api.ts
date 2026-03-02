@@ -93,6 +93,29 @@ export type AIRunView = {
   created_at: string;
 };
 
+export type AIMetricsSummary = {
+  capability?: string | null;
+  since_hours: number;
+  window_start: string;
+  total_jobs: number;
+  succeeded_jobs: number;
+  failed_jobs: number;
+  running_jobs: number;
+  queued_jobs: number;
+  success_rate: number;
+  timeout_failures: number;
+  timeout_rate: number;
+  total_runs: number;
+  succeeded_runs: number;
+  failed_runs: number;
+  avg_latency_ms?: number | null;
+  p95_latency_ms?: number | null;
+  total_estimated_cost: number;
+  avg_task_cost?: number | null;
+  priced_runs: number;
+  cost_coverage_rate: number;
+};
+
 function getBaseForFetch(): string {
   // 在浏览器里优先直连后端，避免 /api 重写层在 multipart 上传时吞掉真实错误。
   if (typeof window !== "undefined") {
@@ -196,6 +219,18 @@ export async function fetchAIRuns(params?: {
 export async function fetchLatestAIRunByJobId(jobId: string): Promise<AIRunView | null> {
   const runs = await fetchAIRuns({ jobId, limit: 1, offset: 0 });
   return runs[0] || null;
+}
+
+export async function fetchAIMetricsSummary(params?: {
+  capability?: string;
+  sinceHours?: number;
+}): Promise<AIMetricsSummary> {
+  const search = new URLSearchParams();
+  if (params?.capability) search.set("capability", params.capability);
+  if (typeof params?.sinceHours === "number") search.set("since_hours", String(params.sinceHours));
+  const query = search.toString();
+  const path = query ? `/api/ai/metrics/summary?${query}` : "/api/ai/metrics/summary";
+  return apiFetch<AIMetricsSummary>(path);
 }
 
 function normalizePublicImagePath(path: string): string {

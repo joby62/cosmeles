@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     doubao_struct_model: str = "doubao-seed-2-0-mini-260215"
     doubao_timeout_seconds: int = 60
     doubao_artifact_ttl_days: int = 14
+    # 任务成本估算（可选）：
+    # AI_COST_PER_RUN_BY_MODEL_JSON='{"doubao-seed-2-0-mini-260215":0.004}'
+    ai_cost_per_run_by_model_json: str = ""
 
     # === 上传安全边界 ===
     max_upload_bytes: int = 8 * 1024 * 1024  # 8MB

@@ -1,7 +1,15 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { AIRunView, AIJobView, ProductDoc, createAIJob, fetchLatestAIRunByJobId } from "@/lib/api";
+import {
+  AIRunView,
+  AIJobView,
+  ProductDoc,
+  createAIJob,
+  fetchAllProducts,
+  fetchLatestAIRunByJobId,
+  fetchProductDoc,
+} from "@/lib/api";
 
 type ActionState = {
   loading: boolean;
@@ -28,6 +36,7 @@ export default function ProductAIConsole({ productId, doc }: { productId: string
   const [ingredientContext, setIngredientContext] = useState(doc.summary?.one_sentence || "");
   const [ingredientState, setIngredientState] = useState<ActionState>({ loading: false });
   const [consistencyState, setConsistencyState] = useState<ActionState>({ loading: false });
+  const [dedupState, setDedupState] = useState<ActionState>({ loading: false });
 
   const imageRelPath = normalizeImageRelPath(doc.evidence?.image_path);
   const jsonText = useMemo(() => JSON.stringify(doc, null, 2), [doc]);
@@ -93,6 +102,59 @@ export default function ProductAIConsole({ productId, doc }: { productId: string
       });
     } catch (err) {
       setConsistencyState({ loading: false, error: formatError(err) });
+    }
+  }
+
+  async function runDedupDecision() {
+    setDedupState((prev) => ({ ...prev, loading: true, error: undefined }));
+    try {
+      const all = await fetchAllProducts();
+      const candidateIds = all
+        .filter((item) => item.id !== productId)
+        .slice(0, 20)
+        .map((item) => item.id);
+
+      const existingDocs = (
+        await Promise.all(
+          candidateIds.map(async (id) => {
+            try {
+              return await fetchProductDoc(id);
+            } catch {
+              return null;
+            }
+          }),
+        )
+      ).filter(Boolean) as ProductDoc[];
+
+      if (existingDocs.length === 0) {
+        setDedupState({
+          loading: false,
+          error: "产品库中没有可比较样本，先上传更多产品后再检测。",
+        });
+        return;
+      }
+
+      const job = await createAIJob({
+        capability: "doubao.product_dedup_decision",
+        trace_id: productId,
+        run_immediately: true,
+        input: {
+          product_id: productId,
+          candidate_json: jsonText,
+          existing_jsons: existingDocs.map((item) => JSON.stringify(item)),
+        },
+      });
+      const run = await fetchLatestRunSafe(job.id);
+      const outputText = toReadableOutput(job.output);
+      setDedupState({
+        loading: false,
+        job,
+        run,
+        outputText,
+        error: job.status === "failed" ? job.error_message || "AI job failed." : undefined,
+      });
+    } catch (err) {
+      setDedupState({ loading: false, error: formatError(err) });
     }
   }
 
@@ -167,6 +229,22 @@ export default function ProductAIConsole({ productId, doc }: { productId: string
           <ActionResult state={consistencyState} />
         </article>
       </div>
+
+      <article className="mt-4 rounded-2xl border border-black/10 bg-[#f7f8fb] p-4">
+        <h3 className="text-[14px] font-semibold text-black/82">产品重合检测（doubao.product_dedup_decision）</h3>
+        <p className="mt-1 text-[12px] leading-[1.55] text-black/62">
+          从产品库抽取最多 20 个历史产品 JSON，与当前产品做重合/重复判断。
+        </p>
+        <button
+          type="button"
+          onClick={runDedupDecision}
+          disabled={dedupState.loading}
+          className="mt-3 inline-flex h-10 items-center justify-center rounded-full bg-black px-4 text-[13px] font-semibold text-white disabled:cursor-not-allowed disabled:bg-black/25"
+        >
+          {dedupState.loading ? "分析中..." : "检测与库内重合度"}
+        </button>
+        <ActionResult state={dedupState} />
+      </article>
     </section>
   );
 }

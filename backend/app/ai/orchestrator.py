@@ -1,5 +1,6 @@
 import json
 import time
+from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -10,6 +11,7 @@ from app.ai.errors import AIServiceError
 from app.db.models import AIJob, AIRun
 from app.db.session import SessionLocal
 from app.services.storage import new_id, now_iso
+from app.settings import settings
 
 
 class AIOrchestrator:
@@ -119,6 +121,67 @@ class AIOrchestrator:
         stmt = stmt.order_by(AIRun.created_at.desc()).offset(offset).limit(limit)
         return list(self.db.execute(stmt).scalars().all())
 
+    def metrics_summary(self, capability: str | None = None, since_hours: int = 168) -> dict[str, Any]:
+        since_hours = max(1, int(since_hours))
+        window_start = (datetime.utcnow() - timedelta(hours=since_hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        jobs_stmt = select(AIJob).where(AIJob.created_at >= window_start)
+        runs_stmt = select(AIRun).where(AIRun.created_at >= window_start)
+        if capability:
+            jobs_stmt = jobs_stmt.where(AIJob.capability == capability)
+            runs_stmt = runs_stmt.where(AIRun.capability == capability)
+
+        jobs = list(self.db.execute(jobs_stmt).scalars().all())
+        runs = list(self.db.execute(runs_stmt).scalars().all())
+
+        total_jobs = len(jobs)
+        succeeded_jobs = sum(1 for j in jobs if j.status == "succeeded")
+        failed_jobs = sum(1 for j in jobs if j.status == "failed")
+        running_jobs = sum(1 for j in jobs if j.status == "running")
+        queued_jobs = sum(1 for j in jobs if j.status == "queued")
+        timeout_failures = sum(1 for j in jobs if _is_timeout_failure(j.error_code, j.error_message))
+
+        total_runs = len(runs)
+        succeeded_runs = sum(1 for r in runs if r.status == "succeeded")
+        failed_runs = sum(1 for r in runs if r.status == "failed")
+
+        latencies = sorted(int(r.latency_ms) for r in runs if isinstance(r.latency_ms, int))
+        avg_latency_ms = (sum(latencies) / len(latencies)) if latencies else None
+        p95_latency_ms = latencies[max(0, (len(latencies) * 95 + 99) // 100 - 1)] if latencies else None
+
+        model_costs = _load_model_costs()
+        priced_runs = 0
+        total_estimated_cost = 0.0
+        for run in runs:
+            model = (run.model or "").strip()
+            if not model or model not in model_costs:
+                continue
+            priced_runs += 1
+            total_estimated_cost += model_costs[model]
+
+        return {
+            "capability": capability,
+            "since_hours": since_hours,
+            "window_start": window_start,
+            "total_jobs": total_jobs,
+            "succeeded_jobs": succeeded_jobs,
+            "failed_jobs": failed_jobs,
+            "running_jobs": running_jobs,
+            "queued_jobs": queued_jobs,
+            "success_rate": (succeeded_jobs / total_jobs) if total_jobs else 0.0,
+            "timeout_failures": timeout_failures,
+            "timeout_rate": (timeout_failures / total_jobs) if total_jobs else 0.0,
+            "total_runs": total_runs,
+            "succeeded_runs": succeeded_runs,
+            "failed_runs": failed_runs,
+            "avg_latency_ms": avg_latency_ms,
+            "p95_latency_ms": p95_latency_ms,
+            "total_estimated_cost": total_estimated_cost,
+            "avg_task_cost": (total_estimated_cost / priced_runs) if priced_runs else None,
+            "priced_runs": priced_runs,
+            "cost_coverage_rate": (priced_runs / total_runs) if total_runs else 0.0,
+        }
+
     def _mark_succeeded(self, job: AIJob, run: AIRun, result: CapabilityExecutionResult, started: float) -> None:
         latency_ms = int((time.perf_counter() - started) * 1000)
         run.status = "succeeded"
@@ -190,3 +253,51 @@ def _load_json(payload: str | None) -> Any:
     if not payload:
         return None
     return json.loads(payload)
+
+
+def _is_timeout_failure(error_code: str | None, error_message: str | None) -> bool:
+    code = (error_code or "").lower()
+    msg = (error_message or "").lower()
+    return "timeout" in code or "timeout" in msg
+
+
+def _load_model_costs() -> dict[str, float]:
+    raw = (settings.ai_cost_per_run_by_model_json or "").strip()
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise AIServiceError(
+            code="ai_cost_config_invalid",
+            message="AI_COST_PER_RUN_BY_MODEL_JSON must be valid JSON object.",
+            http_status=500,
+        ) from e
+    if not isinstance(parsed, dict):
+        raise AIServiceError(
+            code="ai_cost_config_invalid",
+            message="AI_COST_PER_RUN_BY_MODEL_JSON must be a JSON object.",
+            http_status=500,
+        )
+
+    out: dict[str, float] = {}
+    for key, value in parsed.items():
+        model = str(key).strip()
+        if not model:
+            continue
+        try:
+            cost = float(value)
+        except (TypeError, ValueError) as e:
+            raise AIServiceError(
+                code="ai_cost_config_invalid",
+                message=f"Invalid cost value for model '{model}'.",
+                http_status=500,
+            ) from e
+        if cost < 0:
+            raise AIServiceError(
+                code="ai_cost_config_invalid",
+                message=f"Cost must be non-negative for model '{model}'.",
+                http_status=500,
+            )
+        out[model] = cost
+    return out
