@@ -11,6 +11,7 @@ DEFAULT_PROMPT_VERSIONS = {
     "doubao.stage1_vision": "v1",
     "doubao.stage2_struct": "v1",
     "doubao.ingredient_enrich": "v1",
+    "doubao.ingredient_category_profile": "v1",
     "doubao.image_json_consistency": "v1",
     "doubao.product_dedup_decision": "v1",
     "doubao.product_dedup_group": "v1",

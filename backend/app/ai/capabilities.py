@@ -17,6 +17,7 @@ SUPPORTED_CAPABILITIES = {
     "doubao.stage2_struct",
     "doubao.two_stage_parse",
     "doubao.ingredient_enrich",
+    "doubao.ingredient_category_profile",
     "doubao.image_json_consistency",
     "doubao.product_dedup_decision",
     "doubao.product_dedup_group",
@@ -54,6 +55,8 @@ def execute_capability(
         return _cap_two_stage_parse(input_payload, trace_id, event_callback=event_callback)
     if capability == "doubao.ingredient_enrich":
         return _cap_ingredient_enrich(input_payload, trace_id, event_callback=event_callback)
+    if capability == "doubao.ingredient_category_profile":
+        return _cap_ingredient_category_profile(input_payload, trace_id, event_callback=event_callback)
     if capability == "doubao.image_json_consistency":
         return _cap_image_json_consistency(input_payload, trace_id, event_callback=event_callback)
     if capability == "doubao.product_dedup_decision":
@@ -268,6 +271,89 @@ def _cap_ingredient_enrich(
         prompt_key=prompt.key,
         prompt_version=prompt.version,
         model=text_model,
+        request_payload={"prompt": rendered_prompt},
+        response_payload=response_raw,
+    )
+
+
+def _cap_ingredient_category_profile(
+    input_payload: dict[str, Any],
+    trace_id: str | None,
+    event_callback: Callable[[dict[str, Any]], None] | None = None,
+) -> CapabilityExecutionResult:
+    ingredient = _required_nonempty_str(input_payload, "ingredient")
+    category = _required_nonempty_str(input_payload, "category").lower()
+    source_samples = input_payload.get("source_samples") or []
+    if not isinstance(source_samples, list):
+        raise AIServiceError(code="invalid_input", message="source_samples must be a list.", http_status=400)
+    source_samples = [item for item in source_samples if isinstance(item, dict)][:30]
+
+    prompt = load_prompt("doubao.ingredient_category_profile")
+    rendered_prompt = render_prompt(
+        prompt.text,
+        {
+            "ingredient": ingredient,
+            "category": category,
+            "source_samples_json": json.dumps(source_samples, ensure_ascii=False),
+        },
+    )
+    _emit(event_callback, {"type": "step", "stage": "ingredient_category_profile", "message": "Prompt prepared."})
+
+    if _is_sample_mode():
+        sample = {
+            "ingredient_name": ingredient,
+            "category": category,
+            "summary": f"sample mode: {ingredient} in {category}",
+            "benefits": [],
+            "risks": [],
+            "usage_tips": [],
+            "suitable_for": [],
+            "avoid_for": [],
+            "confidence": 0,
+            "reason": "sample mode",
+        }
+        artifact = _maybe_save_artifact(
+            trace_id,
+            "ingredient_category_profile",
+            {"model": "sample", "prompt": rendered_prompt, "response": {"mode": "sample"}, "text": json.dumps(sample, ensure_ascii=False)},
+        )
+        return CapabilityExecutionResult(
+            output={**sample, "analysis_text": json.dumps(sample, ensure_ascii=False), "model": "sample", "artifact": artifact},
+            prompt_key=prompt.key,
+            prompt_version=prompt.version,
+            model="sample",
+            request_payload={"prompt": rendered_prompt},
+            response_payload={"mode": "sample"},
+        )
+
+    sdk, _, _, _ = _build_sdk_and_models()
+    pro_model = settings.doubao_pro_model or "doubao-seed-2-0-pro-260215"
+    _emit(
+        event_callback,
+        {"type": "step", "stage": "ingredient_category_profile", "message": f"Calling model {pro_model}."},
+    )
+    response_raw = _safe_sdk_call(
+        lambda: sdk.chat_with_text(
+            rendered_prompt,
+            model=pro_model,
+            stream=event_callback is not None,
+            on_text_delta=(lambda delta: _emit(event_callback, {"type": "delta", "stage": "ingredient_category_profile", "delta": delta})),
+        )
+    )
+    text = _extract_content(response_raw)
+    parsed = _extract_json_object(text)
+    normalized = _normalize_ingredient_category_profile_result(category=category, ingredient=ingredient, payload=parsed)
+    _emit(event_callback, {"type": "step", "stage": "ingredient_category_profile", "message": "Ingredient profile completed."})
+    artifact = _maybe_save_artifact(
+        trace_id,
+        "ingredient_category_profile",
+        {"model": pro_model, "prompt": rendered_prompt, "response": response_raw, "text": text},
+    )
+    return CapabilityExecutionResult(
+        output={**normalized, "analysis_text": text, "model": pro_model, "artifact": artifact},
+        prompt_key=prompt.key,
+        prompt_version=prompt.version,
+        model=pro_model,
         request_payload={"prompt": rendered_prompt},
         response_payload=response_raw,
     )
@@ -704,6 +790,62 @@ def _normalize_dedup_group_result(
         "duplicates": duplicates,
         "reason": reason,
     }
+
+
+def _normalize_ingredient_category_profile_result(
+    *,
+    category: str,
+    ingredient: str,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise AIServiceError(code="ingredient_profile_invalid", message="ingredient profile output must be a JSON object.", http_status=422)
+
+    ingredient_name = str(payload.get("ingredient_name") or ingredient).strip() or ingredient
+    output_category = str(payload.get("category") or category).strip().lower() or category
+    if output_category != category:
+        raise AIServiceError(
+            code="ingredient_profile_invalid",
+            message=f"ingredient profile category mismatch: expected '{category}', got '{output_category}'.",
+            http_status=422,
+        )
+
+    summary = str(payload.get("summary") or "").strip()
+    if not summary:
+        raise AIServiceError(code="ingredient_profile_invalid", message="ingredient profile summary is required.", http_status=422)
+
+    try:
+        confidence = int(payload.get("confidence"))
+    except Exception:
+        confidence = 0
+    confidence = max(0, min(100, confidence))
+
+    return {
+        "ingredient_name": ingredient_name,
+        "category": output_category,
+        "summary": summary,
+        "benefits": _to_str_array(payload.get("benefits")),
+        "risks": _to_str_array(payload.get("risks")),
+        "usage_tips": _to_str_array(payload.get("usage_tips")),
+        "suitable_for": _to_str_array(payload.get("suitable_for")),
+        "avoid_for": _to_str_array(payload.get("avoid_for")),
+        "confidence": confidence,
+        "reason": str(payload.get("reason") or "").strip(),
+    }
+
+
+def _to_str_array(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    for item in value:
+        text = str(item or "").strip()
+        if not text:
+            continue
+        out.append(text)
+        if len(out) >= 20:
+            break
+    return out
 
 
 def _emit(event_callback: Callable[[dict[str, Any]], None] | None, payload: dict[str, Any]) -> None:

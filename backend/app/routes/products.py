@@ -1,6 +1,7 @@
 import json
 import queue
 import threading
+import hashlib
 from collections import defaultdict
 from typing import Any, Callable
 
@@ -17,6 +18,9 @@ from app.db.models import ProductIndex
 from app.services.storage import (
     load_json,
     save_json_at,
+    now_iso,
+    save_ingredient_profile,
+    ingredient_profile_rel_path,
     exists_rel_path,
     remove_rel_path,
     remove_rel_dir,
@@ -36,6 +40,9 @@ from app.schemas import (
     ProductBatchDeleteResponse,
     OrphanStorageCleanupRequest,
     OrphanStorageCleanupResponse,
+    IngredientLibraryBuildRequest,
+    IngredientLibraryBuildResponse,
+    IngredientLibraryBuildItem,
 )
 
 router = APIRouter(prefix="/api", tags=["products"])
@@ -218,6 +225,46 @@ def suggest_product_duplicates_stream(payload: ProductDedupSuggestRequest, db: S
     )
 
 
+@router.post("/products/ingredients/library/build", response_model=IngredientLibraryBuildResponse)
+def build_ingredient_library(payload: IngredientLibraryBuildRequest, db: Session = Depends(get_db)):
+    return _build_ingredient_library_impl(payload, db, event_callback=None)
+
+
+@router.post("/products/ingredients/library/build/stream")
+def build_ingredient_library_stream(payload: IngredientLibraryBuildRequest, db: Session = Depends(get_db)):
+    events: queue.Queue[tuple[str, dict[str, Any]] | None] = queue.Queue()
+    SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=db.get_bind())
+
+    def emit(event: str, body: dict[str, Any]) -> None:
+        events.put((event, body))
+
+    def worker() -> None:
+        local_db = SessionMaker()
+        try:
+            result = _build_ingredient_library_impl(payload, local_db, event_callback=lambda e: emit("progress", e))
+            emit("result", result.model_dump())
+        except HTTPException as e:
+            emit("error", {"status": e.status_code, "detail": e.detail})
+        except Exception as e:  # pragma: no cover
+            emit("error", {"status": 500, "detail": f"ingredient library build failed: {e}"})
+        finally:
+            emit("done", {"status": "done"})
+            events.put(None)
+            local_db.close()
+
+    threading.Thread(target=worker, daemon=True).start()
+    return StreamingResponse(
+        _sse_iter(events),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Pragma": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @router.post("/products/batch-delete", response_model=ProductBatchDeleteResponse)
 def batch_delete_products(payload: ProductBatchDeleteRequest, db: Session = Depends(get_db)):
     ids = list(dict.fromkeys([str(item).strip() for item in payload.ids if str(item).strip()]))
@@ -285,6 +332,220 @@ def cleanup_orphan_storage_assets(payload: OrphanStorageCleanupRequest, db: Sess
         max_delete=payload.max_delete,
     )
     return OrphanStorageCleanupResponse.model_validate(result)
+
+
+def _build_ingredient_library_impl(
+    payload: IngredientLibraryBuildRequest,
+    db: Session,
+    event_callback: Callable[[dict[str, Any]], None] | None,
+) -> IngredientLibraryBuildResponse:
+    category = (payload.category or "").strip().lower()
+    if category and category not in VALID_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Invalid category: {category}.")
+
+    stmt = select(ProductIndex).order_by(ProductIndex.created_at.desc())
+    if category:
+        stmt = stmt.where(ProductIndex.category == category)
+
+    rows = db.execute(stmt).scalars().all()
+    grouped = _collect_category_ingredients(
+        rows=rows,
+        max_sources_per_ingredient=int(payload.max_sources_per_ingredient),
+    )
+    grouped_items = sorted(grouped.values(), key=lambda item: (item["category"], item["ingredient_name"]))
+
+    _emit_progress(
+        event_callback,
+        {
+            "step": "ingredient_build_start",
+            "scanned_products": len(rows),
+            "unique_ingredients": len(grouped_items),
+            "text": f"开始生成成分库：产品 {len(rows)} 条，唯一成分 {len(grouped_items)} 条。",
+        },
+    )
+
+    created = 0
+    updated = 0
+    skipped = 0
+    failed = 0
+    failures: list[str] = []
+    items: list[IngredientLibraryBuildItem] = []
+    force_regenerate = bool(payload.force_regenerate)
+
+    total = len(grouped_items)
+    for idx, item in enumerate(grouped_items, start=1):
+        ingredient_id = item["ingredient_id"]
+        ingredient_name = item["ingredient_name"]
+        category_name = item["category"]
+        source_trace_ids = sorted(item["source_trace_ids"])
+        source_count = len(source_trace_ids)
+
+        storage_rel = ingredient_profile_rel_path(category_name, ingredient_id)
+        exists_before = exists_rel_path(storage_rel)
+        if exists_before and not force_regenerate:
+            skipped += 1
+            build_item = IngredientLibraryBuildItem(
+                ingredient_id=ingredient_id,
+                category=category_name,
+                ingredient_name=ingredient_name,
+                source_count=source_count,
+                source_trace_ids=source_trace_ids,
+                storage_path=storage_rel,
+                status="skipped",
+                model=None,
+                error=None,
+            )
+            items.append(build_item)
+            _emit_progress(
+                event_callback,
+                {
+                    "step": "ingredient_skip",
+                    "ingredient_id": ingredient_id,
+                    "category": category_name,
+                    "index": idx,
+                    "total": total,
+                    "text": f"[{idx}/{total}] 跳过已存在成分：{category_name} / {ingredient_name}",
+                },
+            )
+            continue
+
+        _emit_progress(
+            event_callback,
+            {
+                "step": "ingredient_start",
+                "ingredient_id": ingredient_id,
+                "category": category_name,
+                "index": idx,
+                "total": total,
+                "text": f"[{idx}/{total}] 生成成分：{category_name} / {ingredient_name}",
+            },
+        )
+        try:
+            ai_result = run_capability_now(
+                capability="doubao.ingredient_category_profile",
+                input_payload={
+                    "ingredient": ingredient_name,
+                    "category": category_name,
+                    "source_samples": item["source_samples"],
+                },
+                trace_id=ingredient_id,
+                event_callback=lambda e, _iid=ingredient_id, _cat=category_name: _forward_ingredient_model_event(
+                    event_callback=event_callback,
+                    ingredient_id=_iid,
+                    category=_cat,
+                    payload=e,
+                ),
+            )
+            profile_doc = {
+                "id": ingredient_id,
+                "category": category_name,
+                "ingredient_name": ingredient_name,
+                "ingredient_key": item["ingredient_key"],
+                "source_count": source_count,
+                "source_trace_ids": source_trace_ids,
+                "source_samples": item["source_samples"],
+                "generated_at": now_iso(),
+                "generator": {
+                    "capability": "doubao.ingredient_category_profile",
+                    "model": str(ai_result.get("model") or ""),
+                    "prompt_key": "doubao.ingredient_category_profile",
+                },
+                "profile": {
+                    "summary": str(ai_result.get("summary") or "").strip(),
+                    "benefits": _safe_str_list(ai_result.get("benefits")),
+                    "risks": _safe_str_list(ai_result.get("risks")),
+                    "usage_tips": _safe_str_list(ai_result.get("usage_tips")),
+                    "suitable_for": _safe_str_list(ai_result.get("suitable_for")),
+                    "avoid_for": _safe_str_list(ai_result.get("avoid_for")),
+                    "confidence": int(ai_result.get("confidence") or 0),
+                    "reason": str(ai_result.get("reason") or "").strip(),
+                    "analysis_text": str(ai_result.get("analysis_text") or "").strip(),
+                },
+            }
+            storage_path = save_ingredient_profile(category_name, ingredient_id, profile_doc)
+            status = "updated" if exists_before else "created"
+            if status == "updated":
+                updated += 1
+            else:
+                created += 1
+            items.append(
+                IngredientLibraryBuildItem(
+                    ingredient_id=ingredient_id,
+                    category=category_name,
+                    ingredient_name=ingredient_name,
+                    source_count=source_count,
+                    source_trace_ids=source_trace_ids,
+                    storage_path=storage_path,
+                    status=status,
+                    model=(str(ai_result.get("model")).strip() if ai_result.get("model") is not None else None),
+                    error=None,
+                )
+            )
+            _emit_progress(
+                event_callback,
+                {
+                    "step": "ingredient_done",
+                    "ingredient_id": ingredient_id,
+                    "category": category_name,
+                    "index": idx,
+                    "total": total,
+                    "status": status,
+                    "text": f"[{idx}/{total}] 完成：{category_name} / {ingredient_name}（{status}）",
+                },
+            )
+        except Exception as e:
+            failed += 1
+            message = f"{ingredient_id} ({category_name}/{ingredient_name}): {e}"
+            failures.append(message)
+            items.append(
+                IngredientLibraryBuildItem(
+                    ingredient_id=ingredient_id,
+                    category=category_name,
+                    ingredient_name=ingredient_name,
+                    source_count=source_count,
+                    source_trace_ids=source_trace_ids,
+                    storage_path=None,
+                    status="failed",
+                    model=None,
+                    error=str(e),
+                )
+            )
+            _emit_progress(
+                event_callback,
+                {
+                    "step": "ingredient_error",
+                    "ingredient_id": ingredient_id,
+                    "category": category_name,
+                    "index": idx,
+                    "total": total,
+                    "text": f"[{idx}/{total}] 失败：{category_name} / {ingredient_name} | {e}",
+                },
+            )
+
+    status = "ok" if failed == 0 else "partial_failed"
+    _emit_progress(
+        event_callback,
+        {
+            "step": "ingredient_build_done",
+            "status": status,
+            "created": created,
+            "updated": updated,
+            "skipped": skipped,
+            "failed": failed,
+            "text": f"成分库生成完成：created={created}, updated={updated}, skipped={skipped}, failed={failed}",
+        },
+    )
+    return IngredientLibraryBuildResponse(
+        status=status,
+        scanned_products=len(rows),
+        unique_ingredients=len(grouped_items),
+        created=created,
+        updated=updated,
+        skipped=skipped,
+        failed=failed,
+        items=items,
+        failures=failures[:200],
+    )
 
 
 def _suggest_product_duplicates_impl(
@@ -753,6 +1014,44 @@ def _forward_dedup_model_event(
     )
 
 
+def _forward_ingredient_model_event(
+    event_callback: Callable[[dict[str, Any]], None] | None,
+    ingredient_id: str,
+    category: str,
+    payload: dict[str, Any],
+) -> None:
+    event_type = str(payload.get("type") or "").strip()
+    if event_type == "delta":
+        delta = str(payload.get("delta") or "")
+        if not delta:
+            return
+        _emit_progress(
+            event_callback,
+            {
+                "step": "ingredient_model_delta",
+                "ingredient_id": ingredient_id,
+                "category": category,
+                "delta": delta,
+                "text": delta,
+            },
+        )
+        return
+    if event_type != "step":
+        return
+    message = str(payload.get("message") or "").strip()
+    if not message:
+        return
+    _emit_progress(
+        event_callback,
+        {
+            "step": "ingredient_model_step",
+            "ingredient_id": ingredient_id,
+            "category": category,
+            "text": f"{ingredient_id} | {message}",
+        },
+    )
+
+
 def _normalize_analysis_text_for_ui(text: str) -> str:
     raw = (text or "").strip()
     if not raw:
@@ -845,6 +1144,101 @@ def _ingredient_names(doc: dict) -> list[str]:
         if name:
             out.append(name)
     return list(dict.fromkeys(out))
+
+
+def _collect_category_ingredients(
+    *,
+    rows: list[ProductIndex],
+    max_sources_per_ingredient: int,
+) -> dict[str, dict[str, Any]]:
+    grouped: dict[str, dict[str, Any]] = {}
+    max_sources = max(1, min(30, int(max_sources_per_ingredient)))
+
+    for row in rows:
+        if not exists_rel_path(row.json_path):
+            continue
+        try:
+            doc = load_json(row.json_path)
+        except Exception:
+            continue
+
+        row_category = str(getattr(row, "category", "") or "").strip().lower()
+        doc_category = ""
+        if isinstance(doc.get("product"), dict):
+            doc_category = str((doc.get("product") or {}).get("category") or "").strip().lower()
+        category = row_category or doc_category or "unknown"
+
+        ingredients = doc.get("ingredients")
+        if not isinstance(ingredients, list):
+            continue
+
+        for raw in ingredients:
+            if isinstance(raw, dict):
+                ingredient_name = str(raw.get("name") or "").strip()
+            else:
+                ingredient_name = str(raw or "").strip()
+            if not ingredient_name:
+                continue
+
+            ingredient_key = _normalize_ingredient_key(ingredient_name)
+            if not ingredient_key:
+                continue
+
+            ingredient_id = _build_ingredient_id(category=category, ingredient_key=ingredient_key)
+            group_key = f"{category}::{ingredient_key}"
+            item = grouped.get(group_key)
+            if item is None:
+                item = {
+                    "ingredient_id": ingredient_id,
+                    "ingredient_name": ingredient_name,
+                    "ingredient_key": ingredient_key,
+                    "category": category,
+                    "source_trace_ids": set(),
+                    "source_samples": [],
+                }
+                grouped[group_key] = item
+
+            item["source_trace_ids"].add(str(row.id))
+            if len(item["source_samples"]) < max_sources:
+                item["source_samples"].append(
+                    {
+                        "trace_id": str(row.id),
+                        "brand": str(row.brand or "").strip(),
+                        "name": str(row.name or "").strip(),
+                        "one_sentence": str(row.one_sentence or "").strip(),
+                        "ingredient": raw if isinstance(raw, dict) else {"name": ingredient_name},
+                    }
+                )
+
+    return grouped
+
+
+def _normalize_ingredient_key(name: str) -> str:
+    value = str(name or "").strip().lower()
+    if not value:
+        return ""
+    compact = " ".join(value.split())
+    return compact[:120]
+
+
+def _build_ingredient_id(category: str, ingredient_key: str) -> str:
+    base = f"{category}::{ingredient_key}"
+    digest = hashlib.sha1(base.encode("utf-8")).hexdigest()[:20]
+    return f"ing-{digest}"
+
+
+def _safe_str_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    out: list[str] = []
+    for item in value:
+        text = str(item or "").strip()
+        if not text:
+            continue
+        out.append(text)
+        if len(out) >= 30:
+            break
+    return out
 
 
 def _emit_progress(event_callback: Callable[[dict[str, Any]], None] | None, payload: dict[str, Any]) -> None:

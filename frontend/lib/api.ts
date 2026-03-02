@@ -49,6 +49,36 @@ export type ProductDedupSuggestResponse = {
   failures: string[];
 };
 
+export type IngredientLibraryBuildRequest = {
+  category?: string;
+  force_regenerate?: boolean;
+  max_sources_per_ingredient?: number;
+};
+
+export type IngredientLibraryBuildItem = {
+  ingredient_id: string;
+  category: string;
+  ingredient_name: string;
+  source_count: number;
+  source_trace_ids: string[];
+  storage_path?: string | null;
+  status: "created" | "updated" | "skipped" | "failed";
+  model?: string | null;
+  error?: string | null;
+};
+
+export type IngredientLibraryBuildResponse = {
+  status: string;
+  scanned_products: number;
+  unique_ingredients: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+  items: IngredientLibraryBuildItem[];
+  failures: string[];
+};
+
 export type ProductBatchDeleteRequest = {
   ids: string[];
   keep_ids?: string[];
@@ -293,6 +323,21 @@ export async function suggestProductDuplicatesStream(
 ): Promise<ProductDedupSuggestResponse> {
   return postSSE<ProductDedupSuggestResponse>(
     "/api/products/dedup/suggest/stream",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+      headers: { "content-type": "application/json" },
+    },
+    onEvent,
+  );
+}
+
+export async function buildIngredientLibraryStream(
+  payload: IngredientLibraryBuildRequest,
+  onEvent: (event: SSEEvent) => void,
+): Promise<IngredientLibraryBuildResponse> {
+  return postSSE<IngredientLibraryBuildResponse>(
+    "/api/products/ingredients/library/build/stream",
     {
       method: "POST",
       body: JSON.stringify(payload),

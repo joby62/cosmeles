@@ -4,6 +4,7 @@ import { fetchAIMetricsSummary, fetchAllProducts, resolveImageUrl } from "@/lib/
 import { CATEGORY_CONFIG } from "@/lib/catalog";
 import ProductDedupManager from "@/components/ProductDedupManager";
 import ProductCleanupWorkbench from "@/components/ProductCleanupWorkbench";
+import IngredientLibraryGenerator from "@/components/IngredientLibraryGenerator";
 
 function categoryLabel(category?: string | null): string {
   if (!category) return "-";
@@ -80,6 +81,7 @@ export default async function ProductGalleryPage() {
         </div>
       </section>
 
+      <IngredientLibraryGenerator initialProducts={products} />
       <ProductDedupManager initialProducts={products} />
       <ProductCleanupWorkbench initialProducts={products} />
 

@@ -95,6 +95,36 @@ class ProductDedupSuggestResponse(BaseModel):
     failures: List[str] = []
 
 
+class IngredientLibraryBuildRequest(BaseModel):
+    category: Optional[str] = None
+    force_regenerate: bool = False
+    max_sources_per_ingredient: int = Field(default=8, ge=1, le=30)
+
+
+class IngredientLibraryBuildItem(BaseModel):
+    ingredient_id: str
+    category: str
+    ingredient_name: str
+    source_count: int = 0
+    source_trace_ids: List[str] = []
+    storage_path: Optional[str] = None
+    status: Literal["created", "updated", "skipped", "failed"] = "created"
+    model: Optional[str] = None
+    error: Optional[str] = None
+
+
+class IngredientLibraryBuildResponse(BaseModel):
+    status: str
+    scanned_products: int = 0
+    unique_ingredients: int = 0
+    created: int = 0
+    updated: int = 0
+    skipped: int = 0
+    failed: int = 0
+    items: List[IngredientLibraryBuildItem] = []
+    failures: List[str] = []
+
+
 class ProductBatchDeleteRequest(BaseModel):
     ids: List[str] = []
     keep_ids: List[str] = []

@@ -25,6 +25,7 @@ def ensure_dirs():
     os.makedirs(os.path.join(settings.storage_dir, "images"), exist_ok=True)
     os.makedirs(os.path.join(settings.storage_dir, "products"), exist_ok=True)
     os.makedirs(os.path.join(settings.storage_dir, "doubao_runs"), exist_ok=True)
+    os.makedirs(os.path.join(settings.storage_dir, "ingredients"), exist_ok=True)
 
 def new_id() -> str:
     return str(uuid4())
@@ -126,6 +127,33 @@ def save_doubao_artifact(product_id: str, stage: str, payload: dict) -> str:
     with open(abs_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
     return rel
+
+
+def save_ingredient_profile(category: str, ingredient_id: str, payload: dict) -> str:
+    """
+    成分库落盘路径：storage/ingredients/<category>/<ingredient_id>.json
+    """
+    ensure_dirs()
+    safe_category = _safe_storage_segment(category, fallback="unknown")
+    safe_ingredient_id = _safe_storage_segment(ingredient_id, fallback=new_id())
+    rel = f"ingredients/{safe_category}/{safe_ingredient_id}.json"
+    abs_path = _resolve_rel_path(rel)
+    abs_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(abs_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    return rel
+
+
+def ingredient_profile_rel_path(category: str, ingredient_id: str) -> str:
+    safe_category = _safe_storage_segment(category, fallback="unknown")
+    safe_ingredient_id = _safe_storage_segment(ingredient_id, fallback="")
+    return f"ingredients/{safe_category}/{safe_ingredient_id}.json"
+
+
+def _safe_storage_segment(value: str, fallback: str) -> str:
+    raw = str(value or "").strip().lower()
+    out = "".join(ch for ch in raw if ch.isalnum() or ch in {"-", "_"}).strip("_-")
+    return out or fallback
 
 def load_json(rel_path: str) -> dict:
     abs_path = _resolve_rel_path(rel_path)
