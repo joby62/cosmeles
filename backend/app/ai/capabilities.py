@@ -328,6 +328,8 @@ def _build_sdk_and_models() -> tuple[DoubaoOpenAIClient, str, str, str]:
         endpoint=endpoint,
         model=vision_model,
         timeout=settings.doubao_timeout_seconds,
+        max_retries=settings.doubao_max_retries,
+        retry_backoff_seconds=settings.doubao_retry_backoff_seconds,
     )
     return sdk, vision_model, struct_model, advanced_text_model
 

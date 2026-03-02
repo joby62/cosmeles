@@ -30,7 +30,9 @@ class Settings(BaseSettings):
     # 高级文本能力默认走 pro（可按环境变量覆盖）
     doubao_pro_model: str = "doubao-seed-2-0-pro-260215"
     doubao_advanced_text_model: str = ""
-    doubao_timeout_seconds: int = 60
+    doubao_timeout_seconds: int = 180
+    doubao_max_retries: int = 2
+    doubao_retry_backoff_seconds: float = 1.5
     doubao_artifact_ttl_days: int = 14
     # 任务成本估算（可选）：
     # AI_COST_PER_RUN_BY_MODEL_JSON='{"doubao-seed-2-0-mini-260215":0.004}'

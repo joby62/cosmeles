@@ -140,7 +140,9 @@ sample_data/             示例数据
 - `DOUBAO_STRUCT_MODEL`：第二阶段结构化模型（默认 mini）
 - `DOUBAO_PRO_MODEL`：高级文本能力默认模型（默认 pro）
 - `DOUBAO_ADVANCED_TEXT_MODEL`：显式覆盖高级文本能力模型（留空则回落 `DOUBAO_PRO_MODEL`）
-- `DOUBAO_TIMEOUT_SECONDS`：默认 `60`
+- `DOUBAO_TIMEOUT_SECONDS`：默认 `180`
+- `DOUBAO_MAX_RETRIES`：豆包请求自动重试次数，默认 `2`
+- `DOUBAO_RETRY_BACKOFF_SECONDS`：重试退避基数秒，默认 `1.5`
 - `DOUBAO_ARTIFACT_TTL_DAYS`：清理默认保留天数，默认 `14`
 - `AI_MODEL_PRICING_PER_MTOKEN_JSON`：按 token 成本估算配置（元/百万tokens）
 - `AI_COST_PER_RUN_BY_MODEL_JSON`：按任务固定成本兜底（当上游未返回 usage 时使用）

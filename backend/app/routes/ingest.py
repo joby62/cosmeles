@@ -390,20 +390,16 @@ def _parse_meta_json(raw: str) -> dict[str, Any]:
     return _to_product_doc_shape(doc)
 
 def _to_product_doc_shape(doc: dict[str, Any]) -> dict[str, Any]:
-    # Already in target shape
-    if "product" in doc and "summary" in doc:
-        return doc
-
     product = {
-        "category": doc.get("category"),
-        "brand": doc.get("brand"),
-        "name": doc.get("name"),
+        "category": (doc.get("product") or {}).get("category") if isinstance(doc.get("product"), dict) else doc.get("category"),
+        "brand": (doc.get("product") or {}).get("brand") if isinstance(doc.get("product"), dict) else doc.get("brand"),
+        "name": (doc.get("product") or {}).get("name") if isinstance(doc.get("product"), dict) else doc.get("name"),
     }
 
-    summary_in = doc.get("summary")
+    summary_in = doc.get("summary") if isinstance(doc.get("summary"), dict) else {}
     if isinstance(summary_in, dict):
         summary = {
-            "one_sentence": summary_in.get("one_sentence") or summary_in.get("oneSentence"),
+            "one_sentence": summary_in.get("one_sentence") or summary_in.get("oneSentence") or doc.get("one_sentence") or doc.get("oneSentence"),
             "pros": _to_str_list(summary_in.get("pros")),
             "cons": _to_str_list(summary_in.get("cons")),
             "who_for": _to_str_list(summary_in.get("who_for") or summary_in.get("whoFor")),
@@ -490,10 +486,11 @@ def _normalize_optional_text(value: Any, lower: bool = False) -> str | None:
 
 
 def _normalize_with_error_reporting(doc: dict[str, Any], image_rel: str | None) -> dict[str, Any]:
-    evidence = doc.get("evidence")
+    shaped = _to_product_doc_shape(doc)
+    evidence = shaped.get("evidence")
     doubao_raw = evidence.get("doubao_raw") if isinstance(evidence, dict) else None
     try:
-        return normalize_doc(doc, image_rel_path=image_rel, doubao_raw=doubao_raw)
+        return normalize_doc(shaped, image_rel_path=image_rel, doubao_raw=doubao_raw)
     except ValidationError as e:
         issues: list[str] = []
         for err in e.errors():

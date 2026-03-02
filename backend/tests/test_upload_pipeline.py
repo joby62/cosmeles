@@ -67,7 +67,7 @@ def test_stage2_creates_product_and_exposes_in_products_api(test_client, monkeyp
                     {
                         "name": "椰油酰胺丙基甜菜碱",
                         "type": "表活",
-                        "functions": ["清洁"],
+                        "functions": "清洁",
                         "risk": "low",
                         "notes": "",
                     }
