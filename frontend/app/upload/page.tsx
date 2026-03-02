@@ -81,7 +81,7 @@ export default function UploadPage() {
       models?: { vision?: string; struct?: string } | null;
       vision_text?: string | null;
       struct_text?: string | null;
-      artifacts?: { vision?: string | null; struct?: string | null } | null;
+      artifacts?: { vision?: string | null; struct?: string | null; context?: string | null } | null;
     } | null;
   }>(null);
 
