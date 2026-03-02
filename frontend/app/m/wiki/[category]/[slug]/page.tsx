@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { fetchIngredientLibraryItem } from "@/lib/api";
 import { isWikiCategoryKey, type WikiCategoryKey, WIKI_MAP } from "@/lib/mobile/ingredientWiki";
+import { InsightSheetCard } from "./insight-sheet-card";
 
 type Params = { category: string; slug: string };
 const INGREDIENT_ID_PATTERN = /^ing-[a-f0-9]{20}$/;
@@ -55,11 +56,6 @@ type ConfidenceMeta = {
   label: string;
   hint: string;
   chipClass: string;
-};
-
-type RiskLevelMeta = {
-  label: string;
-  className: string;
 };
 
 function splitIngredientName(raw: string): NameParts {
@@ -123,6 +119,13 @@ function shortText(text: string, max = 44): string {
   return `${text.slice(0, max - 1)}…`;
 }
 
+function buildPanelSummary(lines: string[], fallback: string): string {
+  if (lines.length === 0) return fallback;
+  const { lead, rest } = splitLead(lines[0]);
+  if (!rest) return lead;
+  return `${lead}，${shortText(rest, 34)}`;
+}
+
 function parseConfidence(value: number | string): number {
   const n = typeof value === "number" ? value : Number.parseInt(String(value), 10);
   if (Number.isNaN(n)) return 0;
@@ -166,26 +169,6 @@ function phraseTags(lines: string[], max = 6): string[] {
     if (tokens.length >= max * 2) break;
   }
   return takeUnique(tokens.map((token) => shortText(token, 18)), max);
-}
-
-function getRiskLevelMeta(line: string): RiskLevelMeta {
-  const text = normalizeLine(line);
-  if (/风险程度高|高风险|严重|急性|禁用|避免|过敏|炎症|灼|红肿|糜烂|强刺激|明显加重/.test(text)) {
-    return {
-      label: "高风险",
-      className: "border-[#ff8383]/45 bg-[#ff8383]/14 text-[#ffb6b6]",
-    };
-  }
-  if (/风险程度中|中风险|可能|谨慎|注意|不适|刺激|泛红|瘙痒|影响/.test(text)) {
-    return {
-      label: "中风险",
-      className: "border-[#f4c465]/45 bg-[#f4c465]/14 text-[#ffd992]",
-    };
-  }
-  return {
-    label: "低风险",
-    className: "border-[#6bb4ff]/40 bg-[#6bb4ff]/12 text-[#b5d8ff]",
-  };
 }
 
 export default async function IngredientDetailPage({
@@ -238,6 +221,16 @@ export default async function IngredientDetailPage({
   const keyBenefit = benefits[0] || "暂无关键收益";
   const keyRisk = risks[0] || "暂无明确风险";
   const keyTip = tips[0] || "按产品说明正常使用";
+  const weakEvidence = confidenceNum < 60;
+  const weakEvidenceNotice = "证据较弱，建议先小范围试用并观察头皮反应";
+
+  const benefitSummary = buildPanelSummary(benefits, "暂无收益描述。");
+  const riskSummary = buildPanelSummary(risks, "暂无风险描述。");
+  const tipSummary = buildPanelSummary(tips, "暂无使用建议。");
+
+  const benefitTags = phraseTags(benefits, 2);
+  const riskTags = phraseTags(risks, 2);
+  const tipTags = phraseTags(tips, 2);
 
   const mainSample = item.source_samples[0];
   const restSamples = item.source_samples.slice(1, 5);
@@ -303,8 +296,15 @@ export default async function IngredientDetailPage({
             <span className={`inline-flex h-6 items-center rounded-full border px-2.5 text-[11px] font-semibold ${confidenceMeta.chipClass}`}>{confidenceMeta.label}</span>
           </div>
 
-          <p className="mt-2 text-[24px] leading-[1.34] tracking-[-0.01em] text-white/94">{leadSummary}</p>
-          {secondSummary ? <p className="mt-2 text-[15px] leading-[1.55] text-white/72">{shortText(secondSummary, 80)}</p> : null}
+          {weakEvidence ? (
+            <div className="mt-3 flex items-start gap-2 rounded-2xl border border-[#f4c465]/55 bg-[#f4c465]/16 px-3 py-2.5 text-[13px] leading-[1.45] text-[#ffe1a6]">
+              <span className="mt-[0.42em] h-1.5 w-1.5 shrink-0 rounded-full bg-[#ffd992]" />
+              <p>{weakEvidenceNotice}</p>
+            </div>
+          ) : null}
+
+          <p className="mt-2 line-clamp-3 text-[22px] leading-[1.34] tracking-[-0.01em] text-white/94">{shortText(leadSummary, 88)}</p>
+          {secondSummary ? <p className="mt-2 line-clamp-2 text-[14px] leading-[1.5] text-white/72">{shortText(secondSummary, 64)}</p> : null}
 
           <div className="mt-3 flex flex-wrap gap-2">
             <KeyPill label="重点收益" value={shortText(splitLead(keyBenefit).lead, 12)} tone="good" />
@@ -315,9 +315,17 @@ export default async function IngredientDetailPage({
         </section>
 
         <section className="grid gap-3">
-          <FocusPanel title="主要收益" items={benefits} emptyText="暂无收益描述。" tone="good" previewCount={2} />
-          <FocusPanel title="潜在风险" items={risks} emptyText="暂无风险描述。" tone="warn" previewCount={2} showRiskLevel />
-          <FocusPanel title="使用建议" items={tips} emptyText="暂无使用建议。" tone="info" previewCount={2} />
+          <InsightSheetCard title="主要收益" tone="good" items={benefits} summary={benefitSummary} digestTags={benefitTags} emptyText="暂无收益描述。" />
+          <InsightSheetCard
+            title="潜在风险"
+            tone="warn"
+            items={risks}
+            summary={riskSummary}
+            digestTags={riskTags}
+            emptyText="暂无风险描述。"
+            showRiskLevel
+          />
+          <InsightSheetCard title="使用建议" tone="info" items={tips} summary={tipSummary} digestTags={tipTags} emptyText="暂无使用建议。" />
         </section>
 
         <section className="grid gap-3">
@@ -384,91 +392,6 @@ function KeyPill({ label, value, tone }: { label: string; value: string; tone: "
       <span className="font-medium">{label}</span>
       <span className="font-semibold">{value}</span>
     </span>
-  );
-}
-
-function FocusPanel({
-  title,
-  items,
-  emptyText,
-  tone,
-  previewCount,
-  showRiskLevel = false,
-}: {
-  title: string;
-  items: string[];
-  emptyText: string;
-  tone: "good" | "warn" | "info";
-  previewCount: number;
-  showRiskLevel?: boolean;
-}) {
-  const preview = items.slice(0, previewCount);
-  const hidden = items.slice(previewCount);
-
-  const bulletClass =
-    tone === "good"
-      ? "bg-[#4dd7a8]"
-      : tone === "warn"
-        ? "bg-[#ff8f8f]"
-        : "bg-[#6bb4ff]";
-
-  return (
-    <section className="rounded-[22px] border border-white/10 bg-white/[0.04] px-4 py-4 backdrop-blur-xl">
-      <h3 className="text-[17px] font-semibold text-white/92">{title}</h3>
-      {preview.length > 0 ? (
-        <ul className="mt-3 space-y-2.5">
-          {preview.map((line) => {
-            const { lead, rest } = splitLead(line);
-            const riskMeta = showRiskLevel ? getRiskLevelMeta(line) : null;
-            return (
-              <li key={line} className="rounded-xl bg-white/[0.03] px-3 py-2.5">
-                {riskMeta ? (
-                  <div className="mb-1.5">
-                    <span className={`inline-flex h-5 items-center rounded-full border px-2 text-[11px] font-semibold ${riskMeta.className}`}>
-                      {riskMeta.label}
-                    </span>
-                  </div>
-                ) : null}
-                <p className="flex items-start gap-2 text-[14px] leading-[1.55] text-white/78">
-                  <span className={`mt-[0.45em] h-1.5 w-1.5 shrink-0 rounded-full ${bulletClass}`} />
-                  <span>
-                    <strong className="font-semibold text-white/94">{lead}</strong>
-                    {rest ? `，${rest}` : ""}
-                  </span>
-                </p>
-              </li>
-            );
-          })}
-        </ul>
-      ) : (
-        <p className="mt-2 text-[14px] text-white/52">{emptyText}</p>
-      )}
-
-      {hidden.length > 0 ? (
-        <details className="group mt-3">
-          <summary className="list-none cursor-pointer text-[13px] font-medium text-white/70">展开更多（{hidden.length}）</summary>
-          <ul className="mt-2 space-y-2.5">
-            {hidden.map((line) => {
-              const { lead, rest } = splitLead(line);
-              const riskMeta = showRiskLevel ? getRiskLevelMeta(line) : null;
-              return (
-                <li key={line} className="rounded-xl bg-white/[0.03] px-3 py-2.5 text-[13px] leading-[1.55] text-white/70">
-                  {riskMeta ? (
-                    <div className="mb-1.5">
-                      <span className={`inline-flex h-5 items-center rounded-full border px-2 text-[11px] font-semibold ${riskMeta.className}`}>
-                        {riskMeta.label}
-                      </span>
-                    </div>
-                  ) : null}
-                  <strong className="font-semibold text-white/86">{lead}</strong>
-                  {rest ? `，${rest}` : ""}
-                </li>
-              );
-            })}
-          </ul>
-        </details>
-      ) : null}
-    </section>
   );
 }
 
