@@ -1,3 +1,4 @@
+import io
 import os, json
 import shutil
 from uuid import uuid4
@@ -46,11 +47,67 @@ def save_image(product_id: str, filename: str, content: bytes, content_type: str
             raise ValueError(
                 f"Unsupported image extension '{ext or '(empty)'}' and content_type '{content_type or '(empty)'}'."
             )
-    rel = f"images/{product_id}{ext}"
+    target_ext, payload = _normalize_image_for_storage(ext=ext, content=content)
+    rel = f"images/{product_id}{target_ext}"
     abs_path = _resolve_rel_path(rel)
     with open(abs_path, "wb") as f:
-        f.write(content)
+        f.write(payload)
     return rel
+
+
+def _normalize_image_for_storage(ext: str, content: bytes) -> tuple[str, bytes]:
+    """
+    存储侧规范：
+    - JPEG/JPG: 保持原样（仅统一后缀为 .jpg）
+    - HEIC/HEIF/PNG/WEBP/GIF: 转为 .jpg，避免浏览器兼容性问题
+    """
+    source_ext = str(ext or "").lower().strip()
+    if source_ext in {".jpg", ".jpeg"}:
+        return ".jpg", content
+    if source_ext in {".heic", ".heif", ".png", ".webp", ".gif"}:
+        return ".jpg", _convert_image_to_jpeg(content=content, source_ext=source_ext)
+    raise ValueError(f"Unsupported image extension for storage normalization: '{source_ext}'.")
+
+
+def _convert_image_to_jpeg(content: bytes, source_ext: str) -> bytes:
+    try:
+        from PIL import Image, ImageOps, ImageSequence
+    except Exception as e:  # pragma: no cover
+        raise ValueError("Image conversion dependency missing: install Pillow.") from e
+
+    if source_ext in {".heic", ".heif"}:
+        try:
+            import pillow_heif  # type: ignore
+
+            pillow_heif.register_heif_opener()
+        except Exception as e:  # pragma: no cover
+            raise ValueError("HEIC/HEIF conversion requires pillow-heif.") from e
+
+    try:
+        with Image.open(io.BytesIO(content)) as img_in:
+            if getattr(img_in, "is_animated", False):
+                first = next(ImageSequence.Iterator(img_in))
+                img = first.copy()
+            else:
+                img = img_in.copy()
+    except Exception as e:
+        raise ValueError(f"Failed to decode source image ({source_ext}): {e}") from e
+
+    try:
+        img = ImageOps.exif_transpose(img)
+        if img.mode in {"RGBA", "LA"} or (img.mode == "P" and "transparency" in img.info):
+            rgba = img.convert("RGBA")
+            bg = Image.new("RGB", rgba.size, (255, 255, 255))
+            bg.paste(rgba, mask=rgba.split()[-1])
+            img = bg
+        elif img.mode != "RGB":
+            img = img.convert("RGB")
+
+        out = io.BytesIO()
+        img.save(out, format="JPEG", quality=90, optimize=True)
+        return out.getvalue()
+    except Exception as e:
+        raise ValueError(f"Failed to convert source image ({source_ext}) to JPEG: {e}") from e
 
 def save_product_json(product_id: str, doc: dict) -> str:
     ensure_dirs()

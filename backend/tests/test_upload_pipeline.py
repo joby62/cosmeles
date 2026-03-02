@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from app.routes import ingest as ingest_routes
+from app.services import storage as storage_service
 
 
 def _read_json(path: Path) -> dict:
@@ -45,7 +46,7 @@ def test_stage1_keeps_heic_extension_in_storage(test_client, monkeypatch: pytest
     client, storage_dir = test_client
 
     def fake_stage1(image_rel: str, trace_id: str):
-        assert image_rel.endswith(".heic")
+        assert image_rel.endswith(".jpg")
         return {
             "vision_text": "【品牌】测试品牌\n【产品名】测试产品",
             "model": "doubao-stage1-mini",
@@ -53,6 +54,7 @@ def test_stage1_keeps_heic_extension_in_storage(test_client, monkeypatch: pytest
         }
 
     monkeypatch.setattr(ingest_routes, "_analyze_with_doubao_stage1", fake_stage1)
+    monkeypatch.setattr(storage_service, "_convert_image_to_jpeg", lambda content, source_ext: b"jpeg-converted")
 
     resp = client.post(
         "/api/upload/stage1",
@@ -60,8 +62,34 @@ def test_stage1_keeps_heic_extension_in_storage(test_client, monkeypatch: pytest
     )
     assert resp.status_code == 200
     trace_id = resp.json()["trace_id"]
-    image_path = storage_dir / "images" / f"{trace_id}.heic"
+    image_path = storage_dir / "images" / f"{trace_id}.jpg"
     assert image_path.exists()
+    assert image_path.read_bytes() == b"jpeg-converted"
+
+
+def test_stage1_converts_png_to_jpg_in_storage(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, storage_dir = test_client
+
+    def fake_stage1(image_rel: str, trace_id: str):
+        assert image_rel.endswith(".jpg")
+        return {
+            "vision_text": "【品牌】测试品牌\n【产品名】测试产品",
+            "model": "doubao-stage1-mini",
+            "artifact": f"doubao_runs/{trace_id}/stage1_vision.json",
+        }
+
+    monkeypatch.setattr(ingest_routes, "_analyze_with_doubao_stage1", fake_stage1)
+    monkeypatch.setattr(storage_service, "_convert_image_to_jpeg", lambda content, source_ext: b"png-to-jpeg")
+
+    resp = client.post(
+        "/api/upload/stage1",
+        files={"image": ("sample.png", b"fake-png-bytes", "image/png")},
+    )
+    assert resp.status_code == 200
+    trace_id = resp.json()["trace_id"]
+    image_path = storage_dir / "images" / f"{trace_id}.jpg"
+    assert image_path.exists()
+    assert image_path.read_bytes() == b"png-to-jpeg"
 
 
 def test_stage1_rejects_unsupported_extension_with_unknown_content_type(test_client):
