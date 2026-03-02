@@ -282,7 +282,7 @@ def _suggest_product_duplicates_impl(
     )
     filtered = filtered[: payload.max_scan_products]
     grouped = _group_docs_by_category(filtered)
-    batch_size = int(payload.compare_batch_size or payload.max_compare_per_product or 20)
+    batch_size = int(payload.compare_batch_size or 1)
     min_confidence = max(0, min(100, int(payload.min_confidence)))
 
     _emit_progress(
@@ -333,6 +333,15 @@ def _suggest_product_duplicates_impl(
             for chunk_start in range(0, len(candidates), batch_size):
                 chunk = candidates[chunk_start : chunk_start + batch_size]
                 chunk_ids = [str(item["row"].id) for item in chunk]
+                for c in chunk:
+                    c_cat = str(getattr(c["row"], "category", "") or "").strip().lower()
+                    if c_cat != cat:
+                        failures.append(f"{anchor_id}: category mismatch with candidate {c['row'].id}.")
+                        chunk = []
+                        chunk_ids = []
+                        break
+                if not chunk:
+                    continue
                 ai_input = {
                     "anchor_product": _compact_product_for_dedup(anchor),
                     "candidate_products": [_compact_product_for_dedup(item) for item in chunk],
@@ -342,9 +351,11 @@ def _suggest_product_duplicates_impl(
                         capability="doubao.product_dedup_group",
                         input_payload=ai_input,
                         trace_id=f"dedup-{anchor_id}",
-                        event_callback=lambda e, _cat=cat, _anchor=anchor_id: _emit_progress(
-                            event_callback,
-                            {"step": "dedup_model_event", "category": _cat, "anchor_id": _anchor, **e},
+                        event_callback=lambda e, _cat=cat, _anchor=anchor_id: _forward_dedup_model_event(
+                            event_callback=event_callback,
+                            category=_cat,
+                            anchor_id=_anchor,
+                            payload=e,
                         ),
                     )
                     relations = _extract_dedup_relations(
@@ -355,8 +366,41 @@ def _suggest_product_duplicates_impl(
                     )
                     directed_relations.extend(relations)
                     chunk_hits += len(relations)
+
+                    for candidate_id in chunk_ids:
+                        pair_relation = _find_pair_relation(relations=relations, a_id=anchor_id, b_id=candidate_id)
+                        _emit_progress(
+                            event_callback,
+                            {
+                                "step": "dedup_pair_result",
+                                "category": cat,
+                                "anchor_id": anchor_id,
+                                "candidate_id": candidate_id,
+                                "duplicate": bool(pair_relation),
+                                "keep_id": pair_relation.get("keep_id") if pair_relation else None,
+                                "remove_id": pair_relation.get("remove_id") if pair_relation else None,
+                                "confidence": int(pair_relation.get("confidence") or 0) if pair_relation else 0,
+                                "reason": str(pair_relation.get("reason") or "") if pair_relation else "",
+                                "text": _pair_result_text(
+                                    anchor_id=anchor_id,
+                                    candidate_id=candidate_id,
+                                    relation=pair_relation,
+                                ),
+                            },
+                        )
                 except Exception as e:
                     failures.append(f"{anchor_id}: {e}")
+                    for candidate_id in chunk_ids:
+                        _emit_progress(
+                            event_callback,
+                            {
+                                "step": "dedup_pair_error",
+                                "category": cat,
+                                "anchor_id": anchor_id,
+                                "candidate_id": candidate_id,
+                                "text": f"{anchor_id} vs {candidate_id} | error: {e}",
+                            },
+                        )
                 finally:
                     _emit_progress(
                         event_callback,
@@ -380,8 +424,8 @@ def _suggest_product_duplicates_impl(
                 },
             )
 
-    row_by_id = {str(item["row"].id): item["row"] for item in filtered}
-    suggestions = _build_suggestions_from_relations(relations=directed_relations, row_by_id=row_by_id)
+    item_by_id = {str(item["row"].id): item for item in filtered}
+    suggestions = _build_suggestions_from_relations(relations=directed_relations, item_by_id=item_by_id)
     involved_ids: set[str] = set()
     for item in suggestions:
         involved_ids.add(item.keep_id)
@@ -453,7 +497,7 @@ def _extract_dedup_relations(
     if not isinstance(duplicates_raw, list):
         raise ValueError("invalid dedup output (duplicates).")
 
-    analysis_text = str(ai_result.get("analysis_text") or "").strip()
+    analysis_text = _normalize_analysis_text_for_ui(str(ai_result.get("analysis_text") or ""))
     relations: list[dict[str, Any]] = []
     for item in duplicates_raw:
         if not isinstance(item, dict):
@@ -482,7 +526,7 @@ def _extract_dedup_relations(
 
 def _build_suggestions_from_relations(
     relations: list[dict[str, Any]],
-    row_by_id: dict[str, ProductIndex],
+    item_by_id: dict[str, dict[str, Any]],
 ) -> list[ProductDedupSuggestion]:
     directed_best: dict[tuple[str, str], dict[str, Any]] = {}
     for item in relations:
@@ -529,10 +573,10 @@ def _build_suggestions_from_relations(
         if not comp_relations:
             continue
 
-        keep_id = _pick_keep_id(component, comp_relations, row_by_id)
+        keep_id = _pick_keep_id(component, comp_relations, item_by_id)
         remove_ids = sorted(
             [pid for pid in component if pid != keep_id],
-            key=lambda pid: (str(getattr(row_by_id.get(pid), "created_at", "") or ""), pid),
+            key=lambda pid: (str(getattr(item_by_id.get(pid, {}).get("row"), "created_at", "") or ""), pid),
             reverse=True,
         )
 
@@ -541,7 +585,7 @@ def _build_suggestions_from_relations(
         analysis_text = _component_analysis_text(comp_relations)
         compared_ids = sorted(
             component,
-            key=lambda pid: (str(getattr(row_by_id.get(pid), "created_at", "") or ""), pid),
+            key=lambda pid: (str(getattr(item_by_id.get(pid, {}).get("row"), "created_at", "") or ""), pid),
             reverse=True,
         )
 
@@ -564,7 +608,7 @@ def _build_suggestions_from_relations(
 def _pick_keep_id(
     component: list[str],
     comp_relations: list[dict[str, Any]],
-    row_by_id: dict[str, ProductIndex],
+    item_by_id: dict[str, dict[str, Any]],
 ) -> str:
     incoming: dict[str, int] = defaultdict(int)
     outgoing: dict[str, int] = defaultdict(int)
@@ -575,16 +619,124 @@ def _pick_keep_id(
         incoming[keep_id] += confidence
         outgoing[remove_id] += confidence
 
+    quality: dict[str, int] = {}
+    for pid in component:
+        quality[pid] = _info_completeness_score(item_by_id.get(pid, {}))
+
     ranked = sorted(
         component,
         key=lambda pid: (
+            -quality.get(pid, 0),
             -incoming.get(pid, 0),
             outgoing.get(pid, 0),
-            str(getattr(row_by_id.get(pid), "created_at", "") or ""),
+            str(getattr(item_by_id.get(pid, {}).get("row"), "created_at", "") or ""),
             pid,
         ),
     )
     return ranked[0]
+
+
+def _info_completeness_score(item: dict[str, Any]) -> int:
+    row = item.get("row")
+    doc = item.get("doc") if isinstance(item.get("doc"), dict) else {}
+    score = 0
+
+    brand = str(getattr(row, "brand", "") or "").strip()
+    name = str(getattr(row, "name", "") or "").strip()
+    one_sentence = str(getattr(row, "one_sentence", "") or "").strip()
+    if brand:
+        score += 4
+    if name:
+        score += 6
+    if one_sentence:
+        score += 4
+        score += min(4, max(0, len(one_sentence) // 24))
+
+    ingredients = _ingredient_names(doc)
+    score += min(12, len(ingredients))
+
+    summary = doc.get("summary")
+    if isinstance(summary, dict):
+        for key in ("pros", "cons", "who_for", "who_not_for"):
+            value = summary.get(key)
+            if isinstance(value, list):
+                score += min(2, len([v for v in value if str(v).strip()]))
+
+    evidence = doc.get("evidence")
+    if isinstance(evidence, dict):
+        image_path = str(evidence.get("image_path") or "").strip()
+        if image_path:
+            score += 2
+
+    return score
+
+
+def _find_pair_relation(relations: list[dict[str, Any]], a_id: str, b_id: str) -> dict[str, Any] | None:
+    ids = {a_id, b_id}
+    for item in relations:
+        keep_id = str(item.get("keep_id") or "").strip()
+        remove_id = str(item.get("remove_id") or "").strip()
+        if {keep_id, remove_id} == ids:
+            return item
+    return None
+
+
+def _pair_result_text(anchor_id: str, candidate_id: str, relation: dict[str, Any] | None) -> str:
+    if not relation:
+        return f"{anchor_id} vs {candidate_id} | non-duplicate"
+    keep_id = str(relation.get("keep_id") or "").strip()
+    remove_id = str(relation.get("remove_id") or "").strip()
+    confidence = max(0, min(100, int(relation.get("confidence") or 0)))
+    reason = str(relation.get("reason") or "").strip()
+    text = f"{anchor_id} vs {candidate_id} | duplicate | keep={keep_id} remove={remove_id} confidence={confidence}"
+    if reason:
+        text += f" | reason={reason}"
+    return text
+
+
+def _forward_dedup_model_event(
+    event_callback: Callable[[dict[str, Any]], None] | None,
+    category: str,
+    anchor_id: str,
+    payload: dict[str, Any],
+) -> None:
+    event_type = str(payload.get("type") or "").strip()
+    if event_type != "step":
+        return
+    message = str(payload.get("message") or "").strip()
+    if not message:
+        return
+    _emit_progress(
+        event_callback,
+        {
+            "step": "dedup_model_event",
+            "category": category,
+            "anchor_id": anchor_id,
+            "text": f"{anchor_id} | {message}",
+        },
+    )
+
+
+def _normalize_analysis_text_for_ui(text: str) -> str:
+    raw = (text or "").strip()
+    if not raw:
+        return ""
+    try:
+        parsed = json.loads(raw)
+        return json.dumps(parsed, ensure_ascii=False)
+    except Exception:
+        pass
+
+    first = raw.find("{")
+    last = raw.rfind("}")
+    if first >= 0 and last > first:
+        snippet = raw[first : last + 1]
+        try:
+            parsed = json.loads(snippet)
+            return json.dumps(parsed, ensure_ascii=False)
+        except Exception:
+            return ""
+    return ""
 
 
 def _component_reason(comp_relations: list[dict[str, Any]]) -> str:

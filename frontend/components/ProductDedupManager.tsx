@@ -83,7 +83,7 @@ export default function ProductDedupManager({
         {
           category: selectedCategory || undefined,
           max_scan_products: maxScanProducts,
-          compare_batch_size: 20,
+          compare_batch_size: 1,
           min_confidence: MIN_CONFIDENCE_FOR_API,
         },
         (event) => onStreamEvent(event),
@@ -108,10 +108,8 @@ export default function ProductDedupManager({
   function onStreamEvent(event: SSEEvent) {
     if (event.event !== "progress") return;
     const step = String(event.data.step || "");
-    const delta = String(event.data.delta || "");
     const text = String(event.data.text || "");
-    if (delta) enqueueRawDelta(delta);
-    if (text) enqueueRawDelta(text);
+    if (text) enqueueRawDelta(`${text}\n`);
     if (step) setProgressHint(formatProgressHint(event.data));
   }
 
@@ -371,13 +369,23 @@ function formatProgressHint(data: Record<string, unknown>): string {
     const hits = Number(data.high_conf_pairs || 0);
     return `锚点完成：${anchorId}，高置信命中 ${hits} 对。`;
   }
+  if (step === "dedup_pair_result") {
+    const duplicate = Boolean(data.duplicate);
+    const confidence = Number(data.confidence || 0);
+    const keepId = String(data.keep_id || "-");
+    const removeId = String(data.remove_id || "-");
+    if (duplicate) return `命中重复：keep=${keepId} remove=${removeId} confidence=${confidence}`;
+    return "当前两两判定：不重复。";
+  }
+  if (step === "dedup_pair_error") {
+    return "当前两两判定失败，已继续后续任务。";
+  }
   if (step === "dedup_scan_done") {
     const suggestions = Number(data.suggestions || 0);
     return `分析结束：命中 ${suggestions} 组。`;
   }
   if (step === "dedup_model_event") {
-    const stage = String(data.stage || "");
-    if (stage) return `模型执行中：${stage}`;
+    return "模型执行中...";
   }
   return "豆包分析中...";
 }

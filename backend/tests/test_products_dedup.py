@@ -195,6 +195,71 @@ def test_products_dedup_suggest_stream_returns_progress_and_result(test_client, 
     assert second_id in resp.text
 
 
+def test_products_dedup_prefers_more_complete_keep_id(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, _ = test_client
+    plans = [
+        {
+            "category": "bodywash",
+            "brand": "A",
+            "name": "A",
+            "one_sentence": "A",
+            "ingredients": ["甘氨酸"],
+        },
+        {
+            "category": "bodywash",
+            "brand": "Dove",
+            "name": "Deep Moisture Body Wash",
+            "one_sentence": "深层保湿沐浴露，信息完整",
+            "ingredients": ["甘氨酸", "椰油酰胺丙基甜菜碱", "香精", "甘油", "烟酰胺"],
+        },
+        {
+            "category": "bodywash",
+            "brand": "C",
+            "name": "C",
+            "one_sentence": "C",
+            "ingredients": ["甘氨酸"],
+        },
+    ]
+    _install_fake_ingest_pipeline(monkeypatch, plans)
+
+    ids = [
+        _ingest_one(client, "qa.jpg"),
+        _ingest_one(client, "qb.jpg"),
+        _ingest_one(client, "qc.jpg"),
+    ]
+
+    def fake_run_capability_now(capability: str, input_payload: dict, trace_id: str | None = None, event_callback=None):
+        assert capability == "doubao.product_dedup_group"
+        anchor_id = input_payload["anchor_product"]["id"]
+        candidate_id = input_payload["candidate_products"][0]["id"]
+        if event_callback:
+            event_callback({"type": "step", "stage": "product_dedup_group", "message": "mock"})
+        return {
+            "keep_id": ids[0],
+            "duplicates": [{"id": candidate_id, "confidence": 98, "reason": "高度重合"}],
+            "reason": f"{anchor_id} 与 {candidate_id} 重复",
+            "analysis_text": "{\"keep_id\":\"x\"}",
+        }
+
+    monkeypatch.setattr(products_routes, "run_capability_now", fake_run_capability_now)
+
+    resp = client.post(
+        "/api/products/dedup/suggest",
+        json={
+            "category": "bodywash",
+            "compare_batch_size": 1,
+            "min_confidence": 95,
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert len(body["suggestions"]) == 1
+    # ids[1] 信息更完整，应被选为 keep_id
+    assert body["suggestions"][0]["keep_id"] == ids[1]
+    assert set(body["suggestions"][0]["remove_ids"]) == {ids[0], ids[2]}
+
+
 def test_products_batch_delete_keeps_selected_and_removes_artifacts(test_client, monkeypatch: pytest.MonkeyPatch):
     client, storage_dir = test_client
     plans = [
