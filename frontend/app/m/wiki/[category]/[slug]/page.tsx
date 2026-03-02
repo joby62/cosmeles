@@ -6,12 +6,37 @@ import { isWikiCategoryKey, type WikiCategoryKey, WIKI_MAP } from "@/lib/mobile/
 type Params = { category: string; slug: string };
 const INGREDIENT_ID_PATTERN = /^ing-[a-f0-9]{20}$/;
 
-const CATEGORY_HERO_CLASS: Record<WikiCategoryKey, string> = {
-  shampoo: "bg-[radial-gradient(circle_at_28%_22%,rgba(236,250,255,0.96),rgba(199,231,245,0.9)_42%,rgba(168,206,223,0.9)_72%,rgba(145,187,208,0.95)_100%)]",
-  bodywash: "bg-[radial-gradient(circle_at_76%_18%,rgba(239,247,255,0.98),rgba(208,225,244,0.92)_45%,rgba(174,197,231,0.9)_74%,rgba(145,171,214,0.95)_100%)]",
-  conditioner: "bg-[radial-gradient(circle_at_30%_14%,rgba(247,244,255,0.98),rgba(222,213,246,0.92)_44%,rgba(193,179,236,0.9)_74%,rgba(162,147,221,0.95)_100%)]",
-  lotion: "bg-[radial-gradient(circle_at_20%_20%,rgba(255,250,238,0.98),rgba(248,232,202,0.93)_46%,rgba(238,211,168,0.9)_74%,rgba(220,189,144,0.95)_100%)]",
-  cleanser: "bg-[radial-gradient(circle_at_26%_18%,rgba(241,252,255,0.99),rgba(210,235,244,0.92)_44%,rgba(175,211,227,0.9)_74%,rgba(145,189,209,0.95)_100%)]",
+type CategoryTheme = {
+  heroClass: string;
+  hazeClass: string;
+};
+
+const CATEGORY_THEME: Record<WikiCategoryKey, CategoryTheme> = {
+  shampoo: {
+    heroClass:
+      "bg-[radial-gradient(circle_at_24%_20%,rgba(235,250,255,0.94),rgba(184,222,238,0.88)_44%,rgba(138,186,210,0.93)_100%)]",
+    hazeClass: "bg-[radial-gradient(circle_at_70%_78%,rgba(18,55,86,0.46),rgba(10,20,36,0)_64%)]",
+  },
+  bodywash: {
+    heroClass:
+      "bg-[radial-gradient(circle_at_72%_20%,rgba(239,247,255,0.94),rgba(191,210,244,0.88)_42%,rgba(122,146,214,0.93)_100%)]",
+    hazeClass: "bg-[radial-gradient(circle_at_20%_82%,rgba(32,41,98,0.44),rgba(10,20,36,0)_64%)]",
+  },
+  conditioner: {
+    heroClass:
+      "bg-[radial-gradient(circle_at_20%_18%,rgba(248,244,255,0.95),rgba(214,198,246,0.9)_44%,rgba(154,132,220,0.93)_100%)]",
+    hazeClass: "bg-[radial-gradient(circle_at_70%_80%,rgba(56,24,102,0.46),rgba(10,20,36,0)_64%)]",
+  },
+  lotion: {
+    heroClass:
+      "bg-[radial-gradient(circle_at_26%_20%,rgba(255,248,232,0.95),rgba(245,219,170,0.9)_45%,rgba(217,167,95,0.93)_100%)]",
+    hazeClass: "bg-[radial-gradient(circle_at_72%_82%,rgba(90,56,18,0.42),rgba(10,20,36,0)_64%)]",
+  },
+  cleanser: {
+    heroClass:
+      "bg-[radial-gradient(circle_at_26%_18%,rgba(241,252,255,0.95),rgba(187,223,236,0.89)_44%,rgba(117,176,205,0.93)_100%)]",
+    hazeClass: "bg-[radial-gradient(circle_at_74%_82%,rgba(18,70,87,0.44),rgba(10,20,36,0)_64%)]",
+  },
 };
 
 export default async function IngredientDetailPage({
@@ -30,6 +55,7 @@ export default async function IngredientDetailPage({
   if (!INGREDIENT_ID_PATTERN.test(ingredientId)) {
     notFound();
   }
+
   let detail;
   try {
     detail = await fetchIngredientLibraryItem(category, ingredientId);
@@ -44,113 +70,119 @@ export default async function IngredientDetailPage({
   const item = detail.item;
   const profile = item.profile;
   const categoryLabel = WIKI_MAP[category].label;
+  const theme = CATEGORY_THEME[category];
 
   return (
-    <section className="pb-10">
-      <Link
-        href="/m/wiki"
-        className="inline-flex h-9 items-center rounded-full border border-black/12 bg-white px-3.5 text-[13px] font-medium text-black/70 active:bg-black/[0.03]"
-      >
-        返回成份百科
-      </Link>
+    <section className="-mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[#0b0d12] pb-28 pt-4 text-white">
+      <div className="px-4">
+        <Link
+          href="/m/wiki"
+          className="inline-flex h-10 items-center rounded-full border border-white/16 bg-white/10 px-4 text-[13px] font-medium text-white/86 backdrop-blur-xl active:bg-white/15"
+        >
+          返回成份百科
+        </Link>
+      </div>
 
-      <article className="mt-4 overflow-hidden rounded-[28px] border border-black/10 bg-white shadow-[0_14px_30px_rgba(0,0,0,0.06)]">
-        <div className={`${CATEGORY_HERO_CLASS[category]} relative h-[280px] w-full`}>
-          <div className="absolute inset-0 bg-[linear-gradient(178deg,rgba(255,255,255,0.08)_0%,rgba(255,255,255,0.0)_30%,rgba(0,0,0,0.2)_100%)]" />
-          <div className="absolute left-5 top-5 rounded-full border border-white/55 bg-white/65 px-3 py-1 text-[12px] font-semibold tracking-[0.04em] text-black/62 backdrop-blur-sm">
+      <article className="mt-4 overflow-hidden rounded-[32px] border border-white/10 bg-[#121722] shadow-[0_28px_70px_rgba(0,0,0,0.48)]">
+        <div className={`${theme.heroClass} relative h-[380px] w-full`}>
+          <div className={`absolute inset-0 ${theme.hazeClass}`} />
+          <div className="absolute inset-0 bg-[linear-gradient(176deg,rgba(255,255,255,0.16)_0%,rgba(255,255,255,0)_35%,rgba(0,0,0,0.36)_100%)]" />
+
+          <div className="absolute left-5 top-5 rounded-full border border-white/35 bg-black/20 px-3 py-1 text-[12px] font-semibold tracking-[0.03em] text-white/92 backdrop-blur-xl">
             {item.ingredient_id}
           </div>
-          <div className="absolute bottom-5 left-5 right-5 text-white">
-            <p className="text-[13px] font-medium tracking-[0.04em] text-white/85">{categoryLabel}</p>
-            <h1 className="mt-1 text-[34px] leading-[1.05] font-semibold tracking-[-0.03em]">{item.ingredient_name}</h1>
+
+          <div className="absolute left-5 top-16 rounded-full border border-white/35 bg-white/12 px-2.5 py-0.5 text-[12px] font-medium text-white/88 backdrop-blur-lg">
+            {categoryLabel}
+          </div>
+
+          <div className="absolute bottom-6 left-5 right-5">
+            <p className="text-[13px] font-medium tracking-[0.04em] text-white/84">成分详情</p>
+            <h1 className="mt-1 text-[44px] leading-[0.98] font-semibold tracking-[-0.04em] text-white">{item.ingredient_name}</h1>
           </div>
         </div>
 
-        <div className="px-5 py-6">
-          <section className="rounded-2xl bg-black/[0.03] px-4 py-4">
-            <h2 className="text-[16px] font-semibold text-black/86">核心摘要</h2>
-            <p className="mt-2 text-[15px] leading-[1.65] text-black/74">
-              {profile.summary || "该成分暂无 AI 摘要，请检查后端构建日志。"}
-            </p>
-          </section>
-
-          <section className="mt-6 grid gap-3">
-            <div className="rounded-2xl border border-black/10 bg-white px-4 py-4">
-              <h3 className="text-[15px] font-semibold text-black/86">主要收益</h3>
-              <ul className="mt-2 space-y-1.5">
-                {profile.benefits.map((line) => (
-                  <li key={line} className="text-[14px] leading-[1.55] text-black/74">
-                    {line}
-                  </li>
-                ))}
-              </ul>
-              {profile.benefits.length === 0 && <p className="mt-2 text-[14px] text-black/50">暂无收益描述。</p>}
-            </div>
-
-            <div className="rounded-2xl border border-black/10 bg-white px-4 py-4">
-              <h3 className="text-[15px] font-semibold text-black/86">潜在风险</h3>
-              <ul className="mt-2 space-y-1.5">
-                {profile.risks.map((line) => (
-                  <li key={line} className="text-[14px] leading-[1.55] text-black/74">
-                    {line}
-                  </li>
-                ))}
-              </ul>
-              {profile.risks.length === 0 && <p className="mt-2 text-[14px] text-black/50">暂无风险描述。</p>}
-            </div>
-
-            <div className="rounded-2xl border border-black/10 bg-white px-4 py-4">
-              <h3 className="text-[15px] font-semibold text-black/86">使用建议</h3>
-              <ul className="mt-2 space-y-1.5">
-                {profile.usage_tips.map((line) => (
-                  <li key={line} className="text-[14px] leading-[1.55] text-black/74">
-                    {line}
-                  </li>
-                ))}
-              </ul>
-              {profile.usage_tips.length === 0 && <p className="mt-2 text-[14px] text-black/50">暂无使用建议。</p>}
-            </div>
-          </section>
-
-          <section className="mt-6 space-y-2">
-            <div className="rounded-2xl bg-black/[0.03] px-4 py-3 text-[14px] leading-[1.6] text-black/72">
-              <span className="font-semibold text-black/82">更适合：</span>
-              {profile.suitable_for.join("；") || "暂无数据"}
-            </div>
-            <div className="rounded-2xl bg-black/[0.03] px-4 py-3 text-[14px] leading-[1.6] text-black/72">
-              <span className="font-semibold text-black/82">需规避：</span>
-              {profile.avoid_for.join("；") || "暂无数据"}
-            </div>
-            <div className="rounded-2xl bg-black/[0.03] px-4 py-3 text-[14px] leading-[1.6] text-black/72">
-              <span className="font-semibold text-black/82">置信度：</span>
-              {profile.confidence}
-            </div>
-            <div className="rounded-2xl bg-black/[0.03] px-4 py-3 text-[14px] leading-[1.6] text-black/72">
-              <span className="font-semibold text-black/82">来源样本：</span>
-              {item.source_count} 条
-            </div>
-            <div className="rounded-2xl bg-black/[0.03] px-4 py-3 text-[14px] leading-[1.6] text-black/72">
-              <span className="font-semibold text-black/82">模型结论依据：</span>
-              {profile.reason || "未提供"}
-            </div>
-          </section>
-
-          {item.source_samples.length > 0 && (
-            <section className="mt-6">
-              <h2 className="text-[16px] font-semibold text-black/86">来源样本</h2>
-              <div className="mt-3 space-y-2">
-                {item.source_samples.slice(0, 5).map((sample) => (
-                  <div key={`${sample.trace_id}-${sample.name}`} className="rounded-2xl border border-black/10 bg-white px-4 py-3">
-                    <div className="text-[13px] font-medium text-black/72">{sample.brand || "未知品牌"} · {sample.name || "未知产品"}</div>
-                    <div className="mt-1 text-[12px] text-black/48">trace_id: {sample.trace_id || "n/a"}</div>
-                    <p className="mt-2 text-[13px] leading-[1.55] text-black/62">{sample.one_sentence || "无一句话描述"}</p>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
+        <div className="grid grid-cols-3 gap-px border-t border-white/10 bg-white/10 text-center">
+          <div className="bg-black/28 px-2 py-3 backdrop-blur-xl">
+            <p className="text-[11px] text-white/55">来源样本</p>
+            <p className="mt-1 text-[18px] font-semibold text-white">{item.source_count}</p>
+          </div>
+          <div className="bg-black/28 px-2 py-3 backdrop-blur-xl">
+            <p className="text-[11px] text-white/55">置信度</p>
+            <p className="mt-1 text-[18px] font-semibold text-white">{profile.confidence}</p>
+          </div>
+          <div className="bg-black/28 px-2 py-3 backdrop-blur-xl">
+            <p className="text-[11px] text-white/55">分类</p>
+            <p className="mt-1 text-[16px] font-semibold text-white">{categoryLabel}</p>
+          </div>
         </div>
       </article>
+
+      <div className="mt-5 space-y-3 px-4">
+        <section className="rounded-[24px] border border-white/10 bg-white/[0.05] p-4 backdrop-blur-xl">
+          <p className="text-[12px] font-medium tracking-[0.04em] text-[#4ea0ff]">核心摘要</p>
+          <p className="mt-2 text-[25px] leading-[1.35] tracking-[-0.015em] text-white/92">
+            {profile.summary || "该成分暂无 AI 摘要，请检查后端构建日志。"}
+          </p>
+        </section>
+
+        <section className="grid gap-3">
+          <Panel title="主要收益" items={profile.benefits} emptyText="暂无收益描述。" />
+          <Panel title="潜在风险" items={profile.risks} emptyText="暂无风险描述。" />
+          <Panel title="使用建议" items={profile.usage_tips} emptyText="暂无使用建议。" />
+        </section>
+
+        <section className="grid grid-cols-1 gap-3">
+          <InfoRow title="更适合" value={profile.suitable_for.join("；") || "暂无数据"} />
+          <InfoRow title="需规避" value={profile.avoid_for.join("；") || "暂无数据"} />
+          <InfoRow title="模型结论依据" value={profile.reason || "未提供"} />
+        </section>
+
+        {item.source_samples.length > 0 && (
+          <section className="pt-1">
+            <h2 className="text-[16px] font-semibold text-white/92">来源样本</h2>
+            <div className="mt-3 space-y-2.5">
+              {item.source_samples.slice(0, 5).map((sample) => (
+                <div key={`${sample.trace_id}-${sample.name}`} className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 backdrop-blur-xl">
+                  <div className="text-[13px] font-medium text-white/82">
+                    {sample.brand || "未知品牌"} · {sample.name || "未知产品"}
+                  </div>
+                  <div className="mt-1 text-[12px] text-white/52">trace_id: {sample.trace_id || "n/a"}</div>
+                  <p className="mt-2 text-[13px] leading-[1.55] text-white/68">{sample.one_sentence || "无一句话描述"}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+      </div>
     </section>
+  );
+}
+
+function Panel({ title, items, emptyText }: { title: string; items: string[]; emptyText: string }) {
+  return (
+    <section className="rounded-[22px] border border-white/10 bg-white/[0.04] px-4 py-4 backdrop-blur-xl">
+      <h3 className="text-[15px] font-semibold text-white/90">{title}</h3>
+      {items.length > 0 ? (
+        <ul className="mt-2 space-y-2">
+          {items.map((line) => (
+            <li key={line} className="text-[14px] leading-[1.55] text-white/75">
+              {line}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-2 text-[14px] text-white/52">{emptyText}</p>
+      )}
+    </section>
+  );
+}
+
+function InfoRow({ title, value }: { title: string; value: string }) {
+  return (
+    <div className="rounded-[20px] border border-white/10 bg-white/[0.04] px-4 py-3 backdrop-blur-xl">
+      <p className="text-[12px] font-medium text-white/55">{title}</p>
+      <p className="mt-1 text-[14px] leading-[1.55] text-white/78">{value}</p>
+    </div>
   );
 }

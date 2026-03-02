@@ -69,6 +69,7 @@ function NavIcon({ name, active }: { name: NavKey; active: boolean }) {
 
 export default function MobileBottomNav() {
   const pathname = usePathname() || "/m/choose";
+  const darkMode = pathname.startsWith("/m/wiki");
   const chooseItem = getChooseItem(pathname);
   const items = [
     { key: "wiki" as const, label: "成份百科", href: "/m/wiki" },
@@ -82,7 +83,11 @@ export default function MobileBottomNav() {
   return (
     <nav className="fixed inset-x-0 bottom-2 z-[60] px-4 pb-[max(env(safe-area-inset-bottom),0px)]">
       <div className="mx-auto flex max-w-[680px] items-center gap-2.5">
-        <div className="flex h-[64px] min-w-0 flex-1 items-center rounded-[32px] border border-black/[0.09] bg-white/84 px-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.11)] backdrop-blur-[20px]">
+        <div
+          className={`flex h-[64px] min-w-0 flex-1 items-center rounded-[32px] px-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.11)] backdrop-blur-[20px] ${
+            darkMode ? "border border-white/14 bg-[#1c2231]/66" : "border border-black/[0.09] bg-white/84"
+          }`}
+        >
           {items.map((item) => {
             const active = isActive(pathname, item.key);
             return (
@@ -90,7 +95,11 @@ export default function MobileBottomNav() {
                 key={item.key}
                 href={item.href}
                 className={`flex h-[56px] min-w-0 flex-1 flex-col items-center justify-center rounded-[24px] transition-colors ${
-                  active ? "bg-[#0071e3]/14 text-[#0071e3]" : "text-black/64 active:bg-black/[0.045] active:text-black/80"
+                  active
+                    ? "bg-[#4da3ff]/24 text-[#4da3ff]"
+                    : darkMode
+                      ? "text-white/74 active:bg-white/[0.1] active:text-white"
+                      : "text-black/64 active:bg-black/[0.045] active:text-black/80"
                 }`}
               >
                 <span className="leading-none">
@@ -107,8 +116,14 @@ export default function MobileBottomNav() {
         <Link
           href="/m/me"
           aria-label="我的"
-          className={`flex h-[64px] w-[64px] shrink-0 items-center justify-center rounded-full border border-black/[0.09] shadow-[0_10px_30px_rgba(0,0,0,0.11)] backdrop-blur-[20px] ${
-            meActive ? "bg-[#0071e3]/14 text-[#0071e3]" : "bg-white/84 text-black/78 active:bg-white"
+          className={`flex h-[64px] w-[64px] shrink-0 items-center justify-center rounded-full shadow-[0_10px_30px_rgba(0,0,0,0.11)] backdrop-blur-[20px] ${
+            darkMode
+              ? meActive
+                ? "border border-white/14 bg-[#4da3ff]/24 text-[#4da3ff]"
+                : "border border-white/14 bg-[#1c2231]/66 text-white/82 active:bg-[#242c3f]/80"
+              : meActive
+                ? "border border-black/[0.09] bg-[#0071e3]/14 text-[#0071e3]"
+                : "border border-black/[0.09] bg-white/84 text-black/78 active:bg-white"
           }`}
         >
           <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
