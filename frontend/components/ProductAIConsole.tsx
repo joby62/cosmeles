@@ -17,7 +17,6 @@ type ActionState = {
   job?: AIJobView;
   run?: AIRunView | null;
   outputText?: string;
-  progressLines?: string[];
   error?: string;
 };
 
@@ -49,7 +48,7 @@ export default function ProductAIConsole({ productId, doc }: { productId: string
       return;
     }
 
-    setIngredientState({ loading: true, error: undefined, progressLines: [] });
+    setIngredientState({ loading: true, error: undefined });
     try {
       const job = await createAIJobStream(
         {
@@ -84,7 +83,7 @@ export default function ProductAIConsole({ productId, doc }: { productId: string
       return;
     }
 
-    setConsistencyState({ loading: true, error: undefined, progressLines: [] });
+    setConsistencyState({ loading: true, error: undefined });
     try {
       const job = await createAIJobStream(
         {
@@ -114,7 +113,7 @@ export default function ProductAIConsole({ productId, doc }: { productId: string
   }
 
   async function runDedupDecision() {
-    setDedupState({ loading: true, error: undefined, progressLines: [] });
+    setDedupState({ loading: true, error: undefined });
     try {
       const all = await fetchAllProducts();
       const candidateIds = all
@@ -261,21 +260,25 @@ export default function ProductAIConsole({ productId, doc }: { productId: string
 }
 
 function ActionResult({ state }: { state: ActionState }) {
+  const prettyText = prettifyAIText(state.outputText || "");
   return (
     <div className="mt-3 space-y-3">
       {state.error ? <div className="rounded-xl border border-[#f5d0d5] bg-[#fff6f7] px-3 py-2 text-[12px] text-[#b42318]">{state.error}</div> : null}
 
       {state.outputText ? (
-        <pre className="max-h-72 overflow-auto rounded-xl border border-black/10 bg-white p-2.5 text-[12px] leading-[1.55] text-black/74 whitespace-pre-wrap">
-          {state.outputText}
-        </pre>
-      ) : null}
-
-      {state.progressLines && state.progressLines.length > 0 ? (
-        <div className="max-h-40 overflow-auto rounded-xl border border-black/10 bg-[#f8fafc] px-2.5 py-2 text-[11px] leading-[1.45] text-black/64">
-          {state.progressLines.map((line, idx) => (
-            <div key={`${line}-${idx}`}>{line}</div>
-          ))}
+        <div className="space-y-2">
+          <div className="rounded-xl border border-black/10 bg-[#fbfcff] p-2.5">
+            <div className="text-[11px] font-semibold text-[#3151d8]">实时文本</div>
+            <pre className="mt-1 max-h-56 overflow-auto whitespace-pre-wrap text-[12px] leading-[1.55] text-black/74">
+              {state.outputText}
+            </pre>
+          </div>
+          <div className="rounded-xl border border-black/10 bg-white p-2.5">
+            <div className="text-[11px] font-semibold text-[#3151d8]">美化文本</div>
+            <pre className="mt-1 max-h-56 overflow-auto whitespace-pre-wrap text-[12px] leading-[1.55] text-black/74">
+              {prettyText}
+            </pre>
+          </div>
         </div>
       ) : null}
 
@@ -360,24 +363,25 @@ function applyStreamEvent(state: ActionState, event: SSEEvent): ActionState {
     return state;
   }
 
-  const kind = String(event.data.type || "");
-  const stage = String(event.data.stage || "");
-  const message = String(event.data.message || "");
   const delta = String(event.data.delta || "");
-  const lines = [...(state.progressLines || [])];
-  const label = stage ? `[${stage}]` : "";
-  if (message) {
-    lines.push(`${label} ${message}`.trim());
-  }
+  const text = String(event.data.text || "");
   if (delta) {
     const merged = (state.outputText || "") + delta;
-    return { ...state, outputText: merged, progressLines: lines };
+    return { ...state, outputText: merged };
   }
-  if (kind === "job_started") {
-    lines.push("任务开始执行");
+  if (text) {
+    const merged = (state.outputText || "") + text;
+    return { ...state, outputText: merged };
   }
-  if (kind === "job_succeeded") {
-    lines.push("任务执行完成");
+  return state;
+}
+
+function prettifyAIText(raw: string): string {
+  const text = raw.trim();
+  if (!text) return "";
+  try {
+    return JSON.stringify(JSON.parse(text), null, 2);
+  } catch {
+    return text.replace(/\n{3,}/g, "\n\n");
   }
-  return { ...state, progressLines: lines };
 }

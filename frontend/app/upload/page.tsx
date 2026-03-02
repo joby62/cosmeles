@@ -55,7 +55,6 @@ type BatchRunItem = {
   artifacts?: { vision?: string | null; struct?: string | null; context?: string | null } | null;
   stage1Text?: string | null;
   stage2Text?: string | null;
-  progressLines?: string[];
 };
 
 export default function UploadPage() {
@@ -99,7 +98,6 @@ export default function UploadPage() {
 
   function pushProgress(index: number, event: SSEEvent) {
     if (event.event !== "progress") return;
-    const line = toStreamLine(event.data);
     setBatchRuns((prev) =>
       prev.map((item) =>
         item.index === index
@@ -107,7 +105,6 @@ export default function UploadPage() {
               ...item,
               stage1Text: appendDeltaText(item.stage1Text, event.data, "stage1_vision"),
               stage2Text: appendDeltaText(item.stage2Text, event.data, "stage2_struct"),
-              progressLines: line ? [...(item.progressLines || []), line].slice(-120) : item.progressLines,
             }
           : item,
       ),
@@ -145,7 +142,7 @@ export default function UploadPage() {
         for (let i = 0; i < images.length; i += 1) {
           const file = images[i];
           setPhase("stage1");
-          updateBatchRun(i, { status: "stage1", error: undefined, progressLines: [] });
+          updateBatchRun(i, { status: "stage1", error: undefined });
 
           let stage1TraceId: string | null = null;
           try {
@@ -358,17 +355,6 @@ export default function UploadPage() {
 
                   {item.error ? <div className="mt-2 text-[12px] text-[#b42318]">{item.error}</div> : null}
 
-                  {item.progressLines && item.progressLines.length > 0 ? (
-                    <details className="mt-2" open>
-                      <summary className="cursor-pointer text-[12px] font-medium text-black/76">流式进度（实时）</summary>
-                      <div className="mt-2 max-h-36 overflow-auto rounded-xl border border-black/10 bg-[#f8fafc] p-2 text-[11px] leading-[1.45] text-black/64">
-                        {item.progressLines.map((line, idx) => (
-                          <div key={`${item.index}-progress-${idx}`}>{line}</div>
-                        ))}
-                      </div>
-                    </details>
-                  ) : null}
-
                   {item.stage1Text && (item.status === "stage1" || item.status === "stage2" || item.status === "done") ? (
                     <div className="mt-2 rounded-xl border border-black/10 bg-[#fbfcff] p-2">
                       <div className="text-[11px] font-semibold text-[#3151d8]">Stage1 实时文本</div>
@@ -553,20 +539,6 @@ function toPrettyStructText(raw: string): string {
   } catch {
     return raw;
   }
-}
-
-function toStreamLine(data: Record<string, unknown>): string {
-  const stage = typeof data.stage === "string" ? data.stage : "";
-  const step = typeof data.step === "string" ? data.step : "";
-  const message = typeof data.message === "string" ? data.message : "";
-  const delta = typeof data.delta === "string" ? data.delta : "";
-  const type = typeof data.type === "string" ? data.type : "";
-
-  const head = [stage || step || type].filter(Boolean).join("/");
-  if (delta) return `${head ? `[${head}] ` : ""}${delta}`;
-  if (message) return `${head ? `[${head}] ` : ""}${message}`;
-  if (head) return `[${head}]`;
-  return "";
 }
 
 function appendDeltaText(
