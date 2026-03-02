@@ -5,6 +5,8 @@ services:
       dockerfile: Dockerfile
     container_name: cosmeles-backend
     restart: unless-stopped
+    env_file:
+      - ./backend/.env.local
     environment:
       APP_ENV: prod
       STORAGE_DIR: /app/storage
