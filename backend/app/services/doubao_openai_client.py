@@ -129,12 +129,32 @@ class DoubaoOpenAIClient:
 
         try:
             with stream_api(**body) as stream_obj:
-                for event in stream_obj:
-                    delta = _extract_delta_text(event)
-                    if delta and on_text_delta:
-                        on_text_delta(delta)
+                emitted_any_delta = False
+                text_deltas = getattr(stream_obj, "text_deltas", None)
+                if text_deltas is not None:
+                    try:
+                        for delta in text_deltas:
+                            if isinstance(delta, str) and delta:
+                                emitted_any_delta = True
+                                if on_text_delta:
+                                    on_text_delta(delta)
+                    except Exception:
+                        # fallback to raw event iteration
+                        pass
+
+                if not emitted_any_delta:
+                    for event in stream_obj:
+                        delta = _extract_delta_text(event)
+                        if delta and on_text_delta:
+                            emitted_any_delta = True
+                            on_text_delta(delta)
                 final_response = stream_obj.get_final_response()
-            return _serialize_response(final_response)
+            payload = _serialize_response(final_response)
+            if not emitted_any_delta and on_text_delta:
+                text = str(payload.get("output_text") or "").strip()
+                if text:
+                    on_text_delta(text)
+            return payload
         except (APITimeoutError, APIConnectionError, APIStatusError):
             # Keep original retry/error behavior handled in _responses.
             raise

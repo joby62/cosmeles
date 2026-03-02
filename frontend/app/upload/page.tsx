@@ -100,10 +100,16 @@ export default function UploadPage() {
   function pushProgress(index: number, event: SSEEvent) {
     if (event.event !== "progress") return;
     const line = toStreamLine(event.data);
-    if (!line) return;
     setBatchRuns((prev) =>
       prev.map((item) =>
-        item.index === index ? { ...item, progressLines: [...(item.progressLines || []), line].slice(-120) } : item,
+        item.index === index
+          ? {
+              ...item,
+              stage1Text: appendDeltaText(item.stage1Text, event.data, "stage1_vision"),
+              stage2Text: appendDeltaText(item.stage2Text, event.data, "stage2_struct"),
+              progressLines: line ? [...(item.progressLines || []), line].slice(-120) : item.progressLines,
+            }
+          : item,
       ),
     );
   }
@@ -543,4 +549,15 @@ function toStreamLine(data: Record<string, unknown>): string {
   if (message) return `${head ? `[${head}] ` : ""}${message}`;
   if (head) return `[${head}]`;
   return "";
+}
+
+function appendDeltaText(
+  current: string | null | undefined,
+  data: Record<string, unknown>,
+  expectedStage: "stage1_vision" | "stage2_struct",
+): string | null | undefined {
+  const stage = typeof data.stage === "string" ? data.stage : "";
+  const delta = typeof data.delta === "string" ? data.delta : "";
+  if (!delta || stage !== expectedStage) return current;
+  return `${current || ""}${delta}`;
 }
