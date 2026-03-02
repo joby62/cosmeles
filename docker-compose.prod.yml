@@ -34,7 +34,6 @@ services:
       BACKEND_HOST: backend
       BACKEND_PORT: "8000"
       INTERNAL_API_BASE: http://backend:8000
-      NEXT_PUBLIC_API_BASE: "http://127.0.0.1:8000"
     ports:
       - "5001:3000"
     depends_on:

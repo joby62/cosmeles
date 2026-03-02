@@ -30,7 +30,6 @@ services:
       # 让 Next 在容器里热更新更稳定（尤其是云服务器/远程FS）
       CHOKIDAR_USEPOLLING: "true"
       WATCHPACK_POLLING: "true"
-      NEXT_PUBLIC_API_BASE: "http://127.0.0.1:8000"
     volumes:
       - ./frontend:/app
     ports:

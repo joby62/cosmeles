@@ -124,7 +124,14 @@ export type AIMetricsSummary = {
 function getBaseForFetch(): string {
   // 在浏览器里优先直连后端，避免 /api 重写层在 multipart 上传时吞掉真实错误。
   if (typeof window !== "undefined") {
+    const pageProtocol = window.location.protocol;
+    const isHttpsPage = pageProtocol === "https:";
     const direct = process.env.NEXT_PUBLIC_API_BASE?.trim();
+
+    // HTTPS 页面下强制走同源，避免 Mixed Content（https 页面请求 http://...）
+    // 生产域名场景应由 Next rewrite/Caddy 转发到后端，而不是浏览器直连 :8000。
+    if (isHttpsPage) return "";
+
     if (direct) {
       try {
         const url = new URL(direct);
