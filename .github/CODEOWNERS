@@ -1,0 +1,28 @@
+# -----------------------------
+# CODEOWNERS (Desktop/Mobile Governance)
+# -----------------------------
+# 用法：
+# 1) 把下面示例中的 @joby62-mobile 替换为真实 mobile 开发者 GitHub 用户名（例如 @alice）。
+# 2) 开启分支保护里的 "Require review from Code Owners"。
+
+# 默认所有文件先归 desktop 负责人
+* @joby62
+
+# Desktop 负责域
+/backend/** @joby62
+/deploy/** @joby62
+/frontend/app/product/** @joby62
+/frontend/components/ProductDedupManager.tsx @joby62
+/frontend/components/ProductCleanupWorkbench.tsx @joby62
+
+# Mobile 负责域（当前先由 desktop 兜底；替换为真实 mobile owner）
+/frontend/lib/mobile/** @joby62
+/frontend/app/m/** @joby62
+/frontend/app/mobile/** @joby62
+# /frontend/lib/mobile/** @joby62 @joby62-mobile
+# /frontend/app/m/** @joby62 @joby62-mobile
+# /frontend/app/mobile/** @joby62 @joby62-mobile
+
+# 共享契约文件（建议双方都参与 review）
+/frontend/lib/api.ts @joby62
+/backend/app/schemas.py @joby62
