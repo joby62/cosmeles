@@ -369,6 +369,24 @@ export default function UploadPage() {
                     </details>
                   ) : null}
 
+                  {item.stage1Text && (item.status === "stage1" || item.status === "stage2" || item.status === "done") ? (
+                    <div className="mt-2 rounded-xl border border-black/10 bg-[#fbfcff] p-2">
+                      <div className="text-[11px] font-semibold text-[#3151d8]">Stage1 实时文本</div>
+                      <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap text-[12px] leading-[1.5] text-black/72">
+                        {item.stage1Text}
+                      </pre>
+                    </div>
+                  ) : null}
+
+                  {item.stage2Text && (item.status === "stage2" || item.status === "done") ? (
+                    <div className="mt-2 rounded-xl border border-black/10 bg-[#f8fafc] p-2">
+                      <div className="text-[11px] font-semibold text-[#3151d8]">Stage2 实时文本</div>
+                      <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap text-[12px] leading-[1.5] text-black/72">
+                        {item.stage2Text}
+                      </pre>
+                    </div>
+                  ) : null}
+
                   {item.stage1Text ? (
                     <details className="mt-2">
                       <summary className="cursor-pointer text-[12px] font-medium text-black/76">Stage1 识别文本（美化）</summary>
@@ -557,7 +575,13 @@ function appendDeltaText(
   expectedStage: "stage1_vision" | "stage2_struct",
 ): string | null | undefined {
   const stage = typeof data.stage === "string" ? data.stage : "";
-  const delta = typeof data.delta === "string" ? data.delta : "";
-  if (!delta || stage !== expectedStage) return current;
+  const delta =
+    (typeof data.delta === "string" ? data.delta : "") ||
+    (typeof data.text === "string" ? data.text : "");
+  const stageMatch =
+    stage === expectedStage ||
+    (expectedStage === "stage1_vision" && stage.includes("stage1")) ||
+    (expectedStage === "stage2_struct" && stage.includes("stage2"));
+  if (!delta || !stageMatch) return current;
   return `${current || ""}${delta}`;
 }
