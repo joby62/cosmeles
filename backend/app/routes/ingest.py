@@ -1,8 +1,11 @@
 import json
+import queue
+import threading
 from typing import Any
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.ai.errors import AIServiceError
 from app.constants import VALID_CATEGORIES, VALID_SOURCES
@@ -212,8 +215,166 @@ def ingest_stage2(
 ):
     if not trace_id.strip():
         raise HTTPException(status_code=400, detail="trace_id is required.")
-    product_id = trace_id.strip()
-    context_rel = f"doubao_runs/{product_id}/stage1_context.json"
+    return _finalize_stage2(
+        trace_id=trace_id.strip(),
+        category=category,
+        brand=brand,
+        name=name,
+        db=db,
+        event_callback=None,
+    )
+
+
+@router.post("/upload/stage1/stream")
+async def ingest_stage1_stream(
+    image: UploadFile | None = File(None),
+    file: UploadFile | None = File(None),
+    category: str | None = Form(None),
+    brand: str | None = Form(None),
+    name: str | None = Form(None),
+):
+    if image and file:
+        raise HTTPException(status_code=400, detail="Please provide only one file field: image or file.")
+    upload = image or file
+    if upload is None:
+        raise HTTPException(status_code=400, detail="stage1 requires image/file.")
+    if not upload.content_type or not upload.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Only image upload is supported.")
+
+    category_override = _normalize_optional_text(category, lower=True)
+    if category_override and category_override not in VALID_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Invalid category: {category_override}.")
+
+    content = await upload.read()
+    if len(content) > settings.max_upload_bytes:
+        raise HTTPException(status_code=413, detail=f"Image too large. Max {settings.max_upload_bytes} bytes.")
+
+    events: queue.Queue[tuple[str, dict[str, Any]] | None] = queue.Queue()
+    trace_id = new_id()
+    image_rel = save_image(trace_id, upload.filename or "upload.jpg", content)
+
+    def emit(event: str, payload: dict[str, Any]) -> None:
+        events.put((event, payload))
+
+    def worker() -> None:
+        try:
+            emit("progress", {"step": "stage1_start", "trace_id": trace_id, "image_path": image_rel})
+            stage1 = _analyze_with_doubao_stage1(
+                image_rel,
+                trace_id,
+                event_callback=lambda e: emit("progress", e),
+            )
+            context = {
+                "trace_id": trace_id,
+                "image_path": image_rel,
+                "category": category_override,
+                "brand": _normalize_optional_text(brand),
+                "name": _normalize_optional_text(name),
+                "vision_text": stage1["vision_text"],
+                "vision_model": stage1["model"],
+                "vision_artifact": stage1.get("artifact"),
+                "created_at": now_iso(),
+            }
+            context_rel = save_doubao_artifact(trace_id, "stage1_context", context)
+            result = {
+                "status": "ok",
+                "trace_id": trace_id,
+                "category": category_override,
+                "image_path": image_rel,
+                "doubao": {
+                    "pipeline_mode": "stage1_done",
+                    "models": {"vision": stage1["model"], "struct": stage1["model"]},
+                    "vision_text": stage1["vision_text"],
+                    "artifacts": {
+                        "vision": stage1.get("artifact"),
+                        "context": context_rel,
+                    },
+                },
+                "next": "/api/upload/stage2",
+            }
+            emit("result", result)
+        except HTTPException as e:
+            remove_rel_path(image_rel)
+            emit("error", {"status": e.status_code, "detail": e.detail})
+        except Exception as e:  # pragma: no cover
+            remove_rel_path(image_rel)
+            emit("error", {"status": 500, "detail": f"Stage1 failed: {e}"})
+        finally:
+            emit("done", {"status": "done"})
+            events.put(None)
+
+    threading.Thread(target=worker, daemon=True).start()
+
+    return StreamingResponse(
+        _sse_iter(events),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.post("/upload/stage2/stream")
+def ingest_stage2_stream(
+    trace_id: str = Form(...),
+    category: str | None = Form(None),
+    brand: str | None = Form(None),
+    name: str | None = Form(None),
+    db: Session = Depends(get_db),
+):
+    tid = trace_id.strip()
+    if not tid:
+        raise HTTPException(status_code=400, detail="trace_id is required.")
+
+    events: queue.Queue[tuple[str, dict[str, Any]] | None] = queue.Queue()
+    SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=db.get_bind())
+
+    def emit(event: str, payload: dict[str, Any]) -> None:
+        events.put((event, payload))
+
+    def worker() -> None:
+        local_db = SessionMaker()
+        try:
+            emit("progress", {"step": "stage2_start", "trace_id": tid})
+            result = _finalize_stage2(
+                trace_id=tid,
+                category=category,
+                brand=brand,
+                name=name,
+                db=local_db,
+                event_callback=lambda e: emit("progress", e),
+            )
+            emit("result", result)
+        except HTTPException as e:
+            emit("error", {"status": e.status_code, "detail": e.detail})
+        except Exception as e:  # pragma: no cover
+            emit("error", {"status": 500, "detail": f"Stage2 failed: {e}"})
+        finally:
+            emit("done", {"status": "done"})
+            events.put(None)
+            local_db.close()
+
+    threading.Thread(target=worker, daemon=True).start()
+
+    return StreamingResponse(
+        _sse_iter(events),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+    )
+
+@router.post("/maintenance/cleanup-doubao")
+def cleanup_doubao(days: int = Query(14, ge=1, le=3650)):
+    result = cleanup_doubao_artifacts(days=days)
+    return {"status": "ok", **result}
+
+
+def _finalize_stage2(
+    trace_id: str,
+    category: str | None,
+    brand: str | None,
+    name: str | None,
+    db: Session,
+    event_callback=None,
+) -> dict[str, Any]:
+    context_rel = f"doubao_runs/{trace_id}/stage1_context.json"
     if not exists_rel_path(context_rel):
         raise HTTPException(status_code=404, detail="Stage1 context not found. Please run /api/upload/stage1 first.")
 
@@ -222,9 +383,17 @@ def ingest_stage2(
     if not image_rel:
         raise HTTPException(status_code=400, detail="Invalid stage1 context: missing image_path.")
 
-    stage2 = _analyze_with_doubao_stage2(str(context.get("vision_text") or ""), product_id)
+    _emit_progress(event_callback, {"step": "stage2_infer", "message": "Calling Doubao stage2 struct model."})
+    if event_callback is None:
+        stage2 = _analyze_with_doubao_stage2(str(context.get("vision_text") or ""), trace_id)
+    else:
+        stage2 = _analyze_with_doubao_stage2(
+            str(context.get("vision_text") or ""),
+            trace_id,
+            event_callback=event_callback,
+        )
     doc = stage2["doc"]
-    if db.get(ProductIndex, product_id):
+    if db.get(ProductIndex, trace_id):
         raise HTTPException(status_code=409, detail="This trace_id has already been finalized.")
 
     resolved_category = _normalize_optional_text(category, lower=True)
@@ -236,15 +405,16 @@ def ingest_stage2(
 
     _apply_product_overrides(doc, resolved_category, resolved_brand, resolved_name)
     _attach_stage_evidence(doc, context, stage2)
+    _emit_progress(event_callback, {"step": "stage2_normalize", "message": "Normalizing structured document."})
 
     normalized = _normalize_with_error_reporting(doc, image_rel=image_rel)
-    json_rel = save_product_json(product_id, normalized)
+    json_rel = save_product_json(trace_id, normalized)
 
     one_sentence = normalized.get("summary", {}).get("one_sentence")
     tags = _derive_tags(normalized)
 
     rec = ProductIndex(
-        id=product_id,
+        id=trace_id,
         category=normalized["product"]["category"],
         brand=normalized["product"].get("brand"),
         name=normalized["product"].get("name"),
@@ -262,8 +432,9 @@ def ingest_stage2(
         remove_rel_path(json_rel)
         raise HTTPException(status_code=500, detail=f"Failed to persist product index: {e}") from e
 
+    _emit_progress(event_callback, {"step": "stage2_done", "message": "Product persisted."})
     return {
-        "id": product_id,
+        "id": trace_id,
         "status": "ok",
         "mode": "doubao_two_stage",
         "category": normalized["product"]["category"],
@@ -273,38 +444,63 @@ def ingest_stage2(
         "endpoint": "/api/upload/stage2",
     }
 
-@router.post("/maintenance/cleanup-doubao")
-def cleanup_doubao(days: int = Query(14, ge=1, le=3650)):
-    result = cleanup_doubao_artifacts(days=days)
-    return {"status": "ok", **result}
+
+def _sse_iter(events: queue.Queue[tuple[str, dict[str, Any]] | None]):
+    while True:
+        try:
+            item = events.get(timeout=10)
+        except queue.Empty:
+            yield ": keep-alive\n\n"
+            continue
+        if item is None:
+            break
+        event, payload = item
+        yield f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
-def _analyze_with_doubao(image_rel: str, trace_id: str) -> dict[str, Any]:
+def _emit_progress(event_callback, payload: dict[str, Any]) -> None:
+    if not event_callback:
+        return
+    try:
+        event_callback(payload)
+    except Exception:
+        return
+
+
+def _analyze_with_doubao(image_rel: str, trace_id: str, event_callback=None) -> dict[str, Any]:
     client = DoubaoPipelineService()
     try:
-        return client.analyze(image_rel, trace_id=trace_id)
+        return client.analyze(image_rel, trace_id=trace_id, event_callback=event_callback)
     except AIServiceError as e:
         raise HTTPException(status_code=e.http_status, detail=e.message) from e
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Doubao request failed: {e}") from e
 
 
-def _analyze_with_doubao_stage1(image_rel: str, trace_id: str) -> dict[str, Any]:
+def _analyze_with_doubao_stage1(
+    image_rel: str,
+    trace_id: str,
+    event_callback=None,
+) -> dict[str, Any]:
     client = DoubaoPipelineService()
     try:
-        return client.analyze_stage1(image_rel, trace_id=trace_id)
+        return client.analyze_stage1(image_rel, trace_id=trace_id, event_callback=event_callback)
     except AIServiceError as e:
         raise HTTPException(status_code=e.http_status, detail=e.message) from e
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Doubao request failed: {e}") from e
 
 
-def _analyze_with_doubao_stage2(vision_text: str, trace_id: str) -> dict[str, Any]:
+def _analyze_with_doubao_stage2(
+    vision_text: str,
+    trace_id: str,
+    event_callback=None,
+) -> dict[str, Any]:
     if not vision_text.strip():
         raise HTTPException(status_code=400, detail="Stage1 output is empty, cannot run stage2.")
     client = DoubaoPipelineService()
     try:
-        return client.analyze_stage2(vision_text, trace_id=trace_id)
+        return client.analyze_stage2(vision_text, trace_id=trace_id, event_callback=event_callback)
     except AIServiceError as e:
         raise HTTPException(status_code=e.http_status, detail=e.message) from e
     except Exception as e:

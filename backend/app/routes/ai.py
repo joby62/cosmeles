@@ -1,8 +1,11 @@
 import json
+import queue
+import threading
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.ai.errors import AIServiceError
 from app.ai.orchestrator import AIOrchestrator
@@ -27,6 +30,65 @@ def create_ai_job(payload: AIJobCreateRequest, db: Session = Depends(get_db)):
         return _to_job_view(job)
     except AIServiceError as e:
         raise HTTPException(status_code=e.http_status, detail=e.message) from e
+
+
+@router.post("/jobs/stream")
+def create_ai_job_stream(payload: AIJobCreateRequest, db: Session = Depends(get_db)):
+    event_queue: queue.Queue[tuple[str, dict[str, Any]] | None] = queue.Queue()
+    SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=db.get_bind())
+
+    def emit(event: str, data: dict[str, Any]) -> None:
+        event_queue.put((event, data))
+
+    def worker() -> None:
+        db_local = SessionMaker()
+        try:
+            orchestrator = AIOrchestrator(db_local)
+            job = orchestrator.create_job(
+                capability=payload.capability,
+                input_payload=payload.input,
+                trace_id=payload.trace_id,
+            )
+            emit("job_created", {"job_id": job.id, "capability": job.capability, "trace_id": job.trace_id})
+
+            if payload.run_immediately:
+                job = orchestrator.run_job(job.id, event_callback=lambda e: emit("progress", e))
+
+            db_local.refresh(job)
+            emit("result", {"job": _to_job_view(job).model_dump()})
+        except AIServiceError as e:
+            emit("error", {"code": e.code, "detail": e.message, "http_status": e.http_status})
+        except Exception as e:  # pragma: no cover
+            emit("error", {"code": "ai_stream_internal_error", "detail": str(e), "http_status": 500})
+        finally:
+            emit("done", {"status": "done"})
+            event_queue.put(None)
+            db_local.close()
+
+    threading.Thread(target=worker, daemon=True).start()
+
+    def event_iter():
+        while True:
+            try:
+                item = event_queue.get(timeout=10)
+            except queue.Empty:
+                # keep alive
+                yield ": keep-alive\n\n"
+                continue
+            if item is None:
+                break
+            event, payload_data = item
+            yield _to_sse(event, payload_data)
+
+    return StreamingResponse(
+        event_iter(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.post("/jobs/{job_id}/run", response_model=AIJobView)
@@ -132,3 +194,7 @@ def _parse_json(payload: str | None) -> dict[str, Any] | None:
     except json.JSONDecodeError:
         return {"raw": payload}
     return value if isinstance(value, dict) else {"value": value}
+
+
+def _to_sse(event: str, payload: dict[str, Any]) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"

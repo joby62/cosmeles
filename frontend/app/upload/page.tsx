@@ -2,7 +2,12 @@
 
 import { FormEvent, useMemo, useState } from "react";
 import Link from "next/link";
-import { ingestProduct, ingestProductStage1, ingestProductStage2 } from "@/lib/api";
+import {
+  ingestProduct,
+  ingestProductStage1Stream,
+  ingestProductStage2Stream,
+  SSEEvent,
+} from "@/lib/api";
 
 const CATEGORIES = [
   { value: "shampoo", label: "洗发水" },
@@ -50,6 +55,7 @@ type BatchRunItem = {
   artifacts?: { vision?: string | null; struct?: string | null; context?: string | null } | null;
   stage1Text?: string | null;
   stage2Text?: string | null;
+  progressLines?: string[];
 };
 
 export default function UploadPage() {
@@ -91,6 +97,17 @@ export default function UploadPage() {
     setBatchRuns((prev) => prev.map((item) => (item.index === index ? { ...item, ...patch } : item)));
   }
 
+  function pushProgress(index: number, event: SSEEvent) {
+    if (event.event !== "progress") return;
+    const line = toStreamLine(event.data);
+    if (!line) return;
+    setBatchRuns((prev) =>
+      prev.map((item) =>
+        item.index === index ? { ...item, progressLines: [...(item.progressLines || []), line].slice(-120) } : item,
+      ),
+    );
+  }
+
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (!canSubmit) return;
@@ -122,11 +139,11 @@ export default function UploadPage() {
         for (let i = 0; i < images.length; i += 1) {
           const file = images[i];
           setPhase("stage1");
-          updateBatchRun(i, { status: "stage1", error: undefined });
+          updateBatchRun(i, { status: "stage1", error: undefined, progressLines: [] });
 
           let stage1TraceId: string | null = null;
           try {
-            const stage1 = await ingestProductStage1({ image: file });
+            const stage1 = await ingestProductStage1Stream({ image: file }, (event) => pushProgress(i, event));
             stage1TraceId = stage1.trace_id;
             updateBatchRun(i, {
               status: "stage2",
@@ -148,7 +165,7 @@ export default function UploadPage() {
             continue;
           }
           try {
-            const ingestResult = await ingestProductStage2({ traceId: stage1TraceId });
+            const ingestResult = await ingestProductStage2Stream({ traceId: stage1TraceId }, (event) => pushProgress(i, event));
             lastResult = ingestResult;
             updateBatchRun(i, {
               status: "done",
@@ -335,6 +352,17 @@ export default function UploadPage() {
 
                   {item.error ? <div className="mt-2 text-[12px] text-[#b42318]">{item.error}</div> : null}
 
+                  {item.progressLines && item.progressLines.length > 0 ? (
+                    <details className="mt-2" open>
+                      <summary className="cursor-pointer text-[12px] font-medium text-black/76">流式进度（实时）</summary>
+                      <div className="mt-2 max-h-36 overflow-auto rounded-xl border border-black/10 bg-[#f8fafc] p-2 text-[11px] leading-[1.45] text-black/64">
+                        {item.progressLines.map((line, idx) => (
+                          <div key={`${item.index}-progress-${idx}`}>{line}</div>
+                        ))}
+                      </div>
+                    </details>
+                  ) : null}
+
                   {item.stage1Text ? (
                     <details className="mt-2">
                       <summary className="cursor-pointer text-[12px] font-medium text-black/76">Stage1 识别文本（美化）</summary>
@@ -501,4 +529,18 @@ function toPrettyStructText(raw: string): string {
   } catch {
     return raw;
   }
+}
+
+function toStreamLine(data: Record<string, unknown>): string {
+  const stage = typeof data.stage === "string" ? data.stage : "";
+  const step = typeof data.step === "string" ? data.step : "";
+  const message = typeof data.message === "string" ? data.message : "";
+  const delta = typeof data.delta === "string" ? data.delta : "";
+  const type = typeof data.type === "string" ? data.type : "";
+
+  const head = [stage || step || type].filter(Boolean).join("/");
+  if (delta) return `${head ? `[${head}] ` : ""}${delta}`;
+  if (message) return `${head ? `[${head}] ` : ""}${message}`;
+  if (head) return `[${head}]`;
+  return "";
 }

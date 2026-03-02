@@ -118,3 +118,63 @@ def test_stage2_returns_404_when_context_missing(test_client):
     client, _ = test_client
     resp = client.post("/api/upload/stage2", data={"trace_id": "not-exists"})
     assert resp.status_code == 404
+
+
+def test_stage1_and_stage2_stream_endpoints(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, _ = test_client
+
+    def fake_stage1(image_rel: str, trace_id: str, event_callback=None):
+        if event_callback:
+            event_callback({"type": "step", "stage": "stage1_vision", "message": "start"})
+            event_callback({"type": "delta", "stage": "stage1_vision", "delta": "视觉文本"})
+        return {
+            "vision_text": "【品牌】测试品牌\n【产品名】测试产品\n【品类】洗发水",
+            "model": "doubao-stage1-mini",
+            "artifact": f"doubao_runs/{trace_id}/stage1_vision.json",
+        }
+
+    def fake_stage2(_vision_text: str, trace_id: str, event_callback=None):
+        if event_callback:
+            event_callback({"type": "step", "stage": "stage2_struct", "message": "start"})
+            event_callback({"type": "delta", "stage": "stage2_struct", "delta": "{\"ok\":true}"})
+        return {
+            "doc": {
+                "product": {"category": "shampoo", "brand": "测试品牌", "name": "测试产品"},
+                "summary": {
+                    "one_sentence": "测试一句话",
+                    "pros": ["温和清洁"],
+                    "cons": [],
+                    "who_for": ["油性头皮"],
+                    "who_not_for": [],
+                },
+                "ingredients": [],
+                "evidence": {"doubao_raw": ""},
+            },
+            "struct_text": "{\"ok\":true}",
+            "model": "doubao-stage2-mini",
+            "artifact": f"doubao_runs/{trace_id}/stage2_struct.json",
+        }
+
+    monkeypatch.setattr(ingest_routes, "_analyze_with_doubao_stage1", fake_stage1)
+    monkeypatch.setattr(ingest_routes, "_analyze_with_doubao_stage2", fake_stage2)
+
+    s1 = client.post(
+        "/api/upload/stage1/stream",
+        files={"image": ("sample.jpg", b"fake-jpeg-bytes", "image/jpeg")},
+    )
+    assert s1.status_code == 200
+    assert "event: progress" in s1.text
+    assert "event: result" in s1.text
+    assert "trace_id" in s1.text
+
+    # 从流文本里取 trace_id（避免引入 SSE 解析器依赖）
+    marker = '"trace_id": "'
+    idx = s1.text.find(marker)
+    assert idx > 0
+    trace_id = s1.text[idx + len(marker) :].split('"', 1)[0]
+
+    s2 = client.post("/api/upload/stage2/stream", data={"trace_id": trace_id})
+    assert s2.status_code == 200
+    assert "event: progress" in s2.text
+    assert "event: result" in s2.text
+    assert '"status": "ok"' in s2.text

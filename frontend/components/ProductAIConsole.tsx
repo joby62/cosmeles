@@ -5,10 +5,11 @@ import {
   AIRunView,
   AIJobView,
   ProductDoc,
-  createAIJob,
+  createAIJobStream,
   fetchAllProducts,
   fetchLatestAIRunByJobId,
   fetchProductDoc,
+  SSEEvent,
 } from "@/lib/api";
 
 type ActionState = {
@@ -16,6 +17,7 @@ type ActionState = {
   job?: AIJobView;
   run?: AIRunView | null;
   outputText?: string;
+  progressLines?: string[];
   error?: string;
 };
 
@@ -47,18 +49,21 @@ export default function ProductAIConsole({ productId, doc }: { productId: string
       return;
     }
 
-    setIngredientState((prev) => ({ ...prev, loading: true, error: undefined }));
+    setIngredientState({ loading: true, error: undefined, progressLines: [] });
     try {
-      const job = await createAIJob({
-        capability: "doubao.ingredient_enrich",
-        trace_id: productId,
-        run_immediately: true,
-        input: {
-          ingredient: selectedIngredient,
-          context: ingredientContext,
-          product_id: productId,
+      const job = await createAIJobStream(
+        {
+          capability: "doubao.ingredient_enrich",
+          trace_id: productId,
+          run_immediately: true,
+          input: {
+            ingredient: selectedIngredient,
+            context: ingredientContext,
+            product_id: productId,
+          },
         },
-      });
+        (event) => setIngredientState((prev) => applyStreamEvent(prev, event)),
+      );
       const run = await fetchLatestRunSafe(job.id);
       const outputText = toReadableOutput(job.output);
       setIngredientState({
@@ -79,18 +84,21 @@ export default function ProductAIConsole({ productId, doc }: { productId: string
       return;
     }
 
-    setConsistencyState((prev) => ({ ...prev, loading: true, error: undefined }));
+    setConsistencyState({ loading: true, error: undefined, progressLines: [] });
     try {
-      const job = await createAIJob({
-        capability: "doubao.image_json_consistency",
-        trace_id: productId,
-        run_immediately: true,
-        input: {
-          image_path: imageRelPath,
-          json_text: jsonText,
-          product_id: productId,
+      const job = await createAIJobStream(
+        {
+          capability: "doubao.image_json_consistency",
+          trace_id: productId,
+          run_immediately: true,
+          input: {
+            image_path: imageRelPath,
+            json_text: jsonText,
+            product_id: productId,
+          },
         },
-      });
+        (event) => setConsistencyState((prev) => applyStreamEvent(prev, event)),
+      );
       const run = await fetchLatestRunSafe(job.id);
       const outputText = toReadableOutput(job.output);
       setConsistencyState({
@@ -106,7 +114,7 @@ export default function ProductAIConsole({ productId, doc }: { productId: string
   }
 
   async function runDedupDecision() {
-    setDedupState((prev) => ({ ...prev, loading: true, error: undefined }));
+    setDedupState({ loading: true, error: undefined, progressLines: [] });
     try {
       const all = await fetchAllProducts();
       const candidateIds = all
@@ -134,16 +142,19 @@ export default function ProductAIConsole({ productId, doc }: { productId: string
         return;
       }
 
-      const job = await createAIJob({
-        capability: "doubao.product_dedup_decision",
-        trace_id: productId,
-        run_immediately: true,
-        input: {
-          product_id: productId,
-          candidate_json: jsonText,
-          existing_jsons: existingDocs.map((item) => JSON.stringify(item)),
+      const job = await createAIJobStream(
+        {
+          capability: "doubao.product_dedup_decision",
+          trace_id: productId,
+          run_immediately: true,
+          input: {
+            product_id: productId,
+            candidate_json: jsonText,
+            existing_jsons: existingDocs.map((item) => JSON.stringify(item)),
+          },
         },
-      });
+        (event) => setDedupState((prev) => applyStreamEvent(prev, event)),
+      );
       const run = await fetchLatestRunSafe(job.id);
       const outputText = toReadableOutput(job.output);
       setDedupState({
@@ -260,6 +271,14 @@ function ActionResult({ state }: { state: ActionState }) {
         </pre>
       ) : null}
 
+      {state.progressLines && state.progressLines.length > 0 ? (
+        <div className="max-h-40 overflow-auto rounded-xl border border-black/10 bg-[#f8fafc] px-2.5 py-2 text-[11px] leading-[1.45] text-black/64">
+          {state.progressLines.map((line, idx) => (
+            <div key={`${line}-${idx}`}>{line}</div>
+          ))}
+        </div>
+      ) : null}
+
       {state.job ? <JobObservability job={state.job} run={state.run} /> : null}
     </div>
   );
@@ -330,4 +349,35 @@ function toReadableOutput(output?: Record<string, unknown> | null): string {
 function formatError(err: unknown): string {
   if (!(err instanceof Error)) return "请求失败，请稍后重试。";
   return err.message || "请求失败，请稍后重试。";
+}
+
+function applyStreamEvent(state: ActionState, event: SSEEvent): ActionState {
+  if (event.event === "error") {
+    const detail = typeof event.data.detail === "string" ? event.data.detail : JSON.stringify(event.data);
+    return { ...state, error: detail };
+  }
+  if (event.event !== "progress") {
+    return state;
+  }
+
+  const kind = String(event.data.type || "");
+  const stage = String(event.data.stage || "");
+  const message = String(event.data.message || "");
+  const delta = String(event.data.delta || "");
+  const lines = [...(state.progressLines || [])];
+  const label = stage ? `[${stage}]` : "";
+  if (message) {
+    lines.push(`${label} ${message}`.trim());
+  }
+  if (delta) {
+    const merged = (state.outputText || "") + delta;
+    return { ...state, outputText: merged, progressLines: lines };
+  }
+  if (kind === "job_started") {
+    lines.push("任务开始执行");
+  }
+  if (kind === "job_succeeded") {
+    lines.push("任务执行完成");
+  }
+  return { ...state, progressLines: lines };
 }

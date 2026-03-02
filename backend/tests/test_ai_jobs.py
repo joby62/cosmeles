@@ -9,7 +9,7 @@ from app.settings import settings
 def test_ai_job_create_and_list(test_client, monkeypatch: pytest.MonkeyPatch):
     client, _ = test_client
 
-    def fake_execute(capability: str, input_payload: dict, trace_id: str | None = None):
+    def fake_execute(capability: str, input_payload: dict, trace_id: str | None = None, event_callback=None):
         assert capability == "doubao.ingredient_enrich"
         assert input_payload["ingredient"] == "烟酰胺"
         assert trace_id == "trace-123"
@@ -57,7 +57,7 @@ def test_ai_job_create_and_list(test_client, monkeypatch: pytest.MonkeyPatch):
 def test_ai_job_dedup_capability(test_client, monkeypatch: pytest.MonkeyPatch):
     client, _ = test_client
 
-    def fake_execute(capability: str, input_payload: dict, trace_id: str | None = None):
+    def fake_execute(capability: str, input_payload: dict, trace_id: str | None = None, event_callback=None):
         assert capability == "doubao.product_dedup_decision"
         assert trace_id == "trace-dedup"
         assert "candidate_json" in input_payload
@@ -88,6 +88,42 @@ def test_ai_job_dedup_capability(test_client, monkeypatch: pytest.MonkeyPatch):
     assert body["output"]["analysis_text"] == "疑似重复，建议人工复核"
 
 
+def test_ai_job_stream_endpoint(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, _ = test_client
+
+    def fake_execute(capability: str, input_payload: dict, trace_id: str | None = None, event_callback=None):
+        if event_callback:
+            event_callback({"type": "step", "stage": "ingredient_enrich", "message": "calling model"})
+            event_callback({"type": "delta", "stage": "ingredient_enrich", "delta": "部分输出"})
+        return CapabilityExecutionResult(
+            output={"analysis_text": "完整输出"},
+            prompt_key=capability,
+            prompt_version="v1",
+            model="doubao-seed-2-0-pro-260215",
+            request_payload={"prompt": "test"},
+            response_payload={"output_text": "完整输出"},
+        )
+
+    monkeypatch.setattr(orchestrator_module, "execute_capability", fake_execute)
+
+    resp = client.post(
+        "/api/ai/jobs/stream",
+        json={
+            "capability": "doubao.ingredient_enrich",
+            "input": {"ingredient": "烟酰胺"},
+            "trace_id": "trace-stream-1",
+            "run_immediately": True,
+        },
+    )
+    assert resp.status_code == 200
+    text = resp.text
+    assert "event: job_created" in text
+    assert "event: progress" in text
+    assert "event: result" in text
+    assert "完整输出" in text
+    assert "event: done" in text
+
+
 def test_ai_metrics_summary(test_client, monkeypatch: pytest.MonkeyPatch):
     client, _ = test_client
     monkeypatch.setattr(
@@ -96,7 +132,7 @@ def test_ai_metrics_summary(test_client, monkeypatch: pytest.MonkeyPatch):
         '{"doubao-seed-2-0-mini-260215": 0.12}',
     )
 
-    def fake_execute(capability: str, input_payload: dict, trace_id: str | None = None):
+    def fake_execute(capability: str, input_payload: dict, trace_id: str | None = None, event_callback=None):
         if input_payload.get("mode") == "timeout":
             raise AIServiceError(
                 code="doubao_request_failed",
@@ -163,7 +199,7 @@ def test_ai_metrics_summary_token_pricing(test_client, monkeypatch: pytest.Monke
         '{"doubao-seed-2-0-pro-260215":{"input":3.2,"output":16,"cache_hit":0.64}}',
     )
 
-    def fake_execute(capability: str, input_payload: dict, trace_id: str | None = None):
+    def fake_execute(capability: str, input_payload: dict, trace_id: str | None = None, event_callback=None):
         return CapabilityExecutionResult(
             output={"analysis_text": "ok"},
             prompt_key=capability,

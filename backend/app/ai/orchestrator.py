@@ -1,6 +1,7 @@
 import json
 import time
 from datetime import datetime, timedelta
+from typing import Callable
 from typing import Any
 
 from sqlalchemy import select
@@ -47,7 +48,7 @@ class AIOrchestrator:
         self.db.refresh(job)
         return job
 
-    def run_job(self, job_id: str) -> AIJob:
+    def run_job(self, job_id: str, event_callback: Callable[[dict[str, Any]], None] | None = None) -> AIJob:
         job = self.db.get(AIJob, job_id)
         if not job:
             raise AIServiceError(code="job_not_found", message=f"AI job '{job_id}' not found.", http_status=404)
@@ -88,15 +89,47 @@ class AIOrchestrator:
         self.db.commit()
         self.db.refresh(job)
         self.db.refresh(run)
+        _emit_event(event_callback, {"type": "job_started", "job_id": job.id, "capability": job.capability})
 
         started = time.perf_counter()
         try:
-            result = execute_capability(job.capability, request_payload, trace_id=job.trace_id)
+            result = execute_capability(
+                job.capability,
+                request_payload,
+                trace_id=job.trace_id,
+                event_callback=lambda event: _emit_event(
+                    event_callback,
+                    {"type": "capability_event", "job_id": job.id, "capability": job.capability, **event},
+                ),
+            )
             self._mark_succeeded(job, run, result, started)
+            _emit_event(event_callback, {"type": "job_succeeded", "job_id": job.id, "capability": job.capability})
         except AIServiceError as e:
             self._mark_failed(job, run, e.code, e.message, e.http_status, started)
+            _emit_event(
+                event_callback,
+                {
+                    "type": "job_failed",
+                    "job_id": job.id,
+                    "capability": job.capability,
+                    "error_code": e.code,
+                    "error_message": e.message,
+                    "error_http_status": e.http_status,
+                },
+            )
         except Exception as e:  # pragma: no cover - defensive fallback
             self._mark_failed(job, run, "ai_internal_error", str(e), 500, started)
+            _emit_event(
+                event_callback,
+                {
+                    "type": "job_failed",
+                    "job_id": job.id,
+                    "capability": job.capability,
+                    "error_code": "ai_internal_error",
+                    "error_message": str(e),
+                    "error_http_status": 500,
+                },
+            )
 
         self.db.refresh(job)
         return job
@@ -227,11 +260,17 @@ class AIOrchestrator:
         self.db.commit()
 
 
-def run_capability_now(capability: str, input_payload: dict[str, Any], trace_id: str | None = None) -> dict[str, Any]:
+def run_capability_now(
+    capability: str,
+    input_payload: dict[str, Any],
+    trace_id: str | None = None,
+    event_callback: Callable[[dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
     db = SessionLocal()
     try:
         orchestrator = AIOrchestrator(db)
-        job = orchestrator.create_and_run(capability=capability, input_payload=input_payload, trace_id=trace_id)
+        job = orchestrator.create_job(capability=capability, input_payload=input_payload, trace_id=trace_id)
+        job = orchestrator.run_job(job.id, event_callback=event_callback)
         if job.status != "succeeded":
             raise AIServiceError(
                 code=job.error_code or "ai_job_failed",
@@ -431,3 +470,13 @@ def _to_non_negative_float(value: Any, key: str) -> float:
             http_status=500,
         )
     return number
+
+
+def _emit_event(event_callback: Callable[[dict[str, Any]], None] | None, payload: dict[str, Any]) -> None:
+    if not event_callback:
+        return
+    try:
+        event_callback(payload)
+    except Exception:
+        # Never fail the AI job because downstream stream consumer crashed.
+        return

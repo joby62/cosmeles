@@ -58,6 +58,11 @@ export type AIJobCreateRequest = {
   run_immediately?: boolean;
 };
 
+export type SSEEvent = {
+  event: string;
+  data: Record<string, unknown>;
+};
+
 export type AIJobView = {
   id: string;
   capability: string;
@@ -202,6 +207,22 @@ export async function createAIJob(payload: AIJobCreateRequest): Promise<AIJobVie
   });
 }
 
+export async function createAIJobStream(
+  payload: AIJobCreateRequest,
+  onEvent: (event: SSEEvent) => void,
+): Promise<AIJobView> {
+  const result = await postSSE<{ job?: AIJobView }>("/api/ai/jobs/stream", {
+    method: "POST",
+    body: JSON.stringify(payload),
+    headers: { "content-type": "application/json" },
+  }, onEvent);
+
+  if (!result.job) {
+    throw new Error("AI stream finished without final job result.");
+  }
+  return result.job;
+}
+
 export async function fetchAIRuns(params?: {
   jobId?: string;
   offset?: number;
@@ -326,6 +347,18 @@ export async function ingestProductStage1(input: Pick<IngestInput, "image" | "ca
   return (await res.json()) as IngestStage1Result;
 }
 
+export async function ingestProductStage1Stream(
+  input: Pick<IngestInput, "image" | "category" | "brand" | "name">,
+  onEvent: (event: SSEEvent) => void,
+): Promise<IngestStage1Result> {
+  const fd = new FormData();
+  if (input.image) fd.append("image", input.image);
+  if (input.category) fd.append("category", input.category);
+  if (input.brand) fd.append("brand", input.brand);
+  if (input.name) fd.append("name", input.name);
+  return postSSE<IngestStage1Result>("/api/upload/stage1/stream", { method: "POST", body: fd }, onEvent);
+}
+
 export async function ingestProductStage2(input: Pick<IngestInput, "category" | "brand" | "name"> & { traceId: string }): Promise<IngestResult> {
   const base = getBaseForFetch();
   const url = base ? new URL("/api/upload/stage2", base).toString() : "/api/upload/stage2";
@@ -343,8 +376,97 @@ export async function ingestProductStage2(input: Pick<IngestInput, "category" | 
   return (await res.json()) as IngestResult;
 }
 
+export async function ingestProductStage2Stream(
+  input: Pick<IngestInput, "category" | "brand" | "name"> & { traceId: string },
+  onEvent: (event: SSEEvent) => void,
+): Promise<IngestResult> {
+  const fd = new FormData();
+  fd.append("trace_id", input.traceId);
+  if (input.category) fd.append("category", input.category);
+  if (input.brand) fd.append("brand", input.brand);
+  if (input.name) fd.append("name", input.name);
+  return postSSE<IngestResult>("/api/upload/stage2/stream", { method: "POST", body: fd }, onEvent);
+}
+
 // 兼容旧调用
 export async function ingestImage(file: File): Promise<{ id: string }> {
   const result = await ingestProduct({ image: file, source: "auto" });
   return { id: result.id };
+}
+
+async function postSSE<T>(
+  path: string,
+  init: RequestInit,
+  onEvent: (event: SSEEvent) => void,
+): Promise<T> {
+  const base = getBaseForFetch();
+  const url = base ? new URL(path, base).toString() : path;
+  const res = await fetch(url, {
+    ...init,
+    headers: {
+      accept: "text/event-stream",
+      ...(init.headers || {}),
+    },
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`${path} ${res.status}: ${text}`);
+  }
+
+  if (!res.body) {
+    throw new Error(`${path}: stream body is empty`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finalResult: T | null = null;
+  let finalError: string | null = null;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    buffer = buffer.replace(/\r\n/g, "\n");
+
+    while (true) {
+      const idx = buffer.indexOf("\n\n");
+      if (idx < 0) break;
+      const raw = buffer.slice(0, idx).trim();
+      buffer = buffer.slice(idx + 2);
+      if (!raw || raw.startsWith(":")) continue;
+
+      let event = "message";
+      const dataLines: string[] = [];
+      for (const line of raw.split("\n")) {
+        if (line.startsWith("event:")) event = line.slice(6).trim();
+        if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+      }
+      const dataRaw = dataLines.join("\n");
+      let data: Record<string, unknown> = {};
+      try {
+        data = dataRaw ? (JSON.parse(dataRaw) as Record<string, unknown>) : {};
+      } catch {
+        data = { raw: dataRaw };
+      }
+
+      onEvent({ event, data });
+      if (event === "result") {
+        finalResult = data as T;
+      } else if (event === "error") {
+        const detail = typeof data.detail === "string" ? data.detail : JSON.stringify(data);
+        finalError = detail;
+      }
+    }
+  }
+
+  if (finalError) {
+    throw new Error(finalError);
+  }
+  if (finalResult == null) {
+    throw new Error(`${path}: stream ended without result`);
+  }
+  return finalResult;
 }

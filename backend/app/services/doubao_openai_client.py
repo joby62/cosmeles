@@ -1,7 +1,7 @@
 import json
 import random
 import time
-from typing import Any
+from typing import Any, Callable
 
 from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI
 
@@ -30,7 +30,14 @@ class DoubaoOpenAIClient:
             max_retries=0,
         )
 
-    def chat_with_image(self, image_url: str, prompt: str, model: str | None = None) -> dict[str, Any]:
+    def chat_with_image(
+        self,
+        image_url: str,
+        prompt: str,
+        model: str | None = None,
+        stream: bool = False,
+        on_text_delta: Callable[[str], None] | None = None,
+    ) -> dict[str, Any]:
         body = {
             "model": model or self.model,
             "input": [
@@ -43,9 +50,15 @@ class DoubaoOpenAIClient:
                 }
             ],
         }
-        return self._responses(body)
+        return self._responses(body, stream=stream, on_text_delta=on_text_delta)
 
-    def chat_with_text(self, prompt: str, model: str | None = None) -> dict[str, Any]:
+    def chat_with_text(
+        self,
+        prompt: str,
+        model: str | None = None,
+        stream: bool = False,
+        on_text_delta: Callable[[str], None] | None = None,
+    ) -> dict[str, Any]:
         body = {
             "model": model or self.model,
             "input": [
@@ -55,13 +68,18 @@ class DoubaoOpenAIClient:
                 }
             ],
         }
-        return self._responses(body)
+        return self._responses(body, stream=stream, on_text_delta=on_text_delta)
 
-    def _responses(self, body: dict[str, Any]) -> dict[str, Any]:
+    def _responses(
+        self,
+        body: dict[str, Any],
+        stream: bool = False,
+        on_text_delta: Callable[[str], None] | None = None,
+    ) -> dict[str, Any]:
         attempts = self.max_retries + 1
         for attempt in range(1, attempts + 1):
             try:
-                response = self.client.responses.create(**body)
+                response = self._call_response_api(body, stream=stream, on_text_delta=on_text_delta)
                 break
             except APITimeoutError as e:
                 if attempt >= attempts:
@@ -81,27 +99,41 @@ class DoubaoOpenAIClient:
                     continue
                 raise RuntimeError(f"Doubao API HTTP {e.status_code}: {detail}") from e
 
-        try:
-            if hasattr(response, "model_dump"):
-                return response.model_dump(mode="json")
-            if hasattr(response, "to_dict"):
-                return response.to_dict()
-            if hasattr(response, "model_dump_json"):
-                return json.loads(response.model_dump_json())
-        except Exception:
-            pass
-
-        # fallback: keep minimal data for parser
-        try:
-            return {"output_text": str(getattr(response, "output_text", "") or "")}
-        except Exception as e:
-            raise RuntimeError(f"Doubao SDK returned unexpected payload type: {type(response)}") from e
+        return response
 
     def _sleep_backoff(self, attempt: int) -> None:
         # 指数退避 + 抖动，减少瞬时重试风暴
         delay = self.retry_backoff_seconds * (2 ** max(attempt - 1, 0))
         jitter = random.uniform(0, min(1.0, delay * 0.2))
         time.sleep(delay + jitter)
+
+    def _call_response_api(
+        self,
+        body: dict[str, Any],
+        stream: bool,
+        on_text_delta: Callable[[str], None] | None,
+    ) -> dict[str, Any]:
+        if not stream:
+            response = self.client.responses.create(**body)
+            return _serialize_response(response)
+
+        stream_api = getattr(self.client.responses, "stream", None)
+        if not callable(stream_api):
+            # fallback: if SDK version doesn't expose stream(), degrade gracefully.
+            response = self.client.responses.create(**body)
+            payload = _serialize_response(response)
+            text = str(payload.get("output_text") or "").strip()
+            if text and on_text_delta:
+                on_text_delta(text)
+            return payload
+
+        with stream_api(**body) as stream_obj:
+            for event in stream_obj:
+                delta = _extract_delta_text(event)
+                if delta and on_text_delta:
+                    on_text_delta(delta)
+            final_response = stream_obj.get_final_response()
+        return _serialize_response(final_response)
 
 
 def _extract_status_error_detail(error: APIStatusError) -> str:
@@ -117,3 +149,44 @@ def _extract_status_error_detail(error: APIStatusError) -> str:
 
 def _is_retryable_status(status: int) -> bool:
     return status in {408, 409, 425, 429, 500, 502, 503, 504}
+
+
+def _serialize_response(response: Any) -> dict[str, Any]:
+    try:
+        if hasattr(response, "model_dump"):
+            return response.model_dump(mode="json")
+        if hasattr(response, "to_dict"):
+            return response.to_dict()
+        if hasattr(response, "model_dump_json"):
+            return json.loads(response.model_dump_json())
+    except Exception:
+        pass
+
+    try:
+        return {"output_text": str(getattr(response, "output_text", "") or "")}
+    except Exception as e:
+        raise RuntimeError(f"Doubao SDK returned unexpected payload type: {type(response)}") from e
+
+
+def _extract_delta_text(event: Any) -> str:
+    if hasattr(event, "delta"):
+        delta = getattr(event, "delta", None)
+        if isinstance(delta, str) and delta:
+            return delta
+
+    if hasattr(event, "model_dump"):
+        try:
+            payload = event.model_dump(mode="json")
+            if isinstance(payload, dict):
+                delta = payload.get("delta")
+                if isinstance(delta, str) and delta:
+                    return delta
+                # Some SDK events wrap text in output_text.delta
+                output_text = payload.get("output_text")
+                if isinstance(output_text, dict):
+                    inner_delta = output_text.get("delta")
+                    if isinstance(inner_delta, str) and inner_delta:
+                        return inner_delta
+        except Exception:
+            return ""
+    return ""

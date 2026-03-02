@@ -117,6 +117,15 @@ sample_data/             示例数据
 - `POST /api/upload/stage2`
   - 功能：基于 `trace_id` 读取阶段1文本，执行结构化并最终入库
   - 返回：最终产品入库结果 + 两阶段落盘路径
+- `POST /api/upload/stage1/stream`
+  - 功能：同 stage1，但以 `text/event-stream` 持续返回进度和增量文本
+- `POST /api/upload/stage2/stream`
+  - 功能：同 stage2，但以 `text/event-stream` 持续返回进度和增量文本
+
+### 4.2) AI 通用流式接口
+- `POST /api/ai/jobs/stream`
+  - 功能：创建并执行 AI Job，SSE 返回 `job_created/progress/result/done` 事件
+  - 适用：成分解释、图文一致性、重合检测、后续能力扩展
 
 ### 4.1) Doubao 产物清理
 - `POST /api/maintenance/cleanup-doubao?days=14`

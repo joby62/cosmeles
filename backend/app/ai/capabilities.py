@@ -4,7 +4,7 @@ import mimetypes
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from app.ai.errors import AIServiceError
 from app.ai.prompts import load_prompt, render_prompt
@@ -36,6 +36,7 @@ def execute_capability(
     capability: str,
     input_payload: dict[str, Any],
     trace_id: str | None = None,
+    event_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> CapabilityExecutionResult:
     if capability not in SUPPORTED_CAPABILITIES:
         raise AIServiceError(
@@ -45,17 +46,17 @@ def execute_capability(
         )
 
     if capability == "doubao.stage1_vision":
-        return _cap_stage1_vision(input_payload, trace_id)
+        return _cap_stage1_vision(input_payload, trace_id, event_callback=event_callback)
     if capability == "doubao.stage2_struct":
-        return _cap_stage2_struct(input_payload, trace_id)
+        return _cap_stage2_struct(input_payload, trace_id, event_callback=event_callback)
     if capability == "doubao.two_stage_parse":
-        return _cap_two_stage_parse(input_payload, trace_id)
+        return _cap_two_stage_parse(input_payload, trace_id, event_callback=event_callback)
     if capability == "doubao.ingredient_enrich":
-        return _cap_ingredient_enrich(input_payload, trace_id)
+        return _cap_ingredient_enrich(input_payload, trace_id, event_callback=event_callback)
     if capability == "doubao.image_json_consistency":
-        return _cap_image_json_consistency(input_payload, trace_id)
+        return _cap_image_json_consistency(input_payload, trace_id, event_callback=event_callback)
     if capability == "doubao.product_dedup_decision":
-        return _cap_product_dedup_decision(input_payload, trace_id)
+        return _cap_product_dedup_decision(input_payload, trace_id, event_callback=event_callback)
 
     raise AIServiceError(
         code="capability_not_supported",
@@ -64,12 +65,18 @@ def execute_capability(
     )
 
 
-def _cap_stage1_vision(input_payload: dict[str, Any], trace_id: str | None) -> CapabilityExecutionResult:
+def _cap_stage1_vision(
+    input_payload: dict[str, Any],
+    trace_id: str | None,
+    event_callback: Callable[[dict[str, Any]], None] | None = None,
+) -> CapabilityExecutionResult:
     image_path = _required_str(input_payload, "image_path")
     prompt = load_prompt("doubao.stage1_vision")
+    _emit(event_callback, {"type": "step", "stage": "stage1_vision", "message": "Preparing image and prompt."})
 
     if _is_sample_mode():
         vision_text = "sample mode: skipped vision OCR."
+        _emit(event_callback, {"type": "step", "stage": "stage1_vision", "message": "Sample mode enabled."})
         artifact = _maybe_save_artifact(
             trace_id=trace_id,
             stage="stage1_vision",
@@ -85,9 +92,22 @@ def _cap_stage1_vision(input_payload: dict[str, Any], trace_id: str | None) -> C
         )
 
     sdk, vision_model, _, _ = _build_sdk_and_models()
+    _emit(
+        event_callback,
+        {"type": "step", "stage": "stage1_vision", "message": f"Calling model {vision_model}."},
+    )
     image_data_url = _to_data_url(image_path)
-    response_raw = _safe_sdk_call(lambda: sdk.chat_with_image(image_data_url, prompt.text, model=vision_model))
+    response_raw = _safe_sdk_call(
+        lambda: sdk.chat_with_image(
+            image_data_url,
+            prompt.text,
+            model=vision_model,
+            stream=event_callback is not None,
+            on_text_delta=(lambda delta: _emit(event_callback, {"type": "delta", "stage": "stage1_vision", "delta": delta})),
+        )
+    )
     vision_text = _extract_content(response_raw)
+    _emit(event_callback, {"type": "step", "stage": "stage1_vision", "message": "Stage1 text extracted."})
     artifact = _maybe_save_artifact(
         trace_id=trace_id,
         stage="stage1_vision",
@@ -104,13 +124,19 @@ def _cap_stage1_vision(input_payload: dict[str, Any], trace_id: str | None) -> C
     )
 
 
-def _cap_stage2_struct(input_payload: dict[str, Any], trace_id: str | None) -> CapabilityExecutionResult:
+def _cap_stage2_struct(
+    input_payload: dict[str, Any],
+    trace_id: str | None,
+    event_callback: Callable[[dict[str, Any]], None] | None = None,
+) -> CapabilityExecutionResult:
     vision_text = _required_nonempty_str(input_payload, "vision_text")
     prompt = load_prompt("doubao.stage2_struct")
     rendered_prompt = render_prompt(prompt.text, {"vision_text": vision_text})
+    _emit(event_callback, {"type": "step", "stage": "stage2_struct", "message": "Rendering struct prompt."})
 
     if _is_sample_mode():
         sample_doc = _sample_product_doc()
+        _emit(event_callback, {"type": "step", "stage": "stage2_struct", "message": "Sample mode enabled."})
         artifact = _maybe_save_artifact(
             trace_id=trace_id,
             stage="stage2_struct",
@@ -131,9 +157,21 @@ def _cap_stage2_struct(input_payload: dict[str, Any], trace_id: str | None) -> C
         )
 
     sdk, _, struct_model, _ = _build_sdk_and_models()
-    response_raw = _safe_sdk_call(lambda: sdk.chat_with_text(rendered_prompt, model=struct_model))
+    _emit(
+        event_callback,
+        {"type": "step", "stage": "stage2_struct", "message": f"Calling model {struct_model}."},
+    )
+    response_raw = _safe_sdk_call(
+        lambda: sdk.chat_with_text(
+            rendered_prompt,
+            model=struct_model,
+            stream=event_callback is not None,
+            on_text_delta=(lambda delta: _emit(event_callback, {"type": "delta", "stage": "stage2_struct", "delta": delta})),
+        )
+    )
     struct_text = _extract_content(response_raw)
     struct_doc = _extract_json_object(struct_text)
+    _emit(event_callback, {"type": "step", "stage": "stage2_struct", "message": "Stage2 JSON extracted."})
     artifact = _maybe_save_artifact(
         trace_id=trace_id,
         stage="stage2_struct",
@@ -150,10 +188,16 @@ def _cap_stage2_struct(input_payload: dict[str, Any], trace_id: str | None) -> C
     )
 
 
-def _cap_two_stage_parse(input_payload: dict[str, Any], trace_id: str | None) -> CapabilityExecutionResult:
+def _cap_two_stage_parse(
+    input_payload: dict[str, Any],
+    trace_id: str | None,
+    event_callback: Callable[[dict[str, Any]], None] | None = None,
+) -> CapabilityExecutionResult:
     image_path = _required_str(input_payload, "image_path")
-    stage1 = _cap_stage1_vision({"image_path": image_path}, trace_id=trace_id)
-    stage2 = _cap_stage2_struct({"vision_text": stage1.output["vision_text"]}, trace_id=trace_id)
+    _emit(event_callback, {"type": "step", "stage": "two_stage_parse", "message": "Running stage1 vision."})
+    stage1 = _cap_stage1_vision({"image_path": image_path}, trace_id=trace_id, event_callback=event_callback)
+    _emit(event_callback, {"type": "step", "stage": "two_stage_parse", "message": "Running stage2 struct."})
+    stage2 = _cap_stage2_struct({"vision_text": stage1.output["vision_text"]}, trace_id=trace_id, event_callback=event_callback)
 
     doc = stage2.output["doc"]
     evidence = doc.setdefault("evidence", {})
@@ -176,14 +220,20 @@ def _cap_two_stage_parse(input_payload: dict[str, Any], trace_id: str | None) ->
     )
 
 
-def _cap_ingredient_enrich(input_payload: dict[str, Any], trace_id: str | None) -> CapabilityExecutionResult:
+def _cap_ingredient_enrich(
+    input_payload: dict[str, Any],
+    trace_id: str | None,
+    event_callback: Callable[[dict[str, Any]], None] | None = None,
+) -> CapabilityExecutionResult:
     ingredient = _required_nonempty_str(input_payload, "ingredient")
     context = str(input_payload.get("context") or "").strip()
     prompt = load_prompt("doubao.ingredient_enrich")
     rendered_prompt = render_prompt(prompt.text, {"ingredient": ingredient, "context": context})
+    _emit(event_callback, {"type": "step", "stage": "ingredient_enrich", "message": "Prompt prepared."})
 
     if _is_sample_mode():
         text = f"sample mode: ingredient={ingredient}, context={context or 'none'}"
+        _emit(event_callback, {"type": "step", "stage": "ingredient_enrich", "message": "Sample mode enabled."})
         artifact = _maybe_save_artifact(trace_id, "ingredient_enrich", {"model": "sample", "prompt": rendered_prompt, "response": {"mode": "sample"}, "text": text})
         return CapabilityExecutionResult(
             output={"analysis_text": text, "model": "sample", "artifact": artifact},
@@ -195,8 +245,20 @@ def _cap_ingredient_enrich(input_payload: dict[str, Any], trace_id: str | None) 
         )
 
     sdk, _, _, text_model = _build_sdk_and_models()
-    response_raw = _safe_sdk_call(lambda: sdk.chat_with_text(rendered_prompt, model=text_model))
+    _emit(
+        event_callback,
+        {"type": "step", "stage": "ingredient_enrich", "message": f"Calling model {text_model}."},
+    )
+    response_raw = _safe_sdk_call(
+        lambda: sdk.chat_with_text(
+            rendered_prompt,
+            model=text_model,
+            stream=event_callback is not None,
+            on_text_delta=(lambda delta: _emit(event_callback, {"type": "delta", "stage": "ingredient_enrich", "delta": delta})),
+        )
+    )
     text = _extract_content(response_raw)
+    _emit(event_callback, {"type": "step", "stage": "ingredient_enrich", "message": "Analysis completed."})
     artifact = _maybe_save_artifact(trace_id, "ingredient_enrich", {"model": text_model, "prompt": rendered_prompt, "response": response_raw, "text": text})
     return CapabilityExecutionResult(
         output={"analysis_text": text, "model": text_model, "artifact": artifact},
@@ -208,10 +270,15 @@ def _cap_ingredient_enrich(input_payload: dict[str, Any], trace_id: str | None) 
     )
 
 
-def _cap_image_json_consistency(input_payload: dict[str, Any], trace_id: str | None) -> CapabilityExecutionResult:
+def _cap_image_json_consistency(
+    input_payload: dict[str, Any],
+    trace_id: str | None,
+    event_callback: Callable[[dict[str, Any]], None] | None = None,
+) -> CapabilityExecutionResult:
     image_path = _required_str(input_payload, "image_path")
     json_text = _required_nonempty_str(input_payload, "json_text")
-    stage1 = _cap_stage1_vision({"image_path": image_path}, trace_id=trace_id)
+    _emit(event_callback, {"type": "step", "stage": "image_json_consistency", "message": "Running stage1 vision."})
+    stage1 = _cap_stage1_vision({"image_path": image_path}, trace_id=trace_id, event_callback=event_callback)
 
     prompt = load_prompt("doubao.image_json_consistency")
     rendered_prompt = render_prompt(
@@ -221,6 +288,7 @@ def _cap_image_json_consistency(input_payload: dict[str, Any], trace_id: str | N
 
     if _is_sample_mode():
         text = "sample mode: consistency looks good."
+        _emit(event_callback, {"type": "step", "stage": "image_json_consistency", "message": "Sample mode enabled."})
         artifact = _maybe_save_artifact(trace_id, "image_json_consistency", {"model": "sample", "prompt": rendered_prompt, "response": {"mode": "sample"}, "text": text})
         return CapabilityExecutionResult(
             output={
@@ -237,8 +305,20 @@ def _cap_image_json_consistency(input_payload: dict[str, Any], trace_id: str | N
         )
 
     sdk, _, _, text_model = _build_sdk_and_models()
-    response_raw = _safe_sdk_call(lambda: sdk.chat_with_text(rendered_prompt, model=text_model))
+    _emit(
+        event_callback,
+        {"type": "step", "stage": "image_json_consistency", "message": f"Calling model {text_model}."},
+    )
+    response_raw = _safe_sdk_call(
+        lambda: sdk.chat_with_text(
+            rendered_prompt,
+            model=text_model,
+            stream=event_callback is not None,
+            on_text_delta=(lambda delta: _emit(event_callback, {"type": "delta", "stage": "image_json_consistency", "delta": delta})),
+        )
+    )
     text = _extract_content(response_raw)
+    _emit(event_callback, {"type": "step", "stage": "image_json_consistency", "message": "Consistency analysis completed."})
     artifact = _maybe_save_artifact(trace_id, "image_json_consistency", {"model": text_model, "prompt": rendered_prompt, "response": response_raw, "text": text})
     return CapabilityExecutionResult(
         output={
@@ -255,7 +335,11 @@ def _cap_image_json_consistency(input_payload: dict[str, Any], trace_id: str | N
     )
 
 
-def _cap_product_dedup_decision(input_payload: dict[str, Any], trace_id: str | None) -> CapabilityExecutionResult:
+def _cap_product_dedup_decision(
+    input_payload: dict[str, Any],
+    trace_id: str | None,
+    event_callback: Callable[[dict[str, Any]], None] | None = None,
+) -> CapabilityExecutionResult:
     candidate_json = _required_nonempty_str(input_payload, "candidate_json")
     existing_jsons = input_payload.get("existing_jsons") or []
     if not isinstance(existing_jsons, list):
@@ -273,6 +357,7 @@ def _cap_product_dedup_decision(input_payload: dict[str, Any], trace_id: str | N
 
     if _is_sample_mode():
         text = "sample mode: dedup decision unavailable."
+        _emit(event_callback, {"type": "step", "stage": "product_dedup_decision", "message": "Sample mode enabled."})
         artifact = _maybe_save_artifact(trace_id, "product_dedup_decision", {"model": "sample", "prompt": rendered_prompt, "response": {"mode": "sample"}, "text": text})
         return CapabilityExecutionResult(
             output={"analysis_text": text, "model": "sample", "artifact": artifact},
@@ -284,8 +369,20 @@ def _cap_product_dedup_decision(input_payload: dict[str, Any], trace_id: str | N
         )
 
     sdk, _, _, text_model = _build_sdk_and_models()
-    response_raw = _safe_sdk_call(lambda: sdk.chat_with_text(rendered_prompt, model=text_model))
+    _emit(
+        event_callback,
+        {"type": "step", "stage": "product_dedup_decision", "message": f"Calling model {text_model}."},
+    )
+    response_raw = _safe_sdk_call(
+        lambda: sdk.chat_with_text(
+            rendered_prompt,
+            model=text_model,
+            stream=event_callback is not None,
+            on_text_delta=(lambda delta: _emit(event_callback, {"type": "delta", "stage": "product_dedup_decision", "delta": delta})),
+        )
+    )
     text = _extract_content(response_raw)
+    _emit(event_callback, {"type": "step", "stage": "product_dedup_decision", "message": "Dedup analysis completed."})
     artifact = _maybe_save_artifact(trace_id, "product_dedup_decision", {"model": text_model, "prompt": rendered_prompt, "response": response_raw, "text": text})
     return CapabilityExecutionResult(
         output={"analysis_text": text, "model": text_model, "artifact": artifact},
@@ -470,3 +567,12 @@ def _extract_json_object(text: str) -> dict[str, Any]:
         return json.loads(text[first : last + 1])
 
     raise AIServiceError(code="json_not_found", message="No JSON object found in capability response.", http_status=422)
+
+
+def _emit(event_callback: Callable[[dict[str, Any]], None] | None, payload: dict[str, Any]) -> None:
+    if not event_callback:
+        return
+    try:
+        event_callback(payload)
+    except Exception:
+        return
