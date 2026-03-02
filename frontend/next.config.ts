@@ -5,6 +5,8 @@ const BACKEND_PORT = process.env.BACKEND_PORT || "8000";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // Keep SSE chunks uncompressed to reduce buffering in stream UI.
+  compress: false,
 
   async rewrites() {
     return [

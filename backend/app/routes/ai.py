@@ -70,7 +70,7 @@ def create_ai_job_stream(payload: AIJobCreateRequest, db: Session = Depends(get_
     def event_iter():
         while True:
             try:
-                item = event_queue.get(timeout=10)
+                item = event_queue.get(timeout=2)
             except queue.Empty:
                 # keep alive
                 yield ": keep-alive\n\n"
@@ -84,7 +84,8 @@ def create_ai_job_stream(payload: AIJobCreateRequest, db: Session = Depends(get_
         event_iter(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-cache, no-transform",
+            "Pragma": "no-cache",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
         },

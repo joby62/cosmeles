@@ -308,7 +308,12 @@ async def ingest_stage1_stream(
     return StreamingResponse(
         _sse_iter(events),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Pragma": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 
@@ -357,7 +362,12 @@ def ingest_stage2_stream(
     return StreamingResponse(
         _sse_iter(events),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Pragma": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 @router.post("/maintenance/cleanup-doubao")
@@ -448,7 +458,7 @@ def _finalize_stage2(
 def _sse_iter(events: queue.Queue[tuple[str, dict[str, Any]] | None]):
     while True:
         try:
-            item = events.get(timeout=10)
+            item = events.get(timeout=2)
         except queue.Empty:
             yield ": keep-alive\n\n"
             continue

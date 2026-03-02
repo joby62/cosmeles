@@ -249,22 +249,7 @@ def _consume_stream(
     final_payload: dict[str, Any] | None = None
 
     try:
-        # OpenAI SDK helper: if available this is usually the most stable text iterator.
-        text_deltas = getattr(stream_obj, "text_deltas", None)
-        if text_deltas is not None:
-            try:
-                for delta in text_deltas:
-                    text = _as_text(delta)
-                    if not text:
-                        continue
-                    emitted_any_delta = True
-                    collected.append(text)
-                    if on_text_delta:
-                        on_text_delta(text)
-            except Exception:
-                # Continue with raw event iteration fallback.
-                pass
-
+        # Prefer raw stream events: `text_deltas` helper may coalesce chunks.
         for event in stream_obj:
             delta = _extract_delta_text(event)
             if delta:
@@ -360,6 +345,16 @@ def _event_to_dict(event: Any) -> dict[str, Any] | None:
 
 
 def _extract_delta_text_from_payload(payload: dict[str, Any]) -> str:
+    event_type = str(payload.get("type") or "")
+
+    # Responses API delta events.
+    if event_type in {"response.output_text.delta", "response.refusal.delta"}:
+        for key in ("delta", "text"):
+            text = _as_text(payload.get(key))
+            if text:
+                return text
+
+    # Partial adapters may not include `type`, keep a strict fallback.
     for key in ("delta", "text"):
         text = _as_text(payload.get(key))
         if text:
@@ -376,12 +371,6 @@ def _extract_delta_text_from_payload(payload: dict[str, Any]) -> str:
             text = _as_text(item)
             if text:
                 return text
-
-    for key in ("data", "item", "content", "content_part"):
-        nested = payload.get(key)
-        text = _as_text(nested)
-        if text:
-            return text
 
     return ""
 

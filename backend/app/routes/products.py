@@ -197,7 +197,12 @@ def suggest_product_duplicates_stream(payload: ProductDedupSuggestRequest, db: S
     return StreamingResponse(
         _sse_iter(events),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Pragma": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 
@@ -666,7 +671,7 @@ def _emit_progress(event_callback: Callable[[dict[str, Any]], None] | None, payl
 def _sse_iter(events: queue.Queue[tuple[str, dict[str, Any]] | None]):
     while True:
         try:
-            item = events.get(timeout=10)
+            item = events.get(timeout=2)
         except queue.Empty:
             yield ": keep-alive\n\n"
             continue

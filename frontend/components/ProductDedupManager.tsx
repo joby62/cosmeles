@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -35,6 +35,8 @@ export default function ProductDedupManager({
   const [streamRawText, setStreamRawText] = useState("");
   const [streamPrettyText, setStreamPrettyText] = useState("");
   const [progressHint, setProgressHint] = useState<string>("");
+  const streamQueueRef = useRef<string[]>([]);
+  const streamTimerRef = useRef<number | null>(null);
 
   const categoryStats = useMemo(() => {
     const map = new Map<string, number>();
@@ -56,6 +58,13 @@ export default function ProductDedupManager({
     return new Set((report?.suggestions || []).map((item) => item.keep_id));
   }, [report?.suggestions]);
 
+  useEffect(() => {
+    return () => {
+      stopRawTextDrainer();
+      streamQueueRef.current = [];
+    };
+  }, []);
+
   async function runDedupScan() {
     setScanning(true);
     setError(null);
@@ -65,6 +74,8 @@ export default function ProductDedupManager({
     setStreamRawText("");
     setStreamPrettyText("");
     setProgressHint("准备开始同品类两两分析...");
+    streamQueueRef.current = [];
+    stopRawTextDrainer();
 
     try {
       const maxScanProducts = Math.max(1, Math.min(500, initialProducts.length || 1));
@@ -99,9 +110,38 @@ export default function ProductDedupManager({
     const step = String(event.data.step || "");
     const delta = String(event.data.delta || "");
     const text = String(event.data.text || "");
-    if (delta) setStreamRawText((prev) => prev + delta);
-    if (text) setStreamRawText((prev) => prev + text);
+    if (delta) enqueueRawDelta(delta);
+    if (text) enqueueRawDelta(text);
     if (step) setProgressHint(formatProgressHint(event.data));
+  }
+
+  function enqueueRawDelta(chunk: string) {
+    const value = String(chunk || "");
+    if (!value) return;
+    streamQueueRef.current.push(value);
+    if (streamTimerRef.current != null) return;
+    streamTimerRef.current = window.setInterval(() => {
+      const queue = streamQueueRef.current;
+      if (queue.length === 0) {
+        stopRawTextDrainer();
+        return;
+      }
+      const head = queue[0];
+      if (!head) {
+        queue.shift();
+        return;
+      }
+      const nextChar = head[0];
+      queue[0] = head.slice(1);
+      if (!queue[0]) queue.shift();
+      setStreamRawText((prev) => prev + nextChar);
+    }, 16);
+  }
+
+  function stopRawTextDrainer() {
+    if (streamTimerRef.current == null) return;
+    window.clearInterval(streamTimerRef.current);
+    streamTimerRef.current = null;
   }
 
   function toggleRemove(productId: string, checked: boolean) {
