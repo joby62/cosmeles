@@ -1,5 +1,6 @@
 # backend/app/main.py
 import os
+import mimetypes
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,6 +15,10 @@ from app.routes.products import router as products_router
 from app.settings import settings
 
 app = FastAPI(title="Shampoo Picker API", version="0.1.0")
+
+# Ensure uncommon image mime types are recognized in both StaticFiles and data-url generation.
+mimetypes.add_type("image/heic", ".heic")
+mimetypes.add_type("image/heif", ".heif")
 
 # CORS
 origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]

@@ -65,7 +65,15 @@ async def ingest(
         content = await upload.read()
         if len(content) > settings.max_upload_bytes:
             raise HTTPException(status_code=413, detail=f"Image too large. Max {settings.max_upload_bytes} bytes.")
-        image_rel = save_image(product_id, upload.filename or "upload.jpg", content)
+        try:
+            image_rel = save_image(
+                product_id,
+                upload.filename or "upload.jpg",
+                content,
+                content_type=upload.content_type,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
 
     # 1) choose document source
     meta_raw = meta_json or payload_json
@@ -159,7 +167,15 @@ async def ingest_stage1(
     content = await upload.read()
     if len(content) > settings.max_upload_bytes:
         raise HTTPException(status_code=413, detail=f"Image too large. Max {settings.max_upload_bytes} bytes.")
-    image_rel = save_image(product_id, upload.filename or "upload.jpg", content)
+    try:
+        image_rel = save_image(
+            product_id,
+            upload.filename or "upload.jpg",
+            content,
+            content_type=upload.content_type,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
     try:
         stage1 = _analyze_with_doubao_stage1(image_rel, product_id)
@@ -251,7 +267,15 @@ async def ingest_stage1_stream(
 
     events: queue.Queue[tuple[str, dict[str, Any]] | None] = queue.Queue()
     trace_id = new_id()
-    image_rel = save_image(trace_id, upload.filename or "upload.jpg", content)
+    try:
+        image_rel = save_image(
+            trace_id,
+            upload.filename or "upload.jpg",
+            content,
+            content_type=upload.content_type,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
     def emit(event: str, payload: dict[str, Any]) -> None:
         events.put((event, payload))

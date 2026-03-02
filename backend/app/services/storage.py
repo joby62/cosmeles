@@ -6,6 +6,16 @@ from pathlib import Path
 from app.settings import settings
 from app.constants import ALLOWED_IMAGE_EXTS
 
+CONTENT_TYPE_TO_EXT = {
+    "image/jpeg": ".jpg",
+    "image/jpg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+    "image/heic": ".heic",
+    "image/heif": ".heif",
+}
+
 def now_iso():
     return datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -25,11 +35,17 @@ def _resolve_rel_path(rel_path: str) -> Path:
         raise ValueError("Invalid storage path.")
     return target
 
-def save_image(product_id: str, filename: str, content: bytes) -> str:
+def save_image(product_id: str, filename: str, content: bytes, content_type: str | None = None) -> str:
     ensure_dirs()
-    ext = os.path.splitext(filename)[1].lower() or ".jpg"
+    ext = os.path.splitext(filename)[1].lower().strip()
     if ext not in ALLOWED_IMAGE_EXTS:
-        ext = ".jpg"
+        inferred = CONTENT_TYPE_TO_EXT.get(str(content_type or "").lower().strip())
+        if inferred in ALLOWED_IMAGE_EXTS:
+            ext = inferred
+        else:
+            raise ValueError(
+                f"Unsupported image extension '{ext or '(empty)'}' and content_type '{content_type or '(empty)'}'."
+            )
     rel = f"images/{product_id}{ext}"
     abs_path = _resolve_rel_path(rel)
     with open(abs_path, "wb") as f:

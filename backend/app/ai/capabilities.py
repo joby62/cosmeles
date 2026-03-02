@@ -530,6 +530,11 @@ def _to_data_url(image_rel_path: str) -> str:
     except ValueError as e:
         raise AIServiceError(code="image_path_invalid", message=f"Invalid image path: {image_rel_path}.", http_status=400) from e
     mime, _ = mimetypes.guess_type(image_rel_path)
+    lower_path = image_rel_path.lower()
+    if not mime and lower_path.endswith(".heic"):
+        mime = "image/heic"
+    if not mime and lower_path.endswith(".heif"):
+        mime = "image/heif"
     mime = mime or "image/jpeg"
     b64 = base64.b64encode(data).decode("ascii")
     return f"data:{mime};base64,{b64}"

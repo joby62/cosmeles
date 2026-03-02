@@ -41,6 +41,38 @@ def test_stage1_saves_context_artifact(test_client, monkeypatch: pytest.MonkeyPa
     assert context["vision_model"] == "doubao-stage1-mini"
     assert "测试品牌" in context["vision_text"]
 
+def test_stage1_keeps_heic_extension_in_storage(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, storage_dir = test_client
+
+    def fake_stage1(image_rel: str, trace_id: str):
+        assert image_rel.endswith(".heic")
+        return {
+            "vision_text": "【品牌】测试品牌\n【产品名】测试产品",
+            "model": "doubao-stage1-mini",
+            "artifact": f"doubao_runs/{trace_id}/stage1_vision.json",
+        }
+
+    monkeypatch.setattr(ingest_routes, "_analyze_with_doubao_stage1", fake_stage1)
+
+    resp = client.post(
+        "/api/upload/stage1",
+        files={"image": ("IMG_4396.HEIC", b"fake-heic-bytes", "image/heic")},
+    )
+    assert resp.status_code == 200
+    trace_id = resp.json()["trace_id"]
+    image_path = storage_dir / "images" / f"{trace_id}.heic"
+    assert image_path.exists()
+
+
+def test_stage1_rejects_unsupported_extension_with_unknown_content_type(test_client):
+    client, _ = test_client
+    resp = client.post(
+        "/api/upload/stage1",
+        files={"image": ("sample.tiff", b"fake-tiff-bytes", "image/tiff")},
+    )
+    assert resp.status_code == 400
+    assert "Unsupported image extension" in resp.text
+
 
 def test_stage2_creates_product_and_exposes_in_products_api(test_client, monkeypatch: pytest.MonkeyPatch):
     client, _ = test_client

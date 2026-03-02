@@ -8,4 +8,4 @@ VALID_CATEGORIES = {
 
 VALID_SOURCES = {"manual", "doubao", "auto"}
 
-ALLOWED_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+ALLOWED_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".heic", ".heif"}
