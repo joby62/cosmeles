@@ -127,13 +127,27 @@ class DoubaoOpenAIClient:
                 on_text_delta(text)
             return payload
 
-        with stream_api(**body) as stream_obj:
-            for event in stream_obj:
-                delta = _extract_delta_text(event)
-                if delta and on_text_delta:
-                    on_text_delta(delta)
-            final_response = stream_obj.get_final_response()
-        return _serialize_response(final_response)
+        try:
+            with stream_api(**body) as stream_obj:
+                for event in stream_obj:
+                    delta = _extract_delta_text(event)
+                    if delta and on_text_delta:
+                        on_text_delta(delta)
+                final_response = stream_obj.get_final_response()
+            return _serialize_response(final_response)
+        except (APITimeoutError, APIConnectionError, APIStatusError):
+            # Keep original retry/error behavior handled in _responses.
+            raise
+        except Exception as e:
+            # SDK streaming occasionally throws internal errors for some multimodal payloads.
+            # Fallback to non-stream request to improve robustness.
+            response = self.client.responses.create(**body)
+            payload = _serialize_response(response)
+            payload["_stream_fallback_error"] = f"{type(e).__name__}: {str(e)}"
+            text = str(payload.get("output_text") or "").strip()
+            if text and on_text_delta:
+                on_text_delta(text)
+            return payload
 
 
 def _extract_status_error_detail(error: APIStatusError) -> str:
