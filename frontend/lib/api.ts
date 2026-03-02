@@ -289,6 +289,45 @@ export type AIMetricsSummary = {
   cost_coverage_rate: number;
 };
 
+export type MobileSelectionCategory = "shampoo" | "bodywash" | "conditioner" | "lotion" | "cleanser";
+
+export type MobileSelectionResolveRequest = {
+  category: MobileSelectionCategory;
+  answers: Record<string, string>;
+  reuse_existing?: boolean;
+};
+
+export type MobileSelectionChoice = {
+  key: string;
+  value: string;
+  label: string;
+};
+
+export type MobileSelectionRuleHit = {
+  rule: string;
+  effect: string;
+};
+
+export type MobileSelectionResolveResponse = {
+  status: string;
+  session_id: string;
+  reused: boolean;
+  category: MobileSelectionCategory;
+  rules_version: string;
+  route: {
+    key: string;
+    title: string;
+  };
+  choices: MobileSelectionChoice[];
+  rule_hits: MobileSelectionRuleHit[];
+  recommended_product: Product;
+  links: {
+    product: string;
+    wiki: string;
+  };
+  created_at: string;
+};
+
 function getBaseForFetch(): string {
   // 在浏览器里优先直连后端，避免 /api 重写层在 multipart 上传时吞掉真实错误。
   if (typeof window !== "undefined") {
@@ -507,6 +546,33 @@ export async function fetchAIMetricsSummary(params?: {
   const query = search.toString();
   const path = query ? `/api/ai/metrics/summary?${query}` : "/api/ai/metrics/summary";
   return apiFetch<AIMetricsSummary>(path);
+}
+
+export async function resolveMobileSelection(
+  payload: MobileSelectionResolveRequest,
+): Promise<MobileSelectionResolveResponse> {
+  return apiFetch<MobileSelectionResolveResponse>("/api/mobile/selection/resolve", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchMobileSelectionSession(sessionId: string): Promise<MobileSelectionResolveResponse> {
+  return apiFetch<MobileSelectionResolveResponse>(`/api/mobile/selection/sessions/${encodeURIComponent(sessionId)}`);
+}
+
+export async function listMobileSelectionSessions(params?: {
+  category?: MobileSelectionCategory;
+  offset?: number;
+  limit?: number;
+}): Promise<MobileSelectionResolveResponse[]> {
+  const search = new URLSearchParams();
+  if (params?.category) search.set("category", params.category);
+  if (typeof params?.offset === "number") search.set("offset", String(params.offset));
+  if (typeof params?.limit === "number") search.set("limit", String(params.limit));
+  const query = search.toString();
+  const path = query ? `/api/mobile/selection/sessions?${query}` : "/api/mobile/selection/sessions";
+  return apiFetch<MobileSelectionResolveResponse[]>(path);
 }
 
 function normalizePublicImagePath(path: string): string {

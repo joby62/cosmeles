@@ -306,3 +306,44 @@ class AIMetricsSummaryView(BaseModel):
     avg_task_cost: Optional[float] = None
     priced_runs: int
     cost_coverage_rate: float
+
+
+class MobileSelectionResolveRequest(BaseModel):
+    category: str
+    answers: dict[str, str] = Field(default_factory=dict)
+    reuse_existing: bool = True
+
+
+class MobileSelectionChoice(BaseModel):
+    key: str
+    value: str
+    label: str
+
+
+class MobileSelectionRuleHit(BaseModel):
+    rule: str
+    effect: str
+
+
+class MobileSelectionRoute(BaseModel):
+    key: str
+    title: str
+
+
+class MobileSelectionLinks(BaseModel):
+    product: str
+    wiki: str
+
+
+class MobileSelectionResolveResponse(BaseModel):
+    status: str
+    session_id: str
+    reused: bool = False
+    category: str
+    rules_version: str
+    route: MobileSelectionRoute
+    choices: List[MobileSelectionChoice] = []
+    rule_hits: List[MobileSelectionRuleHit] = []
+    recommended_product: ProductCard
+    links: MobileSelectionLinks
+    created_at: str
