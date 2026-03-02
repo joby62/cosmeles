@@ -8,6 +8,7 @@ from sqlalchemy import text
 
 from app.db.init_db import init_db
 from app.db.session import engine
+from app.routes.ai import router as ai_router
 from app.routes.ingest import router as ingest_router
 from app.routes.products import router as products_router
 from app.settings import settings
@@ -34,6 +35,7 @@ def _startup_init_db() -> None:
 # routes
 app.include_router(ingest_router)
 app.include_router(products_router)
+app.include_router(ai_router)
 
 @app.get("/healthz")
 def healthz():

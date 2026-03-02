@@ -1,4 +1,4 @@
-from typing import List, Optional, Literal
+from typing import Any, List, Optional, Literal
 from pydantic import BaseModel, Field
 
 RiskLevel = Literal["low", "mid", "high"]
@@ -65,3 +65,45 @@ class ProductListResponse(BaseModel):
 class CategoryCount(BaseModel):
     category: str
     count: int
+
+
+class AIJobCreateRequest(BaseModel):
+    capability: str
+    input: dict[str, Any] = Field(default_factory=dict)
+    trace_id: Optional[str] = None
+    run_immediately: bool = True
+
+
+class AIJobView(BaseModel):
+    id: str
+    capability: str
+    status: str
+    trace_id: Optional[str] = None
+    input: dict[str, Any]
+    output: Optional[dict[str, Any]] = None
+    prompt_key: Optional[str] = None
+    prompt_version: Optional[str] = None
+    model: Optional[str] = None
+    error_code: Optional[str] = None
+    error_http_status: Optional[int] = None
+    error_message: Optional[str] = None
+    created_at: str
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+
+
+class AIRunView(BaseModel):
+    id: str
+    job_id: str
+    capability: str
+    status: str
+    prompt_key: Optional[str] = None
+    prompt_version: Optional[str] = None
+    model: Optional[str] = None
+    request: dict[str, Any]
+    response: Optional[dict[str, Any]] = None
+    latency_ms: Optional[int] = None
+    error_code: Optional[str] = None
+    error_http_status: Optional[int] = None
+    error_message: Optional[str] = None
+    created_at: str

@@ -13,6 +13,7 @@ def init_db() -> None:
     os.makedirs(settings.storage_dir, exist_ok=True)
     os.makedirs(os.path.join(settings.storage_dir, "images"), exist_ok=True)
     os.makedirs(os.path.join(settings.storage_dir, "products"), exist_ok=True)
+    os.makedirs(os.path.join(settings.storage_dir, "doubao_runs"), exist_ok=True)
 
     # Create tables if not exist
     Base.metadata.create_all(bind=engine)

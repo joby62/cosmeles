@@ -4,6 +4,7 @@ from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException, Q
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
+from app.ai.errors import AIServiceError
 from app.constants import VALID_CATEGORIES, VALID_SOURCES
 from app.db.session import get_db
 from app.db.models import ProductIndex
@@ -282,8 +283,8 @@ def _analyze_with_doubao(image_rel: str, trace_id: str) -> dict[str, Any]:
     client = DoubaoPipelineService()
     try:
         return client.analyze(image_rel, trace_id=trace_id)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"Doubao configuration/response error: {e}") from e
+    except AIServiceError as e:
+        raise HTTPException(status_code=e.http_status, detail=e.message) from e
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Doubao request failed: {e}") from e
 
@@ -292,8 +293,8 @@ def _analyze_with_doubao_stage1(image_rel: str, trace_id: str) -> dict[str, Any]
     client = DoubaoPipelineService()
     try:
         return client.analyze_stage1(image_rel, trace_id=trace_id)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"Doubao configuration/response error: {e}") from e
+    except AIServiceError as e:
+        raise HTTPException(status_code=e.http_status, detail=e.message) from e
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Doubao request failed: {e}") from e
 
@@ -304,8 +305,8 @@ def _analyze_with_doubao_stage2(vision_text: str, trace_id: str) -> dict[str, An
     client = DoubaoPipelineService()
     try:
         return client.analyze_stage2(vision_text, trace_id=trace_id)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"Doubao configuration/response error: {e}") from e
+    except AIServiceError as e:
+        raise HTTPException(status_code=e.http_status, detail=e.message) from e
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Doubao request failed: {e}") from e
 
