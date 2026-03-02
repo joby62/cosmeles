@@ -23,7 +23,6 @@ function getSectionLabel(pathname: string | null): string {
 export default function MobileTopBar() {
   const pathname = usePathname();
   const section = getSectionLabel(pathname);
-  const darkMode = Boolean(pathname?.startsWith("/m/wiki"));
   const logoCandidates = [
     "/brand/logo.svg?v=20260226",
     "/brand/logo.png?v=20260226",
@@ -34,19 +33,11 @@ export default function MobileTopBar() {
   const [logoHidden, setLogoHidden] = useState(false);
 
   return (
-    <div
-      className={`h-12 backdrop-blur ${
-        darkMode
-          ? "border-b border-white/10 bg-[#0b0d12]/88 supports-[backdrop-filter]:bg-[#0b0d12]/72"
-          : "bg-[color:var(--bg)]/88 supports-[backdrop-filter]:bg-[color:var(--bg)]/75"
-      }`}
-    >
+    <div className="h-12 border-b border-[color:var(--m-topbar-border)] bg-[color:var(--m-topbar-bg)] backdrop-blur supports-[backdrop-filter]:bg-[color:var(--m-topbar-bg-strong)]">
       <div className="mx-auto flex h-12 max-w-[680px] items-center justify-between px-4">
         <Link
           href="/m"
-          className={`inline-flex items-center gap-0.5 rounded-full px-1 py-0.5 ${
-            darkMode ? "active:bg-white/[0.08]" : "active:bg-black/[0.03]"
-          }`}
+          className="inline-flex items-center gap-0.5 rounded-full px-1 py-0.5 active:bg-[color:var(--m-press)]"
         >
           {!logoHidden ? (
             <Image
@@ -65,10 +56,12 @@ export default function MobileTopBar() {
               }}
             />
           ) : null}
-          <span className={`text-[11px] leading-none ${darkMode ? "text-white/35" : "text-black/36"}`}>·</span>
-          <span className={`text-[14px] font-semibold tracking-[0.005em] ${darkMode ? "text-white/90" : "text-black/88"}`}>{section}</span>
+          <span className="text-[11px] leading-none text-[color:var(--m-topbar-dot)]">·</span>
+          <span className="text-[14px] font-semibold tracking-[0.005em] text-[color:var(--m-topbar-text)]">{section}</span>
         </Link>
-        <div className={`hidden text-[12px] min-[430px]:block ${darkMode ? "text-white/52" : "text-black/45"}`}>省下挑花眼的时间，只留最合适的一件。</div>
+        <p className="max-w-[56vw] truncate text-right text-[11px] leading-none text-[color:var(--m-topbar-sub)] min-[430px]:text-[12px]">
+          省下挑花眼的时间，只留最合适的一件。
+        </p>
       </div>
     </div>
   );

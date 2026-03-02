@@ -133,7 +133,7 @@ export default function MobileWikiPage() {
   const featuredName = useMemo(() => (featured ? splitIngredientName(featured.ingredient_name) : null), [featured]);
 
   return (
-    <section className="-mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[#090c12] px-4 pb-36 pt-4 text-white">
+    <section className="m-wiki-page -mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[color:var(--m-wiki-canvas)] px-4 pb-36 pt-4 text-white">
       <div className="rounded-[24px] border border-white/10 bg-white/[0.04] p-3 shadow-[0_18px_42px_rgba(0,0,0,0.34)] backdrop-blur-xl">
         <form
           onSubmit={(e) => {

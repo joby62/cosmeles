@@ -139,7 +139,7 @@ export default async function WikiCategoryPage({
   });
 
   return (
-    <section className="-mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[#090c12] px-4 pb-36 pt-4 text-white">
+    <section className="m-wiki-page -mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[color:var(--m-wiki-canvas)] px-4 pb-36 pt-4 text-white">
       <div className="mb-4">
         <p className="text-[13px] font-medium text-[#4ea0ff]">成份百科</p>
         <h1 className="mt-1 text-[34px] leading-[1.08] font-semibold tracking-[-0.03em]">{current.label}</h1>

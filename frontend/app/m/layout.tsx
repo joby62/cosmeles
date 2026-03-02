@@ -9,7 +9,7 @@ export const metadata = {
 
 export default function MobileLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-dvh bg-[color:var(--bg)] text-black">
+    <div className="m-shell min-h-dvh bg-[color:var(--m-bg)] text-[color:var(--m-text)]">
       <header className="sticky top-0 z-50">
         <MobileTopBar />
       </header>

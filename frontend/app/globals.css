@@ -269,3 +269,104 @@ html[data-nav-open="1"] #app-main{
 .slogan-breathe{
   animation: matchupBreathe 4.8s ease-in-out infinite;
 }
+
+/* =========================
+   Mobile Theme (Follow System)
+   ========================= */
+.m-shell{
+  --m-bg: #f5f5f7;
+  --m-text: #1d1d1f;
+
+  --m-topbar-bg: rgba(245,245,247,0.88);
+  --m-topbar-bg-strong: rgba(245,245,247,0.75);
+  --m-topbar-border: rgba(0,0,0,0.08);
+  --m-topbar-text: rgba(17,17,21,0.9);
+  --m-topbar-sub: rgba(0,0,0,0.48);
+  --m-topbar-dot: rgba(0,0,0,0.36);
+  --m-press: rgba(0,0,0,0.04);
+
+  --m-nav-bg: rgba(255,255,255,0.78);
+  --m-nav-border: rgba(255,255,255,0.55);
+  --m-nav-text: rgba(0,0,0,0.66);
+  --m-nav-text-strong: rgba(0,0,0,0.8);
+  --m-nav-item-active-bg: rgba(0,0,0,0.05);
+  --m-nav-active-bg: rgba(0,113,227,0.16);
+  --m-nav-active-text: #0071e3;
+
+  --m-wiki-canvas: #f2f5fa;
+  --m-wiki-text-strong: rgba(17,24,39,0.94);
+  --m-wiki-text-mid: rgba(36,48,71,0.76);
+  --m-wiki-text-soft: rgba(66,81,109,0.58);
+  --m-wiki-border: rgba(17,24,39,0.12);
+  --m-wiki-frost: rgba(255,255,255,0.66);
+  --m-wiki-elev: rgba(17,24,39,0.05);
+  --m-wiki-card-solid: rgba(255,255,255,0.78);
+  --m-wiki-sheet-bg: rgba(247,250,255,0.96);
+  --m-wiki-mask: rgba(9,14,24,0.36);
+}
+
+@media (prefers-color-scheme: dark) {
+  .m-shell{
+    --m-bg: #0b0d13;
+    --m-text: #f3f6ff;
+
+    --m-topbar-bg: rgba(11,13,18,0.88);
+    --m-topbar-bg-strong: rgba(11,13,18,0.72);
+    --m-topbar-border: rgba(255,255,255,0.1);
+    --m-topbar-text: rgba(255,255,255,0.9);
+    --m-topbar-sub: rgba(255,255,255,0.58);
+    --m-topbar-dot: rgba(255,255,255,0.38);
+    --m-press: rgba(255,255,255,0.1);
+
+    --m-nav-bg: rgba(30,37,54,0.58);
+    --m-nav-border: rgba(255,255,255,0.18);
+    --m-nav-text: rgba(255,255,255,0.76);
+    --m-nav-text-strong: rgba(255,255,255,0.84);
+    --m-nav-item-active-bg: rgba(255,255,255,0.1);
+    --m-nav-active-bg: rgba(114,182,255,0.24);
+    --m-nav-active-text: #72b6ff;
+
+    --m-wiki-canvas: #090c12;
+    --m-wiki-text-strong: rgba(255,255,255,0.94);
+    --m-wiki-text-mid: rgba(255,255,255,0.76);
+    --m-wiki-text-soft: rgba(255,255,255,0.56);
+    --m-wiki-border: rgba(255,255,255,0.12);
+    --m-wiki-frost: rgba(255,255,255,0.05);
+    --m-wiki-elev: rgba(255,255,255,0.09);
+    --m-wiki-card-solid: #111623;
+    --m-wiki-sheet-bg: rgba(17,24,38,0.96);
+    --m-wiki-mask: rgba(5,7,13,0.78);
+  }
+}
+
+/* Light-coded mobile pages: remap black tokens in dark mode */
+@media (prefers-color-scheme: dark) {
+  .m-shell .text-black { color: rgba(243,246,255,0.94) !important; }
+  .m-shell [class*="text-black/9"] { color: rgba(243,246,255,0.94) !important; }
+  .m-shell [class*="text-black/8"] { color: rgba(238,243,255,0.88) !important; }
+  .m-shell [class*="text-black/7"] { color: rgba(228,235,250,0.78) !important; }
+  .m-shell [class*="text-black/6"] { color: rgba(216,225,242,0.68) !important; }
+  .m-shell [class*="text-black/5"] { color: rgba(199,209,229,0.58) !important; }
+  .m-shell [class*="text-black/4"] { color: rgba(183,194,217,0.48) !important; }
+
+  .m-shell [class*="border-black/"] { border-color: rgba(255,255,255,0.16) !important; }
+  .m-shell [class*="bg-black/"] { background-color: rgba(255,255,255,0.1) !important; }
+  .m-shell [class*="bg-white/"] { background-color: rgba(255,255,255,0.08) !important; }
+  .m-shell .bg-white { background-color: rgba(22,28,41,0.9) !important; }
+}
+
+/* Wiki pages: keep same layout, but remap neutral colors by system theme */
+.m-shell .m-wiki-page .text-white { color: var(--m-wiki-text-strong) !important; }
+.m-shell .m-wiki-page [class*="text-white/9"],
+.m-shell .m-wiki-page [class*="text-white/8"] { color: var(--m-wiki-text-strong) !important; }
+.m-shell .m-wiki-page [class*="text-white/7"],
+.m-shell .m-wiki-page [class*="text-white/6"] { color: var(--m-wiki-text-mid) !important; }
+.m-shell .m-wiki-page [class*="text-white/5"],
+.m-shell .m-wiki-page [class*="text-white/4"],
+.m-shell .m-wiki-page [class*="text-white/3"] { color: var(--m-wiki-text-soft) !important; }
+.m-shell .m-wiki-page [class*="border-white/"] { border-color: var(--m-wiki-border) !important; }
+.m-shell .m-wiki-page [class*="bg-white/"] { background-color: var(--m-wiki-frost) !important; }
+.m-shell .m-wiki-page [class*="bg-black/"] { background-color: var(--m-wiki-elev) !important; }
+.m-shell .m-wiki-page [class*="bg-[#111623]"] { background-color: var(--m-wiki-card-solid) !important; }
+.m-shell .m-wiki-page [class*="bg-[#111826]"] { background-color: var(--m-wiki-sheet-bg) !important; }
+.m-shell .m-wiki-page [class*="bg-[#05070d]"] { background-color: var(--m-wiki-mask) !important; }

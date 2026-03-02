@@ -236,7 +236,7 @@ export default async function IngredientDetailPage({
   const restSamples = item.source_samples.slice(1, 5);
 
   return (
-    <section className="-mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[#090c12] pb-40 pt-4 text-white">
+    <section className="m-wiki-page -mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[color:var(--m-wiki-canvas)] pb-40 pt-4 text-white">
       <div className="px-4">
         <Link
           href="/m/wiki"
