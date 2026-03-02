@@ -85,6 +85,10 @@ type NameParts = {
   sub: string | null;
 };
 
+function normalizeLine(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
 function splitIngredientName(raw: string): NameParts {
   const text = raw.trim();
   const idx = text.indexOf("(");
@@ -95,6 +99,13 @@ function splitIngredientName(raw: string): NameParts {
     main: text.slice(0, idx).trim(),
     sub: text.slice(idx).trim() || null,
   };
+}
+
+function summaryFocus(summary: string | null | undefined): string {
+  const text = normalizeLine(summary || "");
+  if (!text) return "暂无关键结论";
+  const first = text.split(/[。！？!?.]/).map((part) => part.trim()).find(Boolean) || text;
+  return first.length > 24 ? `${first.slice(0, 23)}…` : first;
 }
 
 function queryValue(v: string | string[] | undefined): string | undefined {
@@ -205,7 +216,8 @@ export default async function WikiCategoryPage({
               </div>
 
               <div className="px-4 py-3">
-                <p className="line-clamp-2 text-[15px] leading-[1.5] text-white/80">{item.summary || "该成分暂无 AI 摘要，请检查成分库构建流程。"}</p>
+                <p className="text-[11px] font-medium tracking-[0.04em] text-white/54">一句话重点</p>
+                <p className="mt-1 line-clamp-1 text-[15px] font-semibold text-white/88">{summaryFocus(item.summary)}</p>
                 <p className="mt-1.5 text-[12px] text-white/56">来源样本 {item.source_count} 条</p>
               </div>
             </Link>

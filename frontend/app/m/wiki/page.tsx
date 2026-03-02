@@ -50,6 +50,10 @@ type NameParts = {
   sub: string | null;
 };
 
+function normalizeLine(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
 function splitIngredientName(raw: string): NameParts {
   const text = raw.trim();
   const idx = text.indexOf("(");
@@ -66,6 +70,13 @@ function featuredTitleClass(length: number): string {
   if (length > 56) return "text-[32px] leading-[1.06]";
   if (length > 34) return "text-[36px] leading-[1.04]";
   return "text-[42px] leading-[1.02]";
+}
+
+function summaryFocus(summary: string | null | undefined): string {
+  const text = normalizeLine(summary || "");
+  if (!text) return "暂无关键结论";
+  const first = text.split(/[。！？!?.]/).map((part) => part.trim()).find(Boolean) || text;
+  return first.length > 24 ? `${first.slice(0, 23)}…` : first;
 }
 
 function SearchIcon({ className = "h-5 w-5" }: { className?: string }) {
@@ -232,7 +243,8 @@ export default function MobileWikiPage() {
 
             <div className="flex items-center gap-3 border-t border-white/10 bg-black/34 px-4 py-3 backdrop-blur-2xl">
               <div className="min-w-0 flex-1">
-                <p className="line-clamp-2 text-[15px] leading-[1.45] text-white/86">{featured.summary || "该成分暂无 AI 摘要，请检查成分库构建流程。"}</p>
+                <p className="text-[11px] font-medium tracking-[0.04em] text-white/55">一句话重点</p>
+                <p className="mt-1 line-clamp-1 text-[15px] font-semibold text-white/90">{summaryFocus(featured.summary)}</p>
                 <p className="mt-1 text-[12px] text-white/60">来源样本 {featured.source_count} 条</p>
               </div>
               <span className="inline-flex h-10 items-center rounded-full bg-white/18 px-4 text-[18px] font-semibold text-white">查看</span>
@@ -269,7 +281,8 @@ export default function MobileWikiPage() {
               </div>
 
               <div className="px-4 py-3">
-                <p className="line-clamp-2 text-[15px] leading-[1.5] text-white/80">{item.summary || "该成分暂无 AI 摘要，请检查成分库构建流程。"}</p>
+                <p className="text-[11px] font-medium tracking-[0.04em] text-white/54">一句话重点</p>
+                <p className="mt-1 line-clamp-1 text-[15px] font-semibold text-white/88">{summaryFocus(item.summary)}</p>
                 <p className="mt-1.5 text-[12px] text-white/56">来源样本 {item.source_count} 条</p>
               </div>
             </Link>
