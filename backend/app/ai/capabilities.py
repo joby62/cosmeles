@@ -84,7 +84,7 @@ def _cap_stage1_vision(input_payload: dict[str, Any], trace_id: str | None) -> C
             response_payload={"mode": "sample"},
         )
 
-    sdk, vision_model, _ = _build_sdk_and_models()
+    sdk, vision_model, _, _ = _build_sdk_and_models()
     image_data_url = _to_data_url(image_path)
     response_raw = _safe_sdk_call(lambda: sdk.chat_with_image(image_data_url, prompt.text, model=vision_model))
     vision_text = _extract_content(response_raw)
@@ -130,7 +130,7 @@ def _cap_stage2_struct(input_payload: dict[str, Any], trace_id: str | None) -> C
             response_payload={"mode": "sample"},
         )
 
-    sdk, _, struct_model = _build_sdk_and_models()
+    sdk, _, struct_model, _ = _build_sdk_and_models()
     response_raw = _safe_sdk_call(lambda: sdk.chat_with_text(rendered_prompt, model=struct_model))
     struct_text = _extract_content(response_raw)
     struct_doc = _extract_json_object(struct_text)
@@ -194,7 +194,7 @@ def _cap_ingredient_enrich(input_payload: dict[str, Any], trace_id: str | None) 
             response_payload={"mode": "sample"},
         )
 
-    sdk, _, text_model = _build_sdk_and_models()
+    sdk, _, _, text_model = _build_sdk_and_models()
     response_raw = _safe_sdk_call(lambda: sdk.chat_with_text(rendered_prompt, model=text_model))
     text = _extract_content(response_raw)
     artifact = _maybe_save_artifact(trace_id, "ingredient_enrich", {"model": text_model, "prompt": rendered_prompt, "response": response_raw, "text": text})
@@ -236,7 +236,7 @@ def _cap_image_json_consistency(input_payload: dict[str, Any], trace_id: str | N
             response_payload={"mode": "sample"},
         )
 
-    sdk, _, text_model = _build_sdk_and_models()
+    sdk, _, _, text_model = _build_sdk_and_models()
     response_raw = _safe_sdk_call(lambda: sdk.chat_with_text(rendered_prompt, model=text_model))
     text = _extract_content(response_raw)
     artifact = _maybe_save_artifact(trace_id, "image_json_consistency", {"model": text_model, "prompt": rendered_prompt, "response": response_raw, "text": text})
@@ -283,7 +283,7 @@ def _cap_product_dedup_decision(input_payload: dict[str, Any], trace_id: str | N
             response_payload={"mode": "sample"},
         )
 
-    sdk, _, text_model = _build_sdk_and_models()
+    sdk, _, _, text_model = _build_sdk_and_models()
     response_raw = _safe_sdk_call(lambda: sdk.chat_with_text(rendered_prompt, model=text_model))
     text = _extract_content(response_raw)
     artifact = _maybe_save_artifact(trace_id, "product_dedup_decision", {"model": text_model, "prompt": rendered_prompt, "response": response_raw, "text": text})
@@ -301,7 +301,7 @@ def _is_sample_mode() -> bool:
     return settings.doubao_mode.lower().strip() in {"mock", "sample"}
 
 
-def _build_sdk_and_models() -> tuple[DoubaoOpenAIClient, str, str]:
+def _build_sdk_and_models() -> tuple[DoubaoOpenAIClient, str, str, str]:
     mode = settings.doubao_mode.lower().strip()
     if mode != "real":
         raise AIServiceError(
@@ -321,13 +321,15 @@ def _build_sdk_and_models() -> tuple[DoubaoOpenAIClient, str, str]:
     endpoint = settings.doubao_endpoint or "https://ark.cn-beijing.volces.com/api/v3"
     vision_model = settings.doubao_vision_model or settings.doubao_model or "doubao-seed-2-0-mini-260215"
     struct_model = settings.doubao_struct_model or settings.doubao_model or vision_model
+    pro_model = settings.doubao_pro_model or "doubao-seed-2-0-pro-260215"
+    advanced_text_model = settings.doubao_advanced_text_model or pro_model or struct_model
     sdk = DoubaoOpenAIClient(
         api_key=api_key,
         endpoint=endpoint,
         model=vision_model,
         timeout=settings.doubao_timeout_seconds,
     )
-    return sdk, vision_model, struct_model
+    return sdk, vision_model, struct_model, advanced_text_model
 
 
 def _safe_sdk_call(callable_fn):

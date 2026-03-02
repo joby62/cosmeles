@@ -27,11 +27,21 @@ class Settings(BaseSettings):
     doubao_model: str = "doubao-seed-2-0-mini-260215"  # legacy fallback
     doubao_vision_model: str = "doubao-seed-2-0-mini-260215"
     doubao_struct_model: str = "doubao-seed-2-0-mini-260215"
+    # 高级文本能力默认走 pro（可按环境变量覆盖）
+    doubao_pro_model: str = "doubao-seed-2-0-pro-260215"
+    doubao_advanced_text_model: str = ""
     doubao_timeout_seconds: int = 60
     doubao_artifact_ttl_days: int = 14
     # 任务成本估算（可选）：
     # AI_COST_PER_RUN_BY_MODEL_JSON='{"doubao-seed-2-0-mini-260215":0.004}'
     ai_cost_per_run_by_model_json: str = ""
+    # 按模型 token 单价估算（元 / 百万 tokens）
+    # AI_MODEL_PRICING_PER_MTOKEN_JSON='{"doubao-seed-2-0-pro-260215":{"input":3.2,"output":16,"cache_hit":0.64}}'
+    ai_model_pricing_per_mtoken_json: str = (
+        '{"doubao-seed-2-0-pro-260215":{"input":3.2,"output":16,"cache_hit":0.64},'
+        '"doubao-seed-2-0-lite-260215":{"input":0.6,"output":3.6,"cache_hit":0.12},'
+        '"doubao-seed-2-0-mini-260215":{"input":0.2,"output":2.0,"cache_hit":0.04}}'
+    )
 
     # === 上传安全边界 ===
     max_upload_bytes: int = 8 * 1024 * 1024  # 8MB

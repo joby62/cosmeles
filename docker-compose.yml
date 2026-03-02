@@ -4,6 +4,9 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     restart: unless-stopped
+    environment:
+      DOUBAO_PRO_MODEL: doubao-seed-2-0-pro-260215
+      AI_MODEL_PRICING_PER_MTOKEN_JSON: '{"doubao-seed-2-0-pro-260215":{"input":3.2,"output":16,"cache_hit":0.64},"doubao-seed-2-0-lite-260215":{"input":0.6,"output":3.6,"cache_hit":0.12},"doubao-seed-2-0-mini-260215":{"input":0.2,"output":2.0,"cache_hit":0.04}}'
     volumes:
       - ./backend/storage:/app/storage
     expose:

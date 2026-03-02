@@ -150,14 +150,15 @@ class AIOrchestrator:
         p95_latency_ms = latencies[max(0, (len(latencies) * 95 + 99) // 100 - 1)] if latencies else None
 
         model_costs = _load_model_costs()
+        model_token_pricing = _load_model_token_pricing()
         priced_runs = 0
         total_estimated_cost = 0.0
         for run in runs:
-            model = (run.model or "").strip()
-            if not model or model not in model_costs:
+            estimated = _estimate_run_cost(run, model_token_pricing=model_token_pricing, model_costs=model_costs)
+            if estimated is None:
                 continue
             priced_runs += 1
-            total_estimated_cost += model_costs[model]
+            total_estimated_cost += estimated
 
         return {
             "capability": capability,
@@ -301,3 +302,132 @@ def _load_model_costs() -> dict[str, float]:
             )
         out[model] = cost
     return out
+
+
+def _load_model_token_pricing() -> dict[str, dict[str, float]]:
+    raw = (settings.ai_model_pricing_per_mtoken_json or "").strip()
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise AIServiceError(
+            code="ai_cost_config_invalid",
+            message="AI_MODEL_PRICING_PER_MTOKEN_JSON must be valid JSON object.",
+            http_status=500,
+        ) from e
+    if not isinstance(parsed, dict):
+        raise AIServiceError(
+            code="ai_cost_config_invalid",
+            message="AI_MODEL_PRICING_PER_MTOKEN_JSON must be a JSON object.",
+            http_status=500,
+        )
+
+    out: dict[str, dict[str, float]] = {}
+    for key, value in parsed.items():
+        model = str(key).strip()
+        if not model:
+            continue
+        if not isinstance(value, dict):
+            raise AIServiceError(
+                code="ai_cost_config_invalid",
+                message=f"Pricing for model '{model}' must be an object.",
+                http_status=500,
+            )
+        input_price = _to_non_negative_float(value.get("input"), f"{model}.input")
+        output_price = _to_non_negative_float(value.get("output"), f"{model}.output")
+        cache_hit_price = _to_non_negative_float(value.get("cache_hit", 0), f"{model}.cache_hit")
+        out[model] = {"input": input_price, "output": output_price, "cache_hit": cache_hit_price}
+    return out
+
+
+def _estimate_run_cost(
+    run: AIRun,
+    model_token_pricing: dict[str, dict[str, float]],
+    model_costs: dict[str, float],
+) -> float | None:
+    model = (run.model or "").strip()
+    if not model:
+        return None
+
+    pricing = model_token_pricing.get(model)
+    if pricing:
+        usage = _extract_usage_from_response(run.response_json)
+        if usage is not None:
+            input_tokens = usage.get("input_tokens", 0.0)
+            output_tokens = usage.get("output_tokens", 0.0)
+            cached_tokens = usage.get("cached_tokens", 0.0)
+            billable_input_tokens = max(input_tokens - cached_tokens, 0.0)
+            return (
+                (billable_input_tokens / 1_000_000.0) * pricing["input"]
+                + (output_tokens / 1_000_000.0) * pricing["output"]
+                + (cached_tokens / 1_000_000.0) * pricing["cache_hit"]
+            )
+
+    if model in model_costs:
+        return model_costs[model]
+    return None
+
+
+def _extract_usage_from_response(response_json: str | None) -> dict[str, float] | None:
+    if not response_json:
+        return None
+    try:
+        payload = json.loads(response_json)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    usage = payload.get("usage")
+    if not isinstance(usage, dict):
+        return None
+
+    input_tokens = _as_float(usage.get("input_tokens"))
+    if input_tokens is None:
+        input_tokens = _as_float(usage.get("prompt_tokens"))
+    output_tokens = _as_float(usage.get("output_tokens"))
+    if output_tokens is None:
+        output_tokens = _as_float(usage.get("completion_tokens"))
+
+    cached_tokens = _as_float(usage.get("input_cached_tokens"))
+    if cached_tokens is None:
+        cached_tokens = _as_float(usage.get("cache_read_input_tokens"))
+    if cached_tokens is None:
+        details = usage.get("input_tokens_details")
+        if isinstance(details, dict):
+            cached_tokens = _as_float(details.get("cached_tokens"))
+
+    if input_tokens is None and output_tokens is None and cached_tokens is None:
+        return None
+    return {
+        "input_tokens": max(input_tokens or 0.0, 0.0),
+        "output_tokens": max(output_tokens or 0.0, 0.0),
+        "cached_tokens": max(cached_tokens or 0.0, 0.0),
+    }
+
+
+def _as_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _to_non_negative_float(value: Any, key: str) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as e:
+        raise AIServiceError(
+            code="ai_cost_config_invalid",
+            message=f"Invalid numeric value for '{key}'.",
+            http_status=500,
+        ) from e
+    if number < 0:
+        raise AIServiceError(
+            code="ai_cost_config_invalid",
+            message=f"Value must be non-negative for '{key}'.",
+            http_status=500,
+        )
+    return number

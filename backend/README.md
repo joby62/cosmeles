@@ -3,7 +3,8 @@
 ## 当前后端能力（完整清单）
 - 健康检查与就绪检查（`/healthz`, `/readyz`）
 - 产品上传入库（图片、JSON、豆包分析模式）
-- 豆包双阶段识别（mini 图像识别 -> mini 结构化 JSON）
+- 豆包双阶段识别（默认 mini 图像识别 -> mini 结构化 JSON）
+- 豆包高级文本能力（默认 pro：成分解释/图文一致性/重合检测）
 - 产品列表查询（支持分类/关键词/分页）
 - 产品详情读取（返回完整产品 JSON）
 - 产品编辑（分类、品牌、名称、一句话、标签）
@@ -100,8 +101,10 @@ sample_data/             示例数据
     - 最大文件大小：`MAX_UPLOAD_BYTES`（默认 8MB）
     - Doubao 图片格式建议：`jpg/png/webp/gif`（`heic/heif` 不支持）
   - Doubao 双阶段（`source=doubao`）：
-    - Stage-1 (vision): `doubao-seed-2-0-mini-260215` 读取图片，提取包装文字/成分原文
-    - Stage-2 (struct): `doubao-seed-2-0-mini-260215` 输入 stage-1 文本，严格输出 JSON
+    - Stage-1 (vision): 默认 `doubao-seed-2-0-mini-260215`，读取图片提取包装文字/成分原文
+    - Stage-2 (struct): 默认 `doubao-seed-2-0-mini-260215`，输入 stage-1 文本输出 JSON
+  - Doubao 高级文本能力：
+    - 默认 `doubao-seed-2-0-pro-260215`（成分解释、图文一致性、产品重合检测）
   - 本地落盘：
     - `storage/doubao_runs/{product_id}/stage1_vision.json`
     - `storage/doubao_runs/{product_id}/stage2_struct.json`
@@ -134,9 +137,13 @@ sample_data/             示例数据
 - `DOUBAO_MODE`：`real | sample/mock`（默认 `real`）
 - `ARK_API_KEY` / `DOUBAO_API_KEY` / `DOUBAO_ENDPOINT` / `DOUBAO_MODEL`
 - `DOUBAO_VISION_MODEL`：第一阶段图像识别模型（默认 mini）
-- `DOUBAO_STRUCT_MODEL`：第二阶段结构化模型（当前实现与第一阶段一致，默认 mini）
+- `DOUBAO_STRUCT_MODEL`：第二阶段结构化模型（默认 mini）
+- `DOUBAO_PRO_MODEL`：高级文本能力默认模型（默认 pro）
+- `DOUBAO_ADVANCED_TEXT_MODEL`：显式覆盖高级文本能力模型（留空则回落 `DOUBAO_PRO_MODEL`）
 - `DOUBAO_TIMEOUT_SECONDS`：默认 `60`
 - `DOUBAO_ARTIFACT_TTL_DAYS`：清理默认保留天数，默认 `14`
+- `AI_MODEL_PRICING_PER_MTOKEN_JSON`：按 token 成本估算配置（元/百万tokens）
+- `AI_COST_PER_RUN_BY_MODEL_JSON`：按任务固定成本兜底（当上游未返回 usage 时使用）
 - `MAX_UPLOAD_BYTES`：上传图片大小限制，默认 `8388608`
 
 可通过 `.env` 注入，未使用字段会被忽略。

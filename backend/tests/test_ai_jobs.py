@@ -152,3 +152,56 @@ def test_ai_metrics_summary(test_client, monkeypatch: pytest.MonkeyPatch):
     assert body["cost_coverage_rate"] == 0.5
     assert body["total_estimated_cost"] == pytest.approx(0.12)
     assert body["avg_task_cost"] == pytest.approx(0.12)
+
+
+def test_ai_metrics_summary_token_pricing(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, _ = test_client
+    monkeypatch.setattr(settings, "ai_cost_per_run_by_model_json", "")
+    monkeypatch.setattr(
+        settings,
+        "ai_model_pricing_per_mtoken_json",
+        '{"doubao-seed-2-0-pro-260215":{"input":3.2,"output":16,"cache_hit":0.64}}',
+    )
+
+    def fake_execute(capability: str, input_payload: dict, trace_id: str | None = None):
+        return CapabilityExecutionResult(
+            output={"analysis_text": "ok"},
+            prompt_key=capability,
+            prompt_version="v1",
+            model="doubao-seed-2-0-pro-260215",
+            request_payload={"prompt": "test"},
+            response_payload={
+                "output_text": "ok",
+                "usage": {
+                    "input_tokens": 1_000_000,
+                    "output_tokens": 100_000,
+                    "input_tokens_details": {"cached_tokens": 200_000},
+                },
+            },
+        )
+
+    monkeypatch.setattr(orchestrator_module, "execute_capability", fake_execute)
+
+    ok_job = client.post(
+        "/api/ai/jobs",
+        json={
+            "capability": "doubao.ingredient_enrich",
+            "input": {"ingredient": "烟酰胺"},
+            "trace_id": "trace-metrics-token-1",
+            "run_immediately": True,
+        },
+    )
+    assert ok_job.status_code == 200
+    assert ok_job.json()["status"] == "succeeded"
+
+    metrics = client.get("/api/ai/metrics/summary", params={"since_hours": 24})
+    assert metrics.status_code == 200
+    body = metrics.json()
+    assert body["total_jobs"] == 1
+    assert body["succeeded_jobs"] == 1
+    assert body["failed_jobs"] == 0
+    assert body["priced_runs"] == 1
+    assert body["cost_coverage_rate"] == 1.0
+    # (1,000,000-200,000)/1e6*3.2 + 100,000/1e6*16 + 200,000/1e6*0.64 = 4.288
+    assert body["total_estimated_cost"] == pytest.approx(4.288)
+    assert body["avg_task_cost"] == pytest.approx(4.288)
