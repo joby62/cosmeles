@@ -81,11 +81,11 @@ export default function MobileBottomNav() {
   const meActive = pathname.startsWith("/m/me");
 
   return (
-    <nav className="fixed inset-x-0 bottom-2 z-[60] px-4 pb-[max(env(safe-area-inset-bottom),0px)]">
+    <nav className="fixed inset-x-0 bottom-3 z-[60] px-4 pb-[max(env(safe-area-inset-bottom),0px)]">
       <div className="mx-auto flex max-w-[680px] items-center gap-2.5">
         <div
-          className={`flex h-[64px] min-w-0 flex-1 items-center rounded-[32px] px-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.11)] backdrop-blur-[20px] ${
-            darkMode ? "border border-white/14 bg-[#1c2231]/66" : "border border-black/[0.09] bg-white/84"
+          className={`flex h-[60px] min-w-0 flex-1 items-center rounded-[30px] px-1.5 shadow-[0_14px_34px_rgba(0,0,0,0.26)] backdrop-blur-[24px] ${
+            darkMode ? "border border-white/18 bg-[#1e2536]/58" : "border border-white/50 bg-white/78"
           }`}
         >
           {items.map((item) => {
@@ -94,12 +94,14 @@ export default function MobileBottomNav() {
               <Link
                 key={item.key}
                 href={item.href}
-                className={`flex h-[56px] min-w-0 flex-1 flex-col items-center justify-center rounded-[24px] transition-colors ${
+                className={`flex h-[52px] min-w-0 flex-1 flex-col items-center justify-center rounded-[24px] transition-colors ${
                   active
-                    ? "bg-[#4da3ff]/24 text-[#4da3ff]"
+                    ? darkMode
+                      ? "bg-[#72b6ff]/24 text-[#72b6ff]"
+                      : "bg-[#0071e3]/16 text-[#0071e3]"
                     : darkMode
-                      ? "text-white/74 active:bg-white/[0.1] active:text-white"
-                      : "text-black/64 active:bg-black/[0.045] active:text-black/80"
+                      ? "text-white/76 active:bg-white/[0.1] active:text-white"
+                      : "text-black/66 active:bg-black/[0.04] active:text-black/82"
                 }`}
               >
                 <span className="leading-none">
@@ -116,14 +118,14 @@ export default function MobileBottomNav() {
         <Link
           href="/m/me"
           aria-label="我的"
-          className={`flex h-[64px] w-[64px] shrink-0 items-center justify-center rounded-full shadow-[0_10px_30px_rgba(0,0,0,0.11)] backdrop-blur-[20px] ${
+          className={`flex h-[60px] w-[60px] shrink-0 items-center justify-center rounded-full shadow-[0_14px_34px_rgba(0,0,0,0.26)] backdrop-blur-[24px] ${
             darkMode
               ? meActive
-                ? "border border-white/14 bg-[#4da3ff]/24 text-[#4da3ff]"
-                : "border border-white/14 bg-[#1c2231]/66 text-white/82 active:bg-[#242c3f]/80"
+                ? "border border-white/18 bg-[#72b6ff]/24 text-[#72b6ff]"
+                : "border border-white/18 bg-[#1e2536]/58 text-white/82 active:bg-[#2a3248]/80"
               : meActive
-                ? "border border-black/[0.09] bg-[#0071e3]/14 text-[#0071e3]"
-                : "border border-black/[0.09] bg-white/84 text-black/78 active:bg-white"
+                ? "border border-white/50 bg-[#0071e3]/16 text-[#0071e3]"
+                : "border border-white/50 bg-white/78 text-black/78 active:bg-white"
           }`}
         >
           <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">

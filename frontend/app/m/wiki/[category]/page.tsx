@@ -22,32 +22,32 @@ type CategoryTheme = {
 const CATEGORY_THEME: Record<WikiCategoryKey, CategoryTheme> = {
   shampoo: {
     heroClass:
-      "bg-[radial-gradient(circle_at_24%_20%,rgba(235,250,255,0.94),rgba(184,222,238,0.88)_44%,rgba(138,186,210,0.93)_100%)]",
-    hazeClass: "bg-[radial-gradient(circle_at_70%_78%,rgba(18,55,86,0.44),rgba(10,20,36,0)_64%)]",
+      "bg-[radial-gradient(circle_at_25%_18%,rgba(235,250,255,0.96),rgba(186,222,238,0.9)_45%,rgba(133,181,206,0.94)_100%)]",
+    hazeClass: "bg-[radial-gradient(circle_at_70%_80%,rgba(16,53,80,0.42),rgba(10,20,36,0)_64%)]",
     accentClass: "bg-[#8fd3f2]",
   },
   bodywash: {
     heroClass:
-      "bg-[radial-gradient(circle_at_72%_20%,rgba(239,247,255,0.94),rgba(191,210,244,0.88)_42%,rgba(122,146,214,0.93)_100%)]",
-    hazeClass: "bg-[radial-gradient(circle_at_20%_82%,rgba(32,41,98,0.42),rgba(10,20,36,0)_64%)]",
+      "bg-[radial-gradient(circle_at_70%_18%,rgba(242,248,255,0.96),rgba(194,211,246,0.9)_44%,rgba(121,143,210,0.94)_100%)]",
+    hazeClass: "bg-[radial-gradient(circle_at_22%_82%,rgba(28,38,92,0.42),rgba(10,20,36,0)_64%)]",
     accentClass: "bg-[#9fb5ff]",
   },
   conditioner: {
     heroClass:
-      "bg-[radial-gradient(circle_at_20%_18%,rgba(248,244,255,0.95),rgba(214,198,246,0.9)_44%,rgba(154,132,220,0.93)_100%)]",
-    hazeClass: "bg-[radial-gradient(circle_at_70%_80%,rgba(56,24,102,0.44),rgba(10,20,36,0)_64%)]",
+      "bg-[radial-gradient(circle_at_24%_16%,rgba(248,244,255,0.97),rgba(214,198,245,0.91)_44%,rgba(152,129,216,0.94)_100%)]",
+    hazeClass: "bg-[radial-gradient(circle_at_72%_82%,rgba(56,24,102,0.42),rgba(10,20,36,0)_64%)]",
     accentClass: "bg-[#bea1ff]",
   },
   lotion: {
     heroClass:
-      "bg-[radial-gradient(circle_at_26%_20%,rgba(255,248,232,0.95),rgba(245,219,170,0.9)_45%,rgba(217,167,95,0.93)_100%)]",
-    hazeClass: "bg-[radial-gradient(circle_at_72%_82%,rgba(90,56,18,0.4),rgba(10,20,36,0)_64%)]",
+      "bg-[radial-gradient(circle_at_24%_18%,rgba(255,248,232,0.97),rgba(246,220,173,0.91)_44%,rgba(217,168,96,0.94)_100%)]",
+    hazeClass: "bg-[radial-gradient(circle_at_70%_82%,rgba(90,56,18,0.4),rgba(10,20,36,0)_64%)]",
     accentClass: "bg-[#e7bd72]",
   },
   cleanser: {
     heroClass:
-      "bg-[radial-gradient(circle_at_26%_18%,rgba(241,252,255,0.95),rgba(187,223,236,0.89)_44%,rgba(117,176,205,0.93)_100%)]",
-    hazeClass: "bg-[radial-gradient(circle_at_74%_82%,rgba(18,70,87,0.42),rgba(10,20,36,0)_64%)]",
+      "bg-[radial-gradient(circle_at_24%_18%,rgba(242,252,255,0.97),rgba(189,223,236,0.9)_44%,rgba(117,176,203,0.94)_100%)]",
+    hazeClass: "bg-[radial-gradient(circle_at_72%_82%,rgba(16,66,84,0.42),rgba(10,20,36,0)_64%)]",
     accentClass: "bg-[#87c7dd]",
   },
 };
@@ -128,7 +128,7 @@ export default async function WikiCategoryPage({
   });
 
   return (
-    <section className="-mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[#0b0d12] px-4 pb-32 pt-4 text-white">
+    <section className="-mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[#090c12] px-4 pb-36 pt-4 text-white">
       <div className="mb-4">
         <p className="text-[13px] font-medium text-[#4ea0ff]">成份百科</p>
         <h1 className="mt-1 text-[34px] leading-[1.08] font-semibold tracking-[-0.03em]">{current.label}</h1>
@@ -179,30 +179,34 @@ export default async function WikiCategoryPage({
             <Link
               key={item.ingredient_id}
               href={`/m/wiki/${category}/${item.ingredient_id}`}
-              className="block overflow-hidden rounded-[30px] border border-white/10 bg-[#121722] shadow-[0_20px_44px_rgba(0,0,0,0.36)] transition-transform active:scale-[0.997]"
+              className="block overflow-hidden rounded-[28px] border border-white/10 bg-[#111623] shadow-[0_18px_40px_rgba(0,0,0,0.35)] transition-transform active:scale-[0.997]"
             >
-              <div className={`${theme.heroClass} relative h-[208px] w-full`}>
+              <div className={`${theme.heroClass} relative h-[164px] w-full`}>
                 <div className={`absolute inset-0 ${theme.hazeClass}`} />
-                <div className={`absolute right-[-44px] top-[-30px] h-[130px] w-[130px] rounded-full ${theme.accentClass} opacity-32 blur-3xl`} />
-                <div className="absolute inset-0 bg-[linear-gradient(178deg,rgba(255,255,255,0.15)_0%,rgba(255,255,255,0)_32%,rgba(0,0,0,0.36)_100%)]" />
+                <div className={`absolute right-[-30px] top-[-26px] h-[120px] w-[120px] rounded-full ${theme.accentClass} opacity-30 blur-3xl`} />
+                <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.13)_0%,rgba(255,255,255,0)_28%,rgba(0,0,0,0.4)_100%)]" />
+
+                <Image
+                  src={`/m/categories/${category}.png`}
+                  alt={current.label}
+                  width={64}
+                  height={64}
+                  className="absolute right-4 top-3 h-12 w-12 rounded-2xl object-cover opacity-78 ring-1 ring-white/22"
+                />
 
                 <div className="absolute left-4 top-4 rounded-full border border-white/30 bg-white/10 px-2.5 py-0.5 text-[11px] font-medium text-white/82 backdrop-blur-md">
                   {current.label}
                 </div>
 
-                <div className="absolute bottom-4 left-4 right-4">
-                  <h2 className="line-clamp-2 break-words text-[30px] leading-[1.05] font-semibold tracking-[-0.03em] text-white">
-                    {name.main}
-                  </h2>
-                  {name.sub ? <p className="mt-1 line-clamp-1 text-[18px] leading-[1.08] font-semibold tracking-[-0.015em] text-white/94">{name.sub}</p> : null}
+                <div className="absolute bottom-3 left-4 right-4">
+                  <h2 className="line-clamp-2 break-words text-[26px] leading-[1.08] font-semibold tracking-[-0.02em] text-white">{name.main}</h2>
+                  {name.sub ? <p className="mt-0.5 line-clamp-1 text-[15px] leading-[1.15] font-medium text-white/90">{name.sub}</p> : null}
                 </div>
               </div>
 
-              <div className="px-4 py-4">
-                <p className="line-clamp-2 text-[15px] leading-[1.55] text-white/76">
-                  {item.summary || "该成分暂无 AI 摘要，请检查成分库构建流程。"}
-                </p>
-                <p className="mt-2 text-[12px] text-white/54">来源样本：{item.source_count} 条</p>
+              <div className="px-4 py-3">
+                <p className="line-clamp-2 text-[15px] leading-[1.5] text-white/80">{item.summary || "该成分暂无 AI 摘要，请检查成分库构建流程。"}</p>
+                <p className="mt-1.5 text-[12px] text-white/56">来源样本 {item.source_count} 条</p>
               </div>
             </Link>
           );

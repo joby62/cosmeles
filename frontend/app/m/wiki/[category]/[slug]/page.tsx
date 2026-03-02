@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { fetchIngredientLibraryItem } from "@/lib/api";
@@ -9,33 +10,39 @@ const INGREDIENT_ID_PATTERN = /^ing-[a-f0-9]{20}$/;
 type CategoryTheme = {
   heroClass: string;
   hazeClass: string;
+  accentClass: string;
 };
 
 const CATEGORY_THEME: Record<WikiCategoryKey, CategoryTheme> = {
   shampoo: {
     heroClass:
-      "bg-[radial-gradient(circle_at_24%_20%,rgba(235,250,255,0.94),rgba(184,222,238,0.88)_44%,rgba(138,186,210,0.93)_100%)]",
-    hazeClass: "bg-[radial-gradient(circle_at_70%_78%,rgba(18,55,86,0.46),rgba(10,20,36,0)_64%)]",
+      "bg-[radial-gradient(circle_at_25%_18%,rgba(235,250,255,0.96),rgba(186,222,238,0.9)_45%,rgba(133,181,206,0.94)_100%)]",
+    hazeClass: "bg-[radial-gradient(circle_at_70%_80%,rgba(16,53,80,0.42),rgba(10,20,36,0)_64%)]",
+    accentClass: "bg-[#8fd3f2]",
   },
   bodywash: {
     heroClass:
-      "bg-[radial-gradient(circle_at_72%_20%,rgba(239,247,255,0.94),rgba(191,210,244,0.88)_42%,rgba(122,146,214,0.93)_100%)]",
-    hazeClass: "bg-[radial-gradient(circle_at_20%_82%,rgba(32,41,98,0.44),rgba(10,20,36,0)_64%)]",
+      "bg-[radial-gradient(circle_at_70%_18%,rgba(242,248,255,0.96),rgba(194,211,246,0.9)_44%,rgba(121,143,210,0.94)_100%)]",
+    hazeClass: "bg-[radial-gradient(circle_at_22%_82%,rgba(28,38,92,0.42),rgba(10,20,36,0)_64%)]",
+    accentClass: "bg-[#9fb5ff]",
   },
   conditioner: {
     heroClass:
-      "bg-[radial-gradient(circle_at_20%_18%,rgba(248,244,255,0.95),rgba(214,198,246,0.9)_44%,rgba(154,132,220,0.93)_100%)]",
-    hazeClass: "bg-[radial-gradient(circle_at_70%_80%,rgba(56,24,102,0.46),rgba(10,20,36,0)_64%)]",
+      "bg-[radial-gradient(circle_at_24%_16%,rgba(248,244,255,0.97),rgba(214,198,245,0.91)_44%,rgba(152,129,216,0.94)_100%)]",
+    hazeClass: "bg-[radial-gradient(circle_at_72%_82%,rgba(56,24,102,0.42),rgba(10,20,36,0)_64%)]",
+    accentClass: "bg-[#bea1ff]",
   },
   lotion: {
     heroClass:
-      "bg-[radial-gradient(circle_at_26%_20%,rgba(255,248,232,0.95),rgba(245,219,170,0.9)_45%,rgba(217,167,95,0.93)_100%)]",
-    hazeClass: "bg-[radial-gradient(circle_at_72%_82%,rgba(90,56,18,0.42),rgba(10,20,36,0)_64%)]",
+      "bg-[radial-gradient(circle_at_24%_18%,rgba(255,248,232,0.97),rgba(246,220,173,0.91)_44%,rgba(217,168,96,0.94)_100%)]",
+    hazeClass: "bg-[radial-gradient(circle_at_70%_82%,rgba(90,56,18,0.4),rgba(10,20,36,0)_64%)]",
+    accentClass: "bg-[#e7bd72]",
   },
   cleanser: {
     heroClass:
-      "bg-[radial-gradient(circle_at_26%_18%,rgba(241,252,255,0.95),rgba(187,223,236,0.89)_44%,rgba(117,176,205,0.93)_100%)]",
-    hazeClass: "bg-[radial-gradient(circle_at_74%_82%,rgba(18,70,87,0.44),rgba(10,20,36,0)_64%)]",
+      "bg-[radial-gradient(circle_at_24%_18%,rgba(242,252,255,0.97),rgba(189,223,236,0.9)_44%,rgba(117,176,203,0.94)_100%)]",
+    hazeClass: "bg-[radial-gradient(circle_at_72%_82%,rgba(16,66,84,0.42),rgba(10,20,36,0)_64%)]",
+    accentClass: "bg-[#87c7dd]",
   },
 };
 
@@ -57,9 +64,9 @@ function splitIngredientName(raw: string): NameParts {
 }
 
 function titleClassByLength(length: number): string {
-  if (length > 56) return "text-[34px] leading-[1.04]";
-  if (length > 34) return "text-[40px] leading-[1.03]";
-  return "text-[46px] leading-[1.01]";
+  if (length > 56) return "text-[32px] leading-[1.06]";
+  if (length > 34) return "text-[36px] leading-[1.04]";
+  return "text-[42px] leading-[1.02]";
 }
 
 export default async function IngredientDetailPage({
@@ -97,7 +104,7 @@ export default async function IngredientDetailPage({
   const name = splitIngredientName(item.ingredient_name);
 
   return (
-    <section className="-mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[#0b0d12] pb-32 pt-4 text-white">
+    <section className="-mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[#090c12] pb-36 pt-4 text-white">
       <div className="px-4">
         <Link
           href="/m/wiki"
@@ -107,29 +114,30 @@ export default async function IngredientDetailPage({
         </Link>
       </div>
 
-      <article className="mt-4 overflow-hidden rounded-[32px] border border-white/10 bg-[#121722] shadow-[0_28px_70px_rgba(0,0,0,0.48)]">
-        <div className={`${theme.heroClass} relative h-[380px] w-full`}>
+      <article className="mt-4 overflow-hidden rounded-[32px] border border-white/10 bg-[#111623] shadow-[0_24px_58px_rgba(0,0,0,0.5)]">
+        <div className={`${theme.heroClass} relative h-[268px] w-full`}>
           <div className={`absolute inset-0 ${theme.hazeClass}`} />
-          <div className="absolute inset-0 bg-[linear-gradient(176deg,rgba(255,255,255,0.16)_0%,rgba(255,255,255,0)_35%,rgba(0,0,0,0.38)_100%)]" />
+          <div className={`absolute right-[-44px] top-[-34px] h-[170px] w-[170px] rounded-full ${theme.accentClass} opacity-30 blur-3xl`} />
+          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.15)_0%,rgba(255,255,255,0)_35%,rgba(0,0,0,0.42)_100%)]" />
+
+          <Image
+            src={`/m/categories/${category}.png`}
+            alt={categoryLabel}
+            width={128}
+            height={128}
+            className="absolute right-6 top-8 h-[92px] w-[92px] rounded-[26px] object-cover opacity-85 shadow-[0_16px_36px_rgba(0,0,0,0.25)] ring-1 ring-white/25"
+          />
 
           <div className="absolute left-5 top-5 rounded-full border border-white/35 bg-white/12 px-2.5 py-0.5 text-[12px] font-medium text-white/88 backdrop-blur-lg">
             {categoryLabel}
           </div>
 
-          <div className="absolute bottom-6 left-5 right-5">
+          <div className="absolute bottom-5 left-5 right-5">
             <p className="text-[13px] font-medium tracking-[0.04em] text-white/84">成分详情</p>
-            <h1
-              className={`mt-1 line-clamp-2 break-words font-semibold tracking-[-0.04em] text-white ${titleClassByLength(
-                item.ingredient_name.length,
-              )}`}
-            >
+            <h1 className={`mt-1 line-clamp-2 break-words font-semibold tracking-[-0.03em] text-white ${titleClassByLength(item.ingredient_name.length)}`}>
               {name.main}
             </h1>
-            {name.sub ? (
-              <p className="mt-1 line-clamp-2 break-words text-[22px] leading-[1.05] font-semibold tracking-[-0.02em] text-white/94">
-                {name.sub}
-              </p>
-            ) : null}
+            {name.sub ? <p className="mt-1 line-clamp-1 text-[17px] leading-[1.1] font-semibold text-white/92">{name.sub}</p> : null}
           </div>
         </div>
 
@@ -152,7 +160,7 @@ export default async function IngredientDetailPage({
       <div className="mt-5 space-y-3 px-4">
         <section className="rounded-[24px] border border-white/10 bg-white/[0.05] p-4 backdrop-blur-xl">
           <p className="text-[12px] font-medium tracking-[0.04em] text-[#4ea0ff]">核心摘要</p>
-          <p className="mt-2 text-[25px] leading-[1.35] tracking-[-0.015em] text-white/92">
+          <p className="mt-2 text-[22px] leading-[1.38] tracking-[-0.01em] text-white/92">
             {profile.summary || "该成分暂无 AI 摘要，请检查后端构建日志。"}
           </p>
         </section>
