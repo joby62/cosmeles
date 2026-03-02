@@ -125,6 +125,66 @@ class IngredientLibraryBuildResponse(BaseModel):
     failures: List[str] = []
 
 
+class IngredientLibraryListItem(BaseModel):
+    ingredient_id: str
+    category: str
+    ingredient_name: str
+    summary: str = ""
+    source_count: int = 0
+    source_trace_ids: List[str] = []
+    generated_at: Optional[str] = None
+    storage_path: str
+
+
+class IngredientLibraryListResponse(BaseModel):
+    status: str
+    category: Optional[str] = None
+    query: Optional[str] = None
+    total: int = 0
+    offset: int = 0
+    limit: int = 0
+    items: List[IngredientLibraryListItem] = []
+
+
+class IngredientLibrarySourceSample(BaseModel):
+    trace_id: str = ""
+    brand: str = ""
+    name: str = ""
+    one_sentence: str = ""
+    ingredient: dict[str, Any] = Field(default_factory=dict)
+
+
+class IngredientLibraryProfile(BaseModel):
+    summary: str = ""
+    benefits: List[str] = []
+    risks: List[str] = []
+    usage_tips: List[str] = []
+    suitable_for: List[str] = []
+    avoid_for: List[str] = []
+    confidence: int = 0
+    reason: str = ""
+    analysis_text: str = ""
+
+
+class IngredientLibraryDetailItem(BaseModel):
+    ingredient_id: str
+    category: str
+    ingredient_name: str
+    ingredient_key: Optional[str] = None
+    source_count: int = 0
+    source_trace_ids: List[str] = []
+    source_samples: List[IngredientLibrarySourceSample] = []
+    generated_at: Optional[str] = None
+    generator: dict[str, Any] = Field(default_factory=dict)
+    profile: IngredientLibraryProfile = Field(default_factory=IngredientLibraryProfile)
+    storage_path: str
+
+
+class IngredientLibraryDetailResponse(BaseModel):
+    status: str
+    item: IngredientLibraryDetailItem
+
+
 class ProductBatchDeleteRequest(BaseModel):
     ids: List[str] = []
     keep_ids: List[str] = []
