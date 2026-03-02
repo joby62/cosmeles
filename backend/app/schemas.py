@@ -105,6 +105,7 @@ class IngredientLibraryBuildItem(BaseModel):
     ingredient_id: str
     category: str
     ingredient_name: str
+    ingredient_name_en: Optional[str] = None
     source_count: int = 0
     source_trace_ids: List[str] = []
     storage_path: Optional[str] = None
@@ -131,6 +132,7 @@ class IngredientLibraryListItem(BaseModel):
     ingredient_id: str
     category: str
     ingredient_name: str
+    ingredient_name_en: Optional[str] = None
     summary: str = ""
     source_count: int = 0
     source_trace_ids: List[str] = []
@@ -172,6 +174,7 @@ class IngredientLibraryDetailItem(BaseModel):
     ingredient_id: str
     category: str
     ingredient_name: str
+    ingredient_name_en: Optional[str] = None
     ingredient_key: Optional[str] = None
     source_count: int = 0
     source_trace_ids: List[str] = []

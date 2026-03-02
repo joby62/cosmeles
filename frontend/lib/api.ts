@@ -59,6 +59,7 @@ export type IngredientLibraryBuildItem = {
   ingredient_id: string;
   category: string;
   ingredient_name: string;
+  ingredient_name_en?: string | null;
   source_count: number;
   source_trace_ids: string[];
   storage_path?: string | null;
@@ -85,6 +86,7 @@ export type IngredientLibraryListItem = {
   ingredient_id: string;
   category: string;
   ingredient_name: string;
+  ingredient_name_en?: string | null;
   summary: string;
   source_count: number;
   source_trace_ids: string[];
@@ -126,6 +128,7 @@ export type IngredientLibraryDetailItem = {
   ingredient_id: string;
   category: string;
   ingredient_name: string;
+  ingredient_name_en?: string | null;
   ingredient_key?: string | null;
   source_count: number;
   source_trace_ids: string[];

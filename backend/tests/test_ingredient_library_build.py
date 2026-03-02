@@ -112,8 +112,13 @@ def test_build_ingredient_library_splits_same_name_by_category(test_client, monk
         assert input_payload.get("category") in {"bodywash", "shampoo"}
         if event_callback:
             event_callback({"type": "delta", "stage": "ingredient_category_profile", "delta": "mock-delta"})
+        en_map = {
+            "甘油": "Glycerin",
+            "烟酰胺": "Niacinamide",
+        }
         return {
             "ingredient_name": input_payload["ingredient"],
+            "ingredient_name_en": en_map.get(input_payload["ingredient"], ""),
             "category": input_payload["category"],
             "summary": f"{input_payload['ingredient']} in {input_payload['category']}",
             "benefits": ["保湿"],
@@ -151,6 +156,7 @@ def test_build_ingredient_library_splits_same_name_by_category(test_client, monk
         saved = json.loads(abs_path.read_text(encoding="utf-8"))
         assert saved["id"] == item["ingredient_id"]
         assert saved["category"] == item["category"]
+        assert "ingredient_name_en" in saved
 
 
 def test_build_ingredient_library_stream_has_progress_and_result(test_client, monkeypatch: pytest.MonkeyPatch):

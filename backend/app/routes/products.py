@@ -484,6 +484,7 @@ def _build_ingredient_library_impl(
                 ingredient_id=ingredient_id,
                 category=category_name,
                 ingredient_name=ingredient_name,
+                ingredient_name_en=None,
                 source_count=source_count,
                 source_trace_ids=source_trace_ids,
                 storage_path=ready_storage_path,
@@ -533,10 +534,13 @@ def _build_ingredient_library_impl(
                     payload=e,
                 ),
             )
+            normalized_ingredient_name = str(ai_result.get("ingredient_name") or ingredient_name).strip() or ingredient_name
+            normalized_ingredient_name_en = str(ai_result.get("ingredient_name_en") or "").strip() or None
             profile_doc = {
                 "id": ingredient_id,
                 "category": category_name,
-                "ingredient_name": ingredient_name,
+                "ingredient_name": normalized_ingredient_name,
+                "ingredient_name_en": normalized_ingredient_name_en,
                 "ingredient_key": item["ingredient_key"],
                 "source_count": source_count,
                 "source_trace_ids": source_trace_ids,
@@ -568,6 +572,7 @@ def _build_ingredient_library_impl(
                 created += 1
 
             index_rec.status = "ready"
+            index_rec.ingredient_name = normalized_ingredient_name
             index_rec.storage_path = storage_path
             index_rec.model = str(ai_result.get("model") or "").strip() or None
             index_rec.last_generated_at = now_iso()
@@ -578,7 +583,8 @@ def _build_ingredient_library_impl(
                 IngredientLibraryBuildItem(
                     ingredient_id=ingredient_id,
                     category=category_name,
-                    ingredient_name=ingredient_name,
+                    ingredient_name=normalized_ingredient_name,
+                    ingredient_name_en=normalized_ingredient_name_en,
                     source_count=source_count,
                     source_trace_ids=source_trace_ids,
                     storage_path=storage_path,
@@ -611,6 +617,7 @@ def _build_ingredient_library_impl(
                     ingredient_id=ingredient_id,
                     category=category_name,
                     ingredient_name=ingredient_name,
+                    ingredient_name_en=None,
                     source_count=source_count,
                     source_trace_ids=source_trace_ids,
                     storage_path=None,
@@ -1432,6 +1439,7 @@ def _to_ingredient_library_list_item(doc: dict[str, Any], rel_path: str) -> Ingr
     if category not in VALID_CATEGORIES:
         raise ValueError(f"invalid category in profile: {category}.")
     ingredient_name = _required_text_field(doc, "ingredient_name")
+    ingredient_name_en = str(doc.get("ingredient_name_en") or "").strip() or None
     source_trace_ids = _strict_str_list(doc.get("source_trace_ids"), field_name="source_trace_ids")
     source_count = _strict_non_negative_int(
         doc.get("source_count"),
@@ -1449,6 +1457,7 @@ def _to_ingredient_library_list_item(doc: dict[str, Any], rel_path: str) -> Ingr
         ingredient_id=ingredient_id,
         category=category,
         ingredient_name=ingredient_name,
+        ingredient_name_en=ingredient_name_en,
         summary=summary,
         source_count=source_count,
         source_trace_ids=source_trace_ids,
@@ -1510,6 +1519,7 @@ def _to_ingredient_library_detail_item(doc: dict[str, Any], rel_path: str) -> In
         ingredient_id=base.ingredient_id,
         category=base.category,
         ingredient_name=base.ingredient_name,
+        ingredient_name_en=base.ingredient_name_en,
         ingredient_key=ingredient_key,
         source_count=base.source_count,
         source_trace_ids=base.source_trace_ids,

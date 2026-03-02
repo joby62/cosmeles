@@ -302,6 +302,7 @@ def _cap_ingredient_category_profile(
     if _is_sample_mode():
         sample = {
             "ingredient_name": ingredient,
+            "ingredient_name_en": "",
             "category": category,
             "summary": f"sample mode: {ingredient} in {category}",
             "benefits": [],
@@ -801,7 +802,15 @@ def _normalize_ingredient_category_profile_result(
     if not isinstance(payload, dict):
         raise AIServiceError(code="ingredient_profile_invalid", message="ingredient profile output must be a JSON object.", http_status=422)
 
-    ingredient_name = str(payload.get("ingredient_name") or ingredient).strip() or ingredient
+    ingredient_name_raw = str(payload.get("ingredient_name") or ingredient).strip() or ingredient
+    ingredient_name_en_raw = str(payload.get("ingredient_name_en") or "").strip()
+    ingredient_name = _normalize_ingredient_name_cn(ingredient_name_raw)
+    ingredient_name_en = _normalize_ingredient_name_en(ingredient_name_en_raw)
+    if not ingredient_name:
+        fallback_cn = _normalize_ingredient_name_cn(ingredient)
+        ingredient_name = fallback_cn or ingredient_name_raw
+    if not ingredient_name_en:
+        ingredient_name_en = _extract_english_name(ingredient_name_raw) or _extract_english_name(ingredient)
     output_category = str(payload.get("category") or category).strip().lower() or category
     if output_category != category:
         raise AIServiceError(
@@ -822,6 +831,7 @@ def _normalize_ingredient_category_profile_result(
 
     return {
         "ingredient_name": ingredient_name,
+        "ingredient_name_en": ingredient_name_en,
         "category": output_category,
         "summary": summary,
         "benefits": _to_str_array(payload.get("benefits")),
@@ -832,6 +842,38 @@ def _normalize_ingredient_category_profile_result(
         "confidence": confidence,
         "reason": str(payload.get("reason") or "").strip(),
     }
+
+
+def _normalize_ingredient_name_cn(value: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    text = re.sub(r"\([^)]*[A-Za-z][^)]*\)", "", text)
+    text = re.sub(r"（[^）]*[A-Za-z][^）]*）", "", text)
+    text = re.sub(r"[A-Za-z][A-Za-z0-9\s\-_/.,]*", "", text)
+    text = re.sub(r"\s+", " ", text).strip(" ,，;；:：()（）-_/")
+    return text.strip()
+
+
+def _normalize_ingredient_name_en(value: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    text = re.sub(r"[\u4e00-\u9fff]", "", text)
+    text = re.sub(r"\s+", " ", text).strip(" ,，;；:：")
+    return text
+
+
+def _extract_english_name(value: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    matches = re.findall(r"[A-Za-z][A-Za-z0-9\- ]*", text)
+    parts = [m.strip(" -_/.,") for m in matches if m and m.strip(" -_/.,")]
+    if not parts:
+        return ""
+    deduped = list(dict.fromkeys(parts))
+    return " / ".join(deduped[:3])
 
 
 def _to_str_array(value: Any) -> list[str]:
