@@ -19,6 +19,7 @@ SUPPORTED_CAPABILITIES = {
     "doubao.ingredient_enrich",
     "doubao.image_json_consistency",
     "doubao.product_dedup_decision",
+    "doubao.product_dedup_group",
 }
 
 
@@ -57,6 +58,8 @@ def execute_capability(
         return _cap_image_json_consistency(input_payload, trace_id, event_callback=event_callback)
     if capability == "doubao.product_dedup_decision":
         return _cap_product_dedup_decision(input_payload, trace_id, event_callback=event_callback)
+    if capability == "doubao.product_dedup_group":
+        return _cap_product_dedup_group(input_payload, trace_id, event_callback=event_callback)
 
     raise AIServiceError(
         code="capability_not_supported",
@@ -394,6 +397,85 @@ def _cap_product_dedup_decision(
     )
 
 
+def _cap_product_dedup_group(
+    input_payload: dict[str, Any],
+    trace_id: str | None,
+    event_callback: Callable[[dict[str, Any]], None] | None = None,
+) -> CapabilityExecutionResult:
+    anchor_product = input_payload.get("anchor_product")
+    candidate_products = input_payload.get("candidate_products")
+    if not isinstance(anchor_product, dict):
+        raise AIServiceError(code="invalid_input", message="anchor_product must be an object.", http_status=400)
+    if not isinstance(candidate_products, list):
+        raise AIServiceError(code="invalid_input", message="candidate_products must be a list.", http_status=400)
+
+    anchor_id = str(anchor_product.get("id") or "").strip()
+    if not anchor_id:
+        raise AIServiceError(code="invalid_input", message="anchor_product.id is required.", http_status=400)
+
+    candidate_products = [item for item in candidate_products if isinstance(item, dict)][:20]
+
+    prompt = load_prompt("doubao.product_dedup_group")
+    rendered_prompt = render_prompt(
+        prompt.text,
+        {
+            "anchor_product_json": json.dumps(anchor_product, ensure_ascii=False),
+            "candidate_products_json": json.dumps(candidate_products, ensure_ascii=False),
+        },
+    )
+
+    if _is_sample_mode():
+        sample = {
+            "keep_id": anchor_id,
+            "duplicates": [],
+            "reason": "sample mode: skip dedup grouping.",
+        }
+        artifact = _maybe_save_artifact(
+            trace_id,
+            "product_dedup_group",
+            {"model": "sample", "prompt": rendered_prompt, "response": {"mode": "sample"}, "text": json.dumps(sample, ensure_ascii=False)},
+        )
+        return CapabilityExecutionResult(
+            output={**sample, "analysis_text": json.dumps(sample, ensure_ascii=False), "model": "sample", "artifact": artifact},
+            prompt_key=prompt.key,
+            prompt_version=prompt.version,
+            model="sample",
+            request_payload={"prompt": rendered_prompt},
+            response_payload={"mode": "sample"},
+        )
+
+    sdk, _, _, text_model = _build_sdk_and_models()
+    _emit(
+        event_callback,
+        {"type": "step", "stage": "product_dedup_group", "message": f"Calling model {text_model}."},
+    )
+    response_raw = _safe_sdk_call(
+        lambda: sdk.chat_with_text(
+            rendered_prompt,
+            model=text_model,
+            stream=event_callback is not None,
+            on_text_delta=(lambda delta: _emit(event_callback, {"type": "delta", "stage": "product_dedup_group", "delta": delta})),
+        )
+    )
+    text = _extract_content(response_raw)
+    parsed = _extract_json_object(text)
+    normalized = _normalize_dedup_group_result(anchor_id=anchor_id, candidate_products=candidate_products, payload=parsed)
+    _emit(event_callback, {"type": "step", "stage": "product_dedup_group", "message": "Dedup grouping completed."})
+    artifact = _maybe_save_artifact(
+        trace_id,
+        "product_dedup_group",
+        {"model": text_model, "prompt": rendered_prompt, "response": response_raw, "text": text},
+    )
+    return CapabilityExecutionResult(
+        output={**normalized, "analysis_text": text, "model": text_model, "artifact": artifact},
+        prompt_key=prompt.key,
+        prompt_version=prompt.version,
+        model=text_model,
+        request_payload={"prompt": rendered_prompt},
+        response_payload=response_raw,
+    )
+
+
 def _is_sample_mode() -> bool:
     return settings.doubao_mode.lower().strip() in {"mock", "sample"}
 
@@ -567,6 +649,56 @@ def _extract_json_object(text: str) -> dict[str, Any]:
         return json.loads(text[first : last + 1])
 
     raise AIServiceError(code="json_not_found", message="No JSON object found in capability response.", http_status=422)
+
+
+def _normalize_dedup_group_result(
+    anchor_id: str,
+    candidate_products: list[dict[str, Any]],
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    allowed_ids = {anchor_id}
+    for item in candidate_products:
+        pid = str(item.get("id") or "").strip()
+        if pid:
+            allowed_ids.add(pid)
+
+    keep_id = str(payload.get("keep_id") or "").strip()
+    if not keep_id:
+        raise AIServiceError(code="dedup_group_invalid", message="dedup group output missing keep_id.", http_status=422)
+    if keep_id not in allowed_ids:
+        raise AIServiceError(
+            code="dedup_group_invalid",
+            message=f"dedup group keep_id '{keep_id}' is not in candidate set.",
+            http_status=422,
+        )
+
+    duplicates_raw = payload.get("duplicates")
+    if not isinstance(duplicates_raw, list):
+        raise AIServiceError(code="dedup_group_invalid", message="dedup group duplicates must be a list.", http_status=422)
+
+    duplicates: list[dict[str, Any]] = []
+    seen = set()
+    for item in duplicates_raw:
+        if not isinstance(item, dict):
+            continue
+        pid = str(item.get("id") or "").strip()
+        if not pid or pid == keep_id or pid not in allowed_ids or pid in seen:
+            continue
+        seen.add(pid)
+        try:
+            confidence = int(item.get("confidence"))
+        except Exception:
+            confidence = 0
+        confidence = max(0, min(100, confidence))
+        reason = str(item.get("reason") or "").strip()
+        duplicates.append({"id": pid, "confidence": confidence, "reason": reason})
+
+    reason = str(payload.get("reason") or "").strip()
+    return {
+        "keep_id": keep_id,
+        "duplicates": duplicates,
+        "reason": reason,
+    }
 
 
 def _emit(event_callback: Callable[[dict[str, Any]], None] | None, payload: dict[str, Any]) -> None:

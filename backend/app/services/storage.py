@@ -1,4 +1,5 @@
 import os, json
+import shutil
 from uuid import uuid4
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -79,6 +80,28 @@ def remove_rel_path(rel_path: str | None) -> bool:
         abs_path.unlink()
         return True
     return False
+
+def remove_rel_dir(rel_path: str | None) -> tuple[int, int]:
+    if not rel_path:
+        return (0, 0)
+    try:
+        abs_path = _resolve_rel_path(rel_path)
+    except ValueError:
+        return (0, 0)
+    if not abs_path.exists() or not abs_path.is_dir():
+        return (0, 0)
+
+    removed_files = 0
+    removed_dirs = 0
+    for path in abs_path.rglob("*"):
+        if path.is_file():
+            removed_files += 1
+        elif path.is_dir():
+            removed_dirs += 1
+    shutil.rmtree(abs_path, ignore_errors=True)
+    # include root dir itself
+    removed_dirs += 1
+    return (removed_files, removed_dirs)
 
 def exists_rel_path(rel_path: str | None) -> bool:
     if not rel_path:

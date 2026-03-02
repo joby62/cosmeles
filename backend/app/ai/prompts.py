@@ -13,6 +13,7 @@ DEFAULT_PROMPT_VERSIONS = {
     "doubao.ingredient_enrich": "v1",
     "doubao.image_json_consistency": "v1",
     "doubao.product_dedup_decision": "v1",
+    "doubao.product_dedup_group": "v1",
 }
 
 _PLACEHOLDER = re.compile(r"\{\{\s*([a-zA-Z0-9_]+)\s*\}\}")

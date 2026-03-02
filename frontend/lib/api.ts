@@ -21,6 +21,47 @@ export type ProductListResponse = {
   meta: ProductListMeta;
 };
 
+export type ProductDedupSuggestRequest = {
+  title_query?: string;
+  ingredient_hints?: string[];
+  max_scan_products?: number;
+  max_compare_per_product?: number;
+  min_confidence?: number;
+};
+
+export type ProductDedupSuggestion = {
+  group_id: string;
+  keep_id: string;
+  remove_ids: string[];
+  confidence: number;
+  reason?: string;
+  analysis_text?: string | null;
+  compared_ids?: string[];
+};
+
+export type ProductDedupSuggestResponse = {
+  status: string;
+  scanned_products: number;
+  suggestions: ProductDedupSuggestion[];
+  involved_products: Product[];
+  failures: string[];
+};
+
+export type ProductBatchDeleteRequest = {
+  ids: string[];
+  keep_ids?: string[];
+  remove_doubao_artifacts?: boolean;
+};
+
+export type ProductBatchDeleteResponse = {
+  status: string;
+  deleted_ids: string[];
+  skipped_ids: string[];
+  missing_ids: string[];
+  removed_files: number;
+  removed_dirs: number;
+};
+
 export type ProductDoc = {
   product: {
     category: string;
@@ -205,6 +246,20 @@ export async function fetchProduct(id: string): Promise<Product> {
 
 export async function fetchProductDoc(id: string): Promise<ProductDoc> {
   return apiFetch<ProductDoc>(`/api/products/${id}`);
+}
+
+export async function suggestProductDuplicates(payload: ProductDedupSuggestRequest): Promise<ProductDedupSuggestResponse> {
+  return apiFetch<ProductDedupSuggestResponse>("/api/products/dedup/suggest", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteProductsBatch(payload: ProductBatchDeleteRequest): Promise<ProductBatchDeleteResponse> {
+  return apiFetch<ProductBatchDeleteResponse>("/api/products/batch-delete", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function createAIJob(payload: AIJobCreateRequest): Promise<AIJobView> {

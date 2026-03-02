@@ -67,6 +67,47 @@ class CategoryCount(BaseModel):
     count: int
 
 
+class ProductDedupSuggestRequest(BaseModel):
+    title_query: Optional[str] = None
+    ingredient_hints: List[str] = []
+    max_scan_products: int = Field(default=80, ge=1, le=300)
+    max_compare_per_product: int = Field(default=6, ge=1, le=20)
+    min_confidence: int = Field(default=70, ge=0, le=100)
+
+
+class ProductDedupSuggestion(BaseModel):
+    group_id: str
+    keep_id: str
+    remove_ids: List[str] = []
+    confidence: int = 0
+    reason: str = ""
+    analysis_text: Optional[str] = None
+    compared_ids: List[str] = []
+
+
+class ProductDedupSuggestResponse(BaseModel):
+    status: str
+    scanned_products: int
+    suggestions: List[ProductDedupSuggestion] = []
+    involved_products: List[ProductCard] = []
+    failures: List[str] = []
+
+
+class ProductBatchDeleteRequest(BaseModel):
+    ids: List[str] = []
+    keep_ids: List[str] = []
+    remove_doubao_artifacts: bool = True
+
+
+class ProductBatchDeleteResponse(BaseModel):
+    status: str
+    deleted_ids: List[str] = []
+    skipped_ids: List[str] = []
+    missing_ids: List[str] = []
+    removed_files: int = 0
+    removed_dirs: int = 0
+
+
 class AIJobCreateRequest(BaseModel):
     capability: str
     input: dict[str, Any] = Field(default_factory=dict)

@@ -56,6 +56,12 @@ export default async function ProductGalleryPage() {
               </span>
             ))}
             <Link
+              href="/product/dedup"
+              className="rounded-full border border-[#f97316]/30 bg-[#fff7ed] px-4 py-1.5 text-[12px] font-semibold text-[#c2410c] transition-colors hover:bg-[#ffedd5]"
+            >
+              重复检查与删除
+            </Link>
+            <Link
               href="/upload"
               className="rounded-full border border-black/14 bg-black px-4 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
             >
