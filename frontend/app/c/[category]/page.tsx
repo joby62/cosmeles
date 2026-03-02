@@ -32,7 +32,7 @@ export default async function CategoryPage({
               <div className="relative aspect-square bg-black/5 border border-black/10 overflow-hidden">
                 <Image
                   src={resolveImageUrl(p)}
-                  alt={p.name}
+                  alt={p.name ?? p.brand ?? `${title} 产品`}
                   fill
                   className="object-contain transition-transform duration-500 group-hover:scale-[1.02]"
                 />
@@ -40,7 +40,7 @@ export default async function CategoryPage({
               <div className="mt-4">
                 <div className="text-xs text-black/60">{p.brand ?? ""}</div>
                 <div className="mt-1 text-base font-medium tracking-tight text-black/90">
-                  {p.name}
+                  {p.name ?? "未命名产品"}
                 </div>
               </div>
             </Link>
