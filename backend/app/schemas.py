@@ -358,3 +358,132 @@ class MobileSelectionBatchDeleteResponse(BaseModel):
     deleted_ids: List[str] = Field(default_factory=list)
     not_found_ids: List[str] = Field(default_factory=list)
     forbidden_ids: List[str] = Field(default_factory=list)
+
+
+class MobileCompareCategoryItem(BaseModel):
+    key: str
+    label: str
+    enabled: bool = True
+
+
+class MobileCompareProfileBootstrap(BaseModel):
+    has_history_profile: bool = False
+    can_skip: bool = True
+    last_completed_at: Optional[str] = None
+    summary: List[str] = Field(default_factory=list)
+
+
+class MobileCompareRecommendationBootstrap(BaseModel):
+    exists: bool = False
+    session_id: Optional[str] = None
+    route_title: Optional[str] = None
+    product: Optional[ProductCard] = None
+
+
+class MobileCompareSourceGuide(BaseModel):
+    title: str
+    value_points: List[str] = Field(default_factory=list)
+
+
+class MobileCompareBootstrapResponse(BaseModel):
+    status: str
+    trace_id: str
+    categories: List[MobileCompareCategoryItem] = Field(default_factory=list)
+    selected_category: str
+    profile: MobileCompareProfileBootstrap
+    recommendation: MobileCompareRecommendationBootstrap
+    source_guide: MobileCompareSourceGuide
+
+
+class MobileCompareUploadResponse(BaseModel):
+    status: str
+    trace_id: str
+    upload_id: str
+    category: str
+    image_path: Optional[str] = None
+    created_at: str
+
+
+class MobileCompareJobCurrentProductInput(BaseModel):
+    source: Literal["upload_new", "history_product"] = "upload_new"
+    upload_id: Optional[str] = None
+    product_id: Optional[str] = None
+
+
+class MobileCompareJobOptions(BaseModel):
+    language: str = "zh-CN"
+    include_inci_order_diff: bool = True
+    include_function_rank_diff: bool = True
+
+
+class MobileCompareJobRequest(BaseModel):
+    category: str
+    profile_mode: Literal["reuse_latest", "update_now", "skip"] = "reuse_latest"
+    profile_answers: dict[str, str] = Field(default_factory=dict)
+    current_product: MobileCompareJobCurrentProductInput
+    options: MobileCompareJobOptions = Field(default_factory=MobileCompareJobOptions)
+
+
+class MobileComparePersonalization(BaseModel):
+    status: str
+    basis: str
+    missing_fields: List[str] = Field(default_factory=list)
+
+
+class MobileCompareVerdict(BaseModel):
+    decision: Literal["keep", "switch", "hybrid"]
+    headline: str
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+
+
+class MobileCompareResultSection(BaseModel):
+    key: str
+    title: str
+    items: List[str] = Field(default_factory=list)
+
+
+class MobileCompareIngredientOrderDiff(BaseModel):
+    ingredient: str
+    current_rank: int
+    recommended_rank: int
+
+
+class MobileCompareFunctionRankDiff(BaseModel):
+    function: str
+    current_score: float
+    recommended_score: float
+
+
+class MobileCompareIngredientDiff(BaseModel):
+    overlap: List[str] = Field(default_factory=list)
+    only_current: List[str] = Field(default_factory=list)
+    only_recommended: List[str] = Field(default_factory=list)
+    inci_order_diff: List[MobileCompareIngredientOrderDiff] = Field(default_factory=list)
+    function_rank_diff: List[MobileCompareFunctionRankDiff] = Field(default_factory=list)
+
+
+class MobileCompareTransparency(BaseModel):
+    model: Optional[str] = None
+    warnings: List[str] = Field(default_factory=list)
+    missing_fields: List[str] = Field(default_factory=list)
+
+
+class MobileCompareResultResponse(BaseModel):
+    status: str
+    trace_id: str
+    compare_id: str
+    category: str
+    personalization: MobileComparePersonalization
+    verdict: MobileCompareVerdict
+    sections: List[MobileCompareResultSection] = Field(default_factory=list)
+    ingredient_diff: MobileCompareIngredientDiff
+    transparency: MobileCompareTransparency
+    recommendation: MobileSelectionResolveResponse
+    current_product: ProductDoc
+    recommended_product: ProductDoc
+    created_at: str
+
+
+class MobileCompareEventRequest(BaseModel):
+    name: str
+    props: dict[str, Any] = Field(default_factory=dict)

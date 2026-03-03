@@ -110,6 +110,12 @@ export default async function ShampooResultPage({
         >
           重新判断一次
         </Link>
+        <Link
+          href="/m/compare?category=shampoo"
+          className="inline-flex h-11 items-center justify-center rounded-full border border-black/15 px-5 text-[15px] font-semibold text-black/80 active:bg-black/[0.03]"
+        >
+          和我在用的对比
+        </Link>
       </div>
     </section>
   );

@@ -1,16 +1,38 @@
 import hashlib
 import json
+import queue
+import threading
+from collections import defaultdict
 from uuid import uuid4
-from typing import Any
+from typing import Any, Callable
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, UploadFile, File, Form
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
+from app.ai.errors import AIServiceError
+from app.ai.orchestrator import run_capability_now
 from app.constants import VALID_CATEGORIES
 from app.db.models import MobileSelectionSession, ProductIndex
 from app.db.session import get_db
 from app.schemas import (
+    MobileCompareBootstrapResponse,
+    MobileCompareCategoryItem,
+    MobileCompareEventRequest,
+    MobileCompareIngredientDiff,
+    MobileCompareIngredientOrderDiff,
+    MobileCompareFunctionRankDiff,
+    MobileCompareJobRequest,
+    MobileComparePersonalization,
+    MobileCompareProfileBootstrap,
+    MobileCompareRecommendationBootstrap,
+    MobileCompareResultResponse,
+    MobileCompareResultSection,
+    MobileCompareSourceGuide,
+    MobileCompareTransparency,
+    MobileCompareUploadResponse,
+    MobileCompareVerdict,
     MobileSelectionChoice,
     MobileSelectionBatchDeleteRequest,
     MobileSelectionBatchDeleteResponse,
@@ -19,9 +41,20 @@ from app.schemas import (
     MobileSelectionResolveResponse,
     MobileSelectionRoute,
     MobileSelectionRuleHit,
+    ProductDoc,
     ProductCard,
 )
-from app.services.storage import now_iso
+from app.services.doubao_pipeline_service import DoubaoPipelineService
+from app.services.parser import normalize_doc
+from app.services.storage import (
+    now_iso,
+    new_id,
+    save_image,
+    save_doubao_artifact,
+    exists_rel_path,
+    load_json,
+)
+from app.settings import settings
 
 router = APIRouter(prefix="/api/mobile", tags=["mobile"])
 
@@ -31,6 +64,7 @@ MOBILE_OWNER_TYPE_DEVICE = "device"
 
 # Bump this version when rule mapping changes.
 MOBILE_RULES_VERSION = "2026-03-03.1"
+MOBILE_COMPARE_VERSION = "2026-03-03.1"
 
 FEATURED_PRODUCT_IDS: dict[str, str] = {
     "shampoo": "db1422ec-6263-45cc-966e-0ee9292fd8f1",
@@ -38,6 +72,14 @@ FEATURED_PRODUCT_IDS: dict[str, str] = {
     "conditioner": "b43ab8f2-f4b2-4d7d-b691-b9c4d2c6c5bc",
     "lotion": "f6774685-cd03-4b99-a606-ef8af9ce1bad",
     "cleanser": "39fe09a5-65ab-40ed-b52b-1033159bab23",
+}
+
+CATEGORY_LABELS_ZH: dict[str, str] = {
+    "shampoo": "洗发水",
+    "bodywash": "沐浴露",
+    "conditioner": "护发素",
+    "lotion": "润肤霜",
+    "cleanser": "洗面奶",
 }
 
 SHAMPOO_Q1_LABELS = {
@@ -445,6 +487,1075 @@ def batch_delete_mobile_selection_sessions(
         not_found_ids=not_found_ids,
         forbidden_ids=forbidden_ids,
     )
+
+
+@router.get("/compare/bootstrap", response_model=MobileCompareBootstrapResponse)
+def mobile_compare_bootstrap(
+    request: Request,
+    response: Response,
+    category: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    owner_type, owner_id, owner_cookie_new = _resolve_owner(request)
+    selected_category = _normalize_category_or_default(category)
+    latest = _latest_selection_session(
+        db=db,
+        owner_type=owner_type,
+        owner_id=owner_id,
+        category=selected_category,
+    )
+
+    profile = MobileCompareProfileBootstrap(
+        has_history_profile=latest is not None,
+        can_skip=True,
+        last_completed_at=latest.created_at if latest else None,
+        summary=_build_profile_summary_from_session(latest),
+    )
+
+    recommendation = MobileCompareRecommendationBootstrap(exists=False)
+    if latest:
+        resolved = _row_to_mobile_response(latest)
+        recommendation = MobileCompareRecommendationBootstrap(
+            exists=True,
+            session_id=resolved.session_id,
+            route_title=resolved.route.title,
+            product=resolved.recommended_product,
+        )
+
+    out = MobileCompareBootstrapResponse(
+        status="ok",
+        trace_id=new_id(),
+        categories=[
+            MobileCompareCategoryItem(key=key, label=CATEGORY_LABELS_ZH.get(key, key), enabled=True)
+            for key in ("shampoo", "bodywash", "conditioner", "lotion", "cleanser")
+        ],
+        selected_category=selected_category,
+        profile=profile,
+        recommendation=recommendation,
+        source_guide=MobileCompareSourceGuide(
+            title="上传你正在用的产品，和首推做一次专业对比",
+            value_points=[
+                "看懂成分差异，不只看营销词。",
+                "结合你填写的个人情况，给到可执行建议。",
+                "明确告诉你更适合：继续用、替换，还是分场景并用。",
+            ],
+        ),
+    )
+    if owner_cookie_new:
+        _set_owner_cookie(response, owner_id, request)
+    return out
+
+
+@router.post("/compare/current-product/upload", response_model=MobileCompareUploadResponse)
+async def upload_mobile_compare_current_product(
+    request: Request,
+    response: Response,
+    category: str = Form(...),
+    image: UploadFile = File(...),
+    brand: str | None = Form(None),
+    name: str | None = Form(None),
+):
+    owner_type, owner_id, owner_cookie_new = _resolve_owner(request)
+    normalized_category = _normalize_required_category(category)
+    if not image.content_type or not image.content_type.startswith("image/"):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "COMPARE_UPLOAD_INVALID_CONTENT_TYPE",
+                "detail": "Only image upload is supported.",
+            },
+        )
+
+    content = await image.read()
+    if len(content) > settings.max_upload_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail={
+                "code": "COMPARE_UPLOAD_TOO_LARGE",
+                "detail": f"Image too large. Max {settings.max_upload_bytes} bytes.",
+            },
+        )
+
+    upload_id = new_id()
+    try:
+        image_rel = save_image(
+            upload_id,
+            image.filename or "upload.jpg",
+            content,
+            content_type=image.content_type,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "COMPARE_UPLOAD_INVALID_IMAGE", "detail": str(e)},
+        ) from e
+
+    payload = {
+        "upload_id": upload_id,
+        "owner_type": owner_type,
+        "owner_id": owner_id,
+        "category": normalized_category,
+        "brand": str(brand or "").strip() or None,
+        "name": str(name or "").strip() or None,
+        "filename": image.filename,
+        "content_type": image.content_type,
+        "image_path": image_rel,
+        "created_at": now_iso(),
+    }
+    save_doubao_artifact(upload_id, "mobile_compare_upload_meta", payload)
+
+    if owner_cookie_new:
+        _set_owner_cookie(response, owner_id, request)
+    return MobileCompareUploadResponse(
+        status="ok",
+        trace_id=upload_id,
+        upload_id=upload_id,
+        category=normalized_category,
+        image_path=image_rel,
+        created_at=payload["created_at"],
+    )
+
+
+@router.post("/compare/jobs/stream")
+def run_mobile_compare_job_stream(
+    payload: MobileCompareJobRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    owner_type, owner_id, owner_cookie_new = _resolve_owner(request)
+    events: queue.Queue[tuple[str, dict[str, Any]] | None] = queue.Queue()
+    SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=db.get_bind())
+
+    def emit(event: str, data: dict[str, Any]) -> None:
+        events.put((event, data))
+
+    def worker() -> None:
+        local_db = SessionMaker()
+        try:
+            result = _run_mobile_compare_job(
+                payload=payload,
+                owner_type=owner_type,
+                owner_id=owner_id,
+                db=local_db,
+                event_callback=emit,
+            )
+            emit("result", result.model_dump())
+        except HTTPException as e:
+            emit("error", _compare_error_payload_from_http_exception(e))
+        except AIServiceError as e:
+            emit(
+                "error",
+                {
+                    "code": e.code,
+                    "detail": e.message,
+                    "http_status": e.http_status,
+                    "retryable": e.http_status >= 500,
+                },
+            )
+        except Exception as e:  # pragma: no cover
+            emit(
+                "error",
+                {
+                    "code": "COMPARE_INTERNAL_ERROR",
+                    "detail": str(e),
+                    "http_status": 500,
+                    "retryable": True,
+                },
+            )
+        finally:
+            emit("done", {"status": "done"})
+            events.put(None)
+            local_db.close()
+
+    threading.Thread(target=worker, daemon=True).start()
+
+    def event_iter():
+        while True:
+            try:
+                item = events.get(timeout=2)
+            except queue.Empty:
+                yield ": keep-alive\n\n"
+                continue
+            if item is None:
+                break
+            event, payload_data = item
+            yield _to_sse(event, payload_data)
+
+    stream = StreamingResponse(
+        event_iter(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Pragma": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+    if owner_cookie_new:
+        _set_owner_cookie(stream, owner_id, request)
+    return stream
+
+
+@router.get("/compare/results/{compare_id}", response_model=MobileCompareResultResponse)
+def get_mobile_compare_result(
+    compare_id: str,
+    request: Request,
+    response: Response,
+):
+    owner_type, owner_id, owner_cookie_new = _resolve_owner(request)
+    rel_path = f"doubao_runs/{compare_id}/mobile_compare_result.json"
+    if not exists_rel_path(rel_path):
+        raise HTTPException(status_code=404, detail="Compare result not found.")
+
+    payload = load_json(rel_path)
+    if str(payload.get("owner_type") or "") != owner_type or str(payload.get("owner_id") or "") != owner_id:
+        raise HTTPException(status_code=404, detail="Compare result not found.")
+    result_payload = payload.get("result")
+    if not isinstance(result_payload, dict):
+        raise HTTPException(status_code=500, detail="Compare result payload is invalid.")
+    result = MobileCompareResultResponse.model_validate(result_payload)
+    if owner_cookie_new:
+        _set_owner_cookie(response, owner_id, request)
+    return result
+
+
+@router.post("/compare/events")
+def record_mobile_compare_event(
+    payload: MobileCompareEventRequest,
+    request: Request,
+    response: Response,
+):
+    owner_type, owner_id, owner_cookie_new = _resolve_owner(request)
+    trace_id = new_id()
+    save_doubao_artifact(
+        trace_id,
+        "mobile_compare_event",
+        {
+            "trace_id": trace_id,
+            "owner_type": owner_type,
+            "owner_id": owner_id,
+            "event_name": payload.name,
+            "props": payload.props,
+            "created_at": now_iso(),
+        },
+    )
+    if owner_cookie_new:
+        _set_owner_cookie(response, owner_id, request)
+    return {"status": "ok", "trace_id": trace_id}
+
+
+def _run_mobile_compare_job(
+    *,
+    payload: MobileCompareJobRequest,
+    owner_type: str,
+    owner_id: str,
+    db: Session,
+    event_callback: Callable[[str, dict[str, Any]], None],
+) -> MobileCompareResultResponse:
+    category = _normalize_required_category(payload.category)
+    compare_id = new_id()
+
+    event_callback(
+        "progress",
+        {
+            "trace_id": compare_id,
+            "stage": "prepare",
+            "message": "已开始准备对比上下文。",
+            "percent": 5,
+        },
+    )
+
+    recommendation_session = _latest_selection_session(
+        db=db,
+        owner_type=owner_type,
+        owner_id=owner_id,
+        category=category,
+    )
+    if recommendation_session is None:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "COMPARE_RECOMMENDATION_NOT_FOUND",
+                "detail": f"Category '{category}' has no historical recommendation for this device.",
+                "retryable": False,
+                "trace_id": compare_id,
+            },
+        )
+    recommendation = _row_to_mobile_response(recommendation_session)
+
+    profile_ctx = _resolve_compare_profile_context(
+        category=category,
+        payload=payload,
+        recommendation_session=recommendation_session,
+        trace_id=compare_id,
+    )
+
+    event_callback(
+        "progress",
+        {
+            "trace_id": compare_id,
+            "stage": "stage1_vision",
+            "message": "正在识别你当前产品的包装与成分表。",
+            "percent": 15,
+        },
+    )
+    current_doc_payload = _resolve_current_product_doc(
+        category=category,
+        payload=payload,
+        owner_type=owner_type,
+        owner_id=owner_id,
+        trace_id=compare_id,
+        event_callback=event_callback,
+        db=db,
+    )
+    current_doc = ProductDoc.model_validate(current_doc_payload)
+
+    event_callback(
+        "progress",
+        {
+            "trace_id": compare_id,
+            "stage": "load_recommended",
+            "message": "正在加载历史首推产品。",
+            "percent": 55,
+        },
+    )
+    recommended_doc_payload = _load_product_doc_payload_by_id(
+        db=db,
+        product_id=recommendation.recommended_product.id,
+        expected_category=category,
+        trace_id=compare_id,
+    )
+    recommended_doc = ProductDoc.model_validate(recommended_doc_payload)
+
+    ingredient_diff = _build_deterministic_ingredient_diff(
+        current_doc=current_doc,
+        recommended_doc=recommended_doc,
+        include_inci_order_diff=payload.options.include_inci_order_diff,
+        include_function_rank_diff=payload.options.include_function_rank_diff,
+    )
+
+    compare_context = _build_mobile_compare_context(
+        category=category,
+        personalization=profile_ctx,
+        recommendation=recommendation,
+        current_doc=current_doc,
+        recommended_doc=recommended_doc,
+        ingredient_diff=ingredient_diff,
+    )
+
+    event_callback(
+        "progress",
+        {
+            "trace_id": compare_id,
+            "stage": "mobile_compare_summary",
+            "message": "正在生成个性化结论。",
+            "percent": 70,
+        },
+    )
+    summary_output = run_capability_now(
+        capability="doubao.mobile_compare_summary",
+        input_payload={"compare_context_json": json.dumps(compare_context, ensure_ascii=False)},
+        trace_id=compare_id,
+        event_callback=lambda e: _emit_mobile_compare_ai_event(
+            event=e,
+            trace_id=compare_id,
+            event_callback=event_callback,
+        ),
+    )
+
+    summary_sections = summary_output.get("sections")
+    if not isinstance(summary_sections, dict):
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "COMPARE_SUMMARY_INVALID",
+                "detail": "AI summary output sections is invalid.",
+                "retryable": True,
+                "trace_id": compare_id,
+            },
+        )
+
+    sections = [
+        MobileCompareResultSection(
+            key="keep_benefits",
+            title="继续用这款，你最能得到什么",
+            items=[str(item).strip() for item in summary_sections.get("keep_benefits", []) if str(item).strip()],
+        ),
+        MobileCompareResultSection(
+            key="keep_watchouts",
+            title="如果继续用，这些点要多留意",
+            items=[str(item).strip() for item in summary_sections.get("keep_watchouts", []) if str(item).strip()],
+        ),
+        MobileCompareResultSection(
+            key="ingredient_order_diff",
+            title="两款成分排位，哪里不一样",
+            items=[str(item).strip() for item in summary_sections.get("ingredient_order_diff", []) if str(item).strip()],
+        ),
+        MobileCompareResultSection(
+            key="profile_fit_advice",
+            title="结合你填写的个人情况，更适合你的用法",
+            items=[str(item).strip() for item in summary_sections.get("profile_fit_advice", []) if str(item).strip()],
+        ),
+    ]
+
+    personalization = MobileComparePersonalization(
+        status=profile_ctx["status"],
+        basis=profile_ctx["basis"],
+        missing_fields=list(profile_ctx["missing_fields"]),
+    )
+
+    warnings: list[str] = []
+    if personalization.status != "complete":
+        warnings.append("你这次没有补全个人情况，个性化结论置信度会下降。")
+
+    result = MobileCompareResultResponse(
+        status="ok",
+        trace_id=compare_id,
+        compare_id=compare_id,
+        category=category,
+        personalization=personalization,
+        verdict=MobileCompareVerdict(
+            decision=str(summary_output.get("decision") or "hybrid"),
+            headline=str(summary_output.get("headline") or "").strip(),
+            confidence=float(summary_output.get("confidence") or 0.0),
+        ),
+        sections=sections,
+        ingredient_diff=ingredient_diff,
+        transparency=MobileCompareTransparency(
+            model=str(summary_output.get("model") or "") or None,
+            warnings=warnings,
+            missing_fields=list(profile_ctx["missing_fields"]),
+        ),
+        recommendation=recommendation,
+        current_product=current_doc,
+        recommended_product=recommended_doc,
+        created_at=now_iso(),
+    )
+
+    save_doubao_artifact(
+        compare_id,
+        "mobile_compare_result",
+        {
+            "owner_type": owner_type,
+            "owner_id": owner_id,
+            "compare_version": MOBILE_COMPARE_VERSION,
+            "result": result.model_dump(),
+        },
+    )
+    event_callback(
+        "progress",
+        {
+            "trace_id": compare_id,
+            "stage": "done",
+            "message": "对比已完成。",
+            "percent": 100,
+        },
+    )
+    return result
+
+
+def _resolve_compare_profile_context(
+    *,
+    category: str,
+    payload: MobileCompareJobRequest,
+    recommendation_session: MobileSelectionSession,
+    trace_id: str,
+) -> dict[str, Any]:
+    mode = str(payload.profile_mode or "reuse_latest").strip().lower()
+    if mode == "skip":
+        return {
+            "status": "skipped",
+            "basis": "skip",
+            "missing_fields": ["profile_answers"],
+            "answers": {},
+            "choices": [],
+            "rule_hits": [],
+            "route_title": recommendation_session.route_title,
+        }
+
+    if mode == "reuse_latest":
+        try:
+            raw = json.loads(recommendation_session.answers_json or "{}")
+        except Exception:
+            raw = {}
+        answers = _normalize_answers(raw if isinstance(raw, dict) else {})
+        if not answers:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "COMPARE_PROFILE_INSUFFICIENT",
+                    "detail": "No reusable profile answers found for this category.",
+                    "retryable": False,
+                    "trace_id": trace_id,
+                },
+            )
+        resolved = _resolve_selection(category=category, answers=answers)
+        return {
+            "status": "complete",
+            "basis": "reuse_latest",
+            "missing_fields": [],
+            "answers": resolved["answers"],
+            "choices": resolved["choices"],
+            "rule_hits": resolved["rule_hits"],
+            "route_title": resolved["route_title"],
+        }
+
+    if mode == "update_now":
+        answers = _normalize_answers(payload.profile_answers)
+        if not answers:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "COMPARE_PROFILE_INSUFFICIENT",
+                    "detail": "profile_answers is required when profile_mode=update_now.",
+                    "retryable": False,
+                    "trace_id": trace_id,
+                },
+            )
+        resolved = _resolve_selection(category=category, answers=answers)
+        return {
+            "status": "complete",
+            "basis": "update_now",
+            "missing_fields": [],
+            "answers": resolved["answers"],
+            "choices": resolved["choices"],
+            "rule_hits": resolved["rule_hits"],
+            "route_title": resolved["route_title"],
+        }
+
+    raise HTTPException(
+        status_code=400,
+        detail={
+            "code": "COMPARE_PROFILE_MODE_INVALID",
+            "detail": f"Unsupported profile_mode: {mode}.",
+            "retryable": False,
+            "trace_id": trace_id,
+        },
+    )
+
+
+def _resolve_current_product_doc(
+    *,
+    category: str,
+    payload: MobileCompareJobRequest,
+    owner_type: str,
+    owner_id: str,
+    trace_id: str,
+    event_callback: Callable[[str, dict[str, Any]], None],
+    db: Session,
+) -> dict[str, Any]:
+    source = str(payload.current_product.source or "upload_new").strip().lower()
+    if source == "history_product":
+        product_id = str(payload.current_product.product_id or "").strip()
+        if not product_id:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "COMPARE_CURRENT_PRODUCT_ID_REQUIRED",
+                    "detail": "product_id is required when source=history_product.",
+                    "retryable": False,
+                    "trace_id": trace_id,
+                },
+            )
+        return _load_product_doc_payload_by_id(
+            db=db,
+            product_id=product_id,
+            expected_category=category,
+            trace_id=trace_id,
+        )
+
+    if source != "upload_new":
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "COMPARE_SOURCE_INVALID",
+                "detail": f"Unsupported current_product.source: {source}.",
+                "retryable": False,
+                "trace_id": trace_id,
+            },
+        )
+
+    upload_id = str(payload.current_product.upload_id or "").strip()
+    if not upload_id:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "COMPARE_UPLOAD_ID_REQUIRED",
+                "detail": "upload_id is required when source=upload_new.",
+                "retryable": False,
+                "trace_id": trace_id,
+            },
+        )
+    meta = _load_mobile_compare_upload_meta(upload_id=upload_id, owner_type=owner_type, owner_id=owner_id, trace_id=trace_id)
+    image_path = str(meta.get("image_path") or "").strip()
+    if not image_path or not exists_rel_path(image_path):
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "COMPARE_UPLOAD_IMAGE_NOT_FOUND",
+                "detail": f"Upload image not found for upload_id={upload_id}.",
+                "retryable": False,
+                "trace_id": trace_id,
+            },
+        )
+
+    pipeline = DoubaoPipelineService()
+
+    def on_pipeline_event(event: dict[str, Any]) -> None:
+        event_type = str(event.get("type") or "").strip().lower()
+        stage = str(event.get("stage") or "").strip() or "pipeline"
+        if event_type == "step":
+            event_callback(
+                "progress",
+                {
+                    "trace_id": trace_id,
+                    "stage": stage,
+                    "message": str(event.get("message") or "").strip(),
+                },
+            )
+            return
+        if event_type == "delta":
+            delta = str(event.get("delta") or "")
+            if delta:
+                event_callback(
+                    "partial_text",
+                    {
+                        "trace_id": trace_id,
+                        "channel": stage,
+                        "text": delta,
+                    },
+                )
+            return
+        if event_type.startswith("job_"):
+            event_callback(
+                "progress",
+                {
+                    "trace_id": trace_id,
+                    "stage": stage,
+                    "message": event_type,
+                },
+            )
+
+    stage1 = pipeline.analyze_stage1(
+        image_path=image_path,
+        trace_id=trace_id,
+        event_callback=on_pipeline_event,
+    )
+    event_callback(
+        "progress",
+        {
+            "trace_id": trace_id,
+            "stage": "stage2_struct",
+            "message": "正在结构化提取成分与摘要。",
+            "percent": 40,
+        },
+    )
+    stage2 = pipeline.analyze_stage2(
+        vision_text=str(stage1.get("vision_text") or ""),
+        trace_id=trace_id,
+        event_callback=on_pipeline_event,
+    )
+
+    doc = stage2.get("doc")
+    if not isinstance(doc, dict):
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "COMPARE_PARSE_INVALID_DOC",
+                "detail": "Stage2 did not return a valid product document.",
+                "retryable": True,
+                "trace_id": trace_id,
+            },
+        )
+
+    product = doc.setdefault("product", {})
+    raw_category = str(product.get("category") or "").strip().lower()
+    if raw_category and raw_category != category:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "COMPARE_CATEGORY_MISMATCH",
+                "detail": f"Current product category '{raw_category}' does not match selected category '{category}'.",
+                "retryable": False,
+                "trace_id": trace_id,
+            },
+        )
+
+    product["category"] = category
+    brand_override = str(meta.get("brand") or "").strip()
+    name_override = str(meta.get("name") or "").strip()
+    if brand_override:
+        product["brand"] = brand_override
+    if name_override:
+        product["name"] = name_override
+
+    normalized = normalize_doc(
+        doc,
+        image_rel_path=image_path,
+        doubao_raw=str(stage2.get("struct_text") or ""),
+    )
+    evidence = normalized.setdefault("evidence", {})
+    evidence["doubao_vision_text"] = stage1.get("vision_text")
+    evidence["doubao_pipeline_mode"] = "mobile-compare-two-stage"
+    evidence["doubao_models"] = {
+        "vision": stage1.get("model"),
+        "struct": stage2.get("model"),
+    }
+    evidence["doubao_artifacts"] = {
+        "vision": stage1.get("artifact"),
+        "struct": stage2.get("artifact"),
+    }
+    return normalized
+
+
+def _load_mobile_compare_upload_meta(
+    *,
+    upload_id: str,
+    owner_type: str,
+    owner_id: str,
+    trace_id: str,
+) -> dict[str, Any]:
+    rel_path = f"doubao_runs/{upload_id}/mobile_compare_upload_meta.json"
+    if not exists_rel_path(rel_path):
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "COMPARE_UPLOAD_NOT_FOUND",
+                "detail": f"upload_id '{upload_id}' not found.",
+                "retryable": False,
+                "trace_id": trace_id,
+            },
+        )
+    payload = load_json(rel_path)
+    if str(payload.get("owner_type") or "") != owner_type or str(payload.get("owner_id") or "") != owner_id:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "COMPARE_UPLOAD_NOT_FOUND",
+                "detail": f"upload_id '{upload_id}' not found.",
+                "retryable": False,
+                "trace_id": trace_id,
+            },
+        )
+    return payload
+
+
+def _load_product_doc_payload_by_id(
+    *,
+    db: Session,
+    product_id: str,
+    expected_category: str,
+    trace_id: str,
+) -> dict[str, Any]:
+    rec = db.get(ProductIndex, product_id)
+    if rec is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "COMPARE_PRODUCT_NOT_FOUND",
+                "detail": f"Product '{product_id}' not found.",
+                "retryable": False,
+                "trace_id": trace_id,
+            },
+        )
+    if str(rec.category or "").strip().lower() != expected_category:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "COMPARE_CATEGORY_MISMATCH",
+                "detail": f"Product '{product_id}' category does not match '{expected_category}'.",
+                "retryable": False,
+                "trace_id": trace_id,
+            },
+        )
+    if not exists_rel_path(rec.json_path):
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "COMPARE_PRODUCT_DOC_MISSING",
+                "detail": f"Product document missing for '{product_id}'.",
+                "retryable": False,
+                "trace_id": trace_id,
+            },
+        )
+    return load_json(rec.json_path)
+
+
+def _emit_mobile_compare_ai_event(
+    *,
+    event: dict[str, Any],
+    trace_id: str,
+    event_callback: Callable[[str, dict[str, Any]], None],
+) -> None:
+    event_type = str(event.get("type") or "").strip().lower()
+    stage = str(event.get("stage") or "").strip() or "mobile_compare_summary"
+    if event_type == "step":
+        event_callback(
+            "progress",
+            {
+                "trace_id": trace_id,
+                "stage": stage,
+                "message": str(event.get("message") or "").strip(),
+            },
+        )
+        return
+    if event_type == "delta":
+        delta = str(event.get("delta") or "")
+        if delta:
+            event_callback(
+                "partial_text",
+                {
+                    "trace_id": trace_id,
+                    "channel": "analysis_live",
+                    "text": delta,
+                },
+            )
+        return
+    if event_type.startswith("job_"):
+        event_callback(
+            "progress",
+            {
+                "trace_id": trace_id,
+                "stage": stage,
+                "message": event_type,
+            },
+        )
+
+
+def _build_mobile_compare_context(
+    *,
+    category: str,
+    personalization: dict[str, Any],
+    recommendation: MobileSelectionResolveResponse,
+    current_doc: ProductDoc,
+    recommended_doc: ProductDoc,
+    ingredient_diff: MobileCompareIngredientDiff,
+) -> dict[str, Any]:
+    return {
+        "category": category,
+        "personalization": {
+            "status": personalization["status"],
+            "basis": personalization["basis"],
+            "missing_fields": personalization["missing_fields"],
+            "summary_labels": [str(item.get("label") or "").strip() for item in personalization.get("choices", []) if str(item.get("label") or "").strip()],
+        },
+        "history_recommendation": {
+            "route_title": recommendation.route.title,
+            "route_key": recommendation.route.key,
+            "rule_hits": [item.model_dump() for item in recommendation.rule_hits],
+        },
+        "current_product": {
+            "brand": current_doc.product.brand,
+            "name": current_doc.product.name,
+            "one_sentence": current_doc.summary.one_sentence,
+            "risk_counts": _count_risks(current_doc),
+        },
+        "recommended_product": {
+            "brand": recommended_doc.product.brand,
+            "name": recommended_doc.product.name,
+            "one_sentence": recommended_doc.summary.one_sentence,
+            "risk_counts": _count_risks(recommended_doc),
+        },
+        "ingredient_diff": ingredient_diff.model_dump(),
+    }
+
+
+def _count_risks(doc: ProductDoc) -> dict[str, int]:
+    out = {"low": 0, "mid": 0, "high": 0}
+    for item in doc.ingredients:
+        risk = str(item.risk or "").strip().lower()
+        if risk in out:
+            out[risk] += 1
+    return out
+
+
+def _build_deterministic_ingredient_diff(
+    *,
+    current_doc: ProductDoc,
+    recommended_doc: ProductDoc,
+    include_inci_order_diff: bool,
+    include_function_rank_diff: bool,
+) -> MobileCompareIngredientDiff:
+    current_items = _extract_ingredient_rows(current_doc)
+    recommended_items = _extract_ingredient_rows(recommended_doc)
+
+    current_map = {item["key"]: item for item in current_items}
+    recommended_map = {item["key"]: item for item in recommended_items}
+    overlap_keys = [item["key"] for item in current_items if item["key"] in recommended_map]
+    only_current_keys = [item["key"] for item in current_items if item["key"] not in recommended_map]
+    only_recommended_keys = [item["key"] for item in recommended_items if item["key"] not in current_map]
+
+    inci_order_diff: list[MobileCompareIngredientOrderDiff] = []
+    if include_inci_order_diff:
+        shifts: list[tuple[int, int, int, str]] = []
+        for key in overlap_keys:
+            cur_rank = int(current_map[key]["rank"])
+            rec_rank = int(recommended_map[key]["rank"])
+            if cur_rank == rec_rank:
+                continue
+            shifts.append((abs(cur_rank - rec_rank), cur_rank, rec_rank, str(current_map[key]["name"])))
+        shifts.sort(key=lambda item: (-item[0], item[1], item[2]))
+        inci_order_diff = [
+            MobileCompareIngredientOrderDiff(
+                ingredient=name,
+                current_rank=cur_rank,
+                recommended_rank=rec_rank,
+            )
+            for _, cur_rank, rec_rank, name in shifts[:12]
+        ]
+
+    function_rank_diff: list[MobileCompareFunctionRankDiff] = []
+    if include_function_rank_diff:
+        current_scores = _function_priority_scores(current_items)
+        recommended_scores = _function_priority_scores(recommended_items)
+        union_keys = sorted(set(current_scores.keys()) | set(recommended_scores.keys()))
+        diffs: list[tuple[float, str, float, float]] = []
+        for key in union_keys:
+            current_score = float(current_scores.get(key, 0.0))
+            recommended_score = float(recommended_scores.get(key, 0.0))
+            if abs(current_score - recommended_score) < 0.0001:
+                continue
+            diffs.append((abs(current_score - recommended_score), key, current_score, recommended_score))
+        diffs.sort(key=lambda item: (-item[0], item[1]))
+        function_rank_diff = [
+            MobileCompareFunctionRankDiff(
+                function=fn,
+                current_score=round(cur, 4),
+                recommended_score=round(rec, 4),
+            )
+            for _, fn, cur, rec in diffs[:12]
+        ]
+
+    return MobileCompareIngredientDiff(
+        overlap=[str(current_map[key]["name"]) for key in overlap_keys[:40]],
+        only_current=[str(current_map[key]["name"]) for key in only_current_keys[:40]],
+        only_recommended=[str(recommended_map[key]["name"]) for key in only_recommended_keys[:40]],
+        inci_order_diff=inci_order_diff,
+        function_rank_diff=function_rank_diff,
+    )
+
+
+def _extract_ingredient_rows(doc: ProductDoc) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for idx, item in enumerate(doc.ingredients, start=1):
+        name = str(item.name or "").strip()
+        if not name:
+            continue
+        key = name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        functions = [str(fn or "").strip() for fn in item.functions if str(fn or "").strip()]
+        out.append(
+            {
+                "key": key,
+                "name": name,
+                "rank": idx,
+                "functions": functions,
+            }
+        )
+    return out
+
+
+def _function_priority_scores(items: list[dict[str, Any]]) -> dict[str, float]:
+    raw: dict[str, float] = defaultdict(float)
+    for idx, item in enumerate(items):
+        functions = item.get("functions") or []
+        if not isinstance(functions, list):
+            continue
+        weight = float(max(1, 20 - idx))
+        for fn in functions:
+            text = str(fn or "").strip().lower()
+            if not text:
+                continue
+            raw[text] += weight
+
+    if not raw:
+        return {}
+    peak = max(raw.values()) or 1.0
+    return {key: value / peak for key, value in raw.items()}
+
+
+def _normalize_category_or_default(raw: str | None) -> str:
+    if raw is None:
+        return "shampoo"
+    value = str(raw or "").strip().lower()
+    if not value:
+        return "shampoo"
+    if value not in VALID_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Invalid category: {value}.")
+    return value
+
+
+def _normalize_required_category(raw: str | None) -> str:
+    value = str(raw or "").strip().lower()
+    if not value:
+        raise HTTPException(status_code=400, detail="category is required.")
+    if value not in VALID_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Invalid category: {value}.")
+    return value
+
+
+def _latest_selection_session(
+    *,
+    db: Session,
+    owner_type: str,
+    owner_id: str,
+    category: str,
+) -> MobileSelectionSession | None:
+    return (
+        db.execute(
+            select(MobileSelectionSession)
+            .where(MobileSelectionSession.owner_type == owner_type)
+            .where(MobileSelectionSession.owner_id == owner_id)
+            .where(MobileSelectionSession.category == category)
+            .where(MobileSelectionSession.deleted_at.is_(None))
+            .order_by(MobileSelectionSession.created_at.desc())
+            .limit(1)
+        )
+        .scalars()
+        .first()
+    )
+
+
+def _build_profile_summary_from_session(row: MobileSelectionSession | None) -> list[str]:
+    if row is None:
+        return []
+    try:
+        payload = json.loads(row.result_json or "{}")
+    except Exception:
+        return []
+    choices = payload.get("choices")
+    if not isinstance(choices, list):
+        return []
+    out: list[str] = []
+    for item in choices:
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label") or "").strip()
+        if label:
+            out.append(label)
+    return out[:4]
+
+
+def _compare_error_payload_from_http_exception(exc: HTTPException) -> dict[str, Any]:
+    detail = exc.detail
+    if isinstance(detail, dict):
+        out = dict(detail)
+        out.setdefault("http_status", exc.status_code)
+        out.setdefault("retryable", exc.status_code >= 500)
+        return out
+    return {
+        "code": "COMPARE_HTTP_ERROR",
+        "detail": str(detail),
+        "http_status": exc.status_code,
+        "retryable": exc.status_code >= 500,
+    }
+
+
+def _to_sse(event: str, payload: dict[str, Any]) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
 def _row_to_mobile_response(row: MobileSelectionSession) -> MobileSelectionResolveResponse:

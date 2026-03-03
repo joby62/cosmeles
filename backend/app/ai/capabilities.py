@@ -21,6 +21,7 @@ SUPPORTED_CAPABILITIES = {
     "doubao.image_json_consistency",
     "doubao.product_dedup_decision",
     "doubao.product_dedup_group",
+    "doubao.mobile_compare_summary",
 }
 
 
@@ -63,6 +64,8 @@ def execute_capability(
         return _cap_product_dedup_decision(input_payload, trace_id, event_callback=event_callback)
     if capability == "doubao.product_dedup_group":
         return _cap_product_dedup_group(input_payload, trace_id, event_callback=event_callback)
+    if capability == "doubao.mobile_compare_summary":
+        return _cap_mobile_compare_summary(input_payload, trace_id, event_callback=event_callback)
 
     raise AIServiceError(
         code="capability_not_supported",
@@ -563,6 +566,78 @@ def _cap_product_dedup_group(
     )
 
 
+def _cap_mobile_compare_summary(
+    input_payload: dict[str, Any],
+    trace_id: str | None,
+    event_callback: Callable[[dict[str, Any]], None] | None = None,
+) -> CapabilityExecutionResult:
+    compare_context_json = _required_nonempty_str(input_payload, "compare_context_json")
+    prompt = load_prompt("doubao.mobile_compare_summary")
+    rendered_prompt = render_prompt(
+        prompt.text,
+        {
+            "compare_context_json": compare_context_json,
+        },
+    )
+
+    if _is_sample_mode():
+        sample = {
+            "decision": "hybrid",
+            "headline": "当前产品可用，但更建议分场景与首推产品搭配使用。",
+            "confidence": 0.62,
+            "sections": {
+                "keep_benefits": ["当前产品在清洁触感上更直接。"],
+                "keep_watchouts": ["连续高频使用时可能放大你的不适点。"],
+                "ingredient_order_diff": ["两款在前排关键成分的权重分布不同。"],
+                "profile_fit_advice": ["按你填写的个人情况，建议主推款作为日常主力。"],
+            },
+        }
+        artifact = _maybe_save_artifact(
+            trace_id,
+            "mobile_compare_summary",
+            {"model": "sample", "prompt": rendered_prompt, "response": {"mode": "sample"}, "text": json.dumps(sample, ensure_ascii=False)},
+        )
+        return CapabilityExecutionResult(
+            output={**sample, "analysis_text": json.dumps(sample, ensure_ascii=False), "model": "sample", "artifact": artifact},
+            prompt_key=prompt.key,
+            prompt_version=prompt.version,
+            model="sample",
+            request_payload={"prompt": rendered_prompt},
+            response_payload={"mode": "sample"},
+        )
+
+    sdk, _, _, text_model = _build_sdk_and_models()
+    _emit(
+        event_callback,
+        {"type": "step", "stage": "mobile_compare_summary", "message": f"Calling model {text_model}."},
+    )
+    response_raw = _safe_sdk_call(
+        lambda: sdk.chat_with_text(
+            rendered_prompt,
+            model=text_model,
+            stream=event_callback is not None,
+            on_text_delta=(lambda delta: _emit(event_callback, {"type": "delta", "stage": "mobile_compare_summary", "delta": delta})),
+        )
+    )
+    text = _extract_content(response_raw)
+    parsed = _extract_json_object(text)
+    normalized = _normalize_mobile_compare_summary_result(parsed)
+    _emit(event_callback, {"type": "step", "stage": "mobile_compare_summary", "message": "Compare summary completed."})
+    artifact = _maybe_save_artifact(
+        trace_id,
+        "mobile_compare_summary",
+        {"model": text_model, "prompt": rendered_prompt, "response": response_raw, "text": text},
+    )
+    return CapabilityExecutionResult(
+        output={**normalized, "analysis_text": text, "model": text_model, "artifact": artifact},
+        prompt_key=prompt.key,
+        prompt_version=prompt.version,
+        model=text_model,
+        request_payload={"prompt": rendered_prompt},
+        response_payload=response_raw,
+    )
+
+
 def _is_sample_mode() -> bool:
     return settings.doubao_mode.lower().strip() in {"mock", "sample"}
 
@@ -790,6 +865,81 @@ def _normalize_dedup_group_result(
         "keep_id": keep_id,
         "duplicates": duplicates,
         "reason": reason,
+    }
+
+
+def _normalize_mobile_compare_summary_result(payload: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise AIServiceError(
+            code="mobile_compare_summary_invalid",
+            message="mobile compare summary output must be a JSON object.",
+            http_status=422,
+        )
+
+    decision = str(payload.get("decision") or "").strip().lower()
+    if decision not in {"keep", "switch", "hybrid"}:
+        raise AIServiceError(
+            code="mobile_compare_summary_invalid",
+            message="mobile compare summary decision must be one of keep/switch/hybrid.",
+            http_status=422,
+        )
+
+    headline = str(payload.get("headline") or "").strip()
+    if not headline:
+        raise AIServiceError(
+            code="mobile_compare_summary_invalid",
+            message="mobile compare summary headline is required.",
+            http_status=422,
+        )
+
+    raw_confidence = payload.get("confidence")
+    try:
+        confidence = float(raw_confidence)
+    except Exception:
+        confidence = 0.0
+    confidence = max(0.0, min(1.0, confidence))
+
+    sections_raw = payload.get("sections")
+    if not isinstance(sections_raw, dict):
+        raise AIServiceError(
+            code="mobile_compare_summary_invalid",
+            message="mobile compare summary sections must be an object.",
+            http_status=422,
+        )
+
+    def normalize_items(key: str) -> list[str]:
+        value = sections_raw.get(key)
+        if not isinstance(value, list):
+            raise AIServiceError(
+                code="mobile_compare_summary_invalid",
+                message=f"mobile compare summary sections.{key} must be a list.",
+                http_status=422,
+            )
+        out: list[str] = []
+        for item in value:
+            text = str(item or "").strip()
+            if text:
+                out.append(text)
+        if not out:
+            raise AIServiceError(
+                code="mobile_compare_summary_invalid",
+                message=f"mobile compare summary sections.{key} cannot be empty.",
+                http_status=422,
+            )
+        return out[:6]
+
+    sections = {
+        "keep_benefits": normalize_items("keep_benefits"),
+        "keep_watchouts": normalize_items("keep_watchouts"),
+        "ingredient_order_diff": normalize_items("ingredient_order_diff"),
+        "profile_fit_advice": normalize_items("profile_fit_advice"),
+    }
+
+    return {
+        "decision": decision,
+        "headline": headline,
+        "confidence": confidence,
+        "sections": sections,
     }
 
 

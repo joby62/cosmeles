@@ -339,6 +339,108 @@ export type MobileSelectionBatchDeleteResponse = {
   forbidden_ids: string[];
 };
 
+export type MobileCompareCategoryItem = {
+  key: MobileSelectionCategory;
+  label: string;
+  enabled: boolean;
+};
+
+export type MobileCompareBootstrapResponse = {
+  status: string;
+  trace_id: string;
+  categories: MobileCompareCategoryItem[];
+  selected_category: MobileSelectionCategory;
+  profile: {
+    has_history_profile: boolean;
+    can_skip: boolean;
+    last_completed_at?: string | null;
+    summary: string[];
+  };
+  recommendation: {
+    exists: boolean;
+    session_id?: string | null;
+    route_title?: string | null;
+    product?: Product | null;
+  };
+  source_guide: {
+    title: string;
+    value_points: string[];
+  };
+};
+
+export type MobileCompareUploadResponse = {
+  status: string;
+  trace_id: string;
+  upload_id: string;
+  category: MobileSelectionCategory;
+  image_path?: string | null;
+  created_at: string;
+};
+
+export type MobileCompareJobRequest = {
+  category: MobileSelectionCategory;
+  profile_mode: "reuse_latest" | "update_now" | "skip";
+  profile_answers?: Record<string, string>;
+  current_product: {
+    source: "upload_new" | "history_product";
+    upload_id?: string | null;
+    product_id?: string | null;
+  };
+  options?: {
+    language?: string;
+    include_inci_order_diff?: boolean;
+    include_function_rank_diff?: boolean;
+  };
+};
+
+export type MobileCompareResultSection = {
+  key: "keep_benefits" | "keep_watchouts" | "ingredient_order_diff" | "profile_fit_advice";
+  title: string;
+  items: string[];
+};
+
+export type MobileCompareResult = {
+  status: string;
+  trace_id: string;
+  compare_id: string;
+  category: MobileSelectionCategory;
+  personalization: {
+    status: string;
+    basis: string;
+    missing_fields: string[];
+  };
+  verdict: {
+    decision: "keep" | "switch" | "hybrid";
+    headline: string;
+    confidence: number;
+  };
+  sections: MobileCompareResultSection[];
+  ingredient_diff: {
+    overlap: string[];
+    only_current: string[];
+    only_recommended: string[];
+    inci_order_diff: Array<{
+      ingredient: string;
+      current_rank: number;
+      recommended_rank: number;
+    }>;
+    function_rank_diff: Array<{
+      function: string;
+      current_score: number;
+      recommended_score: number;
+    }>;
+  };
+  transparency: {
+    model?: string | null;
+    warnings: string[];
+    missing_fields: string[];
+  };
+  recommendation: MobileSelectionResolveResponse;
+  current_product: ProductDoc;
+  recommended_product: ProductDoc;
+  created_at: string;
+};
+
 function getBaseForFetch(): string {
   // 在浏览器里优先直连后端，避免 /api 重写层在 multipart 上传时吞掉真实错误。
   if (typeof window !== "undefined") {
@@ -617,6 +719,64 @@ export async function deleteMobileSelectionSessionsBatch(
   return apiFetch<MobileSelectionBatchDeleteResponse>("/api/mobile/selection/sessions/batch/delete", {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchMobileCompareBootstrap(category?: MobileSelectionCategory): Promise<MobileCompareBootstrapResponse> {
+  const query = category ? `?category=${encodeURIComponent(category)}` : "";
+  return apiFetch<MobileCompareBootstrapResponse>(`/api/mobile/compare/bootstrap${query}`);
+}
+
+export async function uploadMobileCompareCurrentProduct(input: {
+  category: MobileSelectionCategory;
+  image: File;
+  brand?: string;
+  name?: string;
+}): Promise<MobileCompareUploadResponse> {
+  const base = getBaseForFetch();
+  const url = base ? new URL("/api/mobile/compare/current-product/upload", base).toString() : "/api/mobile/compare/current-product/upload";
+  const fd = new FormData();
+  fd.append("category", input.category);
+  fd.append("image", input.image);
+  if (input.brand) fd.append("brand", input.brand);
+  if (input.name) fd.append("name", input.name);
+
+  const res = await fetch(url, {
+    method: "POST",
+    body: fd,
+    credentials: "include",
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`COMPARE_UPLOAD ${res.status}: ${text}`);
+  }
+  return (await res.json()) as MobileCompareUploadResponse;
+}
+
+export async function runMobileCompareJobStream(
+  payload: MobileCompareJobRequest,
+  onEvent: (event: SSEEvent) => void,
+): Promise<MobileCompareResult> {
+  return postSSE<MobileCompareResult>(
+    "/api/mobile/compare/jobs/stream",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+      headers: { "content-type": "application/json" },
+    },
+    onEvent,
+  );
+}
+
+export async function fetchMobileCompareResult(compareId: string): Promise<MobileCompareResult> {
+  return apiFetch<MobileCompareResult>(`/api/mobile/compare/results/${encodeURIComponent(compareId)}`);
+}
+
+export async function recordMobileCompareEvent(name: string, props: Record<string, unknown> = {}): Promise<{ status: string; trace_id: string }> {
+  return apiFetch<{ status: string; trace_id: string }>("/api/mobile/compare/events", {
+    method: "POST",
+    body: JSON.stringify({ name, props }),
   });
 }
 
