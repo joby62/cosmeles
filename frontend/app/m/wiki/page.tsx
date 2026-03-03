@@ -134,13 +134,13 @@ export default function MobileWikiPage() {
 
   return (
     <section className="m-wiki-page -mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[color:var(--m-wiki-canvas)] px-4 pb-36 pt-4 text-white">
-      <div className="rounded-[24px] border border-white/10 bg-white/[0.04] p-3 shadow-[0_18px_42px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+      <div className="m-wiki-card rounded-[24px] p-3 backdrop-blur-xl">
         <form
           onSubmit={(e) => {
             e.preventDefault();
           }}
         >
-          <div className="flex h-11 items-center rounded-2xl border border-white/10 bg-white/[0.07] px-3 text-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]">
+          <div className="m-wiki-input-shell flex h-11 items-center rounded-2xl px-3 text-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]">
             <SearchIcon className="h-[17px] w-[17px] text-white/52" />
             <input
               id="wiki-search"
@@ -164,7 +164,7 @@ export default function MobileWikiPage() {
                   setLoading(true);
                   setError(null);
                 }}
-                className="rounded-full bg-white/10 px-2.5 py-1 text-[12px] text-white/72 active:bg-white/18"
+                className="m-pressable rounded-full bg-white/10 px-2.5 py-1 text-[12px] text-white/72 active:bg-white/18"
               >
                 清除
               </button>
@@ -188,7 +188,7 @@ export default function MobileWikiPage() {
                     }
                     setActive(key);
                   }}
-                  className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12px] transition-colors ${
+                  className={`m-pressable inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12px] transition-colors ${
                     activeTag
                       ? "border-white/36 bg-white/16 text-white"
                       : "border-white/12 bg-white/[0.03] text-white/72 active:bg-white/[0.08]"
@@ -205,7 +205,7 @@ export default function MobileWikiPage() {
 
       <section className="mt-6">
         <div className="mb-3">
-          <p className="text-[14px] font-medium text-[#4ea0ff]">现已推出</p>
+          <p className="m-wiki-kicker text-[14px] text-[#4ea0ff]">现已推出</p>
           <h1 className="mt-1 text-[34px] leading-[1.08] font-semibold tracking-[-0.03em]">成份百科</h1>
           <p className="mt-1 text-[15px] leading-[1.5] text-white/66">{WIKI_MAP[active].summary}</p>
         </div>
@@ -213,7 +213,7 @@ export default function MobileWikiPage() {
         {featured && featuredName ? (
           <Link
             href={`/m/wiki/${active}/${featured.ingredient_id}`}
-            className="block overflow-hidden rounded-[32px] border border-white/12 bg-[#111623] shadow-[0_24px_58px_rgba(0,0,0,0.5)] transition-transform active:scale-[0.996]"
+            className="m-wiki-hero-card m-pressable block overflow-hidden rounded-[32px] transition-transform active:scale-[0.996]"
           >
             <div className={`${theme.heroClass} relative h-[252px] w-full`}>
               <div className={`absolute inset-0 ${theme.hazeClass}`} />
@@ -233,7 +233,7 @@ export default function MobileWikiPage() {
               </div>
 
               <div className="absolute bottom-5 left-5 right-5">
-                <p className="text-[13px] font-medium tracking-[0.04em] text-white/82">必备精选</p>
+                <p className="m-wiki-kicker text-[13px] text-white/82">必备精选</p>
                 <h2 className={`mt-1 line-clamp-2 break-words font-semibold tracking-[-0.03em] text-white ${featuredTitleClass(featured.ingredient_name.length)}`}>
                   {featuredName.main}
                 </h2>
@@ -243,7 +243,7 @@ export default function MobileWikiPage() {
 
             <div className="flex items-center gap-3 border-t border-white/10 bg-black/34 px-4 py-3 backdrop-blur-2xl">
               <div className="min-w-0 flex-1">
-                <p className="text-[11px] font-medium tracking-[0.04em] text-white/55">一句话重点</p>
+                <p className="m-wiki-kicker text-[11px] text-white/55">一句话重点</p>
                 <p className="mt-1 line-clamp-1 text-[15px] font-semibold text-white/90">{summaryFocus(featured.summary)}</p>
                 <p className="mt-1 text-[12px] text-white/60">来源样本 {featured.source_count} 条</p>
               </div>
@@ -260,7 +260,7 @@ export default function MobileWikiPage() {
             <Link
               key={item.ingredient_id}
               href={`/m/wiki/${active}/${item.ingredient_id}`}
-              className="block overflow-hidden rounded-[28px] border border-white/10 bg-[#111623] shadow-[0_18px_40px_rgba(0,0,0,0.35)] transition-transform active:scale-[0.997]"
+              className="m-wiki-hero-card m-pressable block overflow-hidden rounded-[28px] transition-transform active:scale-[0.997]"
             >
               <div className={`${theme.heroClass} relative h-[164px] w-full`}>
                 <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.13)_0%,rgba(255,255,255,0)_28%,rgba(0,0,0,0.4)_100%)]" />
@@ -281,7 +281,7 @@ export default function MobileWikiPage() {
               </div>
 
               <div className="px-4 py-3">
-                <p className="text-[11px] font-medium tracking-[0.04em] text-white/54">一句话重点</p>
+                <p className="m-wiki-kicker text-[11px] text-white/54">一句话重点</p>
                 <p className="mt-1 line-clamp-1 text-[15px] font-semibold text-white/88">{summaryFocus(item.summary)}</p>
                 <p className="mt-1.5 text-[12px] text-white/56">来源样本 {item.source_count} 条</p>
               </div>
@@ -290,7 +290,7 @@ export default function MobileWikiPage() {
         })}
 
         {loading && (
-          <div className="rounded-[24px] border border-white/10 bg-white/[0.05] px-4 py-5 text-[14px] text-white/65">
+          <div className="m-wiki-card-soft rounded-[24px] px-4 py-5 text-[14px] text-white/65">
             正在加载真实成分数据...
           </div>
         )}
@@ -302,7 +302,7 @@ export default function MobileWikiPage() {
         )}
 
         {!loading && !error && items.length === 0 && (
-          <div className="rounded-[24px] border border-white/10 bg-white/[0.05] px-4 py-5 text-[14px] text-white/65">
+          <div className="m-wiki-card-soft rounded-[24px] px-4 py-5 text-[14px] text-white/65">
             当前分类暂无匹配成分，请先在后台构建成分库或更换关键词。
           </div>
         )}

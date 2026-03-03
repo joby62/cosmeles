@@ -83,7 +83,7 @@ export default function MobileBottomNav() {
     <nav className="fixed inset-x-0 bottom-3 z-[60] px-4 pb-[max(env(safe-area-inset-bottom),0px)]">
       <div className="mx-auto flex max-w-[680px] items-center gap-2.5">
         <div
-          className="flex h-[60px] min-w-0 flex-1 items-center rounded-[30px] border border-[color:var(--m-nav-border)] bg-[color:var(--m-nav-bg)] px-1.5 shadow-[0_14px_34px_rgba(0,0,0,0.26)] backdrop-blur-[24px]"
+          className="m-bottom-dock flex h-[60px] min-w-0 flex-1 items-center rounded-[30px] border border-[color:var(--m-nav-border)] bg-[color:var(--m-nav-bg)] px-1.5 shadow-[0_14px_34px_rgba(0,0,0,0.26)]"
         >
           {items.map((item) => {
             const active = isActive(pathname, item.key);
@@ -91,7 +91,7 @@ export default function MobileBottomNav() {
               <Link
                 key={item.key}
                 href={item.href}
-                className={`flex h-[52px] min-w-0 flex-1 flex-col items-center justify-center rounded-[24px] transition-colors ${
+                className={`m-pressable flex h-[52px] min-w-0 flex-1 flex-col items-center justify-center rounded-[24px] transition-colors ${
                   active
                     ? "bg-[color:var(--m-nav-active-bg)] text-[color:var(--m-nav-active-text)]"
                     : "text-[color:var(--m-nav-text)] active:bg-[color:var(--m-nav-item-active-bg)] active:text-[color:var(--m-nav-text-strong)]"
@@ -111,7 +111,7 @@ export default function MobileBottomNav() {
         <Link
           href="/m/me"
           aria-label="我的"
-          className={`flex h-[60px] w-[60px] shrink-0 items-center justify-center rounded-full shadow-[0_14px_34px_rgba(0,0,0,0.26)] backdrop-blur-[24px] ${
+          className={`m-pressable m-bottom-dock flex h-[60px] w-[60px] shrink-0 items-center justify-center rounded-full shadow-[0_14px_34px_rgba(0,0,0,0.26)] ${
             meActive
               ? "border border-[color:var(--m-nav-border)] bg-[color:var(--m-nav-active-bg)] text-[color:var(--m-nav-active-text)]"
               : "border border-[color:var(--m-nav-border)] bg-[color:var(--m-nav-bg)] text-[color:var(--m-nav-text-strong)] active:bg-[color:var(--m-nav-item-active-bg)]"

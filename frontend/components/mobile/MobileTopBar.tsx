@@ -33,11 +33,11 @@ export default function MobileTopBar() {
   const [logoHidden, setLogoHidden] = useState(false);
 
   return (
-    <div className="h-12 border-b border-[color:var(--m-topbar-border)] bg-[color:var(--m-topbar-bg)] backdrop-blur supports-[backdrop-filter]:bg-[color:var(--m-topbar-bg-strong)]">
+    <div className="m-topbar-shell h-12 border-b border-[color:var(--m-topbar-border)] bg-[color:var(--m-topbar-bg)] supports-[backdrop-filter]:bg-[color:var(--m-topbar-bg-strong)]">
       <div className="mx-auto flex h-12 max-w-[680px] items-center justify-between px-4">
         <Link
           href="/m"
-          className="inline-flex items-center gap-0.5 rounded-full px-1 py-0.5 active:bg-[color:var(--m-press)]"
+          className="m-pressable inline-flex items-center gap-0.5 rounded-full px-1 py-0.5 active:bg-[color:var(--m-press)]"
         >
           {!logoHidden ? (
             <Image
@@ -59,7 +59,7 @@ export default function MobileTopBar() {
           <span className="text-[11px] leading-none text-[color:var(--m-topbar-dot)]">·</span>
           <span className="text-[14px] font-semibold tracking-[0.005em] text-[color:var(--m-topbar-text)]">{section}</span>
         </Link>
-        <p className="max-w-[56vw] truncate text-right text-[11px] leading-none text-[color:var(--m-topbar-sub)] min-[430px]:text-[12px]">
+        <p className="max-w-[56vw] truncate text-right text-[11px] leading-none tracking-[0.01em] text-[color:var(--m-topbar-sub)] min-[430px]:text-[12px]">
           省下挑花眼的时间，只留最合适的一件。
         </p>
       </div>

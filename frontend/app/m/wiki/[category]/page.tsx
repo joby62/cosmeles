@@ -141,13 +141,13 @@ export default async function WikiCategoryPage({
   return (
     <section className="m-wiki-page -mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[color:var(--m-wiki-canvas)] px-4 pb-36 pt-4 text-white">
       <div className="mb-4">
-        <p className="text-[13px] font-medium text-[#4ea0ff]">成份百科</p>
+        <p className="m-wiki-kicker text-[13px] text-[#4ea0ff]">成份百科</p>
         <h1 className="mt-1 text-[34px] leading-[1.08] font-semibold tracking-[-0.03em]">{current.label}</h1>
         <p className="mt-1 text-[15px] leading-[1.5] text-white/66">{current.summary}</p>
       </div>
 
       {focus && (
-        <article className="mb-4 rounded-[24px] border border-white/12 bg-white/[0.05] px-4 py-4 backdrop-blur-xl">
+        <article className="m-wiki-card mb-4 rounded-[24px] px-4 py-4 backdrop-blur-xl">
           <h2 className="text-[16px] font-semibold text-white/92">来自结果卡：{focus.title}</h2>
           <p className="mt-2 text-[14px] leading-[1.55] text-white/72">{focus.hint}</p>
           <div className="mt-3 flex flex-wrap gap-2">
@@ -169,7 +169,7 @@ export default async function WikiCategoryPage({
               <Link
                 key={item.key}
                 href={`/m/wiki/${item.key}`}
-                className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12px] ${
+                className={`m-pressable inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12px] ${
                   active
                     ? "border-white/35 bg-white/16 text-white"
                     : "border-white/12 bg-white/[0.03] text-white/72 active:bg-white/[0.09]"
@@ -190,7 +190,7 @@ export default async function WikiCategoryPage({
             <Link
               key={item.ingredient_id}
               href={`/m/wiki/${category}/${item.ingredient_id}`}
-              className="block overflow-hidden rounded-[28px] border border-white/10 bg-[#111623] shadow-[0_18px_40px_rgba(0,0,0,0.35)] transition-transform active:scale-[0.997]"
+              className="m-wiki-hero-card m-pressable block overflow-hidden rounded-[28px] transition-transform active:scale-[0.997]"
             >
               <div className={`${theme.heroClass} relative h-[164px] w-full`}>
                 <div className={`absolute inset-0 ${theme.hazeClass}`} />
@@ -216,7 +216,7 @@ export default async function WikiCategoryPage({
               </div>
 
               <div className="px-4 py-3">
-                <p className="text-[11px] font-medium tracking-[0.04em] text-white/54">一句话重点</p>
+                <p className="m-wiki-kicker text-[11px] text-white/54">一句话重点</p>
                 <p className="mt-1 line-clamp-1 text-[15px] font-semibold text-white/88">{summaryFocus(item.summary)}</p>
                 <p className="mt-1.5 text-[12px] text-white/56">来源样本 {item.source_count} 条</p>
               </div>
@@ -225,7 +225,7 @@ export default async function WikiCategoryPage({
         })}
 
         {library.items.length === 0 && (
-          <article className="rounded-[24px] border border-white/10 bg-white/[0.05] px-4 py-5 text-[14px] leading-[1.6] text-white/65">
+          <article className="m-wiki-card-soft rounded-[24px] px-4 py-5 text-[14px] leading-[1.6] text-white/65">
             当前分类暂无已生成成分，请先在后台执行成分库构建。
           </article>
         )}
@@ -234,7 +234,7 @@ export default async function WikiCategoryPage({
       <div className="mt-8">
         <Link
           href={`/m/${current.key}/start`}
-          className="inline-flex h-11 items-center justify-center rounded-full border border-white/20 bg-white/[0.07] px-5 text-[15px] font-semibold text-white/90 backdrop-blur-xl active:bg-white/[0.12]"
+          className="m-pressable inline-flex h-11 items-center justify-center rounded-full border border-white/20 bg-white/[0.07] px-5 text-[15px] font-semibold text-white/90 backdrop-blur-xl active:bg-white/[0.12]"
         >
           进入{current.label}挑选
         </Link>

@@ -240,13 +240,13 @@ export default async function IngredientDetailPage({
       <div className="px-4">
         <Link
           href="/m/wiki"
-          className="inline-flex h-10 items-center rounded-full border border-white/16 bg-white/10 px-4 text-[13px] font-medium text-white/86 backdrop-blur-xl active:bg-white/15"
+          className="m-pressable inline-flex h-10 items-center rounded-full border border-white/16 bg-white/10 px-4 text-[13px] font-medium text-white/86 backdrop-blur-xl active:bg-white/15"
         >
           返回成份百科
         </Link>
       </div>
 
-      <article className="mt-4 overflow-hidden rounded-[32px] border border-white/10 bg-[#111623] shadow-[0_24px_58px_rgba(0,0,0,0.5)]">
+      <article className="m-wiki-hero-card mt-4 overflow-hidden rounded-[32px]">
         <div className={`${theme.heroClass} relative h-[268px] w-full`}>
           <div className={`absolute inset-0 ${theme.hazeClass}`} />
           <div className={`absolute right-[-44px] top-[-34px] h-[170px] w-[170px] rounded-full ${theme.accentClass} opacity-30 blur-3xl`} />
@@ -265,7 +265,7 @@ export default async function IngredientDetailPage({
           </div>
 
           <div className="absolute bottom-5 left-5 right-5">
-            <p className="text-[13px] font-medium tracking-[0.04em] text-white/84">成分详情</p>
+            <p className="m-wiki-kicker text-[13px] text-white/84">成分详情</p>
             <h1 className={`mt-1 line-clamp-2 break-words font-semibold tracking-[-0.03em] text-white ${titleClassByLength(item.ingredient_name.length)}`}>
               {name.main}
             </h1>
@@ -290,9 +290,9 @@ export default async function IngredientDetailPage({
       </article>
 
       <div className="mt-5 space-y-3 px-4">
-        <section className="rounded-[24px] border border-white/10 bg-white/[0.05] p-4 backdrop-blur-xl">
+        <section className="m-wiki-card rounded-[24px] p-4 backdrop-blur-xl">
           <div className="flex items-start justify-between gap-2">
-            <p className="text-[12px] font-medium tracking-[0.04em] text-[#4ea0ff]">一分钟结论</p>
+            <p className="m-wiki-kicker text-[12px] text-[#4ea0ff]">一分钟结论</p>
             <span className={`inline-flex h-6 items-center rounded-full border px-2.5 text-[11px] font-semibold ${confidenceMeta.chipClass}`}>{confidenceMeta.label}</span>
           </div>
 
@@ -303,7 +303,7 @@ export default async function IngredientDetailPage({
             </div>
           ) : null}
 
-          <p className="mt-2 line-clamp-3 text-[22px] leading-[1.34] tracking-[-0.01em] text-white/94">{shortText(leadSummary, 88)}</p>
+          <p className="mt-2 line-clamp-3 text-[21px] leading-[1.36] tracking-[-0.01em] text-white/94">{shortText(leadSummary, 88)}</p>
           {secondSummary ? <p className="mt-2 line-clamp-2 text-[14px] leading-[1.5] text-white/72">{shortText(secondSummary, 64)}</p> : null}
 
           <div className="mt-3 flex flex-wrap gap-2">
@@ -333,7 +333,7 @@ export default async function IngredientDetailPage({
           <TagPanel title="需规避" tags={phraseTags(avoid)} emptyText="暂无规避人群标签。" tone="warn" />
         </section>
 
-        <details className="group rounded-[22px] border border-white/10 bg-white/[0.04] px-4 py-4 backdrop-blur-xl">
+        <details className="m-wiki-card group rounded-[22px] px-4 py-4 backdrop-blur-xl">
           <summary className="list-none cursor-pointer text-[15px] font-semibold text-white/92">
             <span>查看完整分析依据</span>
             <span className="ml-2 text-[12px] text-white/50 group-open:hidden">展开</span>
@@ -346,7 +346,7 @@ export default async function IngredientDetailPage({
         </details>
 
         {mainSample ? (
-          <section className="rounded-[22px] border border-white/10 bg-white/[0.04] px-4 py-4 backdrop-blur-xl">
+          <section className="m-wiki-card rounded-[22px] px-4 py-4 backdrop-blur-xl">
             <h2 className="text-[16px] font-semibold text-white/92">来源样本</h2>
             <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
               <div className="text-[13px] font-medium text-white/84">

@@ -27,7 +27,7 @@ export default function MobileChoose() {
             <Link
               key={c.key}
               href={c.href}
-              className="m-choose-card flex aspect-square w-[96px] shrink-0 flex-col rounded-[22px] border border-[#d9dbe3] bg-[#ececf1] px-2 pt-2 pb-2 active:brightness-[0.98]"
+              className="m-choose-card m-pressable flex aspect-square w-[96px] shrink-0 flex-col rounded-[22px] border border-[#d9dbe3] bg-[#ececf1] px-2 pt-2 pb-2 active:brightness-[0.98]"
             >
               <div className="flex min-h-0 flex-1 items-center justify-center">
                 <Image src={c.image} alt={c.zh} width={74} height={58} className="h-[58px] w-[74px] object-contain" />

@@ -124,7 +124,7 @@ export function InsightSheetCard({
 
   return (
     <>
-      <section className="rounded-[22px] border border-white/10 bg-white/[0.04] px-4 py-4 backdrop-blur-xl">
+      <section className="m-wiki-card rounded-[22px] px-4 py-4 backdrop-blur-xl">
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-[17px] font-semibold text-white/92">{title}</h3>
           <button
@@ -135,7 +135,7 @@ export function InsightSheetCard({
               }
             }}
             disabled={!hasItems}
-            className={`inline-flex h-7 items-center rounded-full border px-3 text-[12px] font-medium ${
+            className={`m-pressable inline-flex h-7 items-center rounded-full border px-3 text-[12px] font-medium ${
               hasItems
                 ? "border-white/18 bg-white/[0.08] text-white/86 active:bg-white/[0.14]"
                 : "cursor-not-allowed border-white/8 bg-white/[0.04] text-white/35"
@@ -173,8 +173,8 @@ export function InsightSheetCard({
             className="m-wiki-sheet-mask absolute inset-0 backdrop-blur-sm"
           />
 
-          <div className="m-wiki-sheet absolute inset-x-0 bottom-0 max-h-[82dvh] overflow-hidden rounded-t-[30px] border shadow-[0_-28px_72px_rgba(0,0,0,0.56)] backdrop-blur-2xl">
-            <div className="mx-auto mt-2 h-1 w-11 rounded-full bg-white/26" />
+          <div className="m-wiki-sheet m-sheet-enter absolute inset-x-0 bottom-0 max-h-[82dvh] overflow-hidden rounded-t-[30px] border shadow-[0_-28px_72px_rgba(0,0,0,0.56)] backdrop-blur-2xl">
+            <div className="m-wiki-sheet-handle mx-auto mt-2 h-1 w-11 rounded-full" />
             <div className="flex items-center justify-between border-b border-white/10 px-5 py-3">
               <h4 className="text-[17px] font-semibold text-white/92">{title} · 全部内容</h4>
               <button
@@ -182,7 +182,7 @@ export function InsightSheetCard({
                 onClick={() => {
                   setOpen(false);
                 }}
-                className="inline-flex h-8 items-center rounded-full border border-white/16 bg-white/[0.08] px-3 text-[12px] font-medium text-white/86 active:bg-white/[0.14]"
+                className="m-pressable inline-flex h-8 items-center rounded-full border border-white/16 bg-white/[0.08] px-3 text-[12px] font-medium text-white/86 active:bg-white/[0.14]"
               >
                 关闭
               </button>
@@ -195,7 +195,7 @@ export function InsightSheetCard({
                     const { lead, rest } = splitLead(line);
                     const riskMeta = showRiskLevel ? getRiskLevelMeta(line) : null;
                     return (
-                      <li key={`${line}-${index}`} className="rounded-2xl border border-white/8 bg-white/[0.03] px-3 py-3">
+                      <li key={`${line}-${index}`} className="m-wiki-sheet-item rounded-2xl border px-3 py-3">
                         {riskMeta ? (
                           <div className="mb-1.5">
                             <span className={`inline-flex h-5 items-center rounded-full border px-2 text-[11px] font-semibold ${riskMeta.className}`}>
