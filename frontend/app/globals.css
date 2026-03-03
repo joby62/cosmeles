@@ -314,6 +314,32 @@ html[data-nav-open="1"] #app-main{
   --m-wiki-sheet-item-bg: rgba(255,255,255,0.64);
   --m-wiki-handle: rgba(87,105,136,0.24);
 
+  --m-compare-selection-tip-border: rgba(121,163,241,0.36);
+  --m-compare-selection-tip-bg: rgba(234,242,255,0.9);
+  --m-compare-selection-tip-text: rgba(47,93,178,0.94);
+  --m-compare-card-border: rgba(18,28,45,0.12);
+  --m-compare-card-bg: rgba(255,255,255,0.9);
+  --m-compare-card-shadow: 0 4px 10px rgba(16,24,40,0.06);
+  --m-compare-card-selected-border: rgba(10,132,255,0.62);
+  --m-compare-card-selected-bg: rgba(239,246,255,0.96);
+  --m-compare-card-selected-shadow: 0 9px 18px rgba(10,132,255,0.16);
+  --m-compare-card-press-bg: rgba(243,247,255,0.95);
+  --m-compare-check-border: rgba(18,28,45,0.2);
+  --m-compare-check-bg: rgba(255,255,255,0.92);
+  --m-compare-check-selected-border: #0a84ff;
+  --m-compare-check-selected-bg: #0a84ff;
+  --m-compare-check-selected-text: #ffffff;
+  --m-compare-check-selected-shadow: 0 0 0 2px rgba(10,132,255,0.2);
+  --m-compare-badge-reco-border: rgba(191,210,255,0.95);
+  --m-compare-badge-reco-bg: rgba(234,242,255,0.94);
+  --m-compare-badge-reco-text: rgba(42,95,203,0.98);
+  --m-compare-badge-most-border: rgba(240,220,166,0.96);
+  --m-compare-badge-most-bg: rgba(255,246,221,0.97);
+  --m-compare-badge-most-text: rgba(141,103,19,0.98);
+  --m-compare-badge-most-sub-border: rgba(240,220,166,0.96);
+  --m-compare-badge-most-sub-bg: transparent;
+  --m-compare-badge-most-sub-text: rgba(141,103,19,0.98);
+
   --m-wiki-chip-strong-border: rgba(26,157,120,0.42);
   --m-wiki-chip-strong-bg: rgba(77,215,168,0.2);
   --m-wiki-chip-strong-text: #117c5f;
@@ -389,6 +415,32 @@ html[data-nav-open="1"] #app-main{
     --m-wiki-sheet-item-bg: rgba(255,255,255,0.03);
     --m-wiki-handle: rgba(255,255,255,0.18);
 
+    --m-compare-selection-tip-border: rgba(93,140,224,0.5);
+    --m-compare-selection-tip-bg: rgba(27,42,71,0.72);
+    --m-compare-selection-tip-text: rgba(179,212,255,0.95);
+    --m-compare-card-border: rgba(255,255,255,0.16);
+    --m-compare-card-bg: rgba(20,28,43,0.9);
+    --m-compare-card-shadow: 0 8px 18px rgba(0,0,0,0.35);
+    --m-compare-card-selected-border: rgba(88,166,255,0.74);
+    --m-compare-card-selected-bg: rgba(24,44,72,0.9);
+    --m-compare-card-selected-shadow: 0 10px 22px rgba(12,72,145,0.3);
+    --m-compare-card-press-bg: rgba(29,48,78,0.88);
+    --m-compare-check-border: rgba(255,255,255,0.24);
+    --m-compare-check-bg: rgba(10,18,31,0.86);
+    --m-compare-check-selected-border: #3c9cff;
+    --m-compare-check-selected-bg: #3c9cff;
+    --m-compare-check-selected-text: #ffffff;
+    --m-compare-check-selected-shadow: 0 0 0 2px rgba(60,156,255,0.3);
+    --m-compare-badge-reco-border: rgba(111,166,255,0.42);
+    --m-compare-badge-reco-bg: rgba(39,71,120,0.56);
+    --m-compare-badge-reco-text: rgba(178,214,255,0.98);
+    --m-compare-badge-most-border: rgba(240,196,102,0.45);
+    --m-compare-badge-most-bg: rgba(88,66,24,0.44);
+    --m-compare-badge-most-text: rgba(255,220,147,0.98);
+    --m-compare-badge-most-sub-border: rgba(240,196,102,0.45);
+    --m-compare-badge-most-sub-bg: rgba(0,0,0,0);
+    --m-compare-badge-most-sub-text: rgba(255,220,147,0.95);
+
     --m-wiki-chip-strong-border: rgba(77,215,168,0.4);
     --m-wiki-chip-strong-bg: rgba(77,215,168,0.15);
     --m-wiki-chip-strong-text: #7ff2c8;
@@ -448,6 +500,63 @@ html[data-nav-open="1"] #app-main{
 .m-bottom-dock {
   backdrop-filter: saturate(190%) blur(26px);
   -webkit-backdrop-filter: saturate(190%) blur(26px);
+}
+
+.m-compare-selection-tip {
+  border-color: var(--m-compare-selection-tip-border);
+  background: var(--m-compare-selection-tip-bg);
+  color: var(--m-compare-selection-tip-text);
+}
+
+.m-compare-product-card-default {
+  border-color: var(--m-compare-card-border);
+  background: var(--m-compare-card-bg);
+  box-shadow: var(--m-compare-card-shadow);
+}
+
+.m-compare-product-card-selected {
+  border-color: var(--m-compare-card-selected-border);
+  background: var(--m-compare-card-selected-bg);
+  box-shadow: var(--m-compare-card-selected-shadow);
+}
+
+.m-compare-product-card-emphasized {
+  border-width: 1.5px;
+}
+
+.m-compare-product-card-press:active {
+  background: var(--m-compare-card-press-bg);
+}
+
+.m-compare-check-unselected {
+  border-color: var(--m-compare-check-border);
+  background: var(--m-compare-check-bg);
+  color: transparent;
+}
+
+.m-compare-check-selected {
+  border-color: var(--m-compare-check-selected-border);
+  background: var(--m-compare-check-selected-bg);
+  color: var(--m-compare-check-selected-text);
+  box-shadow: var(--m-compare-check-selected-shadow);
+}
+
+.m-compare-badge-reco {
+  border-color: var(--m-compare-badge-reco-border);
+  background: var(--m-compare-badge-reco-bg);
+  color: var(--m-compare-badge-reco-text);
+}
+
+.m-compare-badge-most {
+  border-color: var(--m-compare-badge-most-border);
+  background: var(--m-compare-badge-most-bg);
+  color: var(--m-compare-badge-most-text);
+}
+
+.m-compare-badge-most-sub {
+  border-color: var(--m-compare-badge-most-sub-border);
+  background: var(--m-compare-badge-most-sub-bg);
+  color: var(--m-compare-badge-most-sub-text);
 }
 
 .m-wiki-card {

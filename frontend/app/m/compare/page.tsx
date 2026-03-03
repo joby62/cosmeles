@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState, type MouseEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
   fetchMobileCompareBootstrap,
@@ -14,6 +14,7 @@ import {
 } from "@/lib/api";
 
 const CATEGORY_ORDER: MobileSelectionCategory[] = ["shampoo", "bodywash", "conditioner", "lotion", "cleanser"];
+const MAX_LIBRARY_SELECTION = 4;
 const CATEGORY_LABEL_ZH: Record<MobileSelectionCategory, string> = {
   shampoo: "洗发水",
   bodywash: "沐浴露",
@@ -30,7 +31,8 @@ export default function MobileComparePage() {
   const [bootstrap, setBootstrap] = useState<Awaited<ReturnType<typeof fetchMobileCompareBootstrap>> | null>(null);
 
   const [sourceMode, setSourceMode] = useState<"upload_new" | "history_product">("upload_new");
-  const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
+  const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
+  const [primaryProductId, setPrimaryProductId] = useState<string | null>(null);
 
   const [file, setFile] = useState<File | null>(null);
   const [brand, setBrand] = useState("");
@@ -41,14 +43,29 @@ export default function MobileComparePage() {
   const [progressHint, setProgressHint] = useState("等待开始");
   const [liveText, setLiveText] = useState("");
   const [stageText, setStageText] = useState("");
-  const [traceId, setTraceId] = useState<string | null>(null);
 
   const recommendationReady = Boolean(bootstrap?.recommendation?.exists);
   const hasHistoryProfile = Boolean(bootstrap?.profile?.has_history_profile);
-  const canRunBySource = sourceMode === "upload_new" ? Boolean(file) : Boolean(selectedProductId);
-  const canStart = !running && !bootstrapLoading && recommendationReady && hasHistoryProfile && canRunBySource;
   const currentCategoryLabel = CATEGORY_LABEL_ZH[category];
-  const libraryItems = useMemo(() => bootstrap?.product_library?.items || [], [bootstrap?.product_library?.items]);
+  const orderedLibraryItems = useMemo(() => orderProductLibraryItems(bootstrap?.product_library?.items || []), [bootstrap?.product_library?.items]);
+  const selectedSet = useMemo(() => new Set(selectedProductIds), [selectedProductIds]);
+  const selectedCount = selectedProductIds.length;
+  const primarySelectedId = primaryProductId && selectedSet.has(primaryProductId) ? primaryProductId : null;
+  const effectivePrimaryProductId = primarySelectedId || selectedProductIds[0] || null;
+  const canRunBySource = sourceMode === "upload_new" ? Boolean(file) : Boolean(effectivePrimaryProductId);
+  const canStart = !running && !bootstrapLoading && recommendationReady && hasHistoryProfile && canRunBySource;
+  const primaryTitle = useMemo(() => {
+    if (!effectivePrimaryProductId) return "";
+    const found = orderedLibraryItems.find((item) => item.productId === effectivePrimaryProductId);
+    return found ? found.title : "";
+  }, [effectivePrimaryProductId, orderedLibraryItems]);
+  const selectionSummary = useMemo(() => {
+    if (selectedCount === 0) return "还未选择产品，先勾选你正在用的。";
+    if (selectedCount === 1 && primaryTitle) return `已选“${primaryTitle}”，将与历史首推对比。`;
+    if (primaryTitle) return `已选 ${selectedCount} 款，当前对比“${primaryTitle}”。`;
+    return `已选 ${selectedCount} 款，将与历史首推对比。`;
+  }, [primaryTitle, selectedCount]);
+  const sourceGuideTitle = bootstrap?.source_guide?.title || "上传你正在用的产品，系统会给出可执行的专业对比建议。";
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -68,8 +85,8 @@ export default function MobileComparePage() {
     setProgressHint("等待开始");
     setLiveText("");
     setStageText("");
-    setTraceId(null);
-    setSelectedProductId(null);
+    setSelectedProductIds([]);
+    setPrimaryProductId(null);
     setSourceMode("upload_new");
 
     void fetchMobileCompareBootstrap(category)
@@ -81,8 +98,11 @@ export default function MobileComparePage() {
         }
         const recommendationId = String(data.product_library?.recommendation_product_id || "").trim();
         const mostUsedId = String(data.product_library?.most_used_product_id || "").trim();
-        const fallbackHistoryId = mostUsedId || recommendationId;
-        if (fallbackHistoryId) setSelectedProductId(fallbackHistoryId);
+        const fallbackHistoryId = recommendationId || mostUsedId;
+        if (fallbackHistoryId) {
+          setSelectedProductIds([fallbackHistoryId]);
+          setPrimaryProductId(fallbackHistoryId);
+        }
       })
       .catch((err) => {
         if (cancelled) return;
@@ -104,13 +124,13 @@ export default function MobileComparePage() {
     setProgressHint(sourceMode === "upload_new" ? "开始上传当前在用产品..." : "开始读取产品库中的在用品...");
     setLiveText("");
     setStageText("");
-    setTraceId(null);
 
     void safeTrack("compare_run_start", {
       category,
       profile_mode: "reuse_latest",
       current_product_source: sourceMode,
-      selected_product_id: selectedProductId || "",
+      selected_product_id: effectivePrimaryProductId || "",
+      selected_count: selectedCount,
     });
     try {
       let currentProduct: { source: "upload_new" | "history_product"; upload_id?: string; product_id?: string };
@@ -125,7 +145,6 @@ export default function MobileComparePage() {
           brand: brand.trim() || undefined,
           name: name.trim() || undefined,
         });
-        setTraceId(uploaded.trace_id);
         setProgressHint("上传完成，正在分析中...");
         currentProduct = {
           source: "upload_new",
@@ -133,12 +152,12 @@ export default function MobileComparePage() {
         };
         void safeTrack("compare_upload_success", { category, upload_id: uploaded.upload_id });
       } else {
-        if (!selectedProductId) {
+        if (!effectivePrimaryProductId) {
           throw new Error("请先在产品库勾选你正在使用的产品。");
         }
         currentProduct = {
           source: "history_product",
-          product_id: selectedProductId,
+          product_id: effectivePrimaryProductId,
         };
       }
 
@@ -158,8 +177,6 @@ export default function MobileComparePage() {
             const stage = String(event.data.stage || "").trim();
             if (message) setProgressHint(message);
             if (stage) setStageText((prev) => `${prev}\n[${stage}] ${message || "-"}`.trim());
-            const currentTrace = String(event.data.trace_id || "").trim();
-            if (currentTrace) setTraceId(currentTrace);
             return;
           }
           if (event.event === "partial_text") {
@@ -173,20 +190,61 @@ export default function MobileComparePage() {
         category,
         compare_id: result.compare_id,
         current_product_source: sourceMode,
-        selected_product_id: selectedProductId || "",
+        selected_product_id: effectivePrimaryProductId || "",
+        selected_count: selectedCount,
       });
       router.push(`/m/compare/result/${encodeURIComponent(result.compare_id)}`);
     } catch (err) {
       const text = err instanceof Error ? err.message : String(err);
       setRunError(text);
-      void safeTrack("compare_run_error", { category, error: text, current_product_source: sourceMode });
+      void safeTrack("compare_run_error", {
+        category,
+        error: text,
+        current_product_source: sourceMode,
+        selected_count: selectedCount,
+      });
     } finally {
       setRunning(false);
     }
   }
 
+  function ensureSelectedAndPrimary(pid: string) {
+    setSelectedProductIds((prev) => {
+      if (prev.includes(pid)) {
+        setPrimaryProductId(pid);
+        return prev;
+      }
+      if (prev.length >= MAX_LIBRARY_SELECTION) return prev;
+      const next = [...prev, pid];
+      setPrimaryProductId(pid);
+      return next;
+    });
+    setSourceMode("history_product");
+  }
+
+  function toggleSelected(pid: string) {
+    setSelectedProductIds((prev) => {
+      const exists = prev.includes(pid);
+      if (exists) {
+        const next = prev.filter((id) => id !== pid);
+        setPrimaryProductId((current) => {
+          if (current && current !== pid) return current;
+          return next[0] || null;
+        });
+        return next;
+      }
+      if (prev.length >= MAX_LIBRARY_SELECTION) {
+        return prev;
+      }
+      const next = [...prev, pid];
+      setPrimaryProductId(pid);
+      return next;
+    });
+    setSourceMode("history_product");
+  }
+
   return (
-    <section className="pb-10">
+    <section className="m-compare-page pb-10">
       <h1 className="text-[30px] leading-[1.12] font-semibold tracking-[-0.02em] text-black/90">专业对比</h1>
       <p className="mt-3 text-[15px] leading-[1.55] text-black/60">
         上传你正在用的产品，或直接从产品库勾选，我们会和历史首推做专业对比，给你明确结论：继续用、替换，还是分场景并用。
@@ -264,7 +322,7 @@ export default function MobileComparePage() {
           </button>
         </div>
         <p className="mt-2 text-[13px] leading-[1.5] text-black/62">
-          {bootstrap?.source_guide?.title || "上传你正在用的产品，系统会给出可执行的专业对比建议。"}
+          {sourceGuideTitle}
         </p>
         <ul className="mt-2 space-y-1 text-[12px] leading-[1.5] text-black/58">
           {(bootstrap?.source_guide?.value_points || []).map((item, idx) => (
@@ -321,10 +379,10 @@ export default function MobileComparePage() {
 
       <div className="mt-4 rounded-2xl border border-black/10 bg-white p-4">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-[14px] font-semibold text-black/84">4. 产品库（同品类）</h2>
+          <h2 className="text-[14px] font-semibold text-black/84">4. 产品库（可直接选你在用的）</h2>
           <button
             type="button"
-            disabled={running || libraryItems.length === 0}
+            disabled={running || orderedLibraryItems.length === 0}
             onClick={() => setSourceMode("history_product")}
             className={`inline-flex h-8 items-center rounded-full border px-3 text-[12px] font-medium ${
               sourceMode === "history_product" ? "border-[#0b63f6]/30 bg-[#eaf2ff] text-[#0b63f6]" : "border-black/12 text-black/64"
@@ -333,39 +391,66 @@ export default function MobileComparePage() {
             {sourceMode === "history_product" ? "当前来源" : "用产品库来源"}
           </button>
         </div>
-        <p className="mt-2 text-[13px] text-black/62">先勾选你正在用的产品，再和历史首推做专业对比。</p>
+        <p className="mt-2 text-[13px] text-black/62">横向滑动浏览产品，可多选。当前会使用你最后确认的一款进行专业对比。</p>
+        <div className="m-compare-selection-tip mt-2 rounded-xl border px-3 py-2 text-[12px]">
+          {selectionSummary}
+          {selectedCount >= MAX_LIBRARY_SELECTION ? " 已达最多 4 款上限。" : ""}
+        </div>
 
         {bootstrapLoading ? (
           <div className="mt-3 text-[13px] text-black/55">正在加载产品库...</div>
         ) : bootstrapError ? (
           <div className="mt-3 text-[13px] text-[#b53a3a]">{bootstrapError}</div>
-        ) : libraryItems.length === 0 ? (
+        ) : orderedLibraryItems.length === 0 ? (
           <div className="mt-3 text-[13px] text-black/55">该品类暂时还没有可用产品。</div>
         ) : (
-          <div className="mt-3 grid grid-cols-1 gap-2.5">
-            {libraryItems.map((item) => {
-              const pid = String(item.product.id || "").trim();
-              const selected = selectedProductId === pid;
-              return (
-                <ProductLibraryCard
-                  key={pid}
-                  item={item}
-                  selected={selected}
-                  onPick={() => {
-                    setSelectedProductId(pid);
-                    setSourceMode("history_product");
-                    void safeTrack("compare_library_pick", {
-                      category,
-                      product_id: pid,
-                      is_recommendation: item.is_recommendation,
-                      is_most_used: item.is_most_used,
-                    });
-                  }}
-                />
-              );
-            })}
+          <div className="mt-3 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="flex min-w-max gap-3 pr-2">
+              {orderedLibraryItems.map((item) => {
+                const pid = item.productId;
+                const selected = selectedSet.has(pid);
+                const primary = effectivePrimaryProductId === pid;
+                const disabled = !selected && selectedCount >= MAX_LIBRARY_SELECTION;
+                const canToggle = selected || selectedCount < MAX_LIBRARY_SELECTION;
+                return (
+                  <ProductLibraryCard
+                    key={pid}
+                    item={item}
+                    selected={selected}
+                    primary={primary}
+                    disabled={running || disabled}
+                    onPress={() => {
+                      ensureSelectedAndPrimary(pid);
+                      void safeTrack("compare_library_focus", {
+                        category,
+                        product_id: pid,
+                        selected_count: selectedCount + (selected ? 0 : 1),
+                      });
+                    }}
+                    onToggle={(event) => {
+                      event.stopPropagation();
+                      if (!canToggle) return;
+                      toggleSelected(pid);
+                      void safeTrack("compare_library_pick", {
+                        category,
+                        product_id: pid,
+                        is_recommendation: item.isRecommendation,
+                        is_most_used: item.isMostUsed,
+                        selected: !selected,
+                      });
+                    }}
+                  />
+                );
+              })}
+            </div>
           </div>
         )}
+
+        {!bootstrapLoading && !bootstrapError && orderedLibraryItems.length > 0 ? (
+          <div className="mt-3 text-[11px] text-black/48">
+            根据你最近填写信息，为你首推；同类用户里最常被选择。其余产品只展示图片和名称，减少干扰。
+          </div>
+        ) : null}
       </div>
 
       {recommendationReady ? null : (
@@ -383,14 +468,15 @@ export default function MobileComparePage() {
           disabled={!canStart}
           className="inline-flex h-11 items-center justify-center rounded-full bg-black px-5 text-[15px] font-semibold text-white disabled:bg-black/25"
         >
-          {running ? "分析中..." : "开始专业对比"}
+          {running
+            ? "分析中..."
+            : sourceMode === "history_product"
+              ? `开始专业对比（${selectedCount}/${MAX_LIBRARY_SELECTION}）`
+              : "开始专业对比"}
         </button>
       </div>
 
-      <div className="mt-3 text-[12px] text-black/55">
-        当前状态：{progressHint}
-        {traceId ? ` · trace_id: ${traceId}` : ""}
-      </div>
+      <div className="mt-3 text-[12px] text-black/55">当前状态：{progressHint}</div>
 
       {runError ? (
         <div className="mt-3 rounded-2xl border border-[#ff8f8f]/45 bg-[#ff5f5f]/10 px-4 py-3 text-[13px] text-[#b53a3a]">
@@ -418,60 +504,161 @@ export default function MobileComparePage() {
   );
 }
 
-function ProductLibraryCard({
+type ProductBadge = "recommendation_primary" | "most_used_primary" | "most_used_secondary";
+
+type OrderedProductLibraryItem = {
+  item: MobileCompareProductLibraryItem;
+  productId: string;
+  title: string;
+  badges: ProductBadge[];
+  emphasized: boolean;
+  isRecommendation: boolean;
+  isMostUsed: boolean;
+};
+
+const ProductLibraryCard = memo(function ProductLibraryCard({
   item,
   selected,
-  onPick,
+  primary,
+  disabled,
+  onPress,
+  onToggle,
 }: {
-  item: MobileCompareProductLibraryItem;
+  item: OrderedProductLibraryItem;
   selected: boolean;
-  onPick: () => void;
+  primary: boolean;
+  disabled: boolean;
+  onPress: () => void;
+  onToggle: (event: MouseEvent<HTMLButtonElement>) => void;
 }) {
-  const image = resolveProductImage(item.product.image_url);
-  const title = [item.product.brand, item.product.name].filter(Boolean).join(" ").trim() || "未命名产品";
+  const image = resolveProductImage(item.item.product.image_url);
   return (
-    <button
-      type="button"
-      onClick={onPick}
-      className={`w-full rounded-2xl border px-3 py-3 text-left ${
-        selected ? "border-[#0b63f6]/35 bg-[#edf4ff]" : "border-black/10 bg-white active:bg-black/[0.02]"
-      }`}
+    <article
+      className={`m-compare-product-card m-compare-product-card-press m-pressable group relative flex w-[clamp(108px,31vw,134px)] shrink-0 flex-col rounded-[22px] border text-left transition-[background-color,border-color,box-shadow,transform] duration-200 ${
+        selected ? "m-compare-product-card-selected" : "m-compare-product-card-default"
+      } ${item.emphasized ? "m-compare-product-card-emphasized px-2.5 pb-2.5 pt-3" : "px-2 pb-2 pt-2.5"} ${disabled ? "opacity-45" : "cursor-pointer active:scale-[0.985]"}`}
+      onClick={() => {
+        if (disabled) return;
+        onPress();
+      }}
+      onKeyDown={(event) => {
+        if (disabled) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onPress();
+        }
+      }}
+      role="button"
+      tabIndex={disabled ? -1 : 0}
     >
-      <div className="flex items-center gap-3">
-        <div className="relative h-14 w-14 overflow-hidden rounded-xl bg-[linear-gradient(140deg,#f2f4f8,#dbe4ef)]">
-          {image ? (
-            <Image src={image} alt={title} fill sizes="56px" className="object-contain p-1.5" />
-          ) : (
-            <div className="flex h-full items-center justify-center text-[11px] text-black/35">无图</div>
-          )}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap gap-1.5">
-            {item.is_recommendation ? (
-              <span className="inline-flex rounded-full border border-[#d0daf9] bg-[#edf3ff] px-2 py-0.5 text-[10px] font-medium text-[#2856c8]">
-                历史首推
-              </span>
-            ) : null}
-            {item.is_most_used ? (
-              <span className="inline-flex rounded-full border border-[#e7dcc0] bg-[#fff9e9] px-2 py-0.5 text-[10px] font-medium text-[#8a6814]">
-                最多人用
-              </span>
-            ) : null}
-          </div>
-          <div className="mt-1 truncate text-[13px] font-medium text-black/86">{title}</div>
-          <div className="mt-0.5 truncate text-[12px] text-black/55">{item.product.one_sentence || "暂无一句话摘要"}</div>
-          {item.usage_count > 0 ? <div className="mt-1 text-[11px] text-black/45">被标记在用 {item.usage_count} 次</div> : null}
-        </div>
-        <div
-          className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[11px] ${
-            selected ? "border-[#0b63f6] bg-[#0b63f6] text-white" : "border-black/18 text-transparent"
-          }`}
-        >
-          ✓
-        </div>
+      <button
+        type="button"
+        disabled={disabled}
+        aria-label={selected ? `取消选择 ${item.title}` : `选择 ${item.title}`}
+        onClick={onToggle}
+        className={`m-compare-check absolute right-2 top-2 inline-flex h-5 w-5 items-center justify-center rounded-full border transition-colors ${
+          selected ? "m-compare-check-selected" : "m-compare-check-unselected"
+        } ${primary && selected ? "shadow-[0_0_0_2px_rgba(10,132,255,0.2)]" : ""}`}
+      >
+        ✓
+      </button>
+
+      <div className="relative h-[86px] w-full overflow-hidden rounded-[16px] bg-[linear-gradient(148deg,#f4f6fb,#d9e3f1)]">
+        {image ? (
+          <Image src={image} alt={item.title} fill sizes="134px" className="object-contain p-2" />
+        ) : (
+          <div className="flex h-full items-center justify-center text-[11px] text-black/35">无图</div>
+        )}
       </div>
-    </button>
+
+      <div className="mt-2 min-h-[54px]">
+        {item.badges.length > 0 ? (
+          <div className="mb-1.5 flex flex-wrap gap-1.5">
+            {item.badges.map((badge) => (
+              <ProductBadgePill key={`${item.productId}-${badge}`} badge={badge} />
+            ))}
+          </div>
+        ) : null}
+        <div className="line-clamp-2 text-[13px] leading-[1.28] font-medium text-black/86">{item.title}</div>
+      </div>
+    </article>
   );
+});
+
+function ProductBadgePill({ badge }: { badge: ProductBadge }) {
+  if (badge === "recommendation_primary") {
+    return (
+      <span className="m-compare-badge m-compare-badge-reco inline-flex h-5 items-center rounded-full border px-2 text-[10px] font-semibold">
+        与你更匹配
+      </span>
+    );
+  }
+  if (badge === "most_used_primary") {
+    return (
+      <span className="m-compare-badge m-compare-badge-most inline-flex h-5 items-center rounded-full border px-2 text-[10px] font-semibold">
+        同类用户常用
+      </span>
+    );
+  }
+  return (
+    <span className="m-compare-badge m-compare-badge-most-sub inline-flex h-5 items-center rounded-full border px-2 text-[10px] font-semibold">
+      同类用户常用
+    </span>
+  );
+}
+
+function orderProductLibraryItems(items: MobileCompareProductLibraryItem[]): OrderedProductLibraryItem[] {
+  const normalized = items
+    .map((item) => {
+      const productId = String(item.product.id || "").trim();
+      if (!productId) return null;
+      const title = [item.product.brand, item.product.name].filter(Boolean).join(" ").trim() || "未命名产品";
+      return { item, productId, title };
+    })
+    .filter((item): item is { item: MobileCompareProductLibraryItem; productId: string; title: string } => Boolean(item));
+
+  if (normalized.length === 0) return [];
+
+  const recommendation = normalized.find((entry) => entry.item.is_recommendation) || null;
+  const mostUsed = normalized.find((entry) => entry.item.is_most_used) || null;
+  const used = new Set<string>();
+  const ordered: OrderedProductLibraryItem[] = [];
+
+  if (recommendation) {
+    used.add(recommendation.productId);
+    const sameAsMost = mostUsed && mostUsed.productId === recommendation.productId;
+    ordered.push({
+      ...recommendation,
+      badges: sameAsMost ? ["recommendation_primary", "most_used_secondary"] : ["recommendation_primary"],
+      emphasized: true,
+      isRecommendation: true,
+      isMostUsed: Boolean(sameAsMost),
+    });
+  }
+
+  if (mostUsed && !used.has(mostUsed.productId)) {
+    used.add(mostUsed.productId);
+    ordered.push({
+      ...mostUsed,
+      badges: ["most_used_primary"],
+      emphasized: true,
+      isRecommendation: false,
+      isMostUsed: true,
+    });
+  }
+
+  for (const entry of normalized) {
+    if (used.has(entry.productId)) continue;
+    ordered.push({
+      ...entry,
+      badges: [],
+      emphasized: false,
+      isRecommendation: false,
+      isMostUsed: false,
+    });
+  }
+
+  return ordered;
 }
 
 function resolveProductImage(raw?: string | null): string | null {
