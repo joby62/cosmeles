@@ -77,7 +77,7 @@ export default function ProductRouteMappingGenerator({
         if (failLine) enqueueText(`\n失败明细:\n${failLine}`);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "类型映射构建失败，请稍后重试。");
+      setError(formatErrorDetail(err));
     } finally {
       setBuilding(false);
     }
@@ -131,7 +131,7 @@ export default function ProductRouteMappingGenerator({
     <section className="mt-8 rounded-[30px] border border-black/10 bg-gradient-to-br from-[#f7fbff] via-white to-[#f2f8f2] p-6">
       <div className="flex flex-wrap items-center gap-2">
         <span className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/62">
-          桌面端 AI 流式分析（实时文本 + 最终总结）
+          Stage D · 产品类型映射（流式）
         </span>
         <span className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/62">
           类型映射模型固定：Doubao Pro
@@ -293,4 +293,14 @@ function buildSummary(result: ProductRouteMappingBuildResponse): string {
     }
   }
   return lines.join("\n");
+}
+
+function formatErrorDetail(err: unknown): string {
+  if (err instanceof Error && err.message) return err.message;
+  if (typeof err === "string") return err;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
 }

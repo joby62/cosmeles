@@ -1,4 +1,5 @@
 import json
+import inspect
 import queue
 import threading
 from typing import Any
@@ -27,6 +28,7 @@ from app.services.parser import normalize_doc
 from app.settings import settings
 
 router = APIRouter(prefix="/api", tags=["ingest"])
+MODEL_TIER_OPTIONS = {"mini", "lite", "pro"}
 
 @router.post("/ingest")
 @router.post("/upload")
@@ -39,6 +41,8 @@ async def ingest(
     brand: str | None = Form(None),
     name: str | None = Form(None),
     source: str = Form("doubao"),  # manual | doubao | auto
+    stage1_model_tier: str | None = Form(None),
+    stage2_model_tier: str | None = Form(None),
     db: Session = Depends(get_db),
 ):
     if image and file:
@@ -52,6 +56,8 @@ async def ingest(
     category_override = _normalize_optional_text(category, lower=True)
     if category_override and category_override not in VALID_CATEGORIES:
         raise HTTPException(status_code=400, detail=f"Invalid category: {category_override}.")
+    normalized_stage1_model_tier = _normalize_model_tier(stage1_model_tier, field_name="stage1_model_tier")
+    normalized_stage2_model_tier = _normalize_model_tier(stage2_model_tier, field_name="stage2_model_tier")
 
     if upload is None and not meta_json and not payload_json:
         raise HTTPException(status_code=400, detail="Please provide image/file or meta_json/payload_json.")
@@ -83,13 +89,23 @@ async def ingest(
     elif normalized_source in {"doubao", "auto"}:
         if not image_rel:
             raise HTTPException(status_code=400, detail="source=doubao requires image/file.")
-        doc = _analyze_with_doubao(image_rel, product_id)
+        doc = _analyze_with_doubao(
+            image_rel,
+            product_id,
+            stage1_model_tier=normalized_stage1_model_tier,
+            stage2_model_tier=normalized_stage2_model_tier,
+        )
         ingest_mode = "doubao"
     else:
         # manual upload without JSON: still allow, use doubao mock/real to bootstrap.
         if not image_rel:
             raise HTTPException(status_code=400, detail="manual upload without JSON still requires image/file.")
-        doc = _analyze_with_doubao(image_rel, product_id)
+        doc = _analyze_with_doubao(
+            image_rel,
+            product_id,
+            stage1_model_tier=normalized_stage1_model_tier,
+            stage2_model_tier=normalized_stage2_model_tier,
+        )
         ingest_mode = "manual_image_bootstrap"
 
     # 2) allow override minimal product fields
@@ -149,6 +165,7 @@ async def ingest_stage1(
     category: str | None = Form(None),
     brand: str | None = Form(None),
     name: str | None = Form(None),
+    model_tier: str | None = Form(None),
 ):
     if image and file:
         raise HTTPException(status_code=400, detail="Please provide only one file field: image or file.")
@@ -162,6 +179,7 @@ async def ingest_stage1(
     category_override = _normalize_optional_text(category, lower=True)
     if category_override and category_override not in VALID_CATEGORIES:
         raise HTTPException(status_code=400, detail=f"Invalid category: {category_override}.")
+    normalized_model_tier = _normalize_model_tier(model_tier, field_name="model_tier")
 
     product_id = new_id()
     content = await upload.read()
@@ -178,7 +196,12 @@ async def ingest_stage1(
         raise HTTPException(status_code=400, detail=str(e)) from e
 
     try:
-        stage1 = _analyze_with_doubao_stage1(image_rel, product_id)
+        stage1 = _invoke_stage1_analyzer(
+            image_rel=image_rel,
+            trace_id=product_id,
+            model_tier=normalized_model_tier,
+            event_callback=None,
+        )
     except HTTPException:
         remove_rel_path(image_rel)
         raise
@@ -193,6 +216,7 @@ async def ingest_stage1(
         "name": _normalize_optional_text(name),
         "vision_text": stage1["vision_text"],
         "vision_model": stage1["model"],
+        "stage1_model_tier": normalized_model_tier,
         "vision_artifact": stage1.get("artifact"),
         "created_at": now_iso(),
     }
@@ -210,7 +234,7 @@ async def ingest_stage1(
         "image_path": image_rel,
         "doubao": {
             "pipeline_mode": "stage1_done",
-            "models": {"vision": stage1["model"], "struct": stage1["model"]},
+            "models": {"vision": stage1["model"], "struct": None},
             "vision_text": stage1["vision_text"],
             "artifacts": {
                 "vision": stage1.get("artifact"),
@@ -227,6 +251,7 @@ def ingest_stage2(
     category: str | None = Form(None),
     brand: str | None = Form(None),
     name: str | None = Form(None),
+    model_tier: str | None = Form(None),
     db: Session = Depends(get_db),
 ):
     if not trace_id.strip():
@@ -236,6 +261,7 @@ def ingest_stage2(
         category=category,
         brand=brand,
         name=name,
+        model_tier=_normalize_model_tier(model_tier, field_name="model_tier"),
         db=db,
         event_callback=None,
     )
@@ -248,6 +274,7 @@ async def ingest_stage1_stream(
     category: str | None = Form(None),
     brand: str | None = Form(None),
     name: str | None = Form(None),
+    model_tier: str | None = Form(None),
 ):
     if image and file:
         raise HTTPException(status_code=400, detail="Please provide only one file field: image or file.")
@@ -260,6 +287,7 @@ async def ingest_stage1_stream(
     category_override = _normalize_optional_text(category, lower=True)
     if category_override and category_override not in VALID_CATEGORIES:
         raise HTTPException(status_code=400, detail=f"Invalid category: {category_override}.")
+    normalized_model_tier = _normalize_model_tier(model_tier, field_name="model_tier")
 
     content = await upload.read()
     if len(content) > settings.max_upload_bytes:
@@ -283,9 +311,10 @@ async def ingest_stage1_stream(
     def worker() -> None:
         try:
             emit("progress", {"step": "stage1_start", "trace_id": trace_id, "image_path": image_rel})
-            stage1 = _analyze_with_doubao_stage1(
-                image_rel,
-                trace_id,
+            stage1 = _invoke_stage1_analyzer(
+                image_rel=image_rel,
+                trace_id=trace_id,
+                model_tier=normalized_model_tier,
                 event_callback=lambda e: emit("progress", e),
             )
             context = {
@@ -296,6 +325,7 @@ async def ingest_stage1_stream(
                 "name": _normalize_optional_text(name),
                 "vision_text": stage1["vision_text"],
                 "vision_model": stage1["model"],
+                "stage1_model_tier": normalized_model_tier,
                 "vision_artifact": stage1.get("artifact"),
                 "created_at": now_iso(),
             }
@@ -307,7 +337,7 @@ async def ingest_stage1_stream(
                 "image_path": image_rel,
                 "doubao": {
                     "pipeline_mode": "stage1_done",
-                    "models": {"vision": stage1["model"], "struct": stage1["model"]},
+                    "models": {"vision": stage1["model"], "struct": None},
                     "vision_text": stage1["vision_text"],
                     "artifacts": {
                         "vision": stage1.get("artifact"),
@@ -347,11 +377,13 @@ def ingest_stage2_stream(
     category: str | None = Form(None),
     brand: str | None = Form(None),
     name: str | None = Form(None),
+    model_tier: str | None = Form(None),
     db: Session = Depends(get_db),
 ):
     tid = trace_id.strip()
     if not tid:
         raise HTTPException(status_code=400, detail="trace_id is required.")
+    normalized_model_tier = _normalize_model_tier(model_tier, field_name="model_tier")
 
     events: queue.Queue[tuple[str, dict[str, Any]] | None] = queue.Queue()
     SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=db.get_bind())
@@ -368,6 +400,7 @@ def ingest_stage2_stream(
                 category=category,
                 brand=brand,
                 name=name,
+                model_tier=normalized_model_tier,
                 db=local_db,
                 event_callback=lambda e: emit("progress", e),
             )
@@ -405,6 +438,7 @@ def _finalize_stage2(
     category: str | None,
     brand: str | None,
     name: str | None,
+    model_tier: str | None,
     db: Session,
     event_callback=None,
 ) -> dict[str, Any]:
@@ -418,14 +452,12 @@ def _finalize_stage2(
         raise HTTPException(status_code=400, detail="Invalid stage1 context: missing image_path.")
 
     _emit_progress(event_callback, {"step": "stage2_infer", "message": "Calling Doubao stage2 struct model."})
-    if event_callback is None:
-        stage2 = _analyze_with_doubao_stage2(str(context.get("vision_text") or ""), trace_id)
-    else:
-        stage2 = _analyze_with_doubao_stage2(
-            str(context.get("vision_text") or ""),
-            trace_id,
-            event_callback=event_callback,
-        )
+    stage2 = _invoke_stage2_analyzer(
+        vision_text=str(context.get("vision_text") or ""),
+        trace_id=trace_id,
+        model_tier=model_tier,
+        event_callback=event_callback,
+    )
     doc = stage2["doc"]
     if db.get(ProductIndex, trace_id):
         raise HTTPException(status_code=409, detail="This trace_id has already been finalized.")
@@ -501,10 +533,22 @@ def _emit_progress(event_callback, payload: dict[str, Any]) -> None:
         return
 
 
-def _analyze_with_doubao(image_rel: str, trace_id: str, event_callback=None) -> dict[str, Any]:
+def _analyze_with_doubao(
+    image_rel: str,
+    trace_id: str,
+    stage1_model_tier: str | None = None,
+    stage2_model_tier: str | None = None,
+    event_callback=None,
+) -> dict[str, Any]:
     client = DoubaoPipelineService()
     try:
-        return client.analyze(image_rel, trace_id=trace_id, event_callback=event_callback)
+        return client.analyze(
+            image_rel,
+            trace_id=trace_id,
+            stage1_model_tier=stage1_model_tier,
+            stage2_model_tier=stage2_model_tier,
+            event_callback=event_callback,
+        )
     except AIServiceError as e:
         raise HTTPException(status_code=e.http_status, detail=e.message) from e
     except Exception as e:
@@ -514,11 +558,17 @@ def _analyze_with_doubao(image_rel: str, trace_id: str, event_callback=None) -> 
 def _analyze_with_doubao_stage1(
     image_rel: str,
     trace_id: str,
+    model_tier: str | None = None,
     event_callback=None,
 ) -> dict[str, Any]:
     client = DoubaoPipelineService()
     try:
-        return client.analyze_stage1(image_rel, trace_id=trace_id, event_callback=event_callback)
+        return client.analyze_stage1(
+            image_rel,
+            trace_id=trace_id,
+            model_tier=model_tier,
+            event_callback=event_callback,
+        )
     except AIServiceError as e:
         raise HTTPException(status_code=e.http_status, detail=e.message) from e
     except Exception as e:
@@ -528,13 +578,19 @@ def _analyze_with_doubao_stage1(
 def _analyze_with_doubao_stage2(
     vision_text: str,
     trace_id: str,
+    model_tier: str | None = None,
     event_callback=None,
 ) -> dict[str, Any]:
     if not vision_text.strip():
         raise HTTPException(status_code=400, detail="Stage1 output is empty, cannot run stage2.")
     client = DoubaoPipelineService()
     try:
-        return client.analyze_stage2(vision_text, trace_id=trace_id, event_callback=event_callback)
+        return client.analyze_stage2(
+            vision_text,
+            trace_id=trace_id,
+            model_tier=model_tier,
+            event_callback=event_callback,
+        )
     except AIServiceError as e:
         raise HTTPException(status_code=e.http_status, detail=e.message) from e
     except Exception as e:
@@ -713,6 +769,57 @@ def _normalize_optional_text(value: Any, lower: bool = False) -> str | None:
     if not text:
         return None
     return text.lower() if lower else text
+
+
+def _normalize_model_tier(value: Any, *, field_name: str) -> str | None:
+    text = str(value or "").strip().lower()
+    if not text:
+        return None
+    if text not in MODEL_TIER_OPTIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid {field_name}: {text}. Allowed: mini, lite, pro.",
+        )
+    return text
+
+
+def _invoke_stage1_analyzer(
+    *,
+    image_rel: str,
+    trace_id: str,
+    model_tier: str | None,
+    event_callback=None,
+) -> dict[str, Any]:
+    fn = _analyze_with_doubao_stage1
+    kwargs: dict[str, Any] = {}
+    if _accepts_parameter(fn, "model_tier"):
+        kwargs["model_tier"] = model_tier
+    if event_callback is not None and _accepts_parameter(fn, "event_callback"):
+        kwargs["event_callback"] = event_callback
+    return fn(image_rel, trace_id, **kwargs)
+
+
+def _invoke_stage2_analyzer(
+    *,
+    vision_text: str,
+    trace_id: str,
+    model_tier: str | None,
+    event_callback=None,
+) -> dict[str, Any]:
+    fn = _analyze_with_doubao_stage2
+    kwargs: dict[str, Any] = {}
+    if _accepts_parameter(fn, "model_tier"):
+        kwargs["model_tier"] = model_tier
+    if event_callback is not None and _accepts_parameter(fn, "event_callback"):
+        kwargs["event_callback"] = event_callback
+    return fn(vision_text, trace_id, **kwargs)
+
+
+def _accepts_parameter(fn, name: str) -> bool:
+    try:
+        return name in inspect.signature(fn).parameters
+    except Exception:
+        return False
 
 
 def _normalize_with_error_reporting(doc: dict[str, Any], image_rel: str | None) -> dict[str, Any]:

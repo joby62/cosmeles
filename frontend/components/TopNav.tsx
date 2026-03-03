@@ -62,11 +62,11 @@ function getFlyout(category: CategoryKey, lang: Lang): FlyoutColumn[] {
         items:
           lang === "zh"
             ? [
-                { label: "成分与配方逻辑", href: "/compare" },
+                { label: "产品管理台", href: "/product" },
                 { label: "如何选择洗发水", href: "/c/shampoo" },
               ]
             : [
-                { label: "Ingredients & formulas", href: "/compare" },
+                { label: "Product management", href: "/product" },
                 { label: "How to choose shampoo", href: "/c/shampoo" },
               ],
       },
@@ -98,7 +98,7 @@ function getFlyout(category: CategoryKey, lang: Lang): FlyoutColumn[] {
     },
     {
       title: t.more,
-      items: [{ label: lang === "zh" ? "横向对比" : "Compare", href: "/compare" }],
+      items: [{ label: lang === "zh" ? "产品管理" : "Product management", href: "/product" }],
     },
   ];
 }
@@ -208,14 +208,8 @@ export default function TopNav() {
                 </Link>
               ))}
 
-              <Link href="/compare" className="nav-item" onPointerEnter={() => requestClose()}>
-                {lang === "zh" ? "横向对比" : "Compare"}
-              </Link>
               <Link href="/product" className="nav-item" onPointerEnter={() => requestClose()}>
-                {lang === "zh" ? "产品" : "Products"}
-              </Link>
-              <Link href="/upload" className="nav-item" onPointerEnter={() => requestClose()}>
-                {lang === "zh" ? "上传" : "Upload"}
+                {lang === "zh" ? "产品管理" : "Product Mgmt"}
               </Link>
             </nav>
 

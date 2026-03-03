@@ -2,6 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { fetchAIMetricsSummary, fetchAllProducts, resolveImageUrl } from "@/lib/api";
 import { CATEGORY_CONFIG } from "@/lib/catalog";
+import ProductIngestWorkbench from "@/components/ProductIngestWorkbench";
 import ProductDedupManager from "@/components/ProductDedupManager";
 import ProductCleanupWorkbench from "@/components/ProductCleanupWorkbench";
 import IngredientLibraryGenerator from "@/components/IngredientLibraryGenerator";
@@ -27,7 +28,7 @@ function formatTime(value?: string | null): string {
   }).format(date);
 }
 
-export default async function ProductGalleryPage() {
+export default async function ProductManagementPage() {
   const products = await fetchAllProducts();
   const aiMetrics = await fetchAIMetricsSummary({ sinceHours: 24 * 7 }).catch(() => null);
 
@@ -45,26 +46,32 @@ export default async function ProductGalleryPage() {
         <div className="pointer-events-none absolute -right-12 -top-12 h-44 w-44 rounded-full bg-[#2f7bf6]/10 blur-2xl" />
         <div className="pointer-events-none absolute -bottom-16 -left-8 h-48 w-48 rounded-full bg-[#00a86b]/10 blur-2xl" />
         <div className="relative">
-          <div className="text-[12px] font-semibold tracking-[0.12em] text-black/46">PRODUCT LIBRARY</div>
-          <h1 className="mt-2 text-[44px] font-semibold tracking-[-0.03em] text-black/90">产品展示</h1>
+          <div className="text-[12px] font-semibold tracking-[0.12em] text-black/46">PRODUCT MANAGEMENT</div>
+          <h1 className="mt-2 text-[44px] font-semibold tracking-[-0.03em] text-black/90">产品管理</h1>
           <p className="mt-3 max-w-[760px] text-[16px] leading-[1.6] text-black/62">
-            这里汇总了你在上传页分析过的全部产品。点击任意卡片可进入可视化详情页，查看摘要、成分、证据与完整 JSON。
+            一个页面串行完成：上传解析、重合度去重、成分分析、类型映射与清理维护。下方同时保留全部产品卡片，便于随时回看详情。
           </p>
           <div className="mt-6 flex flex-wrap items-center gap-2.5">
             <span className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-[12px] font-medium text-black/72">
               总产品数：{products.length}
+            </span>
+            <span className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-[12px] text-black/66">
+              Stage A 上传解析
+            </span>
+            <span className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-[12px] text-black/66">
+              Stage B 去重
+            </span>
+            <span className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-[12px] text-black/66">
+              Stage C 成分分析
+            </span>
+            <span className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-[12px] text-black/66">
+              Stage D 类型映射
             </span>
             {categoryStats.map(([key, count]) => (
               <span key={key} className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-[12px] text-black/66">
                 {categoryLabel(key)} · {count}
               </span>
             ))}
-            <Link
-              href="/upload"
-              className="rounded-full border border-black/14 bg-black px-4 py-1.5 text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
-            >
-              去上传
-            </Link>
           </div>
 
           {aiMetrics ? (
@@ -82,20 +89,21 @@ export default async function ProductGalleryPage() {
         </div>
       </section>
 
+      <ProductIngestWorkbench />
+      <ProductDedupManager initialProducts={products} />
       <IngredientLibraryGenerator initialProducts={products} />
       <ProductRouteMappingGenerator initialProducts={products} />
-      <ProductDedupManager initialProducts={products} />
       <ProductCleanupWorkbench initialProducts={products} />
 
       {products.length === 0 ? (
         <section className="mt-8 rounded-[28px] border border-dashed border-black/16 bg-white px-8 py-14 text-center">
-          <h2 className="text-[22px] font-semibold tracking-[-0.02em] text-black/84">还没有可展示的产品</h2>
-          <p className="mt-2 text-[14px] text-black/58">先去上传页提交图片，完成分析后这里会自动出现产品卡片。</p>
+          <h2 className="text-[22px] font-semibold tracking-[-0.02em] text-black/84">还没有可管理的产品</h2>
+          <p className="mt-2 text-[14px] text-black/58">先在本页上传台提交图片，完成解析后这里会自动出现产品卡片。</p>
           <Link
-            href="/upload"
+            href="/product#product-ingest-workbench"
             className="mt-5 inline-flex rounded-full border border-black/12 bg-black px-5 py-2 text-[13px] font-semibold text-white transition-opacity hover:opacity-90"
           >
-            前往上传
+            前往上传解析
           </Link>
         </section>
       ) : (

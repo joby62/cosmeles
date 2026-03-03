@@ -71,6 +71,7 @@ class ProductDedupSuggestRequest(BaseModel):
     category: Optional[str] = None
     title_query: Optional[str] = None
     ingredient_hints: List[str] = []
+    model_tier: Optional[Literal["mini", "lite", "pro"]] = None
     max_scan_products: int = Field(default=200, ge=1, le=500)
     max_compare_per_product: int = Field(default=20, ge=1, le=20)
     compare_batch_size: Optional[int] = Field(default=None, ge=1, le=20)
@@ -90,6 +91,8 @@ class ProductDedupSuggestion(BaseModel):
 class ProductDedupSuggestResponse(BaseModel):
     status: str
     scanned_products: int
+    requested_model_tier: Optional[Literal["mini", "lite", "pro"]] = None
+    model: Optional[str] = None
     suggestions: List[ProductDedupSuggestion] = []
     involved_products: List[ProductCard] = []
     failures: List[str] = []

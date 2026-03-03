@@ -73,7 +73,7 @@ export default function ProductCleanupWorkbench({ initialProducts }: { initialPr
         setCleanupSummary(summary);
         if (!dryRun) router.refresh();
       } catch (err) {
-        setCleanupError(err instanceof Error ? err.message : "清理失败，请稍后重试。");
+        setCleanupError(formatErrorDetail(err));
       } finally {
         cleanupRunningRef.current = false;
         setCleanupRunning(false);
@@ -124,7 +124,7 @@ export default function ProductCleanupWorkbench({ initialProducts }: { initialPr
       setSelectedIds([]);
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "删除失败，请稍后重试。");
+      setError(formatErrorDetail(err));
     } finally {
       setDeleting(false);
     }
@@ -132,7 +132,12 @@ export default function ProductCleanupWorkbench({ initialProducts }: { initialPr
 
   return (
     <section className="mt-8 rounded-[30px] border border-black/10 bg-white p-6">
-      <h2 className="text-[28px] font-semibold tracking-[-0.02em] text-black/90">手动清理台</h2>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/62">
+          Stage E · 清理维护
+        </span>
+      </div>
+      <h2 className="mt-3 text-[28px] font-semibold tracking-[-0.02em] text-black/90">手动清理台</h2>
       <p className="mt-2 text-[14px] text-black/65">
         支持定时清理无 product 引用的 images 与 doubao_runs，也支持手动勾选无效产品直接删除。
       </p>
@@ -273,4 +278,14 @@ function categoryLabel(category?: string | null): string {
   if (!category) return "-";
   const key = category.toLowerCase() as keyof typeof CATEGORY_CONFIG;
   return CATEGORY_CONFIG[key]?.zh || category;
+}
+
+function formatErrorDetail(err: unknown): string {
+  if (err instanceof Error && err.message) return err.message;
+  if (typeof err === "string") return err;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
 }

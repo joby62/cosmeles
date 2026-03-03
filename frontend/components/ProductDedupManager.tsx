@@ -16,6 +16,12 @@ import { CATEGORY_CONFIG } from "@/lib/catalog";
 
 const AUTO_SELECT_CONFIDENCE_GT = 95;
 const MIN_CONFIDENCE_FOR_API = AUTO_SELECT_CONFIDENCE_GT + 1;
+const MODEL_TIER_OPTIONS: Array<{ value: ModelTier; label: string }> = [
+  { value: "mini", label: "Mini" },
+  { value: "lite", label: "Lite" },
+  { value: "pro", label: "Pro" },
+];
+type ModelTier = "mini" | "lite" | "pro";
 
 export default function ProductDedupManager({
   initialProducts,
@@ -26,6 +32,7 @@ export default function ProductDedupManager({
 }) {
   const router = useRouter();
   const [selectedCategory, setSelectedCategory] = useState<string>("");
+  const [selectedModelTier, setSelectedModelTier] = useState<ModelTier>("pro");
   const [scanning, setScanning] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -82,6 +89,7 @@ export default function ProductDedupManager({
       const result = await suggestProductDuplicatesStream(
         {
           category: selectedCategory || undefined,
+          model_tier: selectedModelTier,
           max_scan_products: maxScanProducts,
           compare_batch_size: 1,
           min_confidence: MIN_CONFIDENCE_FOR_API,
@@ -99,7 +107,7 @@ export default function ProductDedupManager({
           : `分析完成：未命中 >${AUTO_SELECT_CONFIDENCE_GT}% 的两两重合项。`,
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "重复检查失败，请稍后重试。");
+      setError(formatErrorDetail(err));
     } finally {
       setScanning(false);
     }
@@ -170,7 +178,7 @@ export default function ProductDedupManager({
       setReport(null);
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "删除失败，请稍后重试。");
+      setError(formatErrorDetail(err));
     } finally {
       setDeleting(false);
     }
@@ -185,7 +193,13 @@ export default function ProductDedupManager({
           </Link>
         ) : null}
         <span className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/62">
-          桌面端 AI 流式分析（实时文本 + 最终总结）
+          Stage B · AI 重合度检测（流式）
+        </span>
+        <span className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/62">
+          模型档位：{selectedModelTier.toUpperCase()}
+        </span>
+        <span className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/62">
+          实际模型：{report?.model || "-"}
         </span>
       </div>
 
@@ -194,7 +208,7 @@ export default function ProductDedupManager({
         一次性扫描同品类产品，两两调用豆包判断重合度。命中置信度 {">"}{AUTO_SELECT_CONFIDENCE_GT}% 的 trace_id 会自动勾选到待删除清单，你审核后再确认删除。
       </p>
 
-      <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-[260px_1fr]">
+      <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-[260px_220px_1fr]">
         <label className="flex flex-col gap-1.5">
           <span className="text-[12px] font-medium text-black/70">分析范围</span>
           <select
@@ -207,6 +221,21 @@ export default function ProductDedupManager({
             {categoryStats.map(([category, count]) => (
               <option key={category} value={category}>
                 {categoryLabel(category)} · {count}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1.5">
+          <span className="text-[12px] font-medium text-black/70">模型档位</span>
+          <select
+            value={selectedModelTier}
+            onChange={(e) => setSelectedModelTier(e.target.value as ModelTier)}
+            className="h-10 rounded-xl border border-black/12 bg-white px-3 text-[13px] outline-none focus:border-black/35"
+            disabled={scanning}
+          >
+            {MODEL_TIER_OPTIONS.map((item) => (
+              <option key={item.value} value={item.value}>
+                {item.label}
               </option>
             ))}
           </select>
@@ -421,4 +450,14 @@ function buildPrettySummary(report: ProductDedupSuggestResponse): string {
     }
   }
   return lines.join("\n");
+}
+
+function formatErrorDetail(err: unknown): string {
+  if (err instanceof Error && err.message) return err.message;
+  if (typeof err === "string") return err;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
 }

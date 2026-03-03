@@ -1495,6 +1495,8 @@ def _suggest_product_duplicates_impl(
     grouped = _group_docs_by_category(filtered)
     batch_size = int(payload.compare_batch_size or 1)
     min_confidence = max(0, min(100, int(payload.min_confidence)))
+    requested_model_tier = str(payload.model_tier or "").strip().lower() or None
+    resolved_model: str | None = None
 
     _emit_progress(
         event_callback,
@@ -1505,6 +1507,7 @@ def _suggest_product_duplicates_impl(
             "category_groups": len(grouped),
             "min_confidence": min_confidence,
             "batch_size": batch_size,
+            "requested_model_tier": requested_model_tier,
         },
     )
 
@@ -1557,6 +1560,8 @@ def _suggest_product_duplicates_impl(
                     "anchor_product": _compact_product_for_dedup(anchor),
                     "candidate_products": [_compact_product_for_dedup(item) for item in chunk],
                 }
+                if requested_model_tier:
+                    ai_input["model_tier"] = requested_model_tier
                 try:
                     ai_result = run_capability_now(
                         capability="doubao.product_dedup_group",
@@ -1569,6 +1574,9 @@ def _suggest_product_duplicates_impl(
                             payload=e,
                         ),
                     )
+                    model_name = str(ai_result.get("model") or "").strip()
+                    if model_name and not resolved_model:
+                        resolved_model = model_name
                     relations = _extract_dedup_relations(
                         ai_result=ai_result,
                         anchor_id=anchor_id,
@@ -1656,6 +1664,8 @@ def _suggest_product_duplicates_impl(
     return ProductDedupSuggestResponse(
         status="ok",
         scanned_products=len(filtered),
+        requested_model_tier=requested_model_tier,
+        model=resolved_model,
         suggestions=suggestions,
         involved_products=[_row_to_card(row) for row in involved_rows],
         failures=failures[:50],
@@ -1690,6 +1700,13 @@ def _group_docs_by_category(items: list[dict[str, Any]]) -> dict[str, list[dict[
         row = item["row"]
         category = str(getattr(row, "category", "") or "").strip().lower() or "unknown"
         grouped[category].append(item)
+    for cat_items in grouped.values():
+        cat_items.sort(
+            key=lambda item: (
+                str(getattr(item["row"], "created_at", "") or ""),
+                str(getattr(item["row"], "id", "") or ""),
+            )
+        )
     return grouped
 
 
@@ -1912,6 +1929,21 @@ def _forward_dedup_model_event(
     payload: dict[str, Any],
 ) -> None:
     event_type = str(payload.get("type") or "").strip()
+    if event_type == "delta":
+        delta = str(payload.get("delta") or "")
+        if not delta:
+            return
+        _emit_progress(
+            event_callback,
+            {
+                "step": "dedup_model_delta",
+                "category": category,
+                "anchor_id": anchor_id,
+                "delta": delta,
+                "text": delta,
+            },
+        )
+        return
     if event_type != "step":
         return
     message = str(payload.get("message") or "").strip()

@@ -25,6 +25,7 @@ export type ProductDedupSuggestRequest = {
   category?: string;
   title_query?: string;
   ingredient_hints?: string[];
+  model_tier?: "mini" | "lite" | "pro";
   max_scan_products?: number;
   max_compare_per_product?: number;
   compare_batch_size?: number;
@@ -44,6 +45,8 @@ export type ProductDedupSuggestion = {
 export type ProductDedupSuggestResponse = {
   status: string;
   scanned_products: number;
+  requested_model_tier?: "mini" | "lite" | "pro" | null;
+  model?: string | null;
   suggestions: ProductDedupSuggestion[];
   involved_products: Product[];
   failures: string[];
@@ -975,6 +978,8 @@ export type IngestInput = {
   name?: string;
   source?: "manual" | "doubao" | "auto";
   metaJson?: string;
+  stage1ModelTier?: "mini" | "lite" | "pro";
+  stage2ModelTier?: "mini" | "lite" | "pro";
 };
 
 export type IngestResult = {
@@ -1019,6 +1024,8 @@ export async function ingestProduct(input: IngestInput): Promise<IngestResult> {
   if (input.name) fd.append("name", input.name);
   if (input.source) fd.append("source", input.source);
   if (input.metaJson) fd.append("meta_json", input.metaJson);
+  if (input.stage1ModelTier) fd.append("stage1_model_tier", input.stage1ModelTier);
+  if (input.stage2ModelTier) fd.append("stage2_model_tier", input.stage2ModelTier);
 
   const res = await fetch(url, { method: "POST", body: fd });
   if (!res.ok) {
@@ -1028,7 +1035,9 @@ export async function ingestProduct(input: IngestInput): Promise<IngestResult> {
   return (await res.json()) as IngestResult;
 }
 
-export async function ingestProductStage1(input: Pick<IngestInput, "image" | "category" | "brand" | "name">): Promise<IngestStage1Result> {
+export async function ingestProductStage1(
+  input: Pick<IngestInput, "image" | "category" | "brand" | "name"> & { modelTier?: "mini" | "lite" | "pro" },
+): Promise<IngestStage1Result> {
   const base = getBaseForFetch();
   const url = base ? new URL("/api/upload/stage1", base).toString() : "/api/upload/stage1";
   const fd = new FormData();
@@ -1036,6 +1045,7 @@ export async function ingestProductStage1(input: Pick<IngestInput, "image" | "ca
   if (input.category) fd.append("category", input.category);
   if (input.brand) fd.append("brand", input.brand);
   if (input.name) fd.append("name", input.name);
+  if (input.modelTier) fd.append("model_tier", input.modelTier);
 
   const res = await fetch(url, { method: "POST", body: fd });
   if (!res.ok) {
@@ -1046,7 +1056,7 @@ export async function ingestProductStage1(input: Pick<IngestInput, "image" | "ca
 }
 
 export async function ingestProductStage1Stream(
-  input: Pick<IngestInput, "image" | "category" | "brand" | "name">,
+  input: Pick<IngestInput, "image" | "category" | "brand" | "name"> & { modelTier?: "mini" | "lite" | "pro" },
   onEvent: (event: SSEEvent) => void,
 ): Promise<IngestStage1Result> {
   const fd = new FormData();
@@ -1054,10 +1064,13 @@ export async function ingestProductStage1Stream(
   if (input.category) fd.append("category", input.category);
   if (input.brand) fd.append("brand", input.brand);
   if (input.name) fd.append("name", input.name);
+  if (input.modelTier) fd.append("model_tier", input.modelTier);
   return postSSE<IngestStage1Result>("/api/upload/stage1/stream", { method: "POST", body: fd }, onEvent);
 }
 
-export async function ingestProductStage2(input: Pick<IngestInput, "category" | "brand" | "name"> & { traceId: string }): Promise<IngestResult> {
+export async function ingestProductStage2(
+  input: Pick<IngestInput, "category" | "brand" | "name"> & { traceId: string; modelTier?: "mini" | "lite" | "pro" },
+): Promise<IngestResult> {
   const base = getBaseForFetch();
   const url = base ? new URL("/api/upload/stage2", base).toString() : "/api/upload/stage2";
   const fd = new FormData();
@@ -1065,6 +1078,7 @@ export async function ingestProductStage2(input: Pick<IngestInput, "category" | 
   if (input.category) fd.append("category", input.category);
   if (input.brand) fd.append("brand", input.brand);
   if (input.name) fd.append("name", input.name);
+  if (input.modelTier) fd.append("model_tier", input.modelTier);
 
   const res = await fetch(url, { method: "POST", body: fd });
   if (!res.ok) {
@@ -1075,7 +1089,7 @@ export async function ingestProductStage2(input: Pick<IngestInput, "category" | 
 }
 
 export async function ingestProductStage2Stream(
-  input: Pick<IngestInput, "category" | "brand" | "name"> & { traceId: string },
+  input: Pick<IngestInput, "category" | "brand" | "name"> & { traceId: string; modelTier?: "mini" | "lite" | "pro" },
   onEvent: (event: SSEEvent) => void,
 ): Promise<IngestResult> {
   const fd = new FormData();
@@ -1083,6 +1097,7 @@ export async function ingestProductStage2Stream(
   if (input.category) fd.append("category", input.category);
   if (input.brand) fd.append("brand", input.brand);
   if (input.name) fd.append("name", input.name);
+  if (input.modelTier) fd.append("model_tier", input.modelTier);
   return postSSE<IngestResult>("/api/upload/stage2/stream", { method: "POST", body: fd }, onEvent);
 }
 

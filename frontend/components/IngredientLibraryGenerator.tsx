@@ -60,7 +60,7 @@ export default function IngredientLibraryGenerator({
         if (failLine) enqueueText(`\n失败明细:\n${failLine}`);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "成分库生成失败，请稍后重试。");
+      setError(formatErrorDetail(err));
     } finally {
       setBuilding(false);
     }
@@ -115,16 +115,16 @@ export default function IngredientLibraryGenerator({
     <section className="mt-8 rounded-[30px] border border-black/10 bg-gradient-to-br from-[#f8fbff] via-white to-[#f2f8f1] p-6">
       <div className="flex flex-wrap items-center gap-2">
         <span className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/62">
-          桌面端 AI 流式分析（实时文本 + 最终总结）
+          Stage C · 成分分析与成分库生成（流式）
         </span>
         <span className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/62">
-          成分库模型固定：Doubao Pro
+          成分分析模型固定：Doubao Pro
         </span>
       </div>
 
-      <h2 className="mt-3 text-[30px] font-semibold tracking-[-0.02em] text-black/90">成分库生成台</h2>
+      <h2 className="mt-3 text-[30px] font-semibold tracking-[-0.02em] text-black/90">成分分析台（生成成分库）</h2>
       <p className="mt-2 text-[14px] leading-[1.6] text-black/65">
-        一键扫描当前全部产品成分，按“品类+成分名”生成独立成分条目；同名跨品类会拆分为不同成分并分别调用豆包 Pro。
+        去重后统一扫描产品成分，按“品类+成分名”生成独立成分条目；这一步先把成分语义跑完整，再给后续类型映射使用。
       </p>
 
       <div className="mt-4 flex flex-wrap items-center gap-2.5">
@@ -236,4 +236,14 @@ function buildSummary(result: IngredientLibraryBuildResponse): string {
     }
   }
   return lines.join("\n");
+}
+
+function formatErrorDetail(err: unknown): string {
+  if (err instanceof Error && err.message) return err.message;
+  if (typeof err === "string") return err;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
 }

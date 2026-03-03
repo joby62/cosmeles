@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     doubao_model: str = "doubao-seed-2-0-mini-260215"  # legacy fallback
     doubao_vision_model: str = "doubao-seed-2-0-mini-260215"
     doubao_struct_model: str = "doubao-seed-2-0-mini-260215"
+    doubao_lite_model: str = "doubao-seed-2-0-lite-260215"
     # 高级文本能力默认走 pro（可按环境变量覆盖）
     doubao_pro_model: str = "doubao-seed-2-0-pro-260215"
     doubao_advanced_text_model: str = ""

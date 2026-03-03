@@ -95,30 +95,6 @@ export default function HomePage() {
             </Link>
           ))}
           <Link
-            href="/compare"
-            className={cx(
-              "px-4 py-2 rounded-full",
-              "text-[12px] font-medium tracking-[0.02em]",
-              "border border-black/[0.08]",
-              "bg-white/60 hover:bg-white/75",
-              "transition-colors"
-            )}
-          >
-            横向对比
-          </Link>
-          <Link
-            href="/upload"
-            className={cx(
-              "px-4 py-2 rounded-full",
-              "text-[12px] font-medium tracking-[0.02em]",
-              "border border-black/[0.08]",
-              "bg-white/60 hover:bg-white/75",
-              "transition-colors"
-            )}
-          >
-            上传产品
-          </Link>
-          <Link
             href="/product"
             className={cx(
               "px-4 py-2 rounded-full",
@@ -128,7 +104,7 @@ export default function HomePage() {
               "transition-colors"
             )}
           >
-            产品展示
+            产品管理
           </Link>
         </div>
 

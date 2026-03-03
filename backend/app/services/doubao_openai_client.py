@@ -133,13 +133,7 @@ class DoubaoOpenAIClient:
             # Keep original retry/error behavior handled in _responses.
             raise
         except Exception as e:
-            # SDK streaming occasionally throws internal errors for some multimodal payloads.
-            # Fallback to non-stream request to improve robustness.
-            response = self.client.responses.create(**body)
-            payload = _serialize_response(response)
-            payload["_stream_fallback_error"] = f"{type(e).__name__}: {str(e)}"
-            _emit_final_text_if_needed(payload, on_text_delta=on_text_delta)
-            return payload
+            raise RuntimeError(f"Doubao stream request failed: {type(e).__name__}: {str(e)}") from e
 
     def _stream_with_create(
         self,

@@ -31,6 +31,7 @@ ROUTE_MAPPING_DECISION_TABLE_REL_PATHS = {
     "shampoo": "shampoo/v2026-03-03.1.json",
     "bodywash": "bodywash/v2026-03-03.1.json",
 }
+MODEL_TIER_VALUES = {"mini", "lite", "pro"}
 
 
 @dataclass
@@ -113,16 +114,24 @@ def _cap_stage1_vision(
         )
 
     sdk, vision_model, _, _ = _build_sdk_and_models()
+    selected_tier = _normalize_model_tier(input_payload.get("model_tier"), field_name="model_tier")
+    selected_model = _resolve_model_by_tier(
+        tier=selected_tier,
+        default_model=vision_model,
+        mini_model=vision_model,
+        lite_model=(settings.doubao_lite_model or "doubao-seed-2-0-lite-260215"),
+        pro_model=(settings.doubao_pro_model or "doubao-seed-2-0-pro-260215"),
+    )
     _emit(
         event_callback,
-        {"type": "step", "stage": "stage1_vision", "message": f"Calling model {vision_model}."},
+        {"type": "step", "stage": "stage1_vision", "message": f"Calling model {selected_model}."},
     )
     image_data_url = _to_data_url(image_path)
     response_raw = _safe_sdk_call(
         lambda: sdk.chat_with_image(
             image_data_url,
             prompt.text,
-            model=vision_model,
+            model=selected_model,
             stream=event_callback is not None,
             on_text_delta=(lambda delta: _emit(event_callback, {"type": "delta", "stage": "stage1_vision", "delta": delta})),
         )
@@ -132,14 +141,14 @@ def _cap_stage1_vision(
     artifact = _maybe_save_artifact(
         trace_id=trace_id,
         stage="stage1_vision",
-        payload={"model": vision_model, "prompt": prompt.text, "response": response_raw, "text": vision_text},
+        payload={"model": selected_model, "prompt": prompt.text, "response": response_raw, "text": vision_text},
     )
 
     return CapabilityExecutionResult(
-        output={"vision_text": vision_text, "model": vision_model, "artifact": artifact},
+        output={"vision_text": vision_text, "model": selected_model, "artifact": artifact},
         prompt_key=prompt.key,
         prompt_version=prompt.version,
-        model=vision_model,
+        model=selected_model,
         request_payload={"image_path": image_path, "prompt": prompt.text},
         response_payload=response_raw,
     )
@@ -178,14 +187,22 @@ def _cap_stage2_struct(
         )
 
     sdk, _, struct_model, _ = _build_sdk_and_models()
+    selected_tier = _normalize_model_tier(input_payload.get("model_tier"), field_name="model_tier")
+    selected_model = _resolve_model_by_tier(
+        tier=selected_tier,
+        default_model=struct_model,
+        mini_model=struct_model,
+        lite_model=(settings.doubao_lite_model or "doubao-seed-2-0-lite-260215"),
+        pro_model=(settings.doubao_pro_model or "doubao-seed-2-0-pro-260215"),
+    )
     _emit(
         event_callback,
-        {"type": "step", "stage": "stage2_struct", "message": f"Calling model {struct_model}."},
+        {"type": "step", "stage": "stage2_struct", "message": f"Calling model {selected_model}."},
     )
     response_raw = _safe_sdk_call(
         lambda: sdk.chat_with_text(
             rendered_prompt,
-            model=struct_model,
+            model=selected_model,
             stream=event_callback is not None,
             on_text_delta=(lambda delta: _emit(event_callback, {"type": "delta", "stage": "stage2_struct", "delta": delta})),
         )
@@ -196,14 +213,14 @@ def _cap_stage2_struct(
     artifact = _maybe_save_artifact(
         trace_id=trace_id,
         stage="stage2_struct",
-        payload={"model": struct_model, "prompt": rendered_prompt, "response": response_raw, "text": struct_text},
+        payload={"model": selected_model, "prompt": rendered_prompt, "response": response_raw, "text": struct_text},
     )
 
     return CapabilityExecutionResult(
-        output={"doc": struct_doc, "struct_text": struct_text, "model": struct_model, "artifact": artifact},
+        output={"doc": struct_doc, "struct_text": struct_text, "model": selected_model, "artifact": artifact},
         prompt_key=prompt.key,
         prompt_version=prompt.version,
-        model=struct_model,
+        model=selected_model,
         request_payload={"prompt": rendered_prompt},
         response_payload=response_raw,
     )
@@ -215,10 +232,19 @@ def _cap_two_stage_parse(
     event_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> CapabilityExecutionResult:
     image_path = _required_str(input_payload, "image_path")
+    stage1_model_tier = input_payload.get("stage1_model_tier")
+    stage2_model_tier = input_payload.get("stage2_model_tier")
+    stage1_input: dict[str, Any] = {"image_path": image_path}
+    if stage1_model_tier is not None:
+        stage1_input["model_tier"] = stage1_model_tier
+    stage2_input: dict[str, Any] = {"vision_text": ""}
+    if stage2_model_tier is not None:
+        stage2_input["model_tier"] = stage2_model_tier
     _emit(event_callback, {"type": "step", "stage": "two_stage_parse", "message": "Running stage1 vision."})
-    stage1 = _cap_stage1_vision({"image_path": image_path}, trace_id=trace_id, event_callback=event_callback)
+    stage1 = _cap_stage1_vision(stage1_input, trace_id=trace_id, event_callback=event_callback)
     _emit(event_callback, {"type": "step", "stage": "two_stage_parse", "message": "Running stage2 struct."})
-    stage2 = _cap_stage2_struct({"vision_text": stage1.output["vision_text"]}, trace_id=trace_id, event_callback=event_callback)
+    stage2_input["vision_text"] = stage1.output["vision_text"]
+    stage2 = _cap_stage2_struct(stage2_input, trace_id=trace_id, event_callback=event_callback)
 
     doc = stage2.output["doc"]
     evidence = doc.setdefault("evidence", {})
@@ -547,14 +573,22 @@ def _cap_product_dedup_group(
         )
 
     sdk, _, _, text_model = _build_sdk_and_models()
+    selected_tier = _normalize_model_tier(input_payload.get("model_tier"), field_name="model_tier")
+    selected_model = _resolve_model_by_tier(
+        tier=selected_tier,
+        default_model=text_model,
+        mini_model=(settings.doubao_model or settings.doubao_struct_model or "doubao-seed-2-0-mini-260215"),
+        lite_model=(settings.doubao_lite_model or "doubao-seed-2-0-lite-260215"),
+        pro_model=(settings.doubao_pro_model or "doubao-seed-2-0-pro-260215"),
+    )
     _emit(
         event_callback,
-        {"type": "step", "stage": "product_dedup_group", "message": f"Calling model {text_model}."},
+        {"type": "step", "stage": "product_dedup_group", "message": f"Calling model {selected_model}."},
     )
     response_raw = _safe_sdk_call(
         lambda: sdk.chat_with_text(
             rendered_prompt,
-            model=text_model,
+            model=selected_model,
             stream=event_callback is not None,
             on_text_delta=(lambda delta: _emit(event_callback, {"type": "delta", "stage": "product_dedup_group", "delta": delta})),
         )
@@ -566,13 +600,13 @@ def _cap_product_dedup_group(
     artifact = _maybe_save_artifact(
         trace_id,
         "product_dedup_group",
-        {"model": text_model, "prompt": rendered_prompt, "response": response_raw, "text": text},
+        {"model": selected_model, "prompt": rendered_prompt, "response": response_raw, "text": text},
     )
     return CapabilityExecutionResult(
-        output={**normalized, "analysis_text": text, "model": text_model, "artifact": artifact},
+        output={**normalized, "analysis_text": text, "model": selected_model, "artifact": artifact},
         prompt_key=prompt.key,
         prompt_version=prompt.version,
-        model=text_model,
+        model=selected_model,
         request_payload={"prompt": rendered_prompt},
         response_payload=response_raw,
     )
@@ -797,6 +831,36 @@ def _build_sdk_and_models() -> tuple[DoubaoOpenAIClient, str, str, str]:
         retry_backoff_seconds=settings.doubao_retry_backoff_seconds,
     )
     return sdk, vision_model, struct_model, advanced_text_model
+
+
+def _normalize_model_tier(value: Any, *, field_name: str = "model_tier") -> str | None:
+    text = str(value or "").strip().lower()
+    if not text:
+        return None
+    if text not in MODEL_TIER_VALUES:
+        raise AIServiceError(
+            code="invalid_model_tier",
+            message=f"{field_name} must be one of: mini, lite, pro.",
+            http_status=400,
+        )
+    return text
+
+
+def _resolve_model_by_tier(
+    *,
+    tier: str | None,
+    default_model: str,
+    mini_model: str,
+    lite_model: str,
+    pro_model: str,
+) -> str:
+    if tier == "mini":
+        return mini_model
+    if tier == "lite":
+        return lite_model
+    if tier == "pro":
+        return pro_model
+    return default_model
 
 
 def _safe_sdk_call(callable_fn):

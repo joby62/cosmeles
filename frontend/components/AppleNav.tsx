@@ -40,7 +40,7 @@ function getFlyout(category: CategoryKey): FlyoutColumn[] {
       {
         title: "More",
         items: [
-          { label: "Ingredients & Formulas", href: "/compare" },
+          { label: "Product management", href: "/product" },
           { label: "How to choose shampoo", href: "/c/shampoo" },
         ],
       },
@@ -107,7 +107,7 @@ function getFlyout(category: CategoryKey): FlyoutColumn[] {
   return [
     { title: "Explore", items: [{ label: `查看${CATEGORY_CONFIG[category].zh}`, href: `/c/${category}` }] },
     { title: "For", items: [{ label: "适合人群 / 肤质 / 发质", href: `/c/${category}` }] },
-    { title: "More", items: [{ label: "横向对比", href: "/compare" }] },
+    { title: "More", items: [{ label: "产品管理", href: "/product" }] },
   ];
 }
 
@@ -231,8 +231,8 @@ export default function AppleNav() {
                 {CATEGORY_CONFIG[k].zh}
               </NavLink>
             ))}
-            <NavLink href="/compare" onEnter={requestClose}>
-              横向对比
+            <NavLink href="/product" onEnter={requestClose}>
+              产品管理
             </NavLink>
           </nav>
 

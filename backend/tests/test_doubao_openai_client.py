@@ -1,3 +1,5 @@
+import pytest
+
 from app.services.doubao_openai_client import DoubaoOpenAIClient
 
 
@@ -37,7 +39,7 @@ class _FakeOpenAIClientStreamOK:
         self.responses = _FakeResponsesStreamOK()
 
 
-def test_stream_fallback_to_non_stream_on_sdk_internal_error():
+def test_stream_raises_runtime_error_on_sdk_internal_error():
     client = DoubaoOpenAIClient(
         api_key="dummy",
         endpoint="https://ark.cn-beijing.volces.com/api/v3",
@@ -46,17 +48,12 @@ def test_stream_fallback_to_non_stream_on_sdk_internal_error():
     )
     client.client = _FakeOpenAIClient()
 
-    chunks: list[str] = []
-    resp = client.chat_with_text(
-        "hello",
-        stream=True,
-        on_text_delta=lambda delta: chunks.append(delta),
-    )
-
-    assert resp["output_text"] == "fallback-ok"
-    assert "_stream_fallback_error" in resp
-    assert "NoneType" in str(resp["_stream_fallback_error"])
-    assert "fallback-ok" in "".join(chunks)
+    with pytest.raises(RuntimeError, match="Doubao stream request failed"):
+        client.chat_with_text(
+            "hello",
+            stream=True,
+            on_text_delta=lambda _delta: None,
+        )
 
 
 def test_stream_extracts_text_delta_from_create_stream_events():
