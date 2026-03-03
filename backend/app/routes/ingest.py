@@ -2,6 +2,7 @@ import json
 import inspect
 import queue
 import threading
+import re
 from typing import Any
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
@@ -200,6 +201,7 @@ async def ingest_stage1(
             image_rel=image_rel,
             trace_id=product_id,
             model_tier=normalized_model_tier,
+            image_paths=None,
             event_callback=None,
         )
     except HTTPException:
@@ -208,9 +210,11 @@ async def ingest_stage1(
     except Exception as e:
         remove_rel_path(image_rel)
         raise HTTPException(status_code=500, detail=f"Stage1 failed: {e}") from e
+    stage1_requirement = _build_stage1_requirement(stage1.get("vision_text"))
     context = {
         "trace_id": product_id,
         "image_path": image_rel,
+        "image_paths": [image_rel],
         "category": category_override,
         "brand": _normalize_optional_text(brand),
         "name": _normalize_optional_text(name),
@@ -218,6 +222,9 @@ async def ingest_stage1(
         "vision_model": stage1["model"],
         "stage1_model_tier": normalized_model_tier,
         "vision_artifact": stage1.get("artifact"),
+        "needs_more_images": stage1_requirement["needs_more_images"],
+        "missing_fields": stage1_requirement["missing_fields"],
+        "required_view": stage1_requirement["required_view"],
         "created_at": now_iso(),
     }
     try:
@@ -228,10 +235,14 @@ async def ingest_stage1(
         raise HTTPException(status_code=500, detail=f"Stage1 context persistence failed: {e}") from e
 
     return {
-        "status": "ok",
+        "status": "needs_more_images" if stage1_requirement["needs_more_images"] else "ok",
         "trace_id": product_id,
         "category": category_override,
         "image_path": image_rel,
+        "image_paths": [image_rel],
+        "needs_more_images": stage1_requirement["needs_more_images"],
+        "missing_fields": stage1_requirement["missing_fields"],
+        "required_view": stage1_requirement["required_view"],
         "doubao": {
             "pipeline_mode": "stage1_done",
             "models": {"vision": stage1["model"], "struct": None},
@@ -241,7 +252,7 @@ async def ingest_stage1(
                 "context": context_rel,
             },
         },
-        "next": "/api/upload/stage2",
+        "next": "/api/upload/stage1/supplement" if stage1_requirement["needs_more_images"] else "/api/upload/stage2",
     }
 
 
@@ -315,11 +326,14 @@ async def ingest_stage1_stream(
                 image_rel=image_rel,
                 trace_id=trace_id,
                 model_tier=normalized_model_tier,
+                image_paths=None,
                 event_callback=lambda e: emit("progress", e),
             )
+            stage1_requirement = _build_stage1_requirement(stage1.get("vision_text"))
             context = {
                 "trace_id": trace_id,
                 "image_path": image_rel,
+                "image_paths": [image_rel],
                 "category": category_override,
                 "brand": _normalize_optional_text(brand),
                 "name": _normalize_optional_text(name),
@@ -327,14 +341,21 @@ async def ingest_stage1_stream(
                 "vision_model": stage1["model"],
                 "stage1_model_tier": normalized_model_tier,
                 "vision_artifact": stage1.get("artifact"),
+                "needs_more_images": stage1_requirement["needs_more_images"],
+                "missing_fields": stage1_requirement["missing_fields"],
+                "required_view": stage1_requirement["required_view"],
                 "created_at": now_iso(),
             }
             context_rel = save_doubao_artifact(trace_id, "stage1_context", context)
             result = {
-                "status": "ok",
+                "status": "needs_more_images" if stage1_requirement["needs_more_images"] else "ok",
                 "trace_id": trace_id,
                 "category": category_override,
                 "image_path": image_rel,
+                "image_paths": [image_rel],
+                "needs_more_images": stage1_requirement["needs_more_images"],
+                "missing_fields": stage1_requirement["missing_fields"],
+                "required_view": stage1_requirement["required_view"],
                 "doubao": {
                     "pipeline_mode": "stage1_done",
                     "models": {"vision": stage1["model"], "struct": None},
@@ -344,7 +365,7 @@ async def ingest_stage1_stream(
                         "context": context_rel,
                     },
                 },
-                "next": "/api/upload/stage2",
+                "next": "/api/upload/stage1/supplement" if stage1_requirement["needs_more_images"] else "/api/upload/stage2",
             }
             emit("result", result)
         except HTTPException as e:
@@ -359,6 +380,101 @@ async def ingest_stage1_stream(
 
     threading.Thread(target=worker, daemon=True).start()
 
+    return StreamingResponse(
+        _sse_iter(events),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Pragma": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.post("/upload/stage1/supplement")
+async def ingest_stage1_supplement(
+    trace_id: str = Form(...),
+    image: UploadFile | None = File(None),
+    file: UploadFile | None = File(None),
+    model_tier: str | None = Form(None),
+):
+    if image and file:
+        raise HTTPException(status_code=400, detail="Please provide only one file field: image or file.")
+    upload = image or file
+    if upload is None:
+        raise HTTPException(status_code=400, detail="supplement requires image/file.")
+    if not upload.content_type or not upload.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Only image upload is supported.")
+    tid = str(trace_id or "").strip()
+    if not tid:
+        raise HTTPException(status_code=400, detail="trace_id is required.")
+    normalized_model_tier = _normalize_model_tier(model_tier, field_name="model_tier")
+    upload_filename = upload.filename or "supplement.jpg"
+
+    content = await upload.read()
+    if len(content) > settings.max_upload_bytes:
+        raise HTTPException(status_code=413, detail=f"Image too large. Max {settings.max_upload_bytes} bytes.")
+    return _run_stage1_supplement(
+        trace_id=tid,
+        filename=upload_filename,
+        content=content,
+        content_type=upload.content_type,
+        model_tier=normalized_model_tier,
+        event_callback=None,
+    )
+
+
+@router.post("/upload/stage1/supplement/stream")
+async def ingest_stage1_supplement_stream(
+    trace_id: str = Form(...),
+    image: UploadFile | None = File(None),
+    file: UploadFile | None = File(None),
+    model_tier: str | None = Form(None),
+):
+    if image and file:
+        raise HTTPException(status_code=400, detail="Please provide only one file field: image or file.")
+    upload = image or file
+    if upload is None:
+        raise HTTPException(status_code=400, detail="supplement requires image/file.")
+    if not upload.content_type or not upload.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Only image upload is supported.")
+    tid = str(trace_id or "").strip()
+    if not tid:
+        raise HTTPException(status_code=400, detail="trace_id is required.")
+    normalized_model_tier = _normalize_model_tier(model_tier, field_name="model_tier")
+    upload_filename = upload.filename or "supplement.jpg"
+
+    content = await upload.read()
+    if len(content) > settings.max_upload_bytes:
+        raise HTTPException(status_code=413, detail=f"Image too large. Max {settings.max_upload_bytes} bytes.")
+
+    events: queue.Queue[tuple[str, dict[str, Any]] | None] = queue.Queue()
+
+    def emit(event: str, payload: dict[str, Any]) -> None:
+        events.put((event, payload))
+
+    def worker() -> None:
+        try:
+            emit("progress", {"step": "stage1_supplement_start", "trace_id": tid})
+            result = _run_stage1_supplement(
+                trace_id=tid,
+                filename=upload_filename,
+                content=content,
+                content_type=upload.content_type,
+                model_tier=normalized_model_tier,
+                event_callback=lambda e: emit("progress", e),
+            )
+            emit("result", result)
+        except HTTPException as e:
+            emit("error", {"status": e.status_code, "detail": e.detail})
+        except Exception as e:  # pragma: no cover
+            emit("error", {"status": 500, "detail": f"Stage1 supplement failed: {e}"})
+        finally:
+            emit("done", {"status": "done"})
+            events.put(None)
+
+    threading.Thread(target=worker, daemon=True).start()
     return StreamingResponse(
         _sse_iter(events),
         media_type="text/event-stream",
@@ -433,6 +549,108 @@ def cleanup_doubao(days: int = Query(14, ge=1, le=3650)):
     return {"status": "ok", **result}
 
 
+def _run_stage1_supplement(
+    *,
+    trace_id: str,
+    filename: str,
+    content: bytes,
+    content_type: str | None,
+    model_tier: str | None,
+    event_callback=None,
+) -> dict[str, Any]:
+    context_rel = f"doubao_runs/{trace_id}/stage1_context.json"
+    if not exists_rel_path(context_rel):
+        raise HTTPException(status_code=404, detail="Stage1 context not found. Please run /api/upload/stage1 first.")
+    if exists_rel_path(f"products/{trace_id}.json"):
+        raise HTTPException(status_code=409, detail="This trace_id has already been finalized.")
+
+    context = load_json(context_rel)
+    primary_image_path = str(context.get("image_path") or "").strip()
+    if not primary_image_path:
+        raise HTTPException(status_code=400, detail="Invalid stage1 context: missing image_path.")
+    if not exists_rel_path(primary_image_path):
+        raise HTTPException(status_code=404, detail="Primary image not found, please restart from /api/upload/stage1.")
+
+    context_image_paths = context.get("image_paths")
+    if isinstance(context_image_paths, list):
+        image_paths = [str(item or "").strip() for item in context_image_paths if str(item or "").strip()]
+    else:
+        image_paths = []
+    if not image_paths:
+        image_paths = [primary_image_path]
+
+    if len(image_paths) >= 2:
+        raise HTTPException(status_code=409, detail="Supplement image already exists for this trace_id (max 2 images).")
+
+    try:
+        supplement_image_path = save_image(
+            f"{trace_id}.supp1",
+            filename,
+            content,
+            content_type=content_type,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    combined_image_paths = [primary_image_path, supplement_image_path]
+    try:
+        stage1 = _invoke_stage1_analyzer(
+            image_rel=primary_image_path,
+            image_paths=combined_image_paths,
+            trace_id=trace_id,
+            model_tier=model_tier,
+            event_callback=event_callback,
+        )
+    except HTTPException:
+        remove_rel_path(supplement_image_path)
+        raise
+    except Exception as e:
+        remove_rel_path(supplement_image_path)
+        raise HTTPException(status_code=500, detail=f"Stage1 supplement failed: {e}") from e
+
+    stage1_requirement = _build_stage1_requirement(stage1.get("vision_text"))
+    if stage1_requirement["needs_more_images"]:
+        remove_rel_path(supplement_image_path)
+        missing_labels = ",".join(stage1_requirement["missing_fields"]) or "unknown"
+        raise HTTPException(
+            status_code=422,
+            detail=f"Two-image stage1 still missing critical fields: {missing_labels}. Please recapture clearer images.",
+        )
+
+    context["image_paths"] = combined_image_paths
+    context["supplement_image_path"] = supplement_image_path
+    context["vision_text"] = stage1["vision_text"]
+    context["vision_model"] = stage1["model"]
+    context["stage1_model_tier"] = model_tier
+    context["vision_artifact"] = stage1.get("artifact")
+    context["needs_more_images"] = False
+    context["missing_fields"] = []
+    context["required_view"] = None
+    context["updated_at"] = now_iso()
+    context_rel_saved = save_doubao_artifact(trace_id, "stage1_context", context)
+
+    return {
+        "status": "ok",
+        "trace_id": trace_id,
+        "category": _normalize_optional_text(context.get("category"), lower=True),
+        "image_path": primary_image_path,
+        "image_paths": combined_image_paths,
+        "needs_more_images": False,
+        "missing_fields": [],
+        "required_view": None,
+        "doubao": {
+            "pipeline_mode": "stage1_done",
+            "models": {"vision": stage1["model"], "struct": None},
+            "vision_text": stage1["vision_text"],
+            "artifacts": {
+                "vision": stage1.get("artifact"),
+                "context": context_rel_saved,
+            },
+        },
+        "next": "/api/upload/stage2",
+    }
+
+
 def _finalize_stage2(
     trace_id: str,
     category: str | None,
@@ -450,6 +668,19 @@ def _finalize_stage2(
     image_rel = context.get("image_path")
     if not image_rel:
         raise HTTPException(status_code=400, detail="Invalid stage1 context: missing image_path.")
+    if bool(context.get("needs_more_images")):
+        missing_fields = context.get("missing_fields")
+        if isinstance(missing_fields, list):
+            missing_text = ",".join(str(item or "").strip() for item in missing_fields if str(item or "").strip())
+        else:
+            missing_text = ""
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Stage1 requires supplement image before Stage2."
+                + (f" Missing fields: {missing_text}." if missing_text else "")
+            ),
+        )
 
     _emit_progress(event_callback, {"step": "stage2_infer", "message": "Calling Doubao stage2 struct model."})
     stage2 = _invoke_stage2_analyzer(
@@ -558,6 +789,7 @@ def _analyze_with_doubao(
 def _analyze_with_doubao_stage1(
     image_rel: str,
     trace_id: str,
+    image_paths: list[str] | None = None,
     model_tier: str | None = None,
     event_callback=None,
 ) -> dict[str, Any]:
@@ -565,6 +797,7 @@ def _analyze_with_doubao_stage1(
     try:
         return client.analyze_stage1(
             image_rel,
+            image_paths=image_paths,
             trace_id=trace_id,
             model_tier=model_tier,
             event_callback=event_callback,
@@ -762,6 +995,70 @@ def _derive_tags(doc: dict) -> list[str]:
     return tags[:6]
 
 
+def _build_stage1_requirement(vision_text: Any) -> dict[str, Any]:
+    text = str(vision_text or "")
+    sections = _parse_stage1_sections(text)
+    missing_fields: list[str] = []
+
+    brand_value = sections.get("品牌", "")
+    name_value = sections.get("产品名", "")
+    ingredients_value = sections.get("成分表原文", "")
+
+    if _is_stage1_value_missing(brand_value):
+        missing_fields.append("brand")
+    if _is_stage1_value_missing(name_value):
+        missing_fields.append("name")
+    if _is_stage1_value_missing(ingredients_value):
+        missing_fields.append("ingredients")
+
+    needs_more_images = bool(missing_fields)
+    required_view = _required_view_from_missing_fields(missing_fields) if needs_more_images else None
+    return {
+        "needs_more_images": needs_more_images,
+        "missing_fields": missing_fields,
+        "required_view": required_view,
+    }
+
+
+def _parse_stage1_sections(vision_text: str) -> dict[str, str]:
+    lines = str(vision_text or "").replace("\r\n", "\n").split("\n")
+    out: dict[str, list[str]] = {}
+    current = "raw"
+    out[current] = []
+    for line in lines:
+        m = re.match(r"^【([^】]+)】\s*(.*)$", line.strip())
+        if m:
+            current = str(m.group(1) or "").strip() or "raw"
+            out.setdefault(current, [])
+            trailing = str(m.group(2) or "").strip()
+            if trailing:
+                out[current].append(trailing)
+            continue
+        out.setdefault(current, []).append(line)
+    return {key: "\n".join(value).strip() for key, value in out.items()}
+
+
+def _is_stage1_value_missing(value: str) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return True
+    text_lc = text.lower()
+    if text_lc in {"未识别", "未知", "n/a", "na", "-"}:
+        return True
+    if "未识别" in text:
+        return True
+    return False
+
+
+def _required_view_from_missing_fields(missing_fields: list[str]) -> str:
+    fields = set(str(item or "").strip().lower() for item in missing_fields)
+    if "ingredients" in fields and ("brand" in fields or "name" in fields):
+        return "补拍另一面（品牌/品名 + 成分表）"
+    if "ingredients" in fields:
+        return "补拍背面成分表"
+    return "补拍正面品牌与品名"
+
+
 def _normalize_optional_text(value: Any, lower: bool = False) -> str | None:
     if value is None:
         return None
@@ -786,12 +1083,15 @@ def _normalize_model_tier(value: Any, *, field_name: str) -> str | None:
 def _invoke_stage1_analyzer(
     *,
     image_rel: str,
+    image_paths: list[str] | None,
     trace_id: str,
     model_tier: str | None,
     event_callback=None,
 ) -> dict[str, Any]:
     fn = _analyze_with_doubao_stage1
     kwargs: dict[str, Any] = {}
+    if image_paths and _accepts_parameter(fn, "image_paths"):
+        kwargs["image_paths"] = image_paths
     if _accepts_parameter(fn, "model_tier"):
         kwargs["model_tier"] = model_tier
     if event_callback is not None and _accepts_parameter(fn, "event_callback"):

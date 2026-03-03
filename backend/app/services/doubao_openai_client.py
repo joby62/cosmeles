@@ -53,6 +53,30 @@ class DoubaoOpenAIClient:
         }
         return self._responses(body, stream=stream, on_text_delta=on_text_delta)
 
+    def chat_with_images(
+        self,
+        image_urls: list[str],
+        prompt: str,
+        model: str | None = None,
+        stream: bool = False,
+        on_text_delta: Callable[[str], None] | None = None,
+    ) -> dict[str, Any]:
+        urls = [str(item or "").strip() for item in image_urls if str(item or "").strip()]
+        if not urls:
+            raise RuntimeError("chat_with_images requires at least one image.")
+        content: list[dict[str, str]] = [{"type": "input_image", "image_url": item} for item in urls]
+        content.append({"type": "input_text", "text": prompt})
+        body = {
+            "model": model or self.model,
+            "input": [
+                {
+                    "role": "user",
+                    "content": content,
+                }
+            ],
+        }
+        return self._responses(body, stream=stream, on_text_delta=on_text_delta)
+
     def chat_with_text(
         self,
         prompt: str,

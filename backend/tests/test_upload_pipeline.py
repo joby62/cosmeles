@@ -17,7 +17,7 @@ def test_stage1_saves_context_artifact(test_client, monkeypatch: pytest.MonkeyPa
     def fake_stage1(image_rel: str, trace_id: str):
         assert image_rel.startswith("images/")
         return {
-            "vision_text": "【品牌】测试品牌\n【产品名】测试产品",
+            "vision_text": "【品牌】测试品牌\n【产品名】测试产品\n【成分表原文】水、甘油",
             "model": "doubao-stage1-mini",
             "artifact": f"doubao_runs/{trace_id}/stage1_vision.json",
         }
@@ -48,7 +48,7 @@ def test_stage1_keeps_heic_extension_in_storage(test_client, monkeypatch: pytest
     def fake_stage1(image_rel: str, trace_id: str):
         assert image_rel.endswith(".jpg")
         return {
-            "vision_text": "【品牌】测试品牌\n【产品名】测试产品",
+            "vision_text": "【品牌】测试品牌\n【产品名】测试产品\n【成分表原文】水、甘油",
             "model": "doubao-stage1-mini",
             "artifact": f"doubao_runs/{trace_id}/stage1_vision.json",
         }
@@ -73,7 +73,7 @@ def test_stage1_converts_png_to_jpg_in_storage(test_client, monkeypatch: pytest.
     def fake_stage1(image_rel: str, trace_id: str):
         assert image_rel.endswith(".jpg")
         return {
-            "vision_text": "【品牌】测试品牌\n【产品名】测试产品",
+            "vision_text": "【品牌】测试品牌\n【产品名】测试产品\n【成分表原文】水、甘油",
             "model": "doubao-stage1-mini",
             "artifact": f"doubao_runs/{trace_id}/stage1_vision.json",
         }
@@ -107,7 +107,7 @@ def test_stage2_creates_product_and_exposes_in_products_api(test_client, monkeyp
 
     def fake_stage1(image_rel: str, trace_id: str):
         return {
-            "vision_text": "【品牌】测试品牌\n【产品名】测试产品\n【品类】洗发水",
+            "vision_text": "【品牌】测试品牌\n【产品名】测试产品\n【品类】洗发水\n【成分表原文】水、甘油",
             "model": "doubao-stage1-mini",
             "artifact": f"doubao_runs/{trace_id}/stage1_vision.json",
         }
@@ -180,6 +180,90 @@ def test_stage2_returns_404_when_context_missing(test_client):
     assert resp.status_code == 404
 
 
+def test_stage1_requires_supplement_then_reruns_with_two_images(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, _ = test_client
+    calls: list[dict[str, object]] = []
+
+    def fake_stage1(image_rel: str, trace_id: str, image_paths=None):
+        paths = image_paths if isinstance(image_paths, list) else [image_rel]
+        calls.append({"trace_id": trace_id, "paths": list(paths)})
+        if len(paths) == 1:
+            return {
+                "vision_text": "【品牌】未识别\n【产品名】未识别\n【成分表原文】水、甘油",
+                "model": "doubao-stage1-mini",
+                "artifact": f"doubao_runs/{trace_id}/stage1_vision.json",
+            }
+        return {
+            "vision_text": "【品牌】测试品牌\n【产品名】测试产品\n【成分表原文】水、甘油",
+            "model": "doubao-stage1-mini",
+            "artifact": f"doubao_runs/{trace_id}/stage1_vision.json",
+        }
+
+    def fake_stage2(_vision_text: str, trace_id: str):
+        return {
+            "doc": {
+                "product": {"category": "shampoo", "brand": "测试品牌", "name": "测试产品"},
+                "summary": {
+                    "one_sentence": "测试一句话",
+                    "pros": ["温和清洁"],
+                    "cons": [],
+                    "who_for": ["油性头皮"],
+                    "who_not_for": [],
+                },
+                "ingredients": [
+                    {
+                        "name": "甘油",
+                        "type": "保湿",
+                        "functions": ["保湿"],
+                        "risk": "low",
+                        "notes": "",
+                    }
+                ],
+                "evidence": {"doubao_raw": ""},
+            },
+            "struct_text": "{\"ok\":true}",
+            "model": "doubao-stage2-mini",
+            "artifact": f"doubao_runs/{trace_id}/stage2_struct.json",
+        }
+
+    monkeypatch.setattr(ingest_routes, "_analyze_with_doubao_stage1", fake_stage1)
+    monkeypatch.setattr(ingest_routes, "_analyze_with_doubao_stage2", fake_stage2)
+
+    stage1 = client.post(
+        "/api/upload/stage1",
+        files={"image": ("sample-a.jpg", b"fake-jpeg-bytes-a", "image/jpeg")},
+    )
+    assert stage1.status_code == 200
+    stage1_body = stage1.json()
+    assert stage1_body["status"] == "needs_more_images"
+    assert stage1_body["next"] == "/api/upload/stage1/supplement"
+    trace_id = stage1_body["trace_id"]
+
+    stage2_before = client.post("/api/upload/stage2", data={"trace_id": trace_id})
+    assert stage2_before.status_code == 422
+    assert "supplement image" in stage2_before.text
+
+    supplement = client.post(
+        "/api/upload/stage1/supplement",
+        data={"trace_id": trace_id},
+        files={"image": ("sample-b.jpg", b"fake-jpeg-bytes-b", "image/jpeg")},
+    )
+    assert supplement.status_code == 200
+    supplement_body = supplement.json()
+    assert supplement_body["status"] == "ok"
+    assert supplement_body["next"] == "/api/upload/stage2"
+    assert supplement_body["trace_id"] == trace_id
+    assert len(supplement_body.get("image_paths") or []) == 2
+
+    stage2_after = client.post("/api/upload/stage2", data={"trace_id": trace_id})
+    assert stage2_after.status_code == 200
+    assert stage2_after.json()["status"] == "ok"
+
+    assert len(calls) >= 2
+    assert len(calls[0]["paths"]) == 1
+    assert len(calls[1]["paths"]) == 2
+
+
 def test_stage1_and_stage2_stream_endpoints(test_client, monkeypatch: pytest.MonkeyPatch):
     client, _ = test_client
 
@@ -188,7 +272,7 @@ def test_stage1_and_stage2_stream_endpoints(test_client, monkeypatch: pytest.Mon
             event_callback({"type": "step", "stage": "stage1_vision", "message": "start"})
             event_callback({"type": "delta", "stage": "stage1_vision", "delta": "视觉文本"})
         return {
-            "vision_text": "【品牌】测试品牌\n【产品名】测试产品\n【品类】洗发水",
+            "vision_text": "【品牌】测试品牌\n【产品名】测试产品\n【品类】洗发水\n【成分表原文】水、甘油",
             "model": "doubao-stage1-mini",
             "artifact": f"doubao_runs/{trace_id}/stage1_vision.json",
         }

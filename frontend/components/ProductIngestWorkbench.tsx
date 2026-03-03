@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   ingestProduct,
   ingestProductStage1Stream,
+  ingestProductStage1SupplementStream,
   ingestProductStage2Stream,
   SSEEvent,
 } from "@/lib/api";
@@ -46,7 +47,7 @@ const SAMPLE_JSON = `{
 }`;
 
 type ModelTier = "mini" | "lite" | "pro";
-type BatchStatus = "queued" | "stage1" | "stage2" | "done" | "error";
+type BatchStatus = "queued" | "stage1" | "stage2" | "waiting_more" | "done" | "error";
 
 type BatchRunItem = {
   index: number;
@@ -62,6 +63,9 @@ type BatchRunItem = {
   artifacts?: { vision?: string | null; struct?: string | null; context?: string | null } | null;
   stage1Text?: string | null;
   stage2Text?: string | null;
+  needsMoreImages?: boolean;
+  missingFields?: string[];
+  requiredView?: string | null;
 };
 
 export default function ProductIngestWorkbench() {
@@ -78,6 +82,8 @@ export default function ProductIngestWorkbench() {
   const [phase, setPhase] = useState<"idle" | "stage1" | "stage2" | "done">("idle");
   const [error, setError] = useState<string | null>(null);
   const [batchRuns, setBatchRuns] = useState<BatchRunItem[]>([]);
+  const [supplementFiles, setSupplementFiles] = useState<Record<number, File | null>>({});
+  const [supplementingIndex, setSupplementingIndex] = useState<number | null>(null);
   const [result, setResult] = useState<null | {
     id: string;
     status: string;
@@ -145,6 +151,8 @@ export default function ProductIngestWorkbench() {
     setError(null);
     setResult(null);
     setBatchRuns([]);
+    setSupplementFiles({});
+    setSupplementingIndex(null);
 
     try {
       const finalBrand = useJsonOverride ? brand.trim() || undefined : undefined;
@@ -161,6 +169,8 @@ export default function ProductIngestWorkbench() {
         setBatchRuns(initial);
 
         let failed = 0;
+        let waitingMore = 0;
+        let succeeded = 0;
         let lastResult: (typeof result) | null = null;
 
         for (let i = 0; i < images.length; i += 1) {
@@ -175,12 +185,31 @@ export default function ProductIngestWorkbench() {
               (event) => pushProgress(i, event),
             );
             stage1TraceId = stage1.trace_id;
+            const needsMoreImages = stage1.status === "needs_more_images" || !!stage1.needs_more_images;
+            if (needsMoreImages) {
+              waitingMore += 1;
+              updateBatchRun(i, {
+                status: "waiting_more",
+                traceId: stage1.trace_id,
+                models: stage1.doubao?.models || null,
+                artifacts: stage1.doubao?.artifacts || null,
+                stage1Text: stage1.doubao?.vision_text,
+                needsMoreImages: true,
+                missingFields: stage1.missing_fields || [],
+                requiredView: stage1.required_view || null,
+                error: undefined,
+              });
+              continue;
+            }
             updateBatchRun(i, {
               status: "stage2",
               traceId: stage1.trace_id,
               models: stage1.doubao?.models || null,
               artifacts: stage1.doubao?.artifacts || null,
               stage1Text: stage1.doubao?.vision_text,
+              needsMoreImages: false,
+              missingFields: [],
+              requiredView: null,
             });
           } catch (err) {
             failed += 1;
@@ -211,6 +240,7 @@ export default function ProductIngestWorkbench() {
               stage1Text: ingestResult.doubao?.vision_text,
               stage2Text: ingestResult.doubao?.struct_text,
             });
+            succeeded += 1;
           } catch (err) {
             failed += 1;
             updateBatchRun(i, { status: "error", error: formatError(err) });
@@ -218,8 +248,8 @@ export default function ProductIngestWorkbench() {
         }
 
         if (lastResult) setResult(lastResult);
-        if (failed > 0) {
-          setError(`批量完成：${images.length - failed}/${images.length} 成功，${failed} 失败。`);
+        if (failed > 0 || waitingMore > 0) {
+          setError(`批量完成：${succeeded}/${images.length} 成功，${failed} 失败，${waitingMore} 待补拍。`);
         }
       } else {
         const firstImage = images[0];
@@ -241,6 +271,81 @@ export default function ProductIngestWorkbench() {
       setPhase("idle");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function runSupplementForItem(index: number) {
+    const target = batchRuns.find((item) => item.index === index);
+    const supplementFile = supplementFiles[index];
+    if (!target?.traceId || !supplementFile) return;
+
+    setSupplementingIndex(index);
+    setError(null);
+    updateBatchRun(index, { status: "stage1", error: undefined });
+    setPhase("stage1");
+    try {
+      const stage1 = await ingestProductStage1SupplementStream(
+        {
+          traceId: target.traceId,
+          image: supplementFile,
+          modelTier: stage1ModelTier,
+        },
+        (event) => pushProgress(index, event),
+      );
+
+      const needsMoreImages = stage1.status === "needs_more_images" || !!stage1.needs_more_images;
+      if (needsMoreImages) {
+        updateBatchRun(index, {
+          status: "waiting_more",
+          traceId: stage1.trace_id,
+          models: stage1.doubao?.models || null,
+          artifacts: stage1.doubao?.artifacts || null,
+          stage1Text: stage1.doubao?.vision_text,
+          needsMoreImages: true,
+          missingFields: stage1.missing_fields || [],
+          requiredView: stage1.required_view || null,
+          error: "双图 stage1 仍缺关键信息，请更换更清晰角度后重试。",
+        });
+        return;
+      }
+
+      updateBatchRun(index, {
+        status: "stage2",
+        traceId: stage1.trace_id,
+        models: stage1.doubao?.models || null,
+        artifacts: stage1.doubao?.artifacts || null,
+        stage1Text: stage1.doubao?.vision_text,
+        needsMoreImages: false,
+        missingFields: [],
+        requiredView: null,
+      });
+      setPhase("stage2");
+
+      const ingestResult = await ingestProductStage2Stream(
+        { traceId: stage1.trace_id, modelTier: stage2ModelTier },
+        (event) => pushProgress(index, event),
+      );
+      setResult(ingestResult);
+      updateBatchRun(index, {
+        status: "done",
+        resultId: ingestResult.id,
+        category: ingestResult.category,
+        imagePath: ingestResult.image_path || null,
+        jsonPath: ingestResult.json_path || null,
+        models: ingestResult.doubao?.models || null,
+        artifacts: ingestResult.doubao?.artifacts || null,
+        stage1Text: ingestResult.doubao?.vision_text,
+        stage2Text: ingestResult.doubao?.struct_text,
+        needsMoreImages: false,
+        missingFields: [],
+        requiredView: null,
+      });
+      setSupplementFiles((prev) => ({ ...prev, [index]: null }));
+    } catch (err) {
+      updateBatchRun(index, { status: "error", error: formatError(err) });
+    } finally {
+      setSupplementingIndex(null);
+      setPhase("done");
     }
   }
 
@@ -440,7 +545,38 @@ export default function ProductIngestWorkbench() {
 
                   {item.error ? <div className="mt-2 text-[12px] text-[#b42318]">{item.error}</div> : null}
 
-                  {item.stage1Text && (item.status === "stage1" || item.status === "stage2" || item.status === "done") ? (
+                  {item.status === "waiting_more" ? (
+                    <div className="mt-2 rounded-xl border border-[#f3c178]/40 bg-[#fff8ef] p-2.5">
+                      <div className="text-[12px] font-semibold text-[#9b5a00]">该条需补拍，当前已跳过队列并继续后续任务。</div>
+                      <div className="mt-1 text-[12px] text-black/66">
+                        缺失字段：{(item.missingFields || []).map((field) => missingFieldLabel(field)).join("、") || "-"}
+                      </div>
+                      <div className="mt-1 text-[12px] text-black/66">建议补拍：{item.requiredView || "补拍另一面"}</div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={(event) =>
+                            setSupplementFiles((prev) => ({
+                              ...prev,
+                              [item.index]: event.target.files?.[0] || null,
+                            }))
+                          }
+                          className="h-8 rounded-lg border border-black/12 bg-white px-2 text-[12px] text-black/76 file:mr-2 file:rounded file:border-0 file:bg-black/6 file:px-2 file:py-1 file:text-[11px]"
+                        />
+                        <button
+                          type="button"
+                          disabled={supplementingIndex === item.index || !supplementFiles[item.index]}
+                          onClick={() => runSupplementForItem(item.index)}
+                          className="inline-flex h-8 items-center justify-center rounded-full bg-black px-3 text-[12px] font-semibold text-white disabled:bg-black/25"
+                        >
+                          {supplementingIndex === item.index ? "补拍处理中..." : "上传补拍并继续"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {item.stage1Text && (item.status === "stage1" || item.status === "stage2" || item.status === "waiting_more" || item.status === "done") ? (
                     <div className="mt-2 rounded-xl border border-black/10 bg-[#fbfcff] p-2">
                       <div className="text-[11px] font-semibold text-[#3151d8]">Stage1 实时文本</div>
                       <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap text-[12px] leading-[1.5] text-black/72">
@@ -553,6 +689,7 @@ function statusLabel(status: BatchStatus): string {
   if (status === "queued") return "排队中";
   if (status === "stage1") return "Stage1";
   if (status === "stage2") return "Stage2";
+  if (status === "waiting_more") return "待补拍";
   if (status === "done") return "成功";
   return "失败";
 }
@@ -560,8 +697,16 @@ function statusLabel(status: BatchStatus): string {
 function statusClassName(status: BatchStatus): string {
   if (status === "done") return "bg-[#e7f6ec] text-[#027a48]";
   if (status === "error") return "bg-[#fdebec] text-[#b42318]";
+  if (status === "waiting_more") return "bg-[#fff4e6] text-[#9b5a00]";
   if (status === "stage1" || status === "stage2") return "bg-[#eef2ff] text-[#3151d8]";
   return "bg-black/6 text-black/60";
+}
+
+function missingFieldLabel(field: string): string {
+  if (field === "brand") return "品牌";
+  if (field === "name") return "产品名";
+  if (field === "ingredients") return "成分表";
+  return field;
 }
 
 function toVisionSections(raw: string): Array<{ title: string; body: string }> {

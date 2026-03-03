@@ -10,7 +10,12 @@ def _install_fake_ingest_pipeline(monkeypatch: pytest.MonkeyPatch, plan: dict) -
         if event_callback:
             event_callback({"type": "step", "stage": "stage1_vision", "message": "mock"})
         return {
-            "vision_text": f"【品牌】{plan['brand']}\n【产品名】{plan['name']}\n【品类】{plan['category']}",
+            "vision_text": (
+                f"【品牌】{plan['brand']}\n"
+                f"【产品名】{plan['name']}\n"
+                f"【品类】{plan['category']}\n"
+                "【成分表原文】水、甘油"
+            ),
             "model": "doubao-stage1-mini",
             "artifact": f"doubao_runs/{trace_id}/stage1_vision.json",
         }

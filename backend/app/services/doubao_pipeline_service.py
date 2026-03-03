@@ -12,12 +12,22 @@ class DoubaoPipelineService:
 
     def analyze_stage1(
         self,
-        image_path: str,
+        image_path: str | None = None,
+        image_paths: list[str] | None = None,
         trace_id: str | None = None,
         model_tier: str | None = None,
         event_callback: Callable[[dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
-        input_payload: dict[str, Any] = {"image_path": image_path}
+        paths = [str(item or "").strip() for item in (image_paths or []) if str(item or "").strip()]
+        input_payload: dict[str, Any] = {}
+        if paths:
+            input_payload["image_paths"] = paths
+            input_payload["image_path"] = paths[0]
+        else:
+            single = str(image_path or "").strip()
+            if not single:
+                raise ValueError("analyze_stage1 requires image_path or image_paths.")
+            input_payload["image_path"] = single
         if model_tier:
             input_payload["model_tier"] = model_tier
         return run_capability_now(

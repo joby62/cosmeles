@@ -92,9 +92,16 @@ def _cap_stage1_vision(
     trace_id: str | None,
     event_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> CapabilityExecutionResult:
-    image_path = _required_str(input_payload, "image_path")
+    image_paths = _normalize_stage1_image_paths(input_payload)
     prompt = load_prompt("doubao.stage1_vision")
-    _emit(event_callback, {"type": "step", "stage": "stage1_vision", "message": "Preparing image and prompt."})
+    _emit(
+        event_callback,
+        {
+            "type": "step",
+            "stage": "stage1_vision",
+            "message": f"Preparing {len(image_paths)} image(s) and prompt.",
+        },
+    )
 
     if _is_sample_mode():
         vision_text = "sample mode: skipped vision OCR."
@@ -102,14 +109,20 @@ def _cap_stage1_vision(
         artifact = _maybe_save_artifact(
             trace_id=trace_id,
             stage="stage1_vision",
-            payload={"model": "sample", "prompt": prompt.text, "response": {"mode": "sample"}, "text": vision_text},
+            payload={
+                "model": "sample",
+                "prompt": prompt.text,
+                "response": {"mode": "sample"},
+                "text": vision_text,
+                "image_paths": image_paths,
+            },
         )
         return CapabilityExecutionResult(
             output={"vision_text": vision_text, "model": "sample", "artifact": artifact},
             prompt_key=prompt.key,
             prompt_version=prompt.version,
             model="sample",
-            request_payload={"image_path": image_path, "prompt": prompt.text},
+            request_payload={"image_paths": image_paths, "prompt": prompt.text},
             response_payload={"mode": "sample"},
         )
 
@@ -126,10 +139,18 @@ def _cap_stage1_vision(
         event_callback,
         {"type": "step", "stage": "stage1_vision", "message": f"Calling model {selected_model}."},
     )
-    image_data_url = _to_data_url(image_path)
+    image_data_urls = [_to_data_url(item) for item in image_paths]
     response_raw = _safe_sdk_call(
         lambda: sdk.chat_with_image(
-            image_data_url,
+            image_data_urls[0],
+            prompt.text,
+            model=selected_model,
+            stream=event_callback is not None,
+            on_text_delta=(lambda delta: _emit(event_callback, {"type": "delta", "stage": "stage1_vision", "delta": delta})),
+        )
+        if len(image_data_urls) == 1
+        else sdk.chat_with_images(
+            image_data_urls,
             prompt.text,
             model=selected_model,
             stream=event_callback is not None,
@@ -141,7 +162,13 @@ def _cap_stage1_vision(
     artifact = _maybe_save_artifact(
         trace_id=trace_id,
         stage="stage1_vision",
-        payload={"model": selected_model, "prompt": prompt.text, "response": response_raw, "text": vision_text},
+        payload={
+            "model": selected_model,
+            "prompt": prompt.text,
+            "response": response_raw,
+            "text": vision_text,
+            "image_paths": image_paths,
+        },
     )
 
     return CapabilityExecutionResult(
@@ -149,7 +176,7 @@ def _cap_stage1_vision(
         prompt_key=prompt.key,
         prompt_version=prompt.version,
         model=selected_model,
-        request_payload={"image_path": image_path, "prompt": prompt.text},
+        request_payload={"image_paths": image_paths, "prompt": prompt.text},
         response_payload=response_raw,
     )
 
@@ -794,6 +821,31 @@ def _cap_route_mapping(
         request_payload={"prompt": rendered_prompt},
         response_payload=response_raw,
     )
+
+
+def _normalize_stage1_image_paths(input_payload: dict[str, Any]) -> list[str]:
+    raw = input_payload.get("image_paths")
+    out: list[str] = []
+    if isinstance(raw, list):
+        for item in raw:
+            text = str(item or "").strip()
+            if text:
+                out.append(text)
+    if not out:
+        out = [_required_str(input_payload, "image_path")]
+    if len(out) > 2:
+        raise AIServiceError(
+            code="invalid_input",
+            message="stage1 image_paths supports at most 2 images.",
+            http_status=400,
+        )
+    if not out:
+        raise AIServiceError(
+            code="invalid_input",
+            message="stage1 requires image_path or image_paths.",
+            http_status=400,
+        )
+    return out
 
 
 def _is_sample_mode() -> bool:

@@ -999,10 +999,14 @@ export type IngestResult = {
 };
 
 export type IngestStage1Result = {
-  status: string;
+  status: "ok" | "needs_more_images" | string;
   trace_id: string;
   category?: string;
   image_path?: string | null;
+  image_paths?: string[];
+  needs_more_images?: boolean;
+  missing_fields?: string[];
+  required_view?: string | null;
   doubao?: {
     pipeline_mode?: string | null;
     models?: { vision?: string; struct?: string } | null;
@@ -1066,6 +1070,35 @@ export async function ingestProductStage1Stream(
   if (input.name) fd.append("name", input.name);
   if (input.modelTier) fd.append("model_tier", input.modelTier);
   return postSSE<IngestStage1Result>("/api/upload/stage1/stream", { method: "POST", body: fd }, onEvent);
+}
+
+export async function ingestProductStage1Supplement(
+  input: { traceId: string; image: File; modelTier?: "mini" | "lite" | "pro" },
+): Promise<IngestStage1Result> {
+  const base = getBaseForFetch();
+  const url = base ? new URL("/api/upload/stage1/supplement", base).toString() : "/api/upload/stage1/supplement";
+  const fd = new FormData();
+  fd.append("trace_id", input.traceId);
+  fd.append("image", input.image);
+  if (input.modelTier) fd.append("model_tier", input.modelTier);
+
+  const res = await fetch(url, { method: "POST", body: fd });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`STAGE1_SUPPLEMENT ${res.status}: ${text}`);
+  }
+  return (await res.json()) as IngestStage1Result;
+}
+
+export async function ingestProductStage1SupplementStream(
+  input: { traceId: string; image: File; modelTier?: "mini" | "lite" | "pro" },
+  onEvent: (event: SSEEvent) => void,
+): Promise<IngestStage1Result> {
+  const fd = new FormData();
+  fd.append("trace_id", input.traceId);
+  fd.append("image", input.image);
+  if (input.modelTier) fd.append("model_tier", input.modelTier);
+  return postSSE<IngestStage1Result>("/api/upload/stage1/supplement/stream", { method: "POST", body: fd }, onEvent);
 }
 
 export async function ingestProductStage2(
