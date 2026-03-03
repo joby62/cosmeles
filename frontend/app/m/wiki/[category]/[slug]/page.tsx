@@ -266,7 +266,10 @@ export default async function IngredientDetailPage({
 
           <div className="absolute bottom-5 left-5 right-5">
             <p className="m-wiki-kicker text-[13px] text-white/84">成分详情</p>
-            <h1 className={`mt-1 line-clamp-2 break-words font-semibold tracking-[-0.03em] text-white ${titleClassByLength(item.ingredient_name.length)}`}>
+            <h1
+              data-m-large-title={name.main}
+              className={`mt-1 line-clamp-2 break-words font-semibold tracking-[-0.03em] text-white ${titleClassByLength(item.ingredient_name.length)}`}
+            >
               {name.main}
             </h1>
             {name.sub ? <p className="mt-1 line-clamp-1 text-[17px] leading-[1.1] font-semibold text-white/92">{name.sub}</p> : null}

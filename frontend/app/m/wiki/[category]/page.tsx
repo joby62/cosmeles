@@ -142,7 +142,7 @@ export default async function WikiCategoryPage({
     <section className="m-wiki-page -mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[color:var(--m-wiki-canvas)] px-4 pb-36 pt-4 text-white">
       <div className="mb-4">
         <p className="m-wiki-kicker text-[13px] text-[#4ea0ff]">成份百科</p>
-        <h1 className="mt-1 text-[34px] leading-[1.08] font-semibold tracking-[-0.03em]">{current.label}</h1>
+        <h1 data-m-large-title={current.label} className="mt-1 text-[34px] leading-[1.08] font-semibold tracking-[-0.03em]">{current.label}</h1>
         <p className="mt-1 text-[15px] leading-[1.5] text-white/66">{current.summary}</p>
       </div>
 

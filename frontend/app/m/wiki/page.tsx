@@ -206,7 +206,7 @@ export default function MobileWikiPage() {
       <section className="mt-6">
         <div className="mb-3">
           <p className="m-wiki-kicker text-[14px] text-[#4ea0ff]">现已推出</p>
-          <h1 className="mt-1 text-[34px] leading-[1.08] font-semibold tracking-[-0.03em]">成份百科</h1>
+          <h1 data-m-large-title="成份百科" className="mt-1 text-[34px] leading-[1.08] font-semibold tracking-[-0.03em]">成份百科</h1>
           <p className="mt-1 text-[15px] leading-[1.5] text-white/66">{WIKI_MAP[active].summary}</p>
         </div>
 
