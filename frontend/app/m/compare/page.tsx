@@ -54,6 +54,7 @@ export default function MobileComparePage() {
 
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
   const [file, setFile] = useState<File | null>(null);
+  const [uploadPreviewUrl, setUploadPreviewUrl] = useState<string | null>(null);
   const [brand, setBrand] = useState("");
   const [name, setName] = useState("");
 
@@ -94,7 +95,8 @@ export default function MobileComparePage() {
     }
     return `当前已从产品库选择 ${selectedCount} 款（共 ${totalSelectedCount} 款）。`;
   }, [hasUpload, selectedCount, totalSelectedCount]);
-  const sourceGuideTitle = bootstrap?.source_guide?.title || "上传你正在用的产品，系统会给出可执行的专业对比建议。";
+  const sourceGuideTitle = bootstrap?.source_guide?.title || "还有疑惑？把你正在用的也加进来，我们会给出继续沿用还是建议替换。";
+  const uploadValuePoints = (bootstrap?.source_guide?.value_points || []).slice(0, 3);
   const profileBasisHint =
     profileBasis === "pinned"
       ? "本次对比将自动沿用你置顶的个人情况。"
@@ -154,6 +156,18 @@ export default function MobileComparePage() {
     if (selectedProductIds.length <= maxLibrarySelection) return;
     setSelectedProductIds((prev) => prev.slice(0, maxLibrarySelection));
   }, [maxLibrarySelection, selectedProductIds.length]);
+
+  useEffect(() => {
+    if (!file) {
+      setUploadPreviewUrl(null);
+      return;
+    }
+    const objectUrl = URL.createObjectURL(file);
+    setUploadPreviewUrl(objectUrl);
+    return () => {
+      URL.revokeObjectURL(objectUrl);
+    };
+  }, [file]);
 
   useEffect(() => {
     if (!running) {
@@ -285,7 +299,7 @@ export default function MobileComparePage() {
     <section className="m-compare-page pb-10">
       <h1 className="text-[30px] leading-[1.12] font-semibold tracking-[-0.02em] text-black/90">专业对比</h1>
       <p className="mt-3 text-[15px] leading-[1.55] text-black/60">
-        支持 2~3 款产品两两对比。可上传你正在用的 1 款，再从产品库补 1~2 款；也可不上传，直接从产品库选 2~3 款。
+        帮你快速判断这几款里哪款更适合长期使用。你可以只选产品库，也可以补充上传你正在用的产品，让建议更贴近真实使用。
       </p>
 
       <div className="mt-5 rounded-2xl border border-black/10 bg-white p-4">
@@ -346,64 +360,105 @@ export default function MobileComparePage() {
       </div>
 
       <div className="mt-4 rounded-2xl border border-black/10 bg-white p-4">
-        <h2 className="text-[14px] font-semibold text-black/84">3. 上传你正在用的产品（可跳过）</h2>
-        <p className="mt-2 text-[13px] leading-[1.5] text-black/62">
-          {sourceGuideTitle}
-        </p>
-        <p className="mt-1 text-[12px] text-black/52">不上传也没关系，直接从产品库选择 2~3 款即可开始专业对比。</p>
-        <ul className="mt-2 space-y-1 text-[12px] leading-[1.5] text-black/58">
-          {(bootstrap?.source_guide?.value_points || []).map((item, idx) => (
-            <li key={`${idx}-${item}`}>• {item}</li>
-          ))}
-        </ul>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-[14px] font-semibold text-black/84">3. 补充你正在用的产品（可选）</h2>
+            <p className="mt-2 text-[13px] leading-[1.5] text-black/62">{sourceGuideTitle}</p>
+          </div>
+          <span className="m-compare-upload-optional inline-flex h-7 shrink-0 items-center rounded-full border px-3 text-[11px] font-semibold">
+            可选增强
+          </span>
+        </div>
 
-        <div className="mt-4 rounded-2xl border border-black/10 bg-[#f7f8fb] p-2.5">
-          <div className="flex items-center gap-2">
-            <label
-              htmlFor="mobile-compare-file"
-              className="inline-flex h-10 shrink-0 cursor-pointer items-center rounded-xl bg-white px-4 text-[13px] font-medium text-black/80 shadow-[0_1px_0_rgba(0,0,0,0.04)]"
-            >
-              选取文件
-            </label>
-            <div className="min-w-0 flex-1 truncate text-[13px] text-black/62">{file?.name || "支持相册/拍照/文件，建议清晰拍到成分表"}</div>
-            {file ? (
+        {uploadValuePoints.length > 0 ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {uploadValuePoints.map((item, idx) => (
+              <span key={`${idx}-${item}`} className="m-compare-upload-point inline-flex rounded-full border px-3 py-1 text-[11px] font-medium">
+                {item}
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        <input
+          id="mobile-compare-file"
+          type="file"
+          accept="image/*"
+          disabled={running}
+          onChange={(e) => setFile(e.target.files?.[0] || null)}
+          className="hidden"
+        />
+
+        <label
+          htmlFor="mobile-compare-file"
+          className={`m-compare-upload-drop m-pressable mt-4 block cursor-pointer rounded-[22px] border p-4 ${
+            file ? "m-compare-upload-drop-picked" : ""
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <span className="m-compare-upload-icon inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px]" aria-hidden>
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M16 16l-4-4-4 4" />
+                <path d="M12 12v8" />
+                <path d="M20 16.5a4.5 4.5 0 0 0-1-8.9 6 6 0 0 0-11.6 2.3A4.4 4.4 0 0 0 8 20h11" />
+              </svg>
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="text-[14px] font-semibold text-black/86">{file ? "已添加在用产品" : "上传在用产品照片"}</div>
+              <div className="mt-1 text-[12px] leading-[1.45] text-black/58">
+                {file ? `${file.name} · ${formatFileSize(file.size)}` : "支持相册、拍照、文件导入。成分表越清晰，建议越准确。"}
+              </div>
+            </div>
+            <span className="inline-flex h-8 items-center rounded-full border border-black/12 bg-white/75 px-3 text-[12px] font-medium text-black/72">
+              {file ? "更换" : "选择"}
+            </span>
+          </div>
+          {uploadPreviewUrl ? (
+            <div className="mt-3 overflow-hidden rounded-2xl border border-black/10 bg-black/[0.03]">
+              <Image
+                src={uploadPreviewUrl}
+                alt="在用产品预览"
+                width={1200}
+                height={680}
+                unoptimized
+                className="h-[136px] w-full object-cover"
+              />
+            </div>
+          ) : null}
+        </label>
+
+        {file ? (
+          <div className="mt-3 rounded-[20px] border border-black/10 bg-black/[0.02] p-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-[12px] text-black/56">可补充信息（提升识别准确度）</div>
               <button
                 type="button"
                 onClick={() => setFile(null)}
-                className="inline-flex h-8 items-center rounded-full border border-black/10 px-3 text-[12px] text-black/60"
+                className="inline-flex h-8 items-center rounded-full border border-black/12 px-3 text-[12px] text-black/65 active:bg-black/[0.04]"
               >
-                清除
+                移除
               </button>
-            ) : null}
+            </div>
+            <div className="mt-3 grid grid-cols-1 gap-3">
+              <input
+                value={brand}
+                onChange={(e) => setBrand(e.target.value)}
+                disabled={running}
+                placeholder="品牌（可选）"
+                className="m-compare-upload-input h-10 rounded-xl border px-3 text-[13px] outline-none"
+              />
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                disabled={running}
+                placeholder="产品名（可选）"
+                className="m-compare-upload-input h-10 rounded-xl border px-3 text-[13px] outline-none"
+              />
+            </div>
           </div>
-          <input
-            id="mobile-compare-file"
-            type="file"
-            accept="image/*"
-            disabled={running}
-            onChange={(e) => setFile(e.target.files?.[0] || null)}
-            className="hidden"
-          />
-        </div>
-
-        {file ? (
-          <div className="mt-3 grid grid-cols-1 gap-3">
-            <input
-              value={brand}
-              onChange={(e) => setBrand(e.target.value)}
-              disabled={running}
-              placeholder="品牌（可选）"
-              className="h-10 rounded-xl border border-black/12 bg-white px-3 text-[13px] text-black/78 outline-none"
-            />
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              disabled={running}
-              placeholder="产品名（可选）"
-              className="h-10 rounded-xl border border-black/12 bg-white px-3 text-[13px] text-black/78 outline-none"
-            />
-          </div>
-        ) : null}
+        ) : (
+          <p className="mt-3 text-[12px] text-black/52">不上传也没关系，你仍可以直接从产品库选择并开始专业对比。</p>
+        )}
       </div>
 
       <div className="mt-4 rounded-2xl border border-black/10 bg-white p-4">
@@ -589,6 +644,12 @@ function formatDuration(totalSeconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+function formatFileSize(size: number): string {
+  if (!Number.isFinite(size) || size <= 0) return "0 KB";
+  if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 type ProductBadge = "recommendation_primary" | "most_used_primary" | "most_used_secondary";

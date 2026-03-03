@@ -339,6 +339,22 @@ html[data-nav-open="1"] #app-main{
   --m-compare-badge-most-sub-border: rgba(240,220,166,0.96);
   --m-compare-badge-most-sub-bg: transparent;
   --m-compare-badge-most-sub-text: rgba(141,103,19,0.98);
+  --m-compare-upload-optional-border: rgba(121,163,241,0.36);
+  --m-compare-upload-optional-bg: rgba(234,242,255,0.9);
+  --m-compare-upload-optional-text: rgba(47,93,178,0.92);
+  --m-compare-upload-point-border: rgba(19,85,173,0.18);
+  --m-compare-upload-point-bg: rgba(224,237,255,0.68);
+  --m-compare-upload-point-text: rgba(35,76,150,0.9);
+  --m-compare-upload-drop-border: rgba(21,53,96,0.16);
+  --m-compare-upload-drop-bg: linear-gradient(155deg,rgba(248,251,255,0.95),rgba(234,242,255,0.9));
+  --m-compare-upload-drop-picked-border: rgba(81,138,229,0.5);
+  --m-compare-upload-drop-picked-bg: linear-gradient(155deg,rgba(236,245,255,0.98),rgba(221,236,255,0.9));
+  --m-compare-upload-icon-bg: rgba(226,237,255,0.86);
+  --m-compare-upload-icon-text: rgba(46,94,183,0.96);
+  --m-compare-upload-input-border: rgba(20,46,87,0.14);
+  --m-compare-upload-input-bg: rgba(255,255,255,0.9);
+  --m-compare-upload-input-text: rgba(16,26,44,0.9);
+  --m-compare-upload-input-placeholder: rgba(63,84,120,0.52);
 
   --m-me-card-bg: rgba(255,255,255,0.98);
   --m-me-card-border: rgba(18,28,45,0.12);
@@ -447,6 +463,22 @@ html[data-nav-open="1"] #app-main{
     --m-compare-badge-most-sub-border: rgba(240,196,102,0.45);
     --m-compare-badge-most-sub-bg: rgba(0,0,0,0);
     --m-compare-badge-most-sub-text: rgba(255,220,147,0.95);
+    --m-compare-upload-optional-border: rgba(93,140,224,0.5);
+    --m-compare-upload-optional-bg: rgba(28,47,81,0.74);
+    --m-compare-upload-optional-text: rgba(179,212,255,0.92);
+    --m-compare-upload-point-border: rgba(94,143,228,0.35);
+    --m-compare-upload-point-bg: rgba(33,53,89,0.66);
+    --m-compare-upload-point-text: rgba(182,214,255,0.92);
+    --m-compare-upload-drop-border: rgba(133,179,255,0.32);
+    --m-compare-upload-drop-bg: linear-gradient(155deg,rgba(22,33,53,0.94),rgba(18,30,50,0.88));
+    --m-compare-upload-drop-picked-border: rgba(128,181,255,0.58);
+    --m-compare-upload-drop-picked-bg: linear-gradient(155deg,rgba(31,50,80,0.96),rgba(25,43,73,0.91));
+    --m-compare-upload-icon-bg: rgba(53,78,119,0.58);
+    --m-compare-upload-icon-text: rgba(186,220,255,0.95);
+    --m-compare-upload-input-border: rgba(133,179,255,0.32);
+    --m-compare-upload-input-bg: rgba(20,31,50,0.86);
+    --m-compare-upload-input-text: rgba(233,240,255,0.94);
+    --m-compare-upload-input-placeholder: rgba(173,193,228,0.58);
 
     --m-me-card-bg: rgba(16,23,35,0.98);
     --m-me-card-border: rgba(255,255,255,0.16);
@@ -542,6 +574,57 @@ html[data-nav-open="1"] #app-main{
   background: var(--m-compare-card-press-bg);
 }
 
+.m-compare-upload-optional {
+  border-color: var(--m-compare-upload-optional-border);
+  background: var(--m-compare-upload-optional-bg);
+  color: var(--m-compare-upload-optional-text);
+}
+
+.m-compare-upload-point {
+  border-color: var(--m-compare-upload-point-border);
+  background: var(--m-compare-upload-point-bg);
+  color: var(--m-compare-upload-point-text);
+}
+
+.m-compare-upload-drop {
+  border-color: var(--m-compare-upload-drop-border);
+  background: var(--m-compare-upload-drop-bg);
+}
+
+.m-compare-upload-drop-picked {
+  border-color: var(--m-compare-upload-drop-picked-border);
+  background: var(--m-compare-upload-drop-picked-bg);
+}
+
+.m-compare-upload-icon {
+  background: var(--m-compare-upload-icon-bg);
+  color: var(--m-compare-upload-icon-text);
+}
+
+.m-compare-upload-input {
+  border-color: var(--m-compare-upload-input-border);
+  background: var(--m-compare-upload-input-bg);
+  color: var(--m-compare-upload-input-text);
+}
+
+.m-compare-upload-input::placeholder {
+  color: var(--m-compare-upload-input-placeholder);
+}
+
+.m-compare-check {
+  transition:
+    transform 120ms cubic-bezier(0.2, 0.9, 0.35, 1.28),
+    background-color var(--m-dur-fast) var(--m-ease),
+    border-color var(--m-dur-fast) var(--m-ease),
+    box-shadow var(--m-dur-fast) var(--m-ease);
+}
+
+@keyframes mCompareCheckPop {
+  0% { transform: scale(0.82); }
+  55% { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
+
 .m-compare-check-unselected {
   border-color: var(--m-compare-check-border);
   background: var(--m-compare-check-bg);
@@ -553,6 +636,7 @@ html[data-nav-open="1"] #app-main{
   background: var(--m-compare-check-selected-bg);
   color: var(--m-compare-check-selected-text);
   box-shadow: var(--m-compare-check-selected-shadow);
+  animation: mCompareCheckPop 120ms cubic-bezier(0.2, 0.9, 0.35, 1.28);
 }
 
 .m-compare-badge-reco {
@@ -658,6 +742,10 @@ html[data-nav-open="1"] #app-main{
   }
 
   .m-sheet-enter {
+    animation: none !important;
+  }
+
+  .m-compare-check-selected {
     animation: none !important;
   }
 }
