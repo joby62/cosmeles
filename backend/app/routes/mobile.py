@@ -38,6 +38,7 @@ from app.schemas import (
     MobileSelectionChoice,
     MobileSelectionBatchDeleteRequest,
     MobileSelectionBatchDeleteResponse,
+    MobileSelectionPinRequest,
     MobileSelectionLinks,
     MobileSelectionResolveRequest,
     MobileSelectionResolveResponse,
@@ -353,6 +354,8 @@ def resolve_mobile_selection(
         status="ok",
         session_id=session_id,
         reused=False,
+        is_pinned=False,
+        pinned_at=None,
         category=category,
         rules_version=MOBILE_RULES_VERSION,
         route=MobileSelectionRoute(key=resolved["route_key"], title=resolved["route_title"]),
@@ -378,6 +381,8 @@ def resolve_mobile_selection(
         product_id=product.id,
         answers_json=json.dumps(resolved["answers"], ensure_ascii=False),
         result_json=json.dumps(result.model_dump(), ensure_ascii=False),
+        is_pinned=False,
+        pinned_at=None,
         created_at=created_at,
     )
     db.add(row)
@@ -432,11 +437,42 @@ def list_mobile_selection_sessions(
             raise HTTPException(status_code=400, detail=f"Invalid category: {normalized}.")
         stmt = stmt.where(MobileSelectionSession.category == normalized)
     rows = db.execute(
-        stmt.order_by(MobileSelectionSession.created_at.desc()).offset(offset).limit(limit)
+        stmt.order_by(*_selection_session_order_expr()).offset(offset).limit(limit)
     ).scalars().all()
     if owner_cookie_new:
         _set_owner_cookie(response, owner_id, request)
     return [_row_to_mobile_response(row) for row in rows]
+
+
+@router.post("/selection/sessions/{session_id}/pin", response_model=MobileSelectionResolveResponse)
+def pin_mobile_selection_session(
+    session_id: str,
+    payload: MobileSelectionPinRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    owner_type, owner_id, owner_cookie_new = _resolve_owner(request)
+    row = db.execute(
+        select(MobileSelectionSession)
+        .where(MobileSelectionSession.id == session_id)
+        .where(MobileSelectionSession.owner_type == owner_type)
+        .where(MobileSelectionSession.owner_id == owner_id)
+        .where(MobileSelectionSession.deleted_at.is_(None))
+        .limit(1)
+    ).scalars().first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Selection session not found.")
+
+    should_pin = bool(payload.pinned)
+    row.is_pinned = should_pin
+    row.pinned_at = now_iso() if should_pin else None
+    db.commit()
+    db.refresh(row)
+
+    if owner_cookie_new:
+        _set_owner_cookie(response, owner_id, request)
+    return _row_to_mobile_response(row)
 
 
 @router.post(
@@ -500,7 +536,7 @@ def mobile_compare_bootstrap(
 ):
     owner_type, owner_id, owner_cookie_new = _resolve_owner(request)
     selected_category = _normalize_category_or_default(category)
-    latest = _latest_selection_session(
+    selected_session = _preferred_selection_session(
         db=db,
         owner_type=owner_type,
         owner_id=owner_id,
@@ -508,15 +544,16 @@ def mobile_compare_bootstrap(
     )
 
     profile = MobileCompareProfileBootstrap(
-        has_history_profile=latest is not None,
+        has_history_profile=selected_session is not None,
+        basis=_selection_basis(selected_session),
         can_skip=False,
-        last_completed_at=latest.created_at if latest else None,
-        summary=_build_profile_summary_from_session(latest),
+        last_completed_at=selected_session.created_at if selected_session else None,
+        summary=_build_profile_summary_from_session(selected_session),
     )
 
     recommendation = MobileCompareRecommendationBootstrap(exists=False)
-    if latest:
-        resolved = _row_to_mobile_response(latest)
+    if selected_session:
+        resolved = _row_to_mobile_response(selected_session)
         recommendation = MobileCompareRecommendationBootstrap(
             exists=True,
             session_id=resolved.session_id,
@@ -779,7 +816,7 @@ def _run_mobile_compare_job(
         },
     )
 
-    recommendation_session = _latest_selection_session(
+    recommendation_session = _preferred_selection_session(
         db=db,
         owner_type=owner_type,
         owner_id=owner_id,
@@ -1649,7 +1686,15 @@ def _normalize_required_category(raw: str | None) -> str:
     return value
 
 
-def _latest_selection_session(
+def _selection_session_order_expr():
+    return (
+        MobileSelectionSession.is_pinned.desc(),
+        MobileSelectionSession.pinned_at.desc(),
+        MobileSelectionSession.created_at.desc(),
+    )
+
+
+def _preferred_selection_session(
     *,
     db: Session,
     owner_type: str,
@@ -1663,12 +1708,18 @@ def _latest_selection_session(
             .where(MobileSelectionSession.owner_id == owner_id)
             .where(MobileSelectionSession.category == category)
             .where(MobileSelectionSession.deleted_at.is_(None))
-            .order_by(MobileSelectionSession.created_at.desc())
+            .order_by(*_selection_session_order_expr())
             .limit(1)
         )
         .scalars()
         .first()
     )
+
+
+def _selection_basis(row: MobileSelectionSession | None) -> str:
+    if row is None:
+        return "none"
+    return "pinned" if bool(row.is_pinned) else "latest"
 
 
 def _build_profile_summary_from_session(row: MobileSelectionSession | None) -> list[str]:
@@ -1716,7 +1767,13 @@ def _row_to_mobile_response(row: MobileSelectionSession) -> MobileSelectionResol
     except Exception as e:  # pragma: no cover
         raise HTTPException(status_code=500, detail=f"Invalid session payload: {e}") from e
     try:
-        return MobileSelectionResolveResponse.model_validate(payload)
+        resolved = MobileSelectionResolveResponse.model_validate(payload)
+        return resolved.model_copy(
+            update={
+                "is_pinned": bool(row.is_pinned),
+                "pinned_at": row.pinned_at,
+            }
+        )
     except Exception as e:  # pragma: no cover
         raise HTTPException(status_code=500, detail=f"Session payload schema invalid: {e}") from e
 

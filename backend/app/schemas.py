@@ -339,6 +339,8 @@ class MobileSelectionResolveResponse(BaseModel):
     status: str
     session_id: str
     reused: bool = False
+    is_pinned: bool = False
+    pinned_at: Optional[str] = None
     category: str
     rules_version: str
     route: MobileSelectionRoute
@@ -360,6 +362,10 @@ class MobileSelectionBatchDeleteResponse(BaseModel):
     forbidden_ids: List[str] = Field(default_factory=list)
 
 
+class MobileSelectionPinRequest(BaseModel):
+    pinned: bool = True
+
+
 class MobileCompareCategoryItem(BaseModel):
     key: str
     label: str
@@ -368,6 +374,7 @@ class MobileCompareCategoryItem(BaseModel):
 
 class MobileCompareProfileBootstrap(BaseModel):
     has_history_profile: bool = False
+    basis: Literal["none", "latest", "pinned"] = "none"
     can_skip: bool = False
     last_completed_at: Optional[str] = None
     summary: List[str] = Field(default_factory=list)

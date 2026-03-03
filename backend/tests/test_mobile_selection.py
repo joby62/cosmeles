@@ -276,3 +276,58 @@ def test_mobile_selection_resolve_with_forwarded_device_header(test_client, monk
     assert listed_other_owner.status_code == 200
     ids_other_owner = [item["session_id"] for item in listed_other_owner.json()]
     assert session_id not in ids_other_owner
+
+
+def test_mobile_selection_pin_and_list_order(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, _ = test_client
+    _install_fake_ingest_pipeline(
+        monkeypatch,
+        {
+            "category": "shampoo",
+            "brand": "Dove",
+            "name": "Pin Order",
+            "one_sentence": "置顶排序测试",
+        },
+    )
+    _ingest_one(client, "pin-order.jpg")
+
+    first = client.post(
+        "/api/mobile/selection/resolve",
+        json={"category": "shampoo", "answers": {"q1": "A", "q2": "C", "q3": "B"}, "reuse_existing": False},
+    )
+    assert first.status_code == 200
+    first_id = first.json()["session_id"]
+
+    second = client.post(
+        "/api/mobile/selection/resolve",
+        json={"category": "shampoo", "answers": {"q1": "C", "q2": "C", "q3": "A"}, "reuse_existing": False},
+    )
+    assert second.status_code == 200
+    second_id = second.json()["session_id"]
+    assert first_id != second_id
+
+    pin_resp = client.post(
+        f"/api/mobile/selection/sessions/{first_id}/pin",
+        json={"pinned": True},
+    )
+    assert pin_resp.status_code == 200
+    pinned = pin_resp.json()
+    assert pinned["session_id"] == first_id
+    assert pinned["is_pinned"] is True
+    assert pinned["pinned_at"]
+
+    listed = client.get("/api/mobile/selection/sessions")
+    assert listed.status_code == 200
+    rows = listed.json()
+    assert rows[0]["session_id"] == first_id
+    assert rows[0]["is_pinned"] is True
+    assert rows[1]["session_id"] == second_id
+
+    unpin_resp = client.post(
+        f"/api/mobile/selection/sessions/{first_id}/pin",
+        json={"pinned": False},
+    )
+    assert unpin_resp.status_code == 200
+    unpinned = unpin_resp.json()
+    assert unpinned["is_pinned"] is False
+    assert unpinned["pinned_at"] is None

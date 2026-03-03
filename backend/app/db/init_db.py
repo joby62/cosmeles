@@ -30,6 +30,13 @@ def _ensure_mobile_selection_schema() -> None:
         statements.append("ALTER TABLE mobile_selection_sessions ADD COLUMN deleted_at VARCHAR(32)")
     if "deleted_by" not in columns:
         statements.append("ALTER TABLE mobile_selection_sessions ADD COLUMN deleted_by TEXT")
+    if "is_pinned" not in columns:
+        statements.append(
+            "ALTER TABLE mobile_selection_sessions "
+            "ADD COLUMN is_pinned BOOLEAN NOT NULL DEFAULT 0"
+        )
+    if "pinned_at" not in columns:
+        statements.append("ALTER TABLE mobile_selection_sessions ADD COLUMN pinned_at VARCHAR(32)")
 
     indexes = [
         "CREATE INDEX IF NOT EXISTS ix_mobile_selection_sessions_owner_type "
@@ -38,8 +45,14 @@ def _ensure_mobile_selection_schema() -> None:
         "ON mobile_selection_sessions (owner_id)",
         "CREATE INDEX IF NOT EXISTS ix_mobile_selection_sessions_deleted_at "
         "ON mobile_selection_sessions (deleted_at)",
+        "CREATE INDEX IF NOT EXISTS ix_mobile_selection_sessions_is_pinned "
+        "ON mobile_selection_sessions (is_pinned)",
+        "CREATE INDEX IF NOT EXISTS ix_mobile_selection_sessions_pinned_at "
+        "ON mobile_selection_sessions (pinned_at)",
         "CREATE INDEX IF NOT EXISTS ix_mobile_selection_sessions_owner_scope "
         "ON mobile_selection_sessions (owner_type, owner_id, created_at)",
+        "CREATE INDEX IF NOT EXISTS ix_mobile_selection_sessions_owner_pinned_scope "
+        "ON mobile_selection_sessions (owner_type, owner_id, is_pinned, pinned_at, created_at)",
     ]
 
     with engine.begin() as conn:

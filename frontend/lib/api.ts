@@ -312,6 +312,8 @@ export type MobileSelectionResolveResponse = {
   status: string;
   session_id: string;
   reused: boolean;
+  is_pinned: boolean;
+  pinned_at?: string | null;
   category: MobileSelectionCategory;
   rules_version: string;
   route: {
@@ -339,6 +341,10 @@ export type MobileSelectionBatchDeleteResponse = {
   forbidden_ids: string[];
 };
 
+export type MobileSelectionPinRequest = {
+  pinned: boolean;
+};
+
 export type MobileCompareCategoryItem = {
   key: MobileSelectionCategory;
   label: string;
@@ -359,6 +365,7 @@ export type MobileCompareBootstrapResponse = {
   selected_category: MobileSelectionCategory;
   profile: {
     has_history_profile: boolean;
+    basis: "none" | "latest" | "pinned";
     can_skip: boolean;
     last_completed_at?: string | null;
     summary: string[];
@@ -731,6 +738,19 @@ export async function deleteMobileSelectionSessionsBatch(
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export async function pinMobileSelectionSession(
+  sessionId: string,
+  payload: MobileSelectionPinRequest,
+): Promise<MobileSelectionResolveResponse> {
+  return apiFetch<MobileSelectionResolveResponse>(
+    `/api/mobile/selection/sessions/${encodeURIComponent(sessionId)}/pin`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
 export async function fetchMobileCompareBootstrap(category?: MobileSelectionCategory): Promise<MobileCompareBootstrapResponse> {

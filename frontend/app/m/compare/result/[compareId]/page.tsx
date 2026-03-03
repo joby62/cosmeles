@@ -4,7 +4,7 @@ import { fetchMobileCompareResult } from "@/lib/api";
 export default async function MobileCompareResultPage({
   params,
 }: {
-  params: { compareId: string } | Promise<{ compareId: string }>;
+  params: Promise<{ compareId: string }>;
 }) {
   const { compareId } = await Promise.resolve(params);
   const result = await fetchMobileCompareResult(compareId);

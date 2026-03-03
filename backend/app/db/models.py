@@ -1,5 +1,5 @@
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import Integer, String, Text
+from sqlalchemy import Boolean, Integer, String, Text
 
 class Base(DeclarativeBase):
     pass
@@ -103,6 +103,8 @@ class MobileSelectionSession(Base):
     product_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     answers_json: Mapped[str] = mapped_column(Text)
     result_json: Mapped[str] = mapped_column(Text)
+    is_pinned: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    pinned_at: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     deleted_at: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     deleted_by: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[str] = mapped_column(String(32), index=True)

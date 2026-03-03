@@ -319,3 +319,46 @@ def test_mobile_compare_bootstrap_product_library_marks_recommendation_and_most_
     assert most_used_item is not None
     assert most_used_item["is_most_used"] is True
     assert most_used_item["usage_count"] == 1
+
+
+def test_mobile_compare_bootstrap_prefers_pinned_session(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, _ = test_client
+
+    _install_fake_ingest_pipeline(
+        monkeypatch,
+        {
+            "category": "shampoo",
+            "brand": "BrandP",
+            "name": "PinPref",
+            "one_sentence": "置顶优先",
+        },
+    )
+    _ingest_one(client, "pin-pref.jpg")
+
+    older = client.post(
+        "/api/mobile/selection/resolve",
+        json={"category": "shampoo", "answers": {"q1": "A", "q2": "C", "q3": "B"}, "reuse_existing": False},
+    )
+    assert older.status_code == 200
+    older_session_id = older.json()["session_id"]
+
+    latest = client.post(
+        "/api/mobile/selection/resolve",
+        json={"category": "shampoo", "answers": {"q1": "C", "q2": "C", "q3": "A"}, "reuse_existing": False},
+    )
+    assert latest.status_code == 200
+    latest_session_id = latest.json()["session_id"]
+    assert older_session_id != latest_session_id
+
+    pin_resp = client.post(
+        f"/api/mobile/selection/sessions/{older_session_id}/pin",
+        json={"pinned": True},
+    )
+    assert pin_resp.status_code == 200
+    assert pin_resp.json()["is_pinned"] is True
+
+    bootstrap = client.get("/api/mobile/compare/bootstrap", params={"category": "shampoo"})
+    assert bootstrap.status_code == 200
+    body = bootstrap.json()
+    assert body["profile"]["basis"] == "pinned"
+    assert body["recommendation"]["session_id"] == older_session_id

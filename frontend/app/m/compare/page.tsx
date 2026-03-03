@@ -46,6 +46,7 @@ export default function MobileComparePage() {
 
   const recommendationReady = Boolean(bootstrap?.recommendation?.exists);
   const hasHistoryProfile = Boolean(bootstrap?.profile?.has_history_profile);
+  const profileBasis = bootstrap?.profile?.basis || "none";
   const currentCategoryLabel = CATEGORY_LABEL_ZH[category];
   const orderedLibraryItems = useMemo(() => orderProductLibraryItems(bootstrap?.product_library?.items || []), [bootstrap?.product_library?.items]);
   const selectedSet = useMemo(() => new Set(selectedProductIds), [selectedProductIds]);
@@ -66,6 +67,12 @@ export default function MobileComparePage() {
     return `已选 ${selectedCount} 款，将与历史首推对比。`;
   }, [primaryTitle, selectedCount]);
   const sourceGuideTitle = bootstrap?.source_guide?.title || "上传你正在用的产品，系统会给出可执行的专业对比建议。";
+  const profileBasisHint =
+    profileBasis === "pinned"
+      ? "本次对比将自动沿用你置顶的个人情况。"
+      : profileBasis === "latest"
+        ? "本次对比将自动沿用该品类下你最近一次已填写的个人情况。"
+        : "本次对比将自动沿用你最近一次可用个人情况。";
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -279,10 +286,10 @@ export default function MobileComparePage() {
       <div className="mt-4 rounded-2xl border border-black/10 bg-white p-4">
         <h2 className="text-[14px] font-semibold text-black/84">2. 个人情况（自动沿用）</h2>
         {bootstrapLoading ? (
-          <div className="mt-3 text-[13px] text-black/55">正在加载你的最近一次个人情况...</div>
+          <div className="mt-3 text-[13px] text-black/55">正在加载你的自动沿用个人情况...</div>
         ) : hasHistoryProfile ? (
           <>
-            <div className="mt-2 text-[13px] text-black/72">本次对比将自动沿用该品类下你最近一次已填写的个人情况。</div>
+            <div className="mt-2 text-[13px] text-black/72">{profileBasisHint}</div>
             {bootstrap?.profile?.summary?.length ? (
               <div className="mt-3 flex flex-wrap gap-2">
                 {bootstrap.profile.summary.map((item, idx) => (
