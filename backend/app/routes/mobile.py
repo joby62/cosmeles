@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.ai.errors import AIServiceError
 from app.ai.orchestrator import run_capability_now
 from app.constants import VALID_CATEGORIES, MOBILE_RULES_VERSION, ROUTE_MAPPING_SUPPORTED_CATEGORIES
-from app.db.models import MobileSelectionSession, ProductIndex, ProductFeaturedSlot
+from app.db.models import MobileSelectionSession, ProductIndex, ProductRouteMappingIndex, ProductFeaturedSlot
 from app.db.session import get_db
 from app.schemas import (
     MobileCompareBootstrapResponse,
@@ -356,20 +356,30 @@ def resolve_mobile_selection(
             status_code=422,
             detail=f"Cannot resolve target_type_key for category='{category}', route='{resolved['route_key']}'.",
         )
-    product_row = _pick_featured_product_row(
-        db=db,
-        category=category,
-        target_type_key=target_type_key,
-    )
-    if product_row is None:
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                "No featured product configured for "
-                f"category='{category}', target_type_key='{target_type_key}'. "
-                "Please set featured product in desktop product management."
-            ),
+    featured_query_error: str | None = None
+    try:
+        product_row = _pick_featured_product_row(
+            db=db,
+            category=category,
+            target_type_key=target_type_key,
         )
+    except HTTPException as exc:
+        featured_query_error = str(exc.detail)
+        product_row = None
+
+    if product_row is None:
+        product_row = _pick_route_mapped_product_row(
+            db=db,
+            category=category,
+            target_type_key=target_type_key,
+            rules_version=MOBILE_RULES_VERSION,
+        )
+    if product_row is None:
+        product_row = _pick_product_row(db=db, category=category)
+    if product_row is None:
+        if featured_query_error:
+            raise HTTPException(status_code=500, detail=featured_query_error)
+        raise HTTPException(status_code=422, detail=f"No product found for category '{category}'.")
     product = _row_to_product_card(product_row)
 
     created_at = now_iso()
@@ -2151,6 +2161,78 @@ def _pick_featured_product_row(
     if not exists_rel_path(str(product.json_path or "")):
         return None
     return product
+
+
+def _extract_route_score_from_mapping(scores_json: str, target_type_key: str) -> int | None:
+    raw = str(scores_json or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return None
+    if not isinstance(parsed, list):
+        return None
+    for item in parsed:
+        if not isinstance(item, dict):
+            continue
+        route_key = str(item.get("route_key") or "").strip()
+        if route_key != target_type_key:
+            continue
+        try:
+            score = int(item.get("confidence"))
+        except Exception:
+            return None
+        return max(0, min(100, score))
+    return None
+
+
+def _pick_route_mapped_product_row(
+    db: Session,
+    category: str,
+    target_type_key: str,
+    rules_version: str,
+) -> ProductIndex | None:
+    try:
+        rows = db.execute(
+            select(ProductRouteMappingIndex)
+            .where(ProductRouteMappingIndex.category == category)
+            .where(ProductRouteMappingIndex.rules_version == rules_version)
+            .where(ProductRouteMappingIndex.status == "ready")
+            .order_by(ProductRouteMappingIndex.last_generated_at.desc())
+        ).scalars().all()
+    except OperationalError:
+        return None
+
+    best_row: ProductIndex | None = None
+    best_score = -1
+    best_generated_at = ""
+    for mapping in rows:
+        score = _extract_route_score_from_mapping(str(mapping.scores_json or ""), target_type_key)
+        if score is None or score <= 0:
+            continue
+        product = db.get(ProductIndex, str(mapping.product_id))
+        if not product:
+            continue
+        if str(product.category or "").strip().lower() != category:
+            continue
+        if not exists_rel_path(str(product.json_path or "")):
+            continue
+        generated_at = str(mapping.last_generated_at or "")
+        if score > best_score or (score == best_score and generated_at > best_generated_at):
+            best_score = score
+            best_generated_at = generated_at
+            best_row = product
+    return best_row
+
+
+def _pick_product_row(db: Session, category: str) -> ProductIndex | None:
+    return db.execute(
+        select(ProductIndex)
+        .where(ProductIndex.category == category)
+        .order_by(ProductIndex.created_at.desc())
+        .limit(1)
+    ).scalars().first()
 
 
 def _row_to_product_card(row: ProductIndex) -> ProductCard:

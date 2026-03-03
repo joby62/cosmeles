@@ -19,44 +19,47 @@ function categoryLabel(category?: string | null): string {
 }
 
 export default async function ProductManagementPage() {
-  const [productsRes, aiMetricsRes, routeMappingsRes, featuredSlotsRes] = await Promise.allSettled([
-    fetchAllProducts(),
+  const products = await fetchAllProducts();
+  const loadWarnings: Array<{ source: string; message: string }> = [];
+  const aiMetrics = await loadWithWarning(
     fetchAIMetricsSummary({ sinceHours: 24 * 7 }),
+    "ai_metrics",
+    loadWarnings,
+    {
+      capability: null,
+      since_hours: 24 * 7,
+      window_start: "",
+      total_jobs: 0,
+      succeeded_jobs: 0,
+      failed_jobs: 0,
+      running_jobs: 0,
+      queued_jobs: 0,
+      success_rate: 0,
+      timeout_failures: 0,
+      timeout_rate: 0,
+      total_runs: 0,
+      succeeded_runs: 0,
+      failed_runs: 0,
+      avg_latency_ms: null,
+      p95_latency_ms: null,
+      total_estimated_cost: 0,
+      avg_task_cost: null,
+      priced_runs: 0,
+      cost_coverage_rate: 0,
+    },
+  );
+  const routeMappings = await loadWithWarning(
     fetchProductRouteMappingIndex(),
+    "route_mapping_index",
+    loadWarnings,
+    { status: "error", category: null, total: 0, items: [] },
+  );
+  const featuredSlots = await loadWithWarning(
     fetchProductFeaturedSlots(),
-  ]);
-
-  const loadErrors: Array<{ source: string; message: string }> = [];
-  if (productsRes.status === "rejected") loadErrors.push({ source: "products", message: formatErr(productsRes.reason) });
-  if (aiMetricsRes.status === "rejected") loadErrors.push({ source: "ai_metrics", message: formatErr(aiMetricsRes.reason) });
-  if (routeMappingsRes.status === "rejected") loadErrors.push({ source: "route_mapping_index", message: formatErr(routeMappingsRes.reason) });
-  if (featuredSlotsRes.status === "rejected") loadErrors.push({ source: "featured_slots", message: formatErr(featuredSlotsRes.reason) });
-
-  if (loadErrors.length > 0) {
-    return (
-      <main className="mx-auto min-h-screen w-full max-w-[1180px] px-6 py-12">
-        <section className="rounded-[24px] border border-[#ff9b8f]/55 bg-[#fff1ef] px-6 py-5 text-[#8e2e22]">
-          <h1 className="text-[28px] font-semibold tracking-[-0.02em] text-[#7b261d]">产品管理页加载失败（strict）</h1>
-          <p className="mt-2 text-[14px] leading-[1.6]">
-            已阻断页面继续渲染，不做降级兜底。请根据下列真实错误直接排查后重试。
-          </p>
-          <ul className="mt-4 space-y-2 text-[12px] leading-[1.55]">
-            {loadErrors.map((item, idx) => (
-              <li key={`${idx}-${item.source}`} className="rounded-xl border border-[#f2b0a8]/80 bg-[#fff8f7] px-3 py-2">
-                <div className="font-semibold">stage: {item.source}</div>
-                <pre className="mt-1 whitespace-pre-wrap font-sans">{item.message}</pre>
-              </li>
-            ))}
-          </ul>
-        </section>
-      </main>
-    );
-  }
-
-  const products = unwrapSettled(productsRes, "products");
-  const aiMetrics = unwrapSettled(aiMetricsRes, "ai_metrics");
-  const routeMappings = unwrapSettled(routeMappingsRes, "route_mapping_index");
-  const featuredSlots = unwrapSettled(featuredSlotsRes, "featured_slots");
+    "featured_slots",
+    loadWarnings,
+    { status: "error", category: null, total: 0, items: [] },
+  );
 
   const categoryCounts = new Map<string, number>();
   for (const item of products) {
@@ -68,6 +71,19 @@ export default async function ProductManagementPage() {
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-[1180px] px-6 py-12">
+      {loadWarnings.length > 0 ? (
+        <section className="mb-6 rounded-[20px] border border-[#f3c77b]/55 bg-[#fff7e9] px-5 py-4 text-[#855400]">
+          <div className="text-[14px] font-semibold">过渡模式：部分能力未就绪，已启用兼容回退</div>
+          <ul className="mt-2 space-y-1 text-[12px] leading-[1.55]">
+            {loadWarnings.map((item, idx) => (
+              <li key={`${idx}-${item.source}`}>
+                • {item.source}：{item.message}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       <section className="relative overflow-hidden rounded-[34px] border border-black/10 bg-gradient-to-br from-[#f7f9ff] via-white to-[#f2f6f1] px-8 py-9">
         <div className="pointer-events-none absolute -right-12 -top-12 h-44 w-44 rounded-full bg-[#2f7bf6]/10 blur-2xl" />
         <div className="pointer-events-none absolute -bottom-16 -left-8 h-48 w-48 rounded-full bg-[#00a86b]/10 blur-2xl" />
@@ -140,9 +156,18 @@ function formatErr(err: unknown): string {
   }
 }
 
-function unwrapSettled<T>(result: PromiseSettledResult<T>, source: string): T {
-  if (result.status === "fulfilled") return result.value;
-  throw new Error(`Unreachable settled error for '${source}': ${formatErr(result.reason)}`);
+async function loadWithWarning<T>(
+  promise: Promise<T>,
+  source: string,
+  collector: Array<{ source: string; message: string }>,
+  fallback: T,
+): Promise<T> {
+  try {
+    return await promise;
+  } catch (err) {
+    collector.push({ source, message: formatErr(err) });
+    return fallback;
+  }
 }
 
 function MetricsBadge({ label, value, sub }: { label: string; value: string; sub?: string }) {

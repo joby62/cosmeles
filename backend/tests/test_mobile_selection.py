@@ -175,7 +175,7 @@ def _set_featured_slot(client, category: str, target_type_key: str, product_id: 
     return pid
 
 
-def test_mobile_selection_resolve_requires_featured_slot(test_client, monkeypatch: pytest.MonkeyPatch):
+def test_mobile_selection_resolve_without_featured_slot_uses_fallback(test_client, monkeypatch: pytest.MonkeyPatch):
     client, _ = test_client
     _install_fake_ingest_pipeline(
         monkeypatch,
@@ -197,10 +197,11 @@ def test_mobile_selection_resolve_requires_featured_slot(test_client, monkeypatc
             "answers": {"q1": "A", "q2": "C", "q3": "B"},
         },
     )
-    assert resp.status_code == 422
-    detail = str(resp.json().get("detail", ""))
-    assert "No featured product configured" in detail
-    assert "volume-support" in detail
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["recommended_product"]["id"]
+    assert body["recommended_product"]["category"] == "shampoo"
 
 
 def test_mobile_selection_resolve_shampoo_route_mapping(test_client, monkeypatch: pytest.MonkeyPatch):
