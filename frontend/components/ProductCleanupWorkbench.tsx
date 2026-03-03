@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Product,
@@ -28,6 +28,7 @@ export default function ProductCleanupWorkbench({ initialProducts }: { initialPr
   const [cleanupSummary, setCleanupSummary] = useState<string | null>(null);
   const [cleanupError, setCleanupError] = useState<string | null>(null);
   const [lastCleanup, setLastCleanup] = useState<OrphanStorageCleanupResponse | null>(null);
+  const cleanupRunningRef = useRef(false);
 
   const categoryStats = useMemo(() => {
     const map = new Map<string, number>();
@@ -52,37 +53,42 @@ export default function ProductCleanupWorkbench({ initialProducts }: { initialPr
     });
   }, [initialProducts, category, keyword, onlyInvalid]);
 
+  const runOrphanCleanup = useCallback(
+    async (dryRun: boolean, fromTimer = false) => {
+      if (cleanupRunningRef.current) return;
+      cleanupRunningRef.current = true;
+      setCleanupRunning(true);
+      setCleanupError(null);
+      if (!fromTimer) setCleanupSummary(null);
+      try {
+        const result = await cleanupOrphanStorage({
+          dry_run: dryRun,
+          min_age_minutes: ORPHAN_MIN_AGE_MINUTES,
+          max_delete: 1000,
+        });
+        setLastCleanup(result);
+        const summary = dryRun
+          ? `扫描完成：orphan 图片 ${result.images.orphan_images}，orphan runs ${result.runs.orphan_runs}。`
+          : `清理完成：删除图片 ${result.images.deleted_images}，删除 runs ${result.runs.deleted_runs}。`;
+        setCleanupSummary(summary);
+        if (!dryRun) router.refresh();
+      } catch (err) {
+        setCleanupError(err instanceof Error ? err.message : "清理失败，请稍后重试。");
+      } finally {
+        cleanupRunningRef.current = false;
+        setCleanupRunning(false);
+      }
+    },
+    [router],
+  );
+
   useEffect(() => {
     if (!autoCleanup) return;
     const timer = window.setInterval(() => {
       void runOrphanCleanup(false, true);
     }, intervalMinutes * 60 * 1000);
     return () => window.clearInterval(timer);
-  }, [autoCleanup, intervalMinutes]);
-
-  async function runOrphanCleanup(dryRun: boolean, fromTimer = false) {
-    if (cleanupRunning) return;
-    setCleanupRunning(true);
-    setCleanupError(null);
-    if (!fromTimer) setCleanupSummary(null);
-    try {
-      const result = await cleanupOrphanStorage({
-        dry_run: dryRun,
-        min_age_minutes: ORPHAN_MIN_AGE_MINUTES,
-        max_delete: 1000,
-      });
-      setLastCleanup(result);
-      const summary = dryRun
-        ? `扫描完成：orphan 图片 ${result.images.orphan_images}，orphan runs ${result.runs.orphan_runs}。`
-        : `清理完成：删除图片 ${result.images.deleted_images}，删除 runs ${result.runs.deleted_runs}。`;
-      setCleanupSummary(summary);
-      if (!dryRun) router.refresh();
-    } catch (err) {
-      setCleanupError(err instanceof Error ? err.message : "清理失败，请稍后重试。");
-    } finally {
-      setCleanupRunning(false);
-    }
-  }
+  }, [autoCleanup, intervalMinutes, runOrphanCleanup]);
 
   function toggleSelect(id: string, checked: boolean) {
     setSelectedIds((prev) => {
