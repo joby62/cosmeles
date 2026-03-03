@@ -252,6 +252,8 @@ def test_mobile_selection_isolated_by_device_cookie(test_client, monkeypatch: py
         },
     )
     _ingest_one(client, "isolation.jpg")
+    _install_fake_route_mapping_builder(monkeypatch)
+    _build_route_mapping(client, "shampoo")
 
     payload = {
         "category": "shampoo",
@@ -288,6 +290,8 @@ def test_mobile_selection_batch_delete_scoped_by_owner(test_client, monkeypatch:
         },
     )
     _ingest_one(client, "delete.jpg")
+    _install_fake_route_mapping_builder(monkeypatch)
+    _build_route_mapping(client, "bodywash")
 
     payload = {"category": "bodywash", "answers": {"q1": "B", "q2": "A"}}
 
@@ -374,6 +378,8 @@ def test_mobile_selection_pin_and_list_order(test_client, monkeypatch: pytest.Mo
         },
     )
     _ingest_one(client, "pin-order.jpg")
+    _install_fake_route_mapping_builder(monkeypatch)
+    _build_route_mapping(client, "shampoo")
 
     first = client.post(
         "/api/mobile/selection/resolve",
