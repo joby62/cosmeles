@@ -519,11 +519,13 @@ const ProductLibraryCard = memo(function ProductLibraryCard({
           disabled={disabled}
           aria-label={selected ? `取消选择 ${item.title}` : `选择 ${item.title}`}
           onClick={onToggle}
-          className={`m-compare-check absolute right-1.5 top-1.5 z-[3] inline-flex h-5 w-5 items-center justify-center rounded-full border transition-colors ${
+          className={`m-compare-check absolute right-1 top-1 z-[3] inline-flex h-7 w-7 items-center justify-center rounded-full border transition-colors ${
             selected ? "m-compare-check-selected" : "m-compare-check-unselected"
           }`}
         >
-          ✓
+          <span className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-full text-[11px] leading-none">
+            ✓
+          </span>
         </button>
       </div>
 

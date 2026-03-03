@@ -11,6 +11,10 @@ import {
 
 const SWIPE_ACTION_WIDTH = 84;
 const SWIPE_ACTION_TOTAL = SWIPE_ACTION_WIDTH * 2;
+const SWIPE_OPEN_RATIO = 0.46;
+const SWIPE_FAST_OPEN_VELOCITY = -0.38;
+const SWIPE_FAST_CLOSE_VELOCITY = 0.34;
+const SWIPE_RUBBER_FACTOR = 0.2;
 
 type ConfirmDeleteState = {
   ids: string[];
@@ -24,6 +28,9 @@ type DragState = {
   startX: number;
   startY: number;
   baseOffset: number;
+  lastX: number;
+  lastTs: number;
+  velocityX: number;
   lock: "pending" | "horizontal" | "vertical";
 };
 
@@ -53,6 +60,20 @@ function sessionById(
   sessionId: string,
 ): MobileSelectionResolveResponse | null {
   return entries.find((item) => item.session_id === sessionId) || null;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function applyRubberBand(value: number, min: number, max: number): number {
+  if (value < min) return min - (min - value) * SWIPE_RUBBER_FACTOR;
+  if (value > max) return max + (value - max) * SWIPE_RUBBER_FACTOR;
+  return value;
+}
+
+function swipeProgressFromOffset(offset: number): number {
+  return clamp(-offset / SWIPE_ACTION_TOTAL, 0, 1);
 }
 
 function TrashIcon() {
@@ -232,7 +253,10 @@ export default function MobileMePage() {
       setDragOffset(0);
       return;
     }
-    const shouldOpen = dragOffset <= -(SWIPE_ACTION_TOTAL * 0.46);
+    const finalOffset = clamp(dragOffset, -SWIPE_ACTION_TOTAL, 0);
+    const shouldOpen =
+      current.velocityX <= SWIPE_FAST_OPEN_VELOCITY ||
+      (current.velocityX < SWIPE_FAST_CLOSE_VELOCITY && finalOffset <= -(SWIPE_ACTION_TOTAL * SWIPE_OPEN_RATIO));
     setOpenRowId(shouldOpen ? current.sessionId : null);
     setDraggingId(null);
     setDragOffset(0);
@@ -252,6 +276,9 @@ export default function MobileMePage() {
         startX: event.clientX,
         startY: event.clientY,
         baseOffset,
+        lastX: event.clientX,
+        lastTs: performance.now(),
+        velocityX: 0,
         lock: "pending",
       };
       setDraggingId(sessionId);
@@ -279,9 +306,15 @@ export default function MobileMePage() {
     if (current.lock === "vertical") return;
 
     event.preventDefault();
-    let next = current.baseOffset + dx;
-    if (next > 0) next = 0;
-    if (next < -SWIPE_ACTION_TOTAL) next = -SWIPE_ACTION_TOTAL;
+    const now = performance.now();
+    const dt = Math.max(1, now - current.lastTs);
+    current.velocityX = (event.clientX - current.lastX) / dt;
+    current.lastX = event.clientX;
+    current.lastTs = now;
+    dragRef.current = current;
+
+    const rawNext = current.baseOffset + dx;
+    const next = applyRubberBand(rawNext, -SWIPE_ACTION_TOTAL, 0);
     setDragOffset(next);
   }, []);
 
@@ -353,7 +386,11 @@ export default function MobileMePage() {
             const checked = selectedIds.includes(entry.session_id);
             const offset = rowOffset(entry.session_id);
             const showingAction = openRowId === entry.session_id && !selectionMode;
-            const actionVisible = !selectionMode && (showingAction || (draggingId === entry.session_id && offset <= -4));
+            const swipeProgress = swipeProgressFromOffset(offset);
+            const actionOpacity = swipeProgress <= 0.08 ? 0 : (swipeProgress - 0.08) / 0.92;
+            const actionShift = (1 - swipeProgress) * 18;
+            const actionVisible = !selectionMode && swipeProgress > 0.01;
+            const actionInteractive = !selectionMode && swipeProgress > 0.38;
 
             return (
               <div
@@ -363,9 +400,15 @@ export default function MobileMePage() {
               >
                 {!selectionMode && (
                   <div
-                    className={`absolute inset-y-0 right-0 z-0 flex transition-opacity duration-150 ${
-                      actionVisible ? "opacity-100" : "pointer-events-none opacity-0"
+                    className={`m-me-swipe-track absolute inset-y-0 right-0 z-0 flex rounded-r-[24px] ${
+                      actionVisible ? "" : "pointer-events-none"
                     }`}
+                    style={{
+                      opacity: clamp(actionOpacity, 0, 1),
+                      transform: `translate3d(${actionShift}px,0,0)`,
+                      transition: draggingId === entry.session_id ? "none" : "opacity 180ms ease, transform 220ms cubic-bezier(0.22, 1, 0.36, 1)",
+                      pointerEvents: actionInteractive ? "auto" : "none",
+                    }}
                   >
                     <button
                       type="button"
