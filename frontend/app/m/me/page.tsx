@@ -302,7 +302,7 @@ export default function MobileMePage() {
   }, [selectedCount, selectionMode]);
 
   return (
-    <section className="relative pb-28" onClick={() => {
+    <section className="m-me-page relative pb-28" onClick={() => {
       if (openRowId && !selectionMode) closeSwipe();
     }}>
       <div className="flex items-start justify-between gap-3">
@@ -353,6 +353,7 @@ export default function MobileMePage() {
             const checked = selectedIds.includes(entry.session_id);
             const offset = rowOffset(entry.session_id);
             const showingAction = openRowId === entry.session_id && !selectionMode;
+            const actionVisible = !selectionMode && (showingAction || (draggingId === entry.session_id && offset <= -4));
 
             return (
               <div
@@ -361,24 +362,32 @@ export default function MobileMePage() {
                 onClick={(event) => event.stopPropagation()}
               >
                 {!selectionMode && (
-                  <div className="absolute inset-y-0 right-0 z-0 flex">
+                  <div
+                    className={`absolute inset-y-0 right-0 z-0 flex transition-opacity duration-150 ${
+                      actionVisible ? "opacity-100" : "pointer-events-none opacity-0"
+                    }`}
+                  >
                     <button
                       type="button"
                       onClick={() => {
                         void togglePin(entry);
                       }}
                       disabled={Boolean(pinningId) || deleting}
-                      className="flex w-[84px] items-center justify-center bg-[#ff9f0a] text-[13px] font-semibold text-white disabled:opacity-55"
+                      className="m-me-swipe-action m-me-swipe-action-pin flex w-[84px] items-center justify-center text-[13px] font-semibold disabled:opacity-55"
                     >
                       {pinningId === entry.session_id ? "处理中" : entry.is_pinned ? "取消置顶" : "置顶"}
                     </button>
                     <button
                       type="button"
                       onClick={() => {
+                        setOpenRowId(null);
+                        setDraggingId(null);
+                        setDragOffset(0);
+                        dragRef.current = null;
                         askDeleteSingle(entry.session_id);
                       }}
                       disabled={deleting}
-                      className="flex w-[84px] items-center justify-center bg-[#ff3b30] text-[13px] font-semibold text-white disabled:opacity-55"
+                      className="m-me-swipe-action m-me-swipe-action-delete flex w-[84px] items-center justify-center text-[13px] font-semibold disabled:opacity-55"
                     >
                       删除
                     </button>
@@ -406,7 +415,7 @@ export default function MobileMePage() {
                         ? "none"
                         : "transform 260ms cubic-bezier(0.22, 1, 0.36, 1)",
                   }}
-                  className={`relative z-10 rounded-[24px] border bg-white px-4 py-4 ${
+                  className={`m-me-record-card relative z-10 rounded-[24px] border px-4 py-4 ${
                     checked ? "border-[#6f9dff]/60 ring-2 ring-[#6f9dff]/20" : "border-black/10"
                   }`}
                 >

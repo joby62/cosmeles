@@ -508,24 +508,23 @@ const ProductLibraryCard = memo(function ProductLibraryCard({
       role="button"
       tabIndex={disabled ? -1 : 0}
     >
-      <button
-        type="button"
-        disabled={disabled}
-        aria-label={selected ? `取消选择 ${item.title}` : `选择 ${item.title}`}
-        onClick={onToggle}
-        className={`m-compare-check absolute right-2 top-2 inline-flex h-5 w-5 items-center justify-center rounded-full border transition-colors ${
-          selected ? "m-compare-check-selected" : "m-compare-check-unselected"
-        }`}
-      >
-        ✓
-      </button>
-
       <div className="relative h-[86px] w-full overflow-hidden rounded-[16px] bg-[linear-gradient(148deg,#f4f6fb,#d9e3f1)]">
         {image ? (
           <Image src={image} alt={item.title} fill sizes="134px" className="object-contain p-2" />
         ) : (
           <div className="flex h-full items-center justify-center text-[11px] text-black/35">无图</div>
         )}
+        <button
+          type="button"
+          disabled={disabled}
+          aria-label={selected ? `取消选择 ${item.title}` : `选择 ${item.title}`}
+          onClick={onToggle}
+          className={`m-compare-check absolute right-1.5 top-1.5 z-[3] inline-flex h-5 w-5 items-center justify-center rounded-full border transition-colors ${
+            selected ? "m-compare-check-selected" : "m-compare-check-unselected"
+          }`}
+        >
+          ✓
+        </button>
       </div>
 
       <div className="mt-2 min-h-[54px]">
