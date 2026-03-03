@@ -116,8 +116,8 @@ export default async function WikiCategoryPage({
   params,
   searchParams,
 }: {
-  params: Params | Promise<Params>;
-  searchParams?: Search | Promise<Search>;
+  params: Promise<Params>;
+  searchParams?: Promise<Search>;
 }) {
   const raw = await Promise.resolve(params);
   const search = (await Promise.resolve(searchParams)) || {};

@@ -4,10 +4,11 @@ import Image from "next/image";
 export default async function ComparePage({
   searchParams,
 }: {
-  searchParams?: { ids?: string };
+  searchParams?: Promise<{ ids?: string }>;
 }) {
+  const resolvedSearch = (await searchParams) ?? {};
   const allProducts = await fetchProducts();
-  const ids = searchParams?.ids?.split(",") ?? [];
+  const ids = resolvedSearch.ids?.split(",") ?? [];
 
   const products = allProducts.filter((p) => ids.includes(p.id));
 

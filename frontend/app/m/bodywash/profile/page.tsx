@@ -88,7 +88,7 @@ function buildNextHref(signals: BodyWashSignals, key: StepKey, value: OptionValu
 export default async function BodyWashProfilePage({
   searchParams,
 }: {
-  searchParams?: Search | Promise<Search>;
+  searchParams?: Promise<Search>;
 }) {
   const raw = (await Promise.resolve(searchParams)) || {};
   const signals = normalizeBodyWashSignals(raw);

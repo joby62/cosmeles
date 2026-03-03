@@ -94,7 +94,7 @@ function makeHref(signals: CleanserSignals, key: StepKey, value: string, nextSte
 export default async function CleanserProfilePage({
   searchParams,
 }: {
-  searchParams?: Search | Promise<Search>;
+  searchParams?: Promise<Search>;
 }) {
   const raw = (await Promise.resolve(searchParams)) || {};
   const signals = normalizeCleanserSignals(raw);

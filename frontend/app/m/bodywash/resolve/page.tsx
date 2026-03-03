@@ -10,7 +10,7 @@ type Search = Record<string, string | string[] | undefined>;
 export default async function BodyWashResolvePage({
   searchParams,
 }: {
-  searchParams?: Search | Promise<Search>;
+  searchParams?: Promise<Search>;
 }) {
   const raw = (await Promise.resolve(searchParams)) || {};
   const signals = normalizeBodyWashSignals(raw);

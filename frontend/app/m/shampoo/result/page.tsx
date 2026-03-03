@@ -29,7 +29,7 @@ function parseAnswers(raw: Search): Record<string, string> | null {
 export default async function ShampooResultPage({
   searchParams,
 }: {
-  searchParams?: Search | Promise<Search>;
+  searchParams?: Promise<Search>;
 }) {
   const raw = (await Promise.resolve(searchParams)) || {};
   const answers = parseAnswers(raw);

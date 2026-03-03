@@ -94,7 +94,7 @@ function makeHref(signals: LotionSignals, key: StepKey, value: string, nextStep:
 export default async function LotionProfilePage({
   searchParams,
 }: {
-  searchParams?: Search | Promise<Search>;
+  searchParams?: Promise<Search>;
 }) {
   const raw = (await Promise.resolve(searchParams)) || {};
   const signals = normalizeLotionSignals(raw);

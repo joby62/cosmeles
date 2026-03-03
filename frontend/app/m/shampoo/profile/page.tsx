@@ -69,7 +69,7 @@ function buildNextHref(signals: ShampooSignals, key: StepKey, value: "A" | "B" |
 export default async function ShampooProfilePage({
   searchParams,
 }: {
-  searchParams?: Search | Promise<Search>;
+  searchParams?: Promise<Search>;
 }) {
   const raw = (await Promise.resolve(searchParams)) || {};
   const signals = normalizeShampooSignals(raw);

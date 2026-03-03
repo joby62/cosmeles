@@ -174,7 +174,7 @@ function phraseTags(lines: string[], max = 6): string[] {
 export default async function IngredientDetailPage({
   params,
 }: {
-  params: Params | Promise<Params>;
+  params: Promise<Params>;
 }) {
   const raw = await Promise.resolve(params);
 

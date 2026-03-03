@@ -8,9 +8,8 @@ type Params = { category: string };
 export default async function CategoryPage({
   params,
 }: {
-  params: Params | Promise<Params>;
+  params: Promise<Params>;
 }) {
-  // ✅ 兼容：Next 可能传对象，也可能传 Promise
   const { category } = await Promise.resolve(params);
 
   const products = await fetchProducts();

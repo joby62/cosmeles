@@ -23,7 +23,7 @@ function parseAnswers(raw: Search): Record<string, string> | null {
 export default async function ConditionerResultPage({
   searchParams,
 }: {
-  searchParams?: Search | Promise<Search>;
+  searchParams?: Promise<Search>;
 }) {
   const raw = (await Promise.resolve(searchParams)) || {};
   const answers = parseAnswers(raw);
