@@ -149,6 +149,60 @@ def _build_route_mapping(client, category: str) -> None:
     assert payload["submitted_to_model"] >= 1
 
 
+def _find_first_product_id(client, category: str) -> str:
+    resp = client.get("/api/products")
+    assert resp.status_code == 200
+    payload = resp.json()
+    items = payload.get("items", []) if isinstance(payload, dict) else payload
+    for item in items:
+        if str(item.get("category", "")).strip().lower() == category:
+            return str(item["id"])
+    raise AssertionError(f"no product found for category={category}")
+
+
+def _set_featured_slot(client, category: str, target_type_key: str, product_id: str | None = None) -> str:
+    pid = product_id or _find_first_product_id(client, category)
+    resp = client.post(
+        "/api/products/featured-slots",
+        json={
+            "category": category,
+            "target_type_key": target_type_key,
+            "product_id": pid,
+            "updated_by": "pytest",
+        },
+    )
+    assert resp.status_code == 200
+    return pid
+
+
+def test_mobile_selection_resolve_requires_featured_slot(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, _ = test_client
+    _install_fake_ingest_pipeline(
+        monkeypatch,
+        {
+            "category": "shampoo",
+            "brand": "Dove",
+            "name": "Shampoo Strict",
+            "one_sentence": "strict 主推测试",
+        },
+    )
+    _ingest_one(client, "shampoo-strict.jpg")
+    _install_fake_route_mapping_builder(monkeypatch)
+    _build_route_mapping(client, "shampoo")
+
+    resp = client.post(
+        "/api/mobile/selection/resolve",
+        json={
+            "category": "shampoo",
+            "answers": {"q1": "A", "q2": "C", "q3": "B"},
+        },
+    )
+    assert resp.status_code == 422
+    detail = str(resp.json().get("detail", ""))
+    assert "No featured product configured" in detail
+    assert "volume-support" in detail
+
+
 def test_mobile_selection_resolve_shampoo_route_mapping(test_client, monkeypatch: pytest.MonkeyPatch):
     client, _ = test_client
     _install_fake_ingest_pipeline(
@@ -163,6 +217,7 @@ def test_mobile_selection_resolve_shampoo_route_mapping(test_client, monkeypatch
     _ingest_one(client, "shampoo.jpg")
     _install_fake_route_mapping_builder(monkeypatch)
     _build_route_mapping(client, "shampoo")
+    _set_featured_slot(client, "shampoo", "volume-support")
 
     resp = client.post(
         "/api/mobile/selection/resolve",
@@ -195,6 +250,7 @@ def test_mobile_selection_resolve_bodywash_fastpath(test_client, monkeypatch: py
     _ingest_one(client, "bodywash.jpg")
     _install_fake_route_mapping_builder(monkeypatch)
     _build_route_mapping(client, "bodywash")
+    _set_featured_slot(client, "bodywash", "rescue")
 
     resp = client.post(
         "/api/mobile/selection/resolve",
@@ -222,6 +278,7 @@ def test_mobile_selection_resolve_reuse_existing_session(test_client, monkeypatc
         },
     )
     _ingest_one(client, "cleanser.jpg")
+    _set_featured_slot(client, "cleanser", "__category__")
 
     payload = {
         "category": "cleanser",
@@ -259,6 +316,7 @@ def test_mobile_selection_isolated_by_device_cookie(test_client, monkeypatch: py
     _ingest_one(client, "isolation.jpg")
     _install_fake_route_mapping_builder(monkeypatch)
     _build_route_mapping(client, "shampoo")
+    _set_featured_slot(client, "shampoo", "volume-support")
 
     payload = {
         "category": "shampoo",
@@ -297,6 +355,7 @@ def test_mobile_selection_batch_delete_scoped_by_owner(test_client, monkeypatch:
     _ingest_one(client, "delete.jpg")
     _install_fake_route_mapping_builder(monkeypatch)
     _build_route_mapping(client, "bodywash")
+    _set_featured_slot(client, "bodywash", "rescue")
 
     payload = {"category": "bodywash", "answers": {"q1": "B", "q2": "A"}}
 
@@ -342,6 +401,7 @@ def test_mobile_selection_resolve_with_forwarded_device_header(test_client, monk
         },
     )
     _ingest_one(client, "lotion.jpg")
+    _set_featured_slot(client, "lotion", "__category__")
 
     headers = {"x-mobile-device-id": "device-header-001"}
     payload = {
@@ -385,6 +445,7 @@ def test_mobile_selection_pin_and_list_order(test_client, monkeypatch: pytest.Mo
     _ingest_one(client, "pin-order.jpg")
     _install_fake_route_mapping_builder(monkeypatch)
     _build_route_mapping(client, "shampoo")
+    _set_featured_slot(client, "shampoo", "volume-support")
 
     first = client.post(
         "/api/mobile/selection/resolve",
@@ -395,7 +456,7 @@ def test_mobile_selection_pin_and_list_order(test_client, monkeypatch: pytest.Mo
 
     second = client.post(
         "/api/mobile/selection/resolve",
-        json={"category": "shampoo", "answers": {"q1": "C", "q2": "C", "q3": "A"}, "reuse_existing": False},
+        json={"category": "shampoo", "answers": {"q1": "A", "q2": "C", "q3": "B"}, "reuse_existing": False},
     )
     assert second.status_code == 200
     second_id = second.json()["session_id"]

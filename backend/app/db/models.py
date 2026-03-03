@@ -118,6 +118,16 @@ class ProductRouteMappingIndex(Base):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class ProductFeaturedSlot(Base):
+    __tablename__ = "product_featured_slots"
+
+    category: Mapped[str] = mapped_column(String(32), primary_key=True)
+    target_type_key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    product_id: Mapped[str] = mapped_column(String(36), index=True)
+    updated_at: Mapped[str] = mapped_column(String(32), index=True)
+    updated_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+
 class MobileSelectionSession(Base):
     __tablename__ = "mobile_selection_sessions"
 

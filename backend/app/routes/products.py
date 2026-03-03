@@ -17,7 +17,7 @@ from app.ai.orchestrator import run_capability_now
 from app.ai.prompts import load_prompt
 from app.constants import VALID_CATEGORIES, MOBILE_RULES_VERSION, ROUTE_MAPPING_SUPPORTED_CATEGORIES
 from app.db.session import get_db
-from app.db.models import ProductIndex, IngredientLibraryIndex, ProductRouteMappingIndex
+from app.db.models import ProductIndex, IngredientLibraryIndex, ProductRouteMappingIndex, ProductFeaturedSlot
 from app.settings import settings
 from app.services.storage import (
     load_json,
@@ -38,6 +38,13 @@ from app.schemas import (
     ProductListResponse,
     ProductListMeta,
     CategoryCount,
+    ProductRouteMappingIndexListResponse,
+    ProductRouteMappingIndexItem,
+    ProductFeaturedSlotItem,
+    ProductFeaturedSlotListResponse,
+    ProductFeaturedSlotUpsertRequest,
+    ProductFeaturedSlotClearRequest,
+    ProductFeaturedSlotClearResponse,
     ProductUpdateRequest,
     ProductDedupSuggestRequest,
     ProductDedupSuggestResponse,
@@ -206,6 +213,11 @@ def delete_product(product_id: str, db: Session = Depends(get_db)):
         if route_mapping_path and remove_rel_path(route_mapping_path):
             removed += 1
         db.delete(route_mapping_rec)
+    featured_slots = db.execute(
+        select(ProductFeaturedSlot).where(ProductFeaturedSlot.product_id == product_id)
+    ).scalars().all()
+    for slot in featured_slots:
+        db.delete(slot)
 
     db.delete(rec)
     db.commit()
@@ -408,6 +420,145 @@ def get_product_route_mapping(product_id: str, db: Session = Depends(get_db)):
     return ProductRouteMappingDetailResponse(status="ok", item=item)
 
 
+@router.get("/products/route-mapping/index", response_model=ProductRouteMappingIndexListResponse)
+def list_product_route_mapping_index(
+    category: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    normalized_category = _normalize_optional_category(category)
+    stmt = select(ProductRouteMappingIndex)
+    if normalized_category:
+        stmt = stmt.where(ProductRouteMappingIndex.category == normalized_category)
+    rows = db.execute(stmt.order_by(ProductRouteMappingIndex.last_generated_at.desc())).scalars().all()
+    items = [
+        ProductRouteMappingIndexItem(
+            product_id=str(row.product_id),
+            category=str(row.category),
+            status=str(row.status or ""),
+            primary_route_key=str(row.primary_route_key or ""),
+            primary_route_title=str(row.primary_route_title or ""),
+            primary_confidence=int(row.primary_confidence or 0),
+            secondary_route_key=str(row.secondary_route_key or "").strip() or None,
+            secondary_route_title=str(row.secondary_route_title or "").strip() or None,
+            secondary_confidence=(int(row.secondary_confidence) if row.secondary_confidence is not None else None),
+            needs_review=bool(row.needs_review),
+            rules_version=str(row.rules_version or ""),
+            last_generated_at=str(row.last_generated_at or "").strip() or None,
+        )
+        for row in rows
+    ]
+    return ProductRouteMappingIndexListResponse(
+        status="ok",
+        category=normalized_category,
+        total=len(items),
+        items=items,
+    )
+
+
+@router.get("/products/featured-slots", response_model=ProductFeaturedSlotListResponse)
+def list_product_featured_slots(
+    category: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    normalized_category = _normalize_optional_category(category)
+    stmt = select(ProductFeaturedSlot)
+    if normalized_category:
+        stmt = stmt.where(ProductFeaturedSlot.category == normalized_category)
+    rows = db.execute(stmt.order_by(ProductFeaturedSlot.category.asc(), ProductFeaturedSlot.target_type_key.asc())).scalars().all()
+    items = [
+        ProductFeaturedSlotItem(
+            category=str(row.category or "").strip().lower(),
+            target_type_key=str(row.target_type_key or "").strip(),
+            product_id=str(row.product_id or "").strip(),
+            updated_at=str(row.updated_at or "").strip(),
+            updated_by=str(row.updated_by or "").strip() or None,
+        )
+        for row in rows
+    ]
+    return ProductFeaturedSlotListResponse(
+        status="ok",
+        category=normalized_category,
+        total=len(items),
+        items=items,
+    )
+
+
+@router.post("/products/featured-slots", response_model=ProductFeaturedSlotItem)
+def upsert_product_featured_slot(
+    payload: ProductFeaturedSlotUpsertRequest,
+    db: Session = Depends(get_db),
+):
+    category = _normalize_required_category(payload.category)
+    target_type_key = _normalize_target_type_key(payload.target_type_key)
+    product_id = str(payload.product_id or "").strip()
+    if not product_id:
+        raise HTTPException(status_code=400, detail="product_id is required.")
+    rec = db.get(ProductIndex, product_id)
+    if not rec:
+        raise HTTPException(status_code=404, detail=f"Product '{product_id}' not found.")
+    if str(rec.category or "").strip().lower() != category:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Product '{product_id}' category mismatch: expected '{category}', got '{rec.category}'.",
+        )
+
+    row = db.execute(
+        select(ProductFeaturedSlot)
+        .where(ProductFeaturedSlot.category == category)
+        .where(ProductFeaturedSlot.target_type_key == target_type_key)
+        .limit(1)
+    ).scalars().first()
+    now = now_iso()
+    updated_by = str(payload.updated_by or "").strip() or None
+    if row is None:
+        row = ProductFeaturedSlot(
+            category=category,
+            target_type_key=target_type_key,
+            product_id=product_id,
+            updated_at=now,
+            updated_by=updated_by,
+        )
+    else:
+        row.product_id = product_id
+        row.updated_at = now
+        row.updated_by = updated_by
+    db.add(row)
+    db.commit()
+    return ProductFeaturedSlotItem(
+        category=category,
+        target_type_key=target_type_key,
+        product_id=product_id,
+        updated_at=row.updated_at,
+        updated_by=row.updated_by,
+    )
+
+
+@router.post("/products/featured-slots/clear", response_model=ProductFeaturedSlotClearResponse)
+def clear_product_featured_slot(
+    payload: ProductFeaturedSlotClearRequest,
+    db: Session = Depends(get_db),
+):
+    category = _normalize_required_category(payload.category)
+    target_type_key = _normalize_target_type_key(payload.target_type_key)
+    row = db.execute(
+        select(ProductFeaturedSlot)
+        .where(ProductFeaturedSlot.category == category)
+        .where(ProductFeaturedSlot.target_type_key == target_type_key)
+        .limit(1)
+    ).scalars().first()
+    deleted = False
+    if row is not None:
+        db.delete(row)
+        deleted = True
+    db.commit()
+    return ProductFeaturedSlotClearResponse(
+        status="ok",
+        category=category,
+        target_type_key=target_type_key,
+        deleted=deleted,
+    )
+
+
 @router.post("/products/batch-delete", response_model=ProductBatchDeleteResponse)
 def batch_delete_products(payload: ProductBatchDeleteRequest, db: Session = Depends(get_db)):
     ids = list(dict.fromkeys([str(item).strip() for item in payload.ids if str(item).strip()]))
@@ -448,6 +599,11 @@ def batch_delete_products(payload: ProductBatchDeleteRequest, db: Session = Depe
             if route_mapping_path and remove_rel_path(route_mapping_path):
                 removed_files += 1
             db.delete(route_mapping_rec)
+        featured_slots = db.execute(
+            select(ProductFeaturedSlot).where(ProductFeaturedSlot.product_id == product_id)
+        ).scalars().all()
+        for slot in featured_slots:
+            db.delete(slot)
 
         db.delete(rec)
         deleted_ids.append(product_id)
@@ -2186,6 +2342,15 @@ def _normalize_required_category(category: str) -> str:
     value = _normalize_optional_category(category)
     if not value:
         raise HTTPException(status_code=400, detail="category is required.")
+    return value
+
+
+def _normalize_target_type_key(raw: str) -> str:
+    value = str(raw or "").strip()
+    if not value:
+        raise HTTPException(status_code=400, detail="target_type_key is required.")
+    if len(value) > 128:
+        raise HTTPException(status_code=400, detail="target_type_key is too long (max 128).")
     return value
 
 

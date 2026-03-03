@@ -220,6 +220,43 @@ export type ProductRouteMappingDetailResponse = {
   item: ProductRouteMappingResult;
 };
 
+export type ProductRouteMappingIndexItem = {
+  product_id: string;
+  category: string;
+  status: string;
+  primary_route_key: string;
+  primary_route_title: string;
+  primary_confidence: number;
+  secondary_route_key?: string | null;
+  secondary_route_title?: string | null;
+  secondary_confidence?: number | null;
+  needs_review: boolean;
+  rules_version: string;
+  last_generated_at?: string | null;
+};
+
+export type ProductRouteMappingIndexListResponse = {
+  status: string;
+  category?: string | null;
+  total: number;
+  items: ProductRouteMappingIndexItem[];
+};
+
+export type ProductFeaturedSlotItem = {
+  category: string;
+  target_type_key: string;
+  product_id: string;
+  updated_at: string;
+  updated_by?: string | null;
+};
+
+export type ProductFeaturedSlotListResponse = {
+  status: string;
+  category?: string | null;
+  total: number;
+  items: ProductFeaturedSlotItem[];
+};
+
 export type ProductBatchDeleteRequest = {
   ids: string[];
   keep_ids?: string[];
@@ -777,6 +814,51 @@ export async function fetchProductRouteMapping(
   if (!value) throw new Error("productId is required.");
   return apiFetch<ProductRouteMappingDetailResponse>(
     `/api/products/${encodeURIComponent(value)}/route-mapping`,
+  );
+}
+
+export async function fetchProductRouteMappingIndex(params?: {
+  category?: string;
+}): Promise<ProductRouteMappingIndexListResponse> {
+  const search = new URLSearchParams();
+  if (params?.category) search.set("category", params.category);
+  const query = search.toString();
+  const path = query ? `/api/products/route-mapping/index?${query}` : "/api/products/route-mapping/index";
+  return apiFetch<ProductRouteMappingIndexListResponse>(path);
+}
+
+export async function fetchProductFeaturedSlots(params?: {
+  category?: string;
+}): Promise<ProductFeaturedSlotListResponse> {
+  const search = new URLSearchParams();
+  if (params?.category) search.set("category", params.category);
+  const query = search.toString();
+  const path = query ? `/api/products/featured-slots?${query}` : "/api/products/featured-slots";
+  return apiFetch<ProductFeaturedSlotListResponse>(path);
+}
+
+export async function setProductFeaturedSlot(payload: {
+  category: string;
+  target_type_key: string;
+  product_id: string;
+  updated_by?: string;
+}): Promise<ProductFeaturedSlotItem> {
+  return apiFetch<ProductFeaturedSlotItem>("/api/products/featured-slots", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function clearProductFeaturedSlot(payload: {
+  category: string;
+  target_type_key: string;
+}): Promise<{ status: string; category: string; target_type_key: string; deleted: boolean }> {
+  return apiFetch<{ status: string; category: string; target_type_key: string; deleted: boolean }>(
+    "/api/products/featured-slots/clear",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
   );
 }
 

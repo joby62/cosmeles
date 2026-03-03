@@ -46,6 +46,55 @@ class ProductCard(BaseModel):
     image_url: Optional[str] = None
     created_at: str
 
+class ProductRouteMappingIndexItem(BaseModel):
+    product_id: str
+    category: str
+    status: str
+    primary_route_key: str
+    primary_route_title: str
+    primary_confidence: int = 0
+    secondary_route_key: Optional[str] = None
+    secondary_route_title: Optional[str] = None
+    secondary_confidence: Optional[int] = None
+    needs_review: bool = False
+    rules_version: str
+    last_generated_at: Optional[str] = None
+
+class ProductRouteMappingIndexListResponse(BaseModel):
+    status: str
+    category: Optional[str] = None
+    total: int = 0
+    items: List[ProductRouteMappingIndexItem] = []
+
+class ProductFeaturedSlotItem(BaseModel):
+    category: str
+    target_type_key: str
+    product_id: str
+    updated_at: str
+    updated_by: Optional[str] = None
+
+class ProductFeaturedSlotListResponse(BaseModel):
+    status: str
+    category: Optional[str] = None
+    total: int = 0
+    items: List[ProductFeaturedSlotItem] = []
+
+class ProductFeaturedSlotUpsertRequest(BaseModel):
+    category: str
+    target_type_key: str
+    product_id: str
+    updated_by: Optional[str] = None
+
+class ProductFeaturedSlotClearRequest(BaseModel):
+    category: str
+    target_type_key: str
+
+class ProductFeaturedSlotClearResponse(BaseModel):
+    status: str
+    category: str
+    target_type_key: str
+    deleted: bool = False
+
 class ProductUpdateRequest(BaseModel):
     category: Optional[str] = None
     brand: Optional[str] = None
