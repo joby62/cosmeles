@@ -1,4 +1,5 @@
 import pytest
+from fastapi.testclient import TestClient
 
 from app.routes import ingest as ingest_routes
 
@@ -153,3 +154,84 @@ def test_mobile_selection_resolve_reuse_existing_session(test_client, monkeypatc
     second_body = second.json()
     assert second_body["reused"] is True
     assert second_body["session_id"] == first_body["session_id"]
+
+
+def test_mobile_selection_isolated_by_device_cookie(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, _ = test_client
+    _install_fake_ingest_pipeline(
+        monkeypatch,
+        {
+            "category": "shampoo",
+            "brand": "Dove",
+            "name": "Shampoo Z",
+            "one_sentence": "隔离测试",
+        },
+    )
+    _ingest_one(client, "isolation.jpg")
+
+    payload = {
+        "category": "shampoo",
+        "answers": {"q1": "A", "q2": "C", "q3": "B"},
+        "reuse_existing": True,
+    }
+    first = client.post("/api/mobile/selection/resolve", json=payload)
+    assert first.status_code == 200
+    first_body = first.json()
+    assert first_body["reused"] is False
+
+    with TestClient(client.app) as another_device:
+        second = another_device.post("/api/mobile/selection/resolve", json=payload)
+        assert second.status_code == 200
+        second_body = second.json()
+        assert second_body["reused"] is False
+        assert second_body["session_id"] != first_body["session_id"]
+
+        listed = another_device.get("/api/mobile/selection/sessions")
+        assert listed.status_code == 200
+        listed_ids = {item["session_id"] for item in listed.json()}
+        assert first_body["session_id"] not in listed_ids
+
+
+def test_mobile_selection_batch_delete_scoped_by_owner(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, _ = test_client
+    _install_fake_ingest_pipeline(
+        monkeypatch,
+        {
+            "category": "bodywash",
+            "brand": "CeraVe",
+            "name": "BodyWash D",
+            "one_sentence": "删除测试",
+        },
+    )
+    _ingest_one(client, "delete.jpg")
+
+    payload = {"category": "bodywash", "answers": {"q1": "B", "q2": "A"}}
+
+    first = client.post("/api/mobile/selection/resolve", json=payload)
+    assert first.status_code == 200
+    first_session_id = first.json()["session_id"]
+
+    with TestClient(client.app) as another_device:
+        second = another_device.post("/api/mobile/selection/resolve", json=payload)
+        assert second.status_code == 200
+        second_session_id = second.json()["session_id"]
+
+        deleted = another_device.post(
+            "/api/mobile/selection/sessions/batch/delete",
+            json={"ids": [second_session_id, first_session_id, "missing-id"]},
+        )
+        assert deleted.status_code == 200
+        body = deleted.json()
+        assert body["deleted_ids"] == [second_session_id]
+        assert body["forbidden_ids"] == [first_session_id]
+        assert body["not_found_ids"] == ["missing-id"]
+
+        listed = another_device.get("/api/mobile/selection/sessions")
+        assert listed.status_code == 200
+        listed_ids = [item["session_id"] for item in listed.json()]
+        assert second_session_id not in listed_ids
+
+    listed_self = client.get("/api/mobile/selection/sessions")
+    assert listed_self.status_code == 200
+    listed_self_ids = [item["session_id"] for item in listed_self.json()]
+    assert first_session_id in listed_self_ids

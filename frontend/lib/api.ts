@@ -328,6 +328,17 @@ export type MobileSelectionResolveResponse = {
   created_at: string;
 };
 
+export type MobileSelectionBatchDeleteRequest = {
+  ids: string[];
+};
+
+export type MobileSelectionBatchDeleteResponse = {
+  status: string;
+  deleted_ids: string[];
+  not_found_ids: string[];
+  forbidden_ids: string[];
+};
+
 function getBaseForFetch(): string {
   // 在浏览器里优先直连后端，避免 /api 重写层在 multipart 上传时吞掉真实错误。
   if (typeof window !== "undefined") {
@@ -573,6 +584,15 @@ export async function listMobileSelectionSessions(params?: {
   const query = search.toString();
   const path = query ? `/api/mobile/selection/sessions?${query}` : "/api/mobile/selection/sessions";
   return apiFetch<MobileSelectionResolveResponse[]>(path);
+}
+
+export async function deleteMobileSelectionSessionsBatch(
+  payload: MobileSelectionBatchDeleteRequest,
+): Promise<MobileSelectionBatchDeleteResponse> {
+  return apiFetch<MobileSelectionBatchDeleteResponse>("/api/mobile/selection/sessions/batch/delete", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 function normalizePublicImagePath(path: string): string {

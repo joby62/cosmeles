@@ -93,6 +93,8 @@ class MobileSelectionSession(Base):
     __tablename__ = "mobile_selection_sessions"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner_type: Mapped[str] = mapped_column(String(32), index=True, default="device")
+    owner_id: Mapped[str] = mapped_column(String(128), index=True)
     category: Mapped[str] = mapped_column(String(32), index=True)
     rules_version: Mapped[str] = mapped_column(String(32), index=True)
     answers_hash: Mapped[str] = mapped_column(String(64), index=True)
@@ -101,4 +103,6 @@ class MobileSelectionSession(Base):
     product_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     answers_json: Mapped[str] = mapped_column(Text)
     result_json: Mapped[str] = mapped_column(Text)
+    deleted_at: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    deleted_by: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[str] = mapped_column(String(32), index=True)

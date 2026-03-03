@@ -3,7 +3,7 @@ import json
 from uuid import uuid4
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -12,6 +12,8 @@ from app.db.models import MobileSelectionSession, ProductIndex
 from app.db.session import get_db
 from app.schemas import (
     MobileSelectionChoice,
+    MobileSelectionBatchDeleteRequest,
+    MobileSelectionBatchDeleteResponse,
     MobileSelectionLinks,
     MobileSelectionResolveRequest,
     MobileSelectionResolveResponse,
@@ -22,6 +24,10 @@ from app.schemas import (
 from app.services.storage import now_iso
 
 router = APIRouter(prefix="/api/mobile", tags=["mobile"])
+
+MOBILE_OWNER_COOKIE_NAME = "mx_device_id"
+MOBILE_OWNER_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365 * 2
+MOBILE_OWNER_TYPE_DEVICE = "device"
 
 # Bump this version when rule mapping changes.
 MOBILE_RULES_VERSION = "2026-03-03.1"
@@ -259,11 +265,17 @@ CLEANSER_SKIN_TITLE = {
 
 
 @router.post("/selection/resolve", response_model=MobileSelectionResolveResponse)
-def resolve_mobile_selection(payload: MobileSelectionResolveRequest, db: Session = Depends(get_db)):
+def resolve_mobile_selection(
+    payload: MobileSelectionResolveRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
     category = str(payload.category or "").strip().lower()
     if category not in VALID_CATEGORIES:
         raise HTTPException(status_code=400, detail=f"Invalid category: {category}.")
 
+    owner_type, owner_id, owner_cookie_new = _resolve_owner(request)
     answers = _normalize_answers(payload.answers)
     resolved = _resolve_selection(category=category, answers=answers)
     answers_hash = _build_answers_hash(category=category, answers=resolved["answers"])
@@ -271,13 +283,18 @@ def resolve_mobile_selection(payload: MobileSelectionResolveRequest, db: Session
     if payload.reuse_existing:
         existing = db.execute(
             select(MobileSelectionSession)
+            .where(MobileSelectionSession.owner_type == owner_type)
+            .where(MobileSelectionSession.owner_id == owner_id)
             .where(MobileSelectionSession.category == category)
             .where(MobileSelectionSession.rules_version == MOBILE_RULES_VERSION)
             .where(MobileSelectionSession.answers_hash == answers_hash)
+            .where(MobileSelectionSession.deleted_at.is_(None))
             .order_by(MobileSelectionSession.created_at.desc())
             .limit(1)
         ).scalars().first()
         if existing:
+            if owner_cookie_new:
+                _set_owner_cookie(response, owner_id, request)
             stored = _row_to_mobile_response(existing)
             return stored.model_copy(update={"reused": True})
 
@@ -288,7 +305,7 @@ def resolve_mobile_selection(payload: MobileSelectionResolveRequest, db: Session
 
     created_at = now_iso()
     session_id = str(uuid4())
-    response = MobileSelectionResolveResponse(
+    result = MobileSelectionResolveResponse(
         status="ok",
         session_id=session_id,
         reused=False,
@@ -307,6 +324,8 @@ def resolve_mobile_selection(payload: MobileSelectionResolveRequest, db: Session
 
     row = MobileSelectionSession(
         id=session_id,
+        owner_type=owner_type,
+        owner_id=owner_id,
         category=category,
         rules_version=MOBILE_RULES_VERSION,
         answers_hash=answers_hash,
@@ -314,30 +333,55 @@ def resolve_mobile_selection(payload: MobileSelectionResolveRequest, db: Session
         route_title=resolved["route_title"],
         product_id=product.id,
         answers_json=json.dumps(resolved["answers"], ensure_ascii=False),
-        result_json=json.dumps(response.model_dump(), ensure_ascii=False),
+        result_json=json.dumps(result.model_dump(), ensure_ascii=False),
         created_at=created_at,
     )
     db.add(row)
     db.commit()
-    return response
+    if owner_cookie_new:
+        _set_owner_cookie(response, owner_id, request)
+    return result
 
 
 @router.get("/selection/sessions/{session_id}", response_model=MobileSelectionResolveResponse)
-def get_mobile_selection_session(session_id: str, db: Session = Depends(get_db)):
-    row = db.get(MobileSelectionSession, session_id)
+def get_mobile_selection_session(
+    session_id: str,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    owner_type, owner_id, owner_cookie_new = _resolve_owner(request)
+    row = db.execute(
+        select(MobileSelectionSession)
+        .where(MobileSelectionSession.id == session_id)
+        .where(MobileSelectionSession.owner_type == owner_type)
+        .where(MobileSelectionSession.owner_id == owner_id)
+        .where(MobileSelectionSession.deleted_at.is_(None))
+        .limit(1)
+    ).scalars().first()
     if not row:
         raise HTTPException(status_code=404, detail="Selection session not found.")
+    if owner_cookie_new:
+        _set_owner_cookie(response, owner_id, request)
     return _row_to_mobile_response(row)
 
 
 @router.get("/selection/sessions", response_model=list[MobileSelectionResolveResponse])
 def list_mobile_selection_sessions(
+    request: Request,
+    response: Response,
     category: str | None = Query(None),
     offset: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
-    stmt = select(MobileSelectionSession)
+    owner_type, owner_id, owner_cookie_new = _resolve_owner(request)
+    stmt = (
+        select(MobileSelectionSession)
+        .where(MobileSelectionSession.owner_type == owner_type)
+        .where(MobileSelectionSession.owner_id == owner_id)
+        .where(MobileSelectionSession.deleted_at.is_(None))
+    )
     if category:
         normalized = str(category).strip().lower()
         if normalized not in VALID_CATEGORIES:
@@ -346,7 +390,61 @@ def list_mobile_selection_sessions(
     rows = db.execute(
         stmt.order_by(MobileSelectionSession.created_at.desc()).offset(offset).limit(limit)
     ).scalars().all()
+    if owner_cookie_new:
+        _set_owner_cookie(response, owner_id, request)
     return [_row_to_mobile_response(row) for row in rows]
+
+
+@router.post(
+    "/selection/sessions/batch/delete",
+    response_model=MobileSelectionBatchDeleteResponse,
+)
+def batch_delete_mobile_selection_sessions(
+    payload: MobileSelectionBatchDeleteRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    owner_type, owner_id, owner_cookie_new = _resolve_owner(request)
+    normalized_ids = _normalize_session_ids(payload.ids)
+    if not normalized_ids:
+        raise HTTPException(status_code=400, detail="ids cannot be empty.")
+
+    rows = db.execute(
+        select(MobileSelectionSession).where(MobileSelectionSession.id.in_(normalized_ids))
+    ).scalars().all()
+    by_id = {row.id: row for row in rows}
+
+    deleted_ids: list[str] = []
+    not_found_ids: list[str] = []
+    forbidden_ids: list[str] = []
+    deleted_at = now_iso()
+    deleted_by = f"{owner_type}:{owner_id}"
+    dirty = False
+
+    for session_id in normalized_ids:
+        row = by_id.get(session_id)
+        if row is None or row.deleted_at is not None:
+            not_found_ids.append(session_id)
+            continue
+        if row.owner_type != owner_type or row.owner_id != owner_id:
+            forbidden_ids.append(session_id)
+            continue
+        row.deleted_at = deleted_at
+        row.deleted_by = deleted_by
+        deleted_ids.append(session_id)
+        dirty = True
+
+    if dirty:
+        db.commit()
+    if owner_cookie_new:
+        _set_owner_cookie(response, owner_id, request)
+    return MobileSelectionBatchDeleteResponse(
+        status="ok",
+        deleted_ids=deleted_ids,
+        not_found_ids=not_found_ids,
+        forbidden_ids=forbidden_ids,
+    )
 
 
 def _row_to_mobile_response(row: MobileSelectionSession) -> MobileSelectionResolveResponse:
@@ -358,6 +456,44 @@ def _row_to_mobile_response(row: MobileSelectionSession) -> MobileSelectionResol
         return MobileSelectionResolveResponse.model_validate(payload)
     except Exception as e:  # pragma: no cover
         raise HTTPException(status_code=500, detail=f"Session payload schema invalid: {e}") from e
+
+
+def _resolve_owner(request: Request) -> tuple[str, str, bool]:
+    existing = str(request.cookies.get(MOBILE_OWNER_COOKIE_NAME) or "").strip()
+    if existing:
+        return MOBILE_OWNER_TYPE_DEVICE, existing, False
+    return MOBILE_OWNER_TYPE_DEVICE, str(uuid4()), True
+
+
+def _set_owner_cookie(response: Response, owner_id: str, request: Request) -> None:
+    response.set_cookie(
+        key=MOBILE_OWNER_COOKIE_NAME,
+        value=owner_id,
+        max_age=MOBILE_OWNER_COOKIE_MAX_AGE_SECONDS,
+        httponly=True,
+        samesite="lax",
+        secure=_is_secure_request(request),
+        path="/",
+    )
+
+
+def _is_secure_request(request: Request) -> bool:
+    if request.url.scheme == "https":
+        return True
+    forwarded_proto = str(request.headers.get("x-forwarded-proto") or "").lower()
+    return "https" in forwarded_proto
+
+
+def _normalize_session_ids(raw_ids: list[str]) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in raw_ids or []:
+        value = str(item or "").strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        normalized.append(value)
+    return normalized
 
 
 def _build_answers_hash(category: str, answers: dict[str, str]) -> str:

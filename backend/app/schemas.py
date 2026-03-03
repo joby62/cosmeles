@@ -347,3 +347,14 @@ class MobileSelectionResolveResponse(BaseModel):
     recommended_product: ProductCard
     links: MobileSelectionLinks
     created_at: str
+
+
+class MobileSelectionBatchDeleteRequest(BaseModel):
+    ids: List[str] = Field(default_factory=list)
+
+
+class MobileSelectionBatchDeleteResponse(BaseModel):
+    status: str
+    deleted_ids: List[str] = Field(default_factory=list)
+    not_found_ids: List[str] = Field(default_factory=list)
+    forbidden_ids: List[str] = Field(default_factory=list)

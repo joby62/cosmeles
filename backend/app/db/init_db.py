@@ -1,9 +1,52 @@
 # backend/app/db/init_db.py
 import os
 
+from sqlalchemy import inspect, text
+
 from app.db.models import Base
 from app.db.session import engine
 from app.settings import settings
+
+
+def _ensure_mobile_selection_schema() -> None:
+    inspector = inspect(engine)
+    if "mobile_selection_sessions" not in inspector.get_table_names():
+        return
+
+    columns = {item["name"] for item in inspector.get_columns("mobile_selection_sessions")}
+    statements: list[str] = []
+    if "owner_type" not in columns:
+        statements.append(
+            "ALTER TABLE mobile_selection_sessions "
+            "ADD COLUMN owner_type VARCHAR(32) NOT NULL DEFAULT 'device'"
+        )
+    if "owner_id" not in columns:
+        # Legacy rows are isolated by marking owner_id as 'legacy' instead of exposing to all devices.
+        statements.append(
+            "ALTER TABLE mobile_selection_sessions "
+            "ADD COLUMN owner_id VARCHAR(128) NOT NULL DEFAULT 'legacy'"
+        )
+    if "deleted_at" not in columns:
+        statements.append("ALTER TABLE mobile_selection_sessions ADD COLUMN deleted_at VARCHAR(32)")
+    if "deleted_by" not in columns:
+        statements.append("ALTER TABLE mobile_selection_sessions ADD COLUMN deleted_by TEXT")
+
+    indexes = [
+        "CREATE INDEX IF NOT EXISTS ix_mobile_selection_sessions_owner_type "
+        "ON mobile_selection_sessions (owner_type)",
+        "CREATE INDEX IF NOT EXISTS ix_mobile_selection_sessions_owner_id "
+        "ON mobile_selection_sessions (owner_id)",
+        "CREATE INDEX IF NOT EXISTS ix_mobile_selection_sessions_deleted_at "
+        "ON mobile_selection_sessions (deleted_at)",
+        "CREATE INDEX IF NOT EXISTS ix_mobile_selection_sessions_owner_scope "
+        "ON mobile_selection_sessions (owner_type, owner_id, created_at)",
+    ]
+
+    with engine.begin() as conn:
+        for stmt in statements:
+            conn.execute(text(stmt))
+        for stmt in indexes:
+            conn.execute(text(stmt))
 
 
 def init_db() -> None:
@@ -18,6 +61,7 @@ def init_db() -> None:
 
     # Create tables if not exist
     Base.metadata.create_all(bind=engine)
+    _ensure_mobile_selection_schema()
 
 
 def main() -> None:
