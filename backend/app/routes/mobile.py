@@ -14,8 +14,8 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.ai.errors import AIServiceError
 from app.ai.orchestrator import run_capability_now
-from app.constants import VALID_CATEGORIES
-from app.db.models import MobileSelectionSession, ProductIndex
+from app.constants import VALID_CATEGORIES, MOBILE_RULES_VERSION, ROUTE_MAPPING_SUPPORTED_CATEGORIES
+from app.db.models import MobileSelectionSession, ProductIndex, ProductRouteMappingIndex
 from app.db.session import get_db
 from app.schemas import (
     MobileCompareBootstrapResponse,
@@ -70,8 +70,6 @@ MOBILE_OWNER_COOKIE_NAME = "mx_device_id"
 MOBILE_OWNER_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365 * 2
 MOBILE_OWNER_TYPE_DEVICE = "device"
 
-# Bump this version when rule mapping changes.
-MOBILE_RULES_VERSION = "2026-03-03.1"
 MOBILE_COMPARE_VERSION = "2026-03-03.2"
 
 FEATURED_PRODUCT_IDS: dict[str, str] = {
@@ -348,7 +346,25 @@ def resolve_mobile_selection(
             stored = _row_to_mobile_response(existing)
             return stored.model_copy(update={"reused": True})
 
-    product_row = _pick_product_row(db=db, category=category)
+    target_type_key = _selection_target_type_key(category=category, route_key=str(resolved["route_key"]))
+    if target_type_key:
+        product_row = _pick_route_mapped_product_row(
+            db=db,
+            category=category,
+            target_type_key=target_type_key,
+            rules_version=MOBILE_RULES_VERSION,
+        )
+        if product_row is None:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "No mapped product found for "
+                    f"category='{category}', target_type='{target_type_key}', rules_version='{MOBILE_RULES_VERSION}'. "
+                    "Please run desktop route mapping build first."
+                ),
+            )
+    else:
+        product_row = _pick_product_row(db=db, category=category)
     if product_row is None:
         raise HTTPException(status_code=422, detail=f"No product found for category '{category}'.")
     product = _row_to_product_card(product_row)
@@ -1947,7 +1963,7 @@ def _latest_selection_session(
             .where(MobileSelectionSession.owner_id == owner_id)
             .where(MobileSelectionSession.category == category)
             .where(MobileSelectionSession.deleted_at.is_(None))
-            .order_by(MobileSelectionSession.created_at.desc())
+            .order_by(*_selection_session_order_expr())
             .limit(1)
         )
         .scalars()
@@ -1958,7 +1974,7 @@ def _latest_selection_session(
 def _selection_basis(row: MobileSelectionSession | None) -> str:
     if row is None:
         return "none"
-    return "latest"
+    return "pinned" if bool(row.is_pinned) else "latest"
 
 
 def _build_profile_summary_from_session(row: MobileSelectionSession | None) -> list[str]:
@@ -2081,6 +2097,82 @@ def _normalize_answers(raw: dict[str, str]) -> dict[str, str]:
             continue
         normalized[key] = value
     return normalized
+
+
+def _selection_target_type_key(category: str, route_key: str) -> str | None:
+    normalized_category = str(category or "").strip().lower()
+    normalized_route_key = str(route_key or "").strip()
+    if normalized_category not in ROUTE_MAPPING_SUPPORTED_CATEGORIES:
+        return None
+    if normalized_category == "shampoo":
+        decision = SHAMPOO_ROUTE_DECISIONS.get(normalized_route_key)
+        if not decision:
+            return None
+        mapped = str(decision.get("bundle_key") or "").strip()
+        return mapped or None
+    if normalized_category == "bodywash":
+        return normalized_route_key or None
+    return None
+
+
+def _extract_route_score_from_mapping(scores_json: str, target_type_key: str) -> int | None:
+    raw = str(scores_json or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return None
+    if not isinstance(parsed, list):
+        return None
+    for item in parsed:
+        if not isinstance(item, dict):
+            continue
+        route_key = str(item.get("route_key") or "").strip()
+        if route_key != target_type_key:
+            continue
+        try:
+            score = int(item.get("confidence"))
+        except Exception:
+            return None
+        return max(0, min(100, score))
+    return None
+
+
+def _pick_route_mapped_product_row(
+    db: Session,
+    category: str,
+    target_type_key: str,
+    rules_version: str,
+) -> ProductIndex | None:
+    rows = db.execute(
+        select(ProductRouteMappingIndex)
+        .where(ProductRouteMappingIndex.category == category)
+        .where(ProductRouteMappingIndex.rules_version == rules_version)
+        .where(ProductRouteMappingIndex.status == "ready")
+        .order_by(ProductRouteMappingIndex.last_generated_at.desc())
+    ).scalars().all()
+
+    best_row: ProductIndex | None = None
+    best_score = -1
+    best_generated_at = ""
+    for mapping in rows:
+        score = _extract_route_score_from_mapping(str(mapping.scores_json or ""), target_type_key)
+        if score is None or score <= 0:
+            continue
+        product = db.get(ProductIndex, str(mapping.product_id))
+        if not product:
+            continue
+        if str(product.category or "").strip().lower() != category:
+            continue
+        if not exists_rel_path(str(product.json_path or "")):
+            continue
+        generated_at = str(mapping.last_generated_at or "")
+        if score > best_score or (score == best_score and generated_at > best_generated_at):
+            best_score = score
+            best_generated_at = generated_at
+            best_row = product
+    return best_row
 
 
 def _pick_product_row(db: Session, category: str) -> ProductIndex | None:

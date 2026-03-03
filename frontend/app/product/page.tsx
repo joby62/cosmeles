@@ -5,6 +5,7 @@ import { CATEGORY_CONFIG } from "@/lib/catalog";
 import ProductDedupManager from "@/components/ProductDedupManager";
 import ProductCleanupWorkbench from "@/components/ProductCleanupWorkbench";
 import IngredientLibraryGenerator from "@/components/IngredientLibraryGenerator";
+import ProductRouteMappingGenerator from "@/components/ProductRouteMappingGenerator";
 
 function categoryLabel(category?: string | null): string {
   if (!category) return "-";
@@ -82,6 +83,7 @@ export default async function ProductGalleryPage() {
       </section>
 
       <IngredientLibraryGenerator initialProducts={products} />
+      <ProductRouteMappingGenerator initialProducts={products} />
       <ProductDedupManager initialProducts={products} />
       <ProductCleanupWorkbench initialProducts={products} />
 

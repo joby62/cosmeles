@@ -1,8 +1,20 @@
 import Link from "next/link";
 import Image from "next/image";
-import { ProductDoc, resolveStoredImageUrl } from "@/lib/api";
+import {
+  ProductDoc,
+  ProductRouteMappingResult,
+  resolveStoredImageUrl,
+} from "@/lib/api";
 
-export default function ProductShowcase({ id, doc }: { id: string; doc: ProductDoc }) {
+export default function ProductShowcase({
+  id,
+  doc,
+  routeMapping,
+}: {
+  id: string;
+  doc: ProductDoc;
+  routeMapping: ProductRouteMappingResult | null;
+}) {
   const imageUrl = resolveStoredImageUrl(doc.evidence?.image_path);
   const models = doc.evidence?.doubao_models || {};
   const artifacts = doc.evidence?.doubao_artifacts || {};
@@ -93,6 +105,68 @@ export default function ProductShowcase({ id, doc }: { id: string; doc: ProductD
         </div>
       </section>
 
+      <section className="mt-6 rounded-[28px] border border-black/10 bg-white p-5">
+        <h2 className="text-[17px] font-semibold tracking-[-0.01em] text-black/86">类型映射（决策联动）</h2>
+        {!routeMapping ? (
+          <div className="mt-3 rounded-2xl border border-dashed border-black/16 px-4 py-6 text-[13px] text-black/52">
+            该产品暂无类型映射。请到“产品类型映射台”先执行构建。
+          </div>
+        ) : (
+          <div className="mt-3 space-y-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge>rules: {routeMapping.rules_version}</Badge>
+              <Badge>model: {routeMapping.model || "-"}</Badge>
+              <Badge>prompt: {routeMapping.prompt_key}@{routeMapping.prompt_version}</Badge>
+              <Badge>needs_review: {routeMapping.needs_review ? "true" : "false"}</Badge>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <article className="rounded-2xl border border-[#d5e6ff] bg-[#f4f8ff] p-3.5">
+                <div className="text-[12px] text-black/58">主类</div>
+                <div className="mt-1 text-[20px] font-semibold text-black/88">{routeMapping.primary_route.route_title}</div>
+                <div className="mt-1 text-[12px] text-black/62">
+                  {routeMapping.primary_route.route_key} · 置信度 {routeMapping.primary_route.confidence}
+                </div>
+                <div className="mt-2 text-[12px] leading-[1.55] text-black/70">{routeMapping.primary_route.reason || "-"}</div>
+              </article>
+              <article className="rounded-2xl border border-[#dfe9e3] bg-[#f4f8f4] p-3.5">
+                <div className="text-[12px] text-black/58">次类</div>
+                <div className="mt-1 text-[20px] font-semibold text-black/88">{routeMapping.secondary_route.route_title}</div>
+                <div className="mt-1 text-[12px] text-black/62">
+                  {routeMapping.secondary_route.route_key} · 置信度 {routeMapping.secondary_route.confidence}
+                </div>
+                <div className="mt-2 text-[12px] leading-[1.55] text-black/70">{routeMapping.secondary_route.reason || "-"}</div>
+              </article>
+            </div>
+
+            <div className="rounded-2xl border border-black/10 bg-[#f8fafc] p-3.5">
+              <h3 className="text-[13px] font-semibold text-black/80">全类别置信度</h3>
+              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {routeMapping.route_scores.map((score) => (
+                  <div key={score.route_key} className="rounded-xl border border-black/10 bg-white px-3 py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-[13px] font-medium text-black/86">{score.route_title}</div>
+                      <div className="text-[12px] text-black/68">{score.confidence}</div>
+                    </div>
+                    <div className="mt-1 text-[11px] text-black/58">{score.route_key}</div>
+                    <div className="mt-1 text-[12px] text-black/66">{score.reason || "-"}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-black/10 bg-[#f8fafc] p-3.5">
+              <h3 className="text-[13px] font-semibold text-black/80">判定依据</h3>
+              <div className="mt-2 text-[13px] leading-[1.6] text-black/72">{routeMapping.confidence_reason}</div>
+              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <EvidencePanel title="正向证据" items={routeMapping.evidence.positive} />
+                <EvidencePanel title="反向证据" items={routeMapping.evidence.counter} />
+              </div>
+            </div>
+          </div>
+        )}
+      </section>
+
       <section className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
         <article className="rounded-[24px] border border-black/10 bg-white p-[18px]">
           <h3 className="text-[14px] font-semibold text-black/82">Stage1 视觉识别文本</h3>
@@ -161,4 +235,38 @@ function riskClass(risk: "low" | "mid" | "high"): string {
   if (risk === "high") return "bg-[#fdeaea] text-[#9f1d1d]";
   if (risk === "mid") return "bg-[#fff3dd] text-[#9b5a00]";
   return "bg-[#eaf8ef] text-[#116a3f]";
+}
+
+function EvidencePanel({
+  title,
+  items,
+}: {
+  title: string;
+  items: Array<{
+    ingredient_name_cn: string;
+    ingredient_name_en: string;
+    rank: number;
+    impact: string;
+  }>;
+}) {
+  return (
+    <section className="rounded-xl border border-black/10 bg-white p-3">
+      <h4 className="text-[12px] font-semibold text-black/76">{title}</h4>
+      {items.length === 0 ? (
+        <div className="mt-2 text-[12px] text-black/45">-</div>
+      ) : (
+        <ul className="mt-2 space-y-1.5 text-[12px] leading-[1.55] text-black/72">
+          {items.slice(0, 8).map((item, idx) => (
+            <li key={`${title}-${idx}`} className="rounded-lg border border-black/8 bg-[#fafbff] px-2 py-1.5">
+              <div className="font-medium text-black/84">
+                {item.ingredient_name_cn || "-"}
+                {item.ingredient_name_en ? ` (${item.ingredient_name_en})` : ""}
+              </div>
+              <div className="text-black/58">rank {item.rank} · {item.impact || "-"}</div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
 }

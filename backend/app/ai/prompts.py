@@ -16,6 +16,8 @@ DEFAULT_PROMPT_VERSIONS = {
     "doubao.product_dedup_decision": "v1",
     "doubao.product_dedup_group": "v1",
     "doubao.mobile_compare_summary": "v1",
+    "doubao.route_mapping_shampoo": "v1",
+    "doubao.route_mapping_bodywash": "v1",
 }
 
 _PLACEHOLDER = re.compile(r"\{\{\s*([a-zA-Z0-9_]+)\s*\}\}")

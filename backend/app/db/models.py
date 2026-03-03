@@ -89,6 +89,35 @@ class AIRun(Base):
     created_at: Mapped[str] = mapped_column(String(32), index=True)
 
 
+class ProductRouteMappingIndex(Base):
+    __tablename__ = "product_route_mapping_index"
+
+    product_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    category: Mapped[str] = mapped_column(String(32), index=True)
+    rules_version: Mapped[str] = mapped_column(String(32), index=True)
+    fingerprint: Mapped[str] = mapped_column(String(64), index=True)
+
+    # ready | failed
+    status: Mapped[str] = mapped_column(String(32), index=True, default="ready")
+    storage_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    primary_route_key: Mapped[str] = mapped_column(String(128), index=True)
+    primary_route_title: Mapped[str] = mapped_column(String(256))
+    primary_confidence: Mapped[int] = mapped_column(Integer, default=0, index=True)
+    secondary_route_key: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    secondary_route_title: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    secondary_confidence: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    scores_json: Mapped[str] = mapped_column(Text, default="[]")
+    needs_review: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+
+    prompt_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    prompt_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+    last_generated_at: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class MobileSelectionSession(Base):
     __tablename__ = "mobile_selection_sessions"
 

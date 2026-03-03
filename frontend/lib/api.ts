@@ -144,6 +144,79 @@ export type IngredientLibraryDetailResponse = {
   item: IngredientLibraryDetailItem;
 };
 
+export type ProductRouteMappingScore = {
+  route_key: string;
+  route_title: string;
+  confidence: number;
+  reason: string;
+};
+
+export type ProductRouteMappingEvidenceItem = {
+  ingredient_name_cn: string;
+  ingredient_name_en: string;
+  rank: number;
+  impact: string;
+};
+
+export type ProductRouteMappingEvidence = {
+  positive: ProductRouteMappingEvidenceItem[];
+  counter: ProductRouteMappingEvidenceItem[];
+};
+
+export type ProductRouteMappingResult = {
+  product_id: string;
+  category: string;
+  rules_version: string;
+  fingerprint: string;
+  generated_at: string;
+  prompt_key: string;
+  prompt_version: string;
+  model: string;
+  primary_route: ProductRouteMappingScore;
+  secondary_route: ProductRouteMappingScore;
+  route_scores: ProductRouteMappingScore[];
+  evidence: ProductRouteMappingEvidence;
+  confidence_reason: string;
+  needs_review: boolean;
+  analysis_text: string;
+  storage_path: string;
+};
+
+export type ProductRouteMappingBuildRequest = {
+  category?: string;
+  force_regenerate?: boolean;
+  only_unmapped?: boolean;
+};
+
+export type ProductRouteMappingBuildItem = {
+  product_id: string;
+  category: string;
+  status: "created" | "updated" | "skipped" | "failed";
+  primary_route?: ProductRouteMappingScore | null;
+  secondary_route?: ProductRouteMappingScore | null;
+  route_scores: ProductRouteMappingScore[];
+  storage_path?: string | null;
+  model?: string | null;
+  error?: string | null;
+};
+
+export type ProductRouteMappingBuildResponse = {
+  status: string;
+  scanned_products: number;
+  submitted_to_model: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+  items: ProductRouteMappingBuildItem[];
+  failures: string[];
+};
+
+export type ProductRouteMappingDetailResponse = {
+  status: string;
+  item: ProductRouteMappingResult;
+};
+
 export type ProductBatchDeleteRequest = {
   ids: string[];
   keep_ids?: string[];
@@ -676,6 +749,31 @@ export async function buildIngredientLibraryStream(
       headers: { "content-type": "application/json" },
     },
     onEvent,
+  );
+}
+
+export async function buildProductRouteMappingStream(
+  payload: ProductRouteMappingBuildRequest,
+  onEvent: (event: SSEEvent) => void,
+): Promise<ProductRouteMappingBuildResponse> {
+  return postSSE<ProductRouteMappingBuildResponse>(
+    "/api/products/route-mapping/build/stream",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+      headers: { "content-type": "application/json" },
+    },
+    onEvent,
+  );
+}
+
+export async function fetchProductRouteMapping(
+  productId: string,
+): Promise<ProductRouteMappingDetailResponse> {
+  const value = productId.trim();
+  if (!value) throw new Error("productId is required.");
+  return apiFetch<ProductRouteMappingDetailResponse>(
+    `/api/products/${encodeURIComponent(value)}/route-mapping`,
   );
 }
 

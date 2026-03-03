@@ -190,6 +190,79 @@ class IngredientLibraryDetailResponse(BaseModel):
     item: IngredientLibraryDetailItem
 
 
+class ProductRouteMappingScore(BaseModel):
+    route_key: str
+    route_title: str
+    confidence: int = 0
+    reason: str = ""
+
+
+class ProductRouteMappingEvidenceItem(BaseModel):
+    ingredient_name_cn: str = ""
+    ingredient_name_en: str = ""
+    rank: int = 0
+    impact: str = ""
+
+
+class ProductRouteMappingEvidence(BaseModel):
+    positive: List[ProductRouteMappingEvidenceItem] = []
+    counter: List[ProductRouteMappingEvidenceItem] = []
+
+
+class ProductRouteMappingResult(BaseModel):
+    product_id: str
+    category: str
+    rules_version: str
+    fingerprint: str
+    generated_at: str
+    prompt_key: str
+    prompt_version: str
+    model: str
+    primary_route: ProductRouteMappingScore
+    secondary_route: ProductRouteMappingScore
+    route_scores: List[ProductRouteMappingScore] = []
+    evidence: ProductRouteMappingEvidence = Field(default_factory=ProductRouteMappingEvidence)
+    confidence_reason: str = ""
+    needs_review: bool = False
+    analysis_text: str = ""
+    storage_path: str
+
+
+class ProductRouteMappingBuildRequest(BaseModel):
+    category: Optional[str] = None
+    force_regenerate: bool = False
+    only_unmapped: bool = False
+
+
+class ProductRouteMappingBuildItem(BaseModel):
+    product_id: str
+    category: str
+    status: Literal["created", "updated", "skipped", "failed"] = "created"
+    primary_route: Optional[ProductRouteMappingScore] = None
+    secondary_route: Optional[ProductRouteMappingScore] = None
+    route_scores: List[ProductRouteMappingScore] = []
+    storage_path: Optional[str] = None
+    model: Optional[str] = None
+    error: Optional[str] = None
+
+
+class ProductRouteMappingBuildResponse(BaseModel):
+    status: str
+    scanned_products: int = 0
+    submitted_to_model: int = 0
+    created: int = 0
+    updated: int = 0
+    skipped: int = 0
+    failed: int = 0
+    items: List[ProductRouteMappingBuildItem] = []
+    failures: List[str] = []
+
+
+class ProductRouteMappingDetailResponse(BaseModel):
+    status: str
+    item: ProductRouteMappingResult
+
+
 class ProductBatchDeleteRequest(BaseModel):
     ids: List[str] = []
     keep_ids: List[str] = []

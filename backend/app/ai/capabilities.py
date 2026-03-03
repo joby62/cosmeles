@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+from app.constants import ROUTE_MAPPING_SUPPORTED_CATEGORIES
 from app.ai.errors import AIServiceError
 from app.ai.prompts import load_prompt, render_prompt
 from app.services.doubao_openai_client import DoubaoOpenAIClient
@@ -22,6 +23,13 @@ SUPPORTED_CAPABILITIES = {
     "doubao.product_dedup_decision",
     "doubao.product_dedup_group",
     "doubao.mobile_compare_summary",
+    "doubao.route_mapping_shampoo",
+    "doubao.route_mapping_bodywash",
+}
+
+ROUTE_MAPPING_DECISION_TABLE_REL_PATHS = {
+    "shampoo": "shampoo/v2026-03-03.1.json",
+    "bodywash": "bodywash/v2026-03-03.1.json",
 }
 
 
@@ -66,6 +74,10 @@ def execute_capability(
         return _cap_product_dedup_group(input_payload, trace_id, event_callback=event_callback)
     if capability == "doubao.mobile_compare_summary":
         return _cap_mobile_compare_summary(input_payload, trace_id, event_callback=event_callback)
+    if capability == "doubao.route_mapping_shampoo":
+        return _cap_route_mapping("shampoo", input_payload, trace_id, event_callback=event_callback)
+    if capability == "doubao.route_mapping_bodywash":
+        return _cap_route_mapping("bodywash", input_payload, trace_id, event_callback=event_callback)
 
     raise AIServiceError(
         code="capability_not_supported",
@@ -639,6 +651,117 @@ def _cap_mobile_compare_summary(
     )
 
 
+def _cap_route_mapping(
+    category: str,
+    input_payload: dict[str, Any],
+    trace_id: str | None,
+    event_callback: Callable[[dict[str, Any]], None] | None = None,
+) -> CapabilityExecutionResult:
+    normalized_category = str(category or "").strip().lower()
+    if normalized_category not in ROUTE_MAPPING_SUPPORTED_CATEGORIES:
+        raise AIServiceError(
+            code="route_mapping_category_unsupported",
+            message=f"route mapping does not support category '{normalized_category}'.",
+            http_status=400,
+        )
+
+    product_context_json = _required_nonempty_str(input_payload, "product_context_json")
+    decision_table = _load_route_mapping_decision_table(normalized_category)
+    decision_table_json = json.dumps(decision_table, ensure_ascii=False)
+    prompt_key = f"doubao.route_mapping_{normalized_category}"
+    prompt = load_prompt(prompt_key)
+    rendered_prompt = render_prompt(
+        prompt.text,
+        {
+            "decision_table_json": decision_table_json,
+            "product_context_json": product_context_json,
+        },
+    )
+
+    stage = f"route_mapping_{normalized_category}"
+    if _is_sample_mode():
+        route_candidates = decision_table.get("route_candidates") or []
+        sample_scores = []
+        for idx, item in enumerate(route_candidates):
+            route_key = str(item.get("route_key") or "").strip()
+            if not route_key:
+                continue
+            sample_scores.append(
+                {
+                    "route_key": route_key,
+                    "confidence": max(0, 80 - idx * 8),
+                    "reason": "sample mode",
+                }
+            )
+        if len(sample_scores) < 2:
+            raise AIServiceError(
+                code="route_mapping_invalid_decision_table",
+                message=f"decision table for '{normalized_category}' has insufficient route candidates.",
+                http_status=500,
+            )
+        sample = {
+            "category": normalized_category,
+            "rules_version": str(decision_table.get("rules_version") or ""),
+            "primary_route": sample_scores[0],
+            "secondary_route": sample_scores[1],
+            "route_scores": sample_scores,
+            "evidence": {"positive": [], "counter": []},
+            "confidence_reason": "sample mode output",
+            "needs_review": False,
+        }
+        normalized = _normalize_route_mapping_result(normalized_category, decision_table, sample)
+        artifact = _maybe_save_artifact(
+            trace_id,
+            stage,
+            {
+                "model": "sample",
+                "prompt": rendered_prompt,
+                "response": {"mode": "sample"},
+                "text": json.dumps(sample, ensure_ascii=False),
+            },
+        )
+        return CapabilityExecutionResult(
+            output={**normalized, "analysis_text": json.dumps(sample, ensure_ascii=False), "model": "sample", "artifact": artifact},
+            prompt_key=prompt.key,
+            prompt_version=prompt.version,
+            model="sample",
+            request_payload={"prompt": rendered_prompt},
+            response_payload={"mode": "sample"},
+        )
+
+    sdk, _, _, _ = _build_sdk_and_models()
+    pro_model = settings.doubao_pro_model or "doubao-seed-2-0-pro-260215"
+    _emit(
+        event_callback,
+        {"type": "step", "stage": stage, "message": f"Calling model {pro_model}."},
+    )
+    response_raw = _safe_sdk_call(
+        lambda: sdk.chat_with_text(
+            rendered_prompt,
+            model=pro_model,
+            stream=event_callback is not None,
+            on_text_delta=(lambda delta: _emit(event_callback, {"type": "delta", "stage": stage, "delta": delta})),
+        )
+    )
+    text = _extract_content(response_raw)
+    parsed = _extract_json_object(text)
+    normalized = _normalize_route_mapping_result(normalized_category, decision_table, parsed)
+    _emit(event_callback, {"type": "step", "stage": stage, "message": "Route mapping completed."})
+    artifact = _maybe_save_artifact(
+        trace_id,
+        stage,
+        {"model": pro_model, "prompt": rendered_prompt, "response": response_raw, "text": text},
+    )
+    return CapabilityExecutionResult(
+        output={**normalized, "analysis_text": text, "model": pro_model, "artifact": artifact},
+        prompt_key=prompt.key,
+        prompt_version=prompt.version,
+        model=pro_model,
+        request_payload={"prompt": rendered_prompt},
+        response_payload=response_raw,
+    )
+
+
 def _is_sample_mode() -> bool:
     return settings.doubao_mode.lower().strip() in {"mock", "sample"}
 
@@ -941,6 +1064,284 @@ def _normalize_mobile_compare_summary_result(payload: dict[str, Any]) -> dict[st
         "headline": headline,
         "confidence": confidence,
         "sections": sections,
+    }
+
+
+def _load_route_mapping_decision_table(category: str) -> dict[str, Any]:
+    normalized_category = str(category or "").strip().lower()
+    rel = ROUTE_MAPPING_DECISION_TABLE_REL_PATHS.get(normalized_category)
+    if not rel:
+        raise AIServiceError(
+            code="route_mapping_category_unsupported",
+            message=f"route mapping does not support category '{normalized_category}'.",
+            http_status=400,
+        )
+    path = Path(__file__).resolve().parent / "decision_tables" / rel
+    if not path.exists():
+        raise AIServiceError(
+            code="route_mapping_decision_table_missing",
+            message=f"route mapping decision table missing for category '{normalized_category}': {path.name}",
+            http_status=500,
+        )
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as e:
+        raise AIServiceError(
+            code="route_mapping_decision_table_invalid",
+            message=f"route mapping decision table invalid for category '{normalized_category}': {e}",
+            http_status=500,
+        ) from e
+
+    if not isinstance(payload, dict):
+        raise AIServiceError(
+            code="route_mapping_decision_table_invalid",
+            message=f"route mapping decision table must be a JSON object for category '{normalized_category}'.",
+            http_status=500,
+        )
+    route_candidates = payload.get("route_candidates")
+    if not isinstance(route_candidates, list) or not route_candidates:
+        raise AIServiceError(
+            code="route_mapping_decision_table_invalid",
+            message=f"route mapping decision table route_candidates missing for category '{normalized_category}'.",
+            http_status=500,
+        )
+    rules_version = str(payload.get("rules_version") or "").strip()
+    if not rules_version:
+        raise AIServiceError(
+            code="route_mapping_decision_table_invalid",
+            message=f"route mapping decision table rules_version missing for category '{normalized_category}'.",
+            http_status=500,
+        )
+    return payload
+
+
+def _normalize_route_mapping_result(
+    category: str,
+    decision_table: dict[str, Any],
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise AIServiceError(
+            code="route_mapping_invalid",
+            message="route mapping output must be a JSON object.",
+            http_status=422,
+        )
+
+    expected_category = str(category or "").strip().lower()
+    output_category = str(payload.get("category") or expected_category).strip().lower()
+    if output_category != expected_category:
+        raise AIServiceError(
+            code="route_mapping_invalid",
+            message=f"route mapping category mismatch: expected '{expected_category}', got '{output_category}'.",
+            http_status=422,
+        )
+
+    expected_rules_version = str(decision_table.get("rules_version") or "").strip()
+    output_rules_version = str(payload.get("rules_version") or "").strip()
+    if output_rules_version != expected_rules_version:
+        raise AIServiceError(
+            code="route_mapping_invalid",
+            message=(
+                "route mapping rules_version mismatch: "
+                f"expected '{expected_rules_version}', got '{output_rules_version}'."
+            ),
+            http_status=422,
+        )
+
+    raw_candidates = decision_table.get("route_candidates") or []
+    if not isinstance(raw_candidates, list) or not raw_candidates:
+        raise AIServiceError(
+            code="route_mapping_invalid",
+            message="route mapping decision table has no route_candidates.",
+            http_status=500,
+        )
+    candidate_map: dict[str, str] = {}
+    for item in raw_candidates:
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get("route_key") or "").strip()
+        title = str(item.get("route_title") or "").strip()
+        if key and title:
+            candidate_map[key] = title
+    if not candidate_map:
+        raise AIServiceError(
+            code="route_mapping_invalid",
+            message="route mapping decision table route_candidates invalid.",
+            http_status=500,
+        )
+
+    raw_scores = payload.get("route_scores")
+    if not isinstance(raw_scores, list):
+        raise AIServiceError(
+            code="route_mapping_invalid",
+            message="route mapping route_scores must be a list.",
+            http_status=422,
+        )
+
+    seen_keys: set[str] = set()
+    scores: list[dict[str, Any]] = []
+    for item in raw_scores:
+        if not isinstance(item, dict):
+            continue
+        route_key = str(item.get("route_key") or "").strip()
+        if route_key not in candidate_map:
+            raise AIServiceError(
+                code="route_mapping_invalid",
+                message=f"route mapping route_scores contains unsupported route_key '{route_key}'.",
+                http_status=422,
+            )
+        if route_key in seen_keys:
+            raise AIServiceError(
+                code="route_mapping_invalid",
+                message=f"route mapping route_scores has duplicate route_key '{route_key}'.",
+                http_status=422,
+            )
+        seen_keys.add(route_key)
+        try:
+            confidence = int(item.get("confidence"))
+        except Exception:
+            confidence = -1
+        if confidence < 0 or confidence > 100:
+            raise AIServiceError(
+                code="route_mapping_invalid",
+                message=f"route mapping route_scores[{route_key}] confidence must be 0-100 integer.",
+                http_status=422,
+            )
+        reason = str(item.get("reason") or "").strip()
+        scores.append(
+            {
+                "route_key": route_key,
+                "route_title": candidate_map[route_key],
+                "confidence": confidence,
+                "reason": reason,
+            }
+        )
+
+    missing = sorted(set(candidate_map.keys()) - seen_keys)
+    if missing:
+        raise AIServiceError(
+            code="route_mapping_invalid",
+            message=f"route mapping route_scores missing candidates: {', '.join(missing)}.",
+            http_status=422,
+        )
+
+    # Stable order: highest confidence first, then route key.
+    scores.sort(key=lambda item: (-int(item["confidence"]), str(item["route_key"])))
+    primary_expected = scores[0]
+    secondary_expected = scores[1] if len(scores) > 1 else scores[0]
+
+    raw_primary = payload.get("primary_route")
+    if not isinstance(raw_primary, dict):
+        raise AIServiceError(
+            code="route_mapping_invalid",
+            message="route mapping primary_route is required.",
+            http_status=422,
+        )
+    raw_secondary = payload.get("secondary_route")
+    if not isinstance(raw_secondary, dict):
+        raise AIServiceError(
+            code="route_mapping_invalid",
+            message="route mapping secondary_route is required.",
+            http_status=422,
+        )
+
+    primary_key = str(raw_primary.get("route_key") or "").strip()
+    secondary_key = str(raw_secondary.get("route_key") or "").strip()
+    if primary_key != str(primary_expected["route_key"]):
+        raise AIServiceError(
+            code="route_mapping_invalid",
+            message=(
+                "route mapping primary_route must match highest-confidence route: "
+                f"expected '{primary_expected['route_key']}', got '{primary_key}'."
+            ),
+            http_status=422,
+        )
+    if secondary_key != str(secondary_expected["route_key"]):
+        raise AIServiceError(
+            code="route_mapping_invalid",
+            message=(
+                "route mapping secondary_route must match second-highest route: "
+                f"expected '{secondary_expected['route_key']}', got '{secondary_key}'."
+            ),
+            http_status=422,
+        )
+
+    confidence_reason = str(payload.get("confidence_reason") or "").strip()
+    if not confidence_reason:
+        raise AIServiceError(
+            code="route_mapping_invalid",
+            message="route mapping confidence_reason is required.",
+            http_status=422,
+        )
+
+    needs_review_raw = payload.get("needs_review")
+    if not isinstance(needs_review_raw, bool):
+        raise AIServiceError(
+            code="route_mapping_invalid",
+            message="route mapping needs_review must be boolean.",
+            http_status=422,
+        )
+
+    evidence_raw = payload.get("evidence")
+    if not isinstance(evidence_raw, dict):
+        raise AIServiceError(
+            code="route_mapping_invalid",
+            message="route mapping evidence must be an object.",
+            http_status=422,
+        )
+
+    def normalize_evidence_items(key: str) -> list[dict[str, Any]]:
+        rows = evidence_raw.get(key)
+        if not isinstance(rows, list):
+            return []
+        out: list[dict[str, Any]] = []
+        for item in rows:
+            if not isinstance(item, dict):
+                continue
+            rank_value = item.get("rank")
+            try:
+                rank = int(rank_value)
+            except Exception:
+                rank = 0
+            out.append(
+                {
+                    "ingredient_name_cn": str(item.get("ingredient_name_cn") or "").strip(),
+                    "ingredient_name_en": str(item.get("ingredient_name_en") or "").strip(),
+                    "rank": max(0, rank),
+                    "impact": str(item.get("impact") or "").strip(),
+                }
+            )
+            if len(out) >= 20:
+                break
+        return out
+
+    primary_reason = str(raw_primary.get("reason") or "").strip()
+    secondary_reason = str(raw_secondary.get("reason") or "").strip()
+    primary_confidence = int(primary_expected["confidence"])
+    secondary_confidence = int(secondary_expected["confidence"])
+
+    return {
+        "category": expected_category,
+        "rules_version": expected_rules_version,
+        "primary_route": {
+            "route_key": str(primary_expected["route_key"]),
+            "route_title": str(primary_expected["route_title"]),
+            "confidence": primary_confidence,
+            "reason": primary_reason,
+        },
+        "secondary_route": {
+            "route_key": str(secondary_expected["route_key"]),
+            "route_title": str(secondary_expected["route_title"]),
+            "confidence": secondary_confidence,
+            "reason": secondary_reason,
+        },
+        "route_scores": scores,
+        "evidence": {
+            "positive": normalize_evidence_items("positive"),
+            "counter": normalize_evidence_items("counter"),
+        },
+        "confidence_reason": confidence_reason,
+        "needs_review": bool(needs_review_raw),
     }
 
 

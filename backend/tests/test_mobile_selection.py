@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.routes import ingest as ingest_routes
+from app.routes import products as products_routes
 
 
 def _install_fake_ingest_pipeline(monkeypatch: pytest.MonkeyPatch, plan: dict) -> None:
@@ -64,6 +65,85 @@ def _ingest_one(client, image_name: str = "sample.jpg") -> str:
     return trace_id
 
 
+def _install_fake_route_mapping_builder(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_run_capability_now(*, capability, input_payload, trace_id=None, event_callback=None):
+        if event_callback:
+            event_callback({"type": "step", "stage": capability, "message": "mock route mapping"})
+        if capability == "doubao.route_mapping_shampoo":
+            return {
+                "category": "shampoo",
+                "rules_version": "2026-03-03.1",
+                "primary_route": {
+                    "route_key": "volume-support",
+                    "route_title": "蓬松支撑型",
+                    "confidence": 93,
+                    "reason": "mock",
+                },
+                "secondary_route": {
+                    "route_key": "deep-oil-control",
+                    "route_title": "深层控油型",
+                    "confidence": 72,
+                    "reason": "mock",
+                },
+                "route_scores": [
+                    {"route_key": "volume-support", "route_title": "蓬松支撑型", "confidence": 93, "reason": "mock"},
+                    {"route_key": "deep-oil-control", "route_title": "深层控油型", "confidence": 72, "reason": "mock"},
+                    {"route_key": "gentle-soothing", "route_title": "温和舒缓型", "confidence": 36, "reason": "mock"},
+                    {"route_key": "deep-repair", "route_title": "深度修护型", "confidence": 24, "reason": "mock"},
+                    {"route_key": "anti-dandruff-itch", "route_title": "去屑止痒型", "confidence": 10, "reason": "mock"},
+                ],
+                "evidence": {"positive": [], "counter": []},
+                "confidence_reason": "mock",
+                "needs_review": False,
+                "analysis_text": "{\"mock\":true}",
+                "model": "mock-pro",
+            }
+        if capability == "doubao.route_mapping_bodywash":
+            return {
+                "category": "bodywash",
+                "rules_version": "2026-03-03.1",
+                "primary_route": {
+                    "route_key": "rescue",
+                    "route_title": "恒温舒缓修护型",
+                    "confidence": 95,
+                    "reason": "mock",
+                },
+                "secondary_route": {
+                    "route_key": "shield",
+                    "route_title": "脂类补充油膏型",
+                    "confidence": 60,
+                    "reason": "mock",
+                },
+                "route_scores": [
+                    {"route_key": "rescue", "route_title": "恒温舒缓修护型", "confidence": 95, "reason": "mock"},
+                    {"route_key": "shield", "route_title": "脂类补充油膏型", "confidence": 60, "reason": "mock"},
+                    {"route_key": "vibe", "route_title": "轻盈香氛平衡型", "confidence": 52, "reason": "mock"},
+                    {"route_key": "glow", "route_title": "氨基酸亮肤型", "confidence": 44, "reason": "mock"},
+                    {"route_key": "purge", "route_title": "水杨酸净彻控油型", "confidence": 31, "reason": "mock"},
+                    {"route_key": "polish", "route_title": "乳酸尿素更新型", "confidence": 20, "reason": "mock"},
+                ],
+                "evidence": {"positive": [], "counter": []},
+                "confidence_reason": "mock",
+                "needs_review": False,
+                "analysis_text": "{\"mock\":true}",
+                "model": "mock-pro",
+            }
+        raise AssertionError(f"unexpected capability: {capability}")
+
+    monkeypatch.setattr(products_routes, "run_capability_now", fake_run_capability_now)
+
+
+def _build_route_mapping(client, category: str) -> None:
+    resp = client.post(
+        "/api/products/route-mapping/build",
+        json={"category": category, "force_regenerate": True},
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["failed"] == 0
+    assert payload["submitted_to_model"] >= 1
+
+
 def test_mobile_selection_resolve_shampoo_route_mapping(test_client, monkeypatch: pytest.MonkeyPatch):
     client, _ = test_client
     _install_fake_ingest_pipeline(
@@ -76,6 +156,8 @@ def test_mobile_selection_resolve_shampoo_route_mapping(test_client, monkeypatch
         },
     )
     _ingest_one(client, "shampoo.jpg")
+    _install_fake_route_mapping_builder(monkeypatch)
+    _build_route_mapping(client, "shampoo")
 
     resp = client.post(
         "/api/mobile/selection/resolve",
@@ -106,6 +188,8 @@ def test_mobile_selection_resolve_bodywash_fastpath(test_client, monkeypatch: py
         },
     )
     _ingest_one(client, "bodywash.jpg")
+    _install_fake_route_mapping_builder(monkeypatch)
+    _build_route_mapping(client, "bodywash")
 
     resp = client.post(
         "/api/mobile/selection/resolve",

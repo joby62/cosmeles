@@ -2,6 +2,7 @@ import json
 import queue
 import threading
 import hashlib
+import re
 from pathlib import Path
 from collections import defaultdict
 from typing import Any, Callable
@@ -13,9 +14,10 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import sessionmaker
 
 from app.ai.orchestrator import run_capability_now
-from app.constants import VALID_CATEGORIES
+from app.ai.prompts import load_prompt
+from app.constants import VALID_CATEGORIES, MOBILE_RULES_VERSION, ROUTE_MAPPING_SUPPORTED_CATEGORIES
 from app.db.session import get_db
-from app.db.models import ProductIndex, IngredientLibraryIndex
+from app.db.models import ProductIndex, IngredientLibraryIndex, ProductRouteMappingIndex
 from app.settings import settings
 from app.services.storage import (
     load_json,
@@ -28,6 +30,8 @@ from app.services.storage import (
     remove_rel_dir,
     remove_product_images,
     cleanup_orphan_storage,
+    save_product_route_mapping,
+    product_route_mapping_rel_path,
 )
 from app.schemas import (
     ProductCard,
@@ -51,6 +55,12 @@ from app.schemas import (
     IngredientLibraryProfile,
     IngredientLibraryDetailItem,
     IngredientLibraryDetailResponse,
+    ProductRouteMappingBuildRequest,
+    ProductRouteMappingBuildResponse,
+    ProductRouteMappingBuildItem,
+    ProductRouteMappingScore,
+    ProductRouteMappingResult,
+    ProductRouteMappingDetailResponse,
 )
 
 router = APIRouter(prefix="/api", tags=["products"])
@@ -187,6 +197,15 @@ def delete_product(product_id: str, db: Session = Depends(get_db)):
     removed += image_removed
     run_files, run_dirs = remove_rel_dir(f"doubao_runs/{product_id}")
     removed += run_files + run_dirs
+    route_mapping_rec = db.get(ProductRouteMappingIndex, product_id)
+    if route_mapping_rec:
+        route_mapping_path = str(route_mapping_rec.storage_path or "").strip() or product_route_mapping_rel_path(
+            str(route_mapping_rec.category or ""),
+            product_id,
+        )
+        if route_mapping_path and remove_rel_path(route_mapping_path):
+            removed += 1
+        db.delete(route_mapping_rec)
 
     db.delete(rec)
     db.commit()
@@ -333,6 +352,62 @@ def get_ingredient_library_item(category: str, ingredient_id: str):
     return IngredientLibraryDetailResponse(status="ok", item=item)
 
 
+@router.post("/products/route-mapping/build", response_model=ProductRouteMappingBuildResponse)
+def build_product_route_mapping(payload: ProductRouteMappingBuildRequest, db: Session = Depends(get_db)):
+    return _build_product_route_mapping_impl(payload, db=db, event_callback=None)
+
+
+@router.post("/products/route-mapping/build/stream")
+def build_product_route_mapping_stream(payload: ProductRouteMappingBuildRequest, db: Session = Depends(get_db)):
+    events: queue.Queue[tuple[str, dict[str, Any]] | None] = queue.Queue()
+    SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=db.get_bind())
+
+    def emit(event: str, body: dict[str, Any]) -> None:
+        events.put((event, body))
+
+    def worker() -> None:
+        local_db = SessionMaker()
+        try:
+            result = _build_product_route_mapping_impl(payload, local_db, event_callback=lambda e: emit("progress", e))
+            emit("result", result.model_dump())
+        except HTTPException as e:
+            emit("error", {"status": e.status_code, "detail": e.detail})
+        except Exception as e:  # pragma: no cover
+            emit("error", {"status": 500, "detail": f"route mapping build failed: {e}"})
+        finally:
+            emit("done", {"status": "done"})
+            events.put(None)
+            local_db.close()
+
+    threading.Thread(target=worker, daemon=True).start()
+    return StreamingResponse(
+        _sse_iter(events),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Pragma": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.get("/products/{product_id}/route-mapping", response_model=ProductRouteMappingDetailResponse)
+def get_product_route_mapping(product_id: str, db: Session = Depends(get_db)):
+    rec = db.get(ProductRouteMappingIndex, product_id)
+    if not rec or str(rec.status or "").strip().lower() != "ready":
+        raise HTTPException(status_code=404, detail=f"Route mapping not found for product '{product_id}'.")
+    storage_path = str(rec.storage_path or "").strip() or product_route_mapping_rel_path(str(rec.category or ""), product_id)
+    if not exists_rel_path(storage_path):
+        raise HTTPException(status_code=404, detail=f"Route mapping file missing for product '{product_id}'.")
+    try:
+        doc = load_json(storage_path)
+        item = _to_product_route_mapping_result(doc=doc, storage_path=storage_path)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Invalid route mapping for product '{product_id}': {e}") from e
+    return ProductRouteMappingDetailResponse(status="ok", item=item)
+
+
 @router.post("/products/batch-delete", response_model=ProductBatchDeleteResponse)
 def batch_delete_products(payload: ProductBatchDeleteRequest, db: Session = Depends(get_db)):
     ids = list(dict.fromkeys([str(item).strip() for item in payload.ids if str(item).strip()]))
@@ -363,6 +438,16 @@ def batch_delete_products(payload: ProductBatchDeleteRequest, db: Session = Depe
             f_count, d_count = remove_rel_dir(f"doubao_runs/{product_id}")
             removed_files += f_count
             removed_dirs += d_count
+
+        route_mapping_rec = db.get(ProductRouteMappingIndex, product_id)
+        if route_mapping_rec:
+            route_mapping_path = str(route_mapping_rec.storage_path or "").strip() or product_route_mapping_rel_path(
+                str(route_mapping_rec.category or ""),
+                product_id,
+            )
+            if route_mapping_path and remove_rel_path(route_mapping_path):
+                removed_files += 1
+            db.delete(route_mapping_rec)
 
         db.delete(rec)
         deleted_ids.append(product_id)
@@ -672,6 +757,709 @@ def _build_ingredient_library_impl(
         items=items,
         failures=failures[:200],
     )
+
+
+def _build_product_route_mapping_impl(
+    payload: ProductRouteMappingBuildRequest,
+    db: Session,
+    event_callback: Callable[[dict[str, Any]], None] | None,
+) -> ProductRouteMappingBuildResponse:
+    category = (payload.category or "").strip().lower()
+    if category:
+        if category not in VALID_CATEGORIES:
+            raise HTTPException(status_code=400, detail=f"Invalid category: {category}.")
+        if category not in ROUTE_MAPPING_SUPPORTED_CATEGORIES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Route mapping does not support category '{category}'.",
+            )
+        target_categories = [category]
+    else:
+        target_categories = sorted(ROUTE_MAPPING_SUPPORTED_CATEGORIES)
+
+    _ensure_product_route_mapping_index_table(db)
+    prompt_versions = {
+        cat: load_prompt(f"doubao.route_mapping_{cat}").version
+        for cat in target_categories
+    }
+
+    rows = db.execute(
+        select(ProductIndex)
+        .where(ProductIndex.category.in_(target_categories))
+        .order_by(ProductIndex.created_at.desc())
+    ).scalars().all()
+
+    scanned_products = len(rows)
+    _emit_progress(
+        event_callback,
+        {
+            "step": "route_mapping_build_start",
+            "scanned_products": scanned_products,
+            "categories": target_categories,
+            "text": f"开始构建产品类型映射：扫描产品 {scanned_products} 条。",
+        },
+    )
+
+    submitted_to_model = 0
+    created = 0
+    updated = 0
+    skipped = 0
+    failed = 0
+    items: list[ProductRouteMappingBuildItem] = []
+    failures: list[str] = []
+
+    force_regenerate = bool(payload.force_regenerate)
+    only_unmapped = bool(payload.only_unmapped)
+    total = len(rows)
+
+    for idx, row in enumerate(rows, start=1):
+        product_id = str(row.id)
+        row_category = str(row.category or "").strip().lower()
+        if row_category not in ROUTE_MAPPING_SUPPORTED_CATEGORIES:
+            continue
+
+        rec = db.get(ProductRouteMappingIndex, product_id)
+        storage_path_existing = ""
+        if rec:
+            storage_path_existing = str(rec.storage_path or "").strip()
+        if not storage_path_existing:
+            storage_path_existing = product_route_mapping_rel_path(row_category, product_id)
+
+        is_ready_existing = bool(
+            rec
+            and str(rec.status or "").strip().lower() == "ready"
+            and str(rec.rules_version or "").strip() == MOBILE_RULES_VERSION
+            and exists_rel_path(storage_path_existing)
+        )
+
+        if only_unmapped and is_ready_existing:
+            skipped += 1
+            items.append(
+                ProductRouteMappingBuildItem(
+                    product_id=product_id,
+                    category=row_category,
+                    status="skipped",
+                    primary_route=_score_or_none(
+                        route_key=str(rec.primary_route_key or ""),
+                        route_title=str(rec.primary_route_title or ""),
+                        confidence=int(rec.primary_confidence or 0),
+                        reason="",
+                    ),
+                    secondary_route=_score_or_none(
+                        route_key=str(rec.secondary_route_key or ""),
+                        route_title=str(rec.secondary_route_title or ""),
+                        confidence=int(rec.secondary_confidence or 0),
+                        reason="",
+                    ),
+                    route_scores=_safe_route_score_models(rec.scores_json),
+                    storage_path=storage_path_existing,
+                    model=rec.model,
+                    error=None,
+                )
+            )
+            _emit_progress(
+                event_callback,
+                {
+                    "step": "route_mapping_skip",
+                    "product_id": product_id,
+                    "category": row_category,
+                    "index": idx,
+                    "total": total,
+                    "text": f"[{idx}/{total}] 跳过（已有映射）：{row_category} / {product_id}",
+                },
+            )
+            continue
+
+        try:
+            if not exists_rel_path(row.json_path):
+                raise ValueError(f"product json missing: {row.json_path}")
+            doc = load_json(row.json_path)
+            context = _build_route_mapping_product_context(row=row, doc=doc)
+            fingerprint = _build_route_mapping_fingerprint(context)
+        except Exception as e:
+            failed += 1
+            message = f"{product_id} ({row_category}): invalid product context | {e}"
+            failures.append(message)
+            now = now_iso()
+            rec = _ensure_route_mapping_record(rec=rec, product_id=product_id, category=row_category)
+            rec.rules_version = MOBILE_RULES_VERSION
+            rec.fingerprint = rec.fingerprint or _fallback_route_mapping_fingerprint(row_category, product_id)
+            rec.status = "failed"
+            rec.prompt_key = f"doubao.route_mapping_{row_category}"
+            rec.prompt_version = prompt_versions.get(row_category)
+            rec.last_error = str(e)
+            rec.last_generated_at = now
+            db.add(rec)
+            items.append(
+                ProductRouteMappingBuildItem(
+                    product_id=product_id,
+                    category=row_category,
+                    status="failed",
+                    primary_route=None,
+                    secondary_route=None,
+                    route_scores=[],
+                    storage_path=None,
+                    model=None,
+                    error=f"invalid product context: {e}",
+                )
+            )
+            _emit_progress(
+                event_callback,
+                {
+                    "step": "route_mapping_error",
+                    "product_id": product_id,
+                    "category": row_category,
+                    "index": idx,
+                    "total": total,
+                    "text": f"[{idx}/{total}] 失败：{row_category} / {product_id} | {e}",
+                },
+            )
+            continue
+
+        if is_ready_existing and not force_regenerate and str(rec.fingerprint or "").strip() == fingerprint:
+            skipped += 1
+            items.append(
+                ProductRouteMappingBuildItem(
+                    product_id=product_id,
+                    category=row_category,
+                    status="skipped",
+                    primary_route=_score_or_none(
+                        route_key=str(rec.primary_route_key or ""),
+                        route_title=str(rec.primary_route_title or ""),
+                        confidence=int(rec.primary_confidence or 0),
+                        reason="",
+                    ),
+                    secondary_route=_score_or_none(
+                        route_key=str(rec.secondary_route_key or ""),
+                        route_title=str(rec.secondary_route_title or ""),
+                        confidence=int(rec.secondary_confidence or 0),
+                        reason="",
+                    ),
+                    route_scores=_safe_route_score_models(rec.scores_json),
+                    storage_path=storage_path_existing,
+                    model=rec.model,
+                    error=None,
+                )
+            )
+            _emit_progress(
+                event_callback,
+                {
+                    "step": "route_mapping_skip",
+                    "product_id": product_id,
+                    "category": row_category,
+                    "index": idx,
+                    "total": total,
+                    "text": f"[{idx}/{total}] 跳过（指纹未变化）：{row_category} / {product_id}",
+                },
+            )
+            continue
+
+        submitted_to_model += 1
+        _emit_progress(
+            event_callback,
+            {
+                "step": "route_mapping_start",
+                "product_id": product_id,
+                "category": row_category,
+                "index": idx,
+                "total": total,
+                "text": f"[{idx}/{total}] 开始映射：{row_category} / {product_id}",
+            },
+        )
+
+        capability = f"doubao.route_mapping_{row_category}"
+        prompt_key = capability
+        prompt_version = prompt_versions[row_category]
+        try:
+            ai_result = run_capability_now(
+                capability=capability,
+                input_payload={"product_context_json": json.dumps(context, ensure_ascii=False)},
+                trace_id=product_id,
+                event_callback=lambda event, _pid=product_id, _cat=row_category: _forward_route_mapping_model_event(
+                    event_callback=event_callback,
+                    product_id=_pid,
+                    category=_cat,
+                    payload=event,
+                ),
+            )
+
+            generated_at = now_iso()
+            profile_doc = {
+                "product_id": product_id,
+                "category": row_category,
+                "rules_version": str(ai_result.get("rules_version") or MOBILE_RULES_VERSION),
+                "fingerprint": fingerprint,
+                "generated_at": generated_at,
+                "prompt_key": prompt_key,
+                "prompt_version": prompt_version,
+                "model": str(ai_result.get("model") or "").strip(),
+                "primary_route": ai_result.get("primary_route") or {},
+                "secondary_route": ai_result.get("secondary_route") or {},
+                "route_scores": ai_result.get("route_scores") or [],
+                "evidence": ai_result.get("evidence") or {"positive": [], "counter": []},
+                "confidence_reason": str(ai_result.get("confidence_reason") or "").strip(),
+                "needs_review": bool(ai_result.get("needs_review")),
+                "analysis_text": str(ai_result.get("analysis_text") or "").strip(),
+            }
+            result_item = _to_product_route_mapping_result(doc=profile_doc, storage_path="")
+            storage_path = save_product_route_mapping(row_category, product_id, profile_doc)
+            result_item = result_item.model_copy(update={"storage_path": storage_path})
+
+            existed_before = rec is not None
+            status = "updated" if existed_before else "created"
+            if status == "updated":
+                updated += 1
+            else:
+                created += 1
+
+            rec = _ensure_route_mapping_record(rec=rec, product_id=product_id, category=row_category)
+            rec.rules_version = result_item.rules_version
+            rec.fingerprint = result_item.fingerprint
+            rec.status = "ready"
+            rec.storage_path = storage_path
+            rec.primary_route_key = result_item.primary_route.route_key
+            rec.primary_route_title = result_item.primary_route.route_title
+            rec.primary_confidence = int(result_item.primary_route.confidence)
+            rec.secondary_route_key = result_item.secondary_route.route_key
+            rec.secondary_route_title = result_item.secondary_route.route_title
+            rec.secondary_confidence = int(result_item.secondary_route.confidence)
+            rec.scores_json = json.dumps([score.model_dump() for score in result_item.route_scores], ensure_ascii=False)
+            rec.needs_review = bool(result_item.needs_review)
+            rec.prompt_key = result_item.prompt_key
+            rec.prompt_version = result_item.prompt_version
+            rec.model = result_item.model
+            rec.last_generated_at = result_item.generated_at
+            rec.last_error = None
+            db.add(rec)
+
+            items.append(
+                ProductRouteMappingBuildItem(
+                    product_id=product_id,
+                    category=row_category,
+                    status=status,
+                    primary_route=result_item.primary_route,
+                    secondary_route=result_item.secondary_route,
+                    route_scores=result_item.route_scores,
+                    storage_path=storage_path,
+                    model=result_item.model,
+                    error=None,
+                )
+            )
+            _emit_progress(
+                event_callback,
+                {
+                    "step": "route_mapping_done",
+                    "product_id": product_id,
+                    "category": row_category,
+                    "index": idx,
+                    "total": total,
+                    "status": status,
+                    "text": f"[{idx}/{total}] 完成：{row_category} / {product_id}（{status}）",
+                },
+            )
+        except Exception as e:
+            failed += 1
+            message = f"{product_id} ({row_category}): {e}"
+            failures.append(message)
+            rec = _ensure_route_mapping_record(rec=rec, product_id=product_id, category=row_category)
+            rec.rules_version = MOBILE_RULES_VERSION
+            rec.fingerprint = fingerprint or _fallback_route_mapping_fingerprint(row_category, product_id)
+            rec.status = "failed"
+            rec.prompt_key = prompt_key
+            rec.prompt_version = prompt_version
+            rec.last_error = str(e)
+            rec.last_generated_at = now_iso()
+            db.add(rec)
+            items.append(
+                ProductRouteMappingBuildItem(
+                    product_id=product_id,
+                    category=row_category,
+                    status="failed",
+                    primary_route=None,
+                    secondary_route=None,
+                    route_scores=[],
+                    storage_path=None,
+                    model=None,
+                    error=str(e),
+                )
+            )
+            _emit_progress(
+                event_callback,
+                {
+                    "step": "route_mapping_error",
+                    "product_id": product_id,
+                    "category": row_category,
+                    "index": idx,
+                    "total": total,
+                    "text": f"[{idx}/{total}] 失败：{row_category} / {product_id} | {e}",
+                },
+            )
+
+    db.commit()
+
+    status = "ok" if failed == 0 else "partial_failed"
+    _emit_progress(
+        event_callback,
+        {
+            "step": "route_mapping_build_done",
+            "status": status,
+            "scanned_products": scanned_products,
+            "submitted_to_model": submitted_to_model,
+            "created": created,
+            "updated": updated,
+            "skipped": skipped,
+            "failed": failed,
+            "text": (
+                "产品类型映射构建完成："
+                f"submitted={submitted_to_model}, created={created}, "
+                f"updated={updated}, skipped={skipped}, failed={failed}"
+            ),
+        },
+    )
+    return ProductRouteMappingBuildResponse(
+        status=status,
+        scanned_products=scanned_products,
+        submitted_to_model=submitted_to_model,
+        created=created,
+        updated=updated,
+        skipped=skipped,
+        failed=failed,
+        items=items,
+        failures=failures[:200],
+    )
+
+
+def _to_product_route_mapping_result(doc: dict[str, Any], storage_path: str) -> ProductRouteMappingResult:
+    if not isinstance(doc, dict):
+        raise ValueError("route mapping document is not an object.")
+    product_id = _required_text_field(doc, "product_id")
+    category = _required_text_field(doc, "category").lower()
+    if category not in ROUTE_MAPPING_SUPPORTED_CATEGORIES:
+        raise ValueError(f"route mapping category unsupported: {category}")
+
+    rules_version = _required_text_field(doc, "rules_version")
+    fingerprint = _required_text_field(doc, "fingerprint")
+    generated_at = _required_text_field(doc, "generated_at")
+    prompt_key = _required_text_field(doc, "prompt_key")
+    prompt_version = _required_text_field(doc, "prompt_version")
+    model = _required_text_field(doc, "model")
+    confidence_reason = _required_text_field(doc, "confidence_reason")
+
+    needs_review_raw = doc.get("needs_review")
+    if not isinstance(needs_review_raw, bool):
+        raise ValueError("needs_review must be boolean.")
+
+    primary_route = _parse_route_mapping_score(doc.get("primary_route"), "primary_route")
+    secondary_route = _parse_route_mapping_score(doc.get("secondary_route"), "secondary_route")
+
+    route_scores_raw = doc.get("route_scores")
+    if not isinstance(route_scores_raw, list) or not route_scores_raw:
+        raise ValueError("route_scores must be a non-empty list.")
+    route_scores = [_parse_route_mapping_score(item, f"route_scores[{idx}]") for idx, item in enumerate(route_scores_raw)]
+
+    evidence = _parse_route_mapping_evidence(doc.get("evidence"))
+    analysis_text = str(doc.get("analysis_text") or "").strip()
+
+    out_storage_path = str(storage_path or "").strip()
+    return ProductRouteMappingResult(
+        product_id=product_id,
+        category=category,
+        rules_version=rules_version,
+        fingerprint=fingerprint,
+        generated_at=generated_at,
+        prompt_key=prompt_key,
+        prompt_version=prompt_version,
+        model=model,
+        primary_route=primary_route,
+        secondary_route=secondary_route,
+        route_scores=route_scores,
+        evidence=evidence,
+        confidence_reason=confidence_reason,
+        needs_review=bool(needs_review_raw),
+        analysis_text=analysis_text,
+        storage_path=out_storage_path,
+    )
+
+
+def _parse_route_mapping_score(value: Any, field_name: str) -> ProductRouteMappingScore:
+    if not isinstance(value, dict):
+        raise ValueError(f"{field_name} must be an object.")
+    route_key = str(value.get("route_key") or "").strip()
+    route_title = str(value.get("route_title") or "").strip()
+    reason = str(value.get("reason") or "").strip()
+    if not route_key:
+        raise ValueError(f"{field_name}.route_key is required.")
+    if not route_title:
+        raise ValueError(f"{field_name}.route_title is required.")
+    try:
+        confidence = int(value.get("confidence"))
+    except Exception as e:
+        raise ValueError(f"{field_name}.confidence must be integer.") from e
+    confidence = max(0, min(100, confidence))
+    return ProductRouteMappingScore(
+        route_key=route_key,
+        route_title=route_title,
+        confidence=confidence,
+        reason=reason,
+    )
+
+
+def _parse_route_mapping_evidence(value: Any) -> dict[str, list[dict[str, Any]]]:
+    if not isinstance(value, dict):
+        return {"positive": [], "counter": []}
+
+    def normalize_items(key: str) -> list[dict[str, Any]]:
+        rows = value.get(key)
+        if not isinstance(rows, list):
+            return []
+        out: list[dict[str, Any]] = []
+        for idx, item in enumerate(rows):
+            if not isinstance(item, dict):
+                continue
+            try:
+                rank = int(item.get("rank"))
+            except Exception:
+                rank = 0
+            out.append(
+                {
+                    "ingredient_name_cn": str(item.get("ingredient_name_cn") or "").strip(),
+                    "ingredient_name_en": str(item.get("ingredient_name_en") or "").strip(),
+                    "rank": max(0, rank),
+                    "impact": str(item.get("impact") or "").strip(),
+                }
+            )
+            if idx >= 30:
+                break
+        return out
+
+    return {"positive": normalize_items("positive"), "counter": normalize_items("counter")}
+
+
+def _safe_route_score_models(scores_json: str | None) -> list[ProductRouteMappingScore]:
+    raw = str(scores_json or "").strip()
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    out: list[ProductRouteMappingScore] = []
+    for idx, item in enumerate(parsed):
+        try:
+            out.append(_parse_route_mapping_score(item, f"scores_json[{idx}]"))
+        except Exception:
+            continue
+    return out
+
+
+def _score_or_none(
+    *,
+    route_key: str,
+    route_title: str,
+    confidence: int,
+    reason: str,
+) -> ProductRouteMappingScore | None:
+    if not route_key.strip() or not route_title.strip():
+        return None
+    return ProductRouteMappingScore(
+        route_key=route_key.strip(),
+        route_title=route_title.strip(),
+        confidence=max(0, min(100, int(confidence))),
+        reason=reason,
+    )
+
+
+def _forward_route_mapping_model_event(
+    event_callback: Callable[[dict[str, Any]], None] | None,
+    product_id: str,
+    category: str,
+    payload: dict[str, Any],
+) -> None:
+    event_type = str(payload.get("type") or "").strip()
+    if event_type == "delta":
+        delta = str(payload.get("delta") or "")
+        if not delta:
+            return
+        _emit_progress(
+            event_callback,
+            {
+                "step": "route_mapping_model_delta",
+                "product_id": product_id,
+                "category": category,
+                "delta": delta,
+                "text": delta,
+            },
+        )
+        return
+
+    if event_type != "step":
+        return
+    message = str(payload.get("message") or "").strip()
+    if not message:
+        return
+    _emit_progress(
+        event_callback,
+        {
+            "step": "route_mapping_model_step",
+            "product_id": product_id,
+            "category": category,
+            "text": f"{product_id} | {message}",
+        },
+    )
+
+
+def _ensure_route_mapping_record(
+    *,
+    rec: ProductRouteMappingIndex | None,
+    product_id: str,
+    category: str,
+) -> ProductRouteMappingIndex:
+    if rec is not None:
+        rec.category = category
+        return rec
+    return ProductRouteMappingIndex(
+        product_id=product_id,
+        category=category,
+        rules_version=MOBILE_RULES_VERSION,
+        fingerprint=_fallback_route_mapping_fingerprint(category, product_id),
+        status="pending",
+        storage_path=None,
+        primary_route_key="",
+        primary_route_title="",
+        primary_confidence=0,
+        secondary_route_key=None,
+        secondary_route_title=None,
+        secondary_confidence=None,
+        scores_json="[]",
+        needs_review=False,
+        prompt_key=None,
+        prompt_version=None,
+        model=None,
+        last_generated_at=None,
+        last_error=None,
+    )
+
+
+def _fallback_route_mapping_fingerprint(category: str, product_id: str) -> str:
+    raw = f"{category}:{product_id}:fallback"
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+
+
+def _build_route_mapping_product_context(*, row: ProductIndex, doc: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(doc, dict):
+        raise ValueError("product doc must be an object.")
+
+    summary_raw = doc.get("summary")
+    summary = summary_raw if isinstance(summary_raw, dict) else {}
+
+    ingredients_raw = doc.get("ingredients")
+    if not isinstance(ingredients_raw, list):
+        raise ValueError("ingredients must be a list.")
+
+    ingredients: list[dict[str, Any]] = []
+    for rank, raw in enumerate(ingredients_raw, start=1):
+        if isinstance(raw, dict):
+            name_raw = str(raw.get("name") or "").strip()
+            type_value = str(raw.get("type") or "").strip()
+            functions = _safe_str_list(raw.get("functions"))
+            risk = str(raw.get("risk") or "").strip()
+            notes = str(raw.get("notes") or "").strip()
+        else:
+            name_raw = str(raw or "").strip()
+            type_value = ""
+            functions = []
+            risk = ""
+            notes = ""
+        if not name_raw:
+            continue
+
+        ingredient_name_cn, ingredient_name_en = _split_ingredient_names(name_raw)
+        ingredients.append(
+            {
+                "rank": rank,
+                "ingredient_name_cn": ingredient_name_cn,
+                "ingredient_name_en": ingredient_name_en,
+                "ingredient_name_raw": name_raw,
+                "type": type_value,
+                "functions": functions,
+                "risk": risk,
+                "notes": notes,
+            }
+        )
+
+    if not ingredients:
+        raise ValueError("ingredients is empty.")
+
+    return {
+        "product_id": str(row.id),
+        "category": str(row.category or "").strip().lower(),
+        "rules_version": MOBILE_RULES_VERSION,
+        "brand": str(row.brand or "").strip(),
+        "name": str(row.name or "").strip(),
+        "one_sentence": str(row.one_sentence or "").strip(),
+        "summary": {
+            "one_sentence": str(summary.get("one_sentence") or "").strip(),
+            "pros": _safe_str_list(summary.get("pros")),
+            "cons": _safe_str_list(summary.get("cons")),
+            "who_for": _safe_str_list(summary.get("who_for")),
+            "who_not_for": _safe_str_list(summary.get("who_not_for")),
+        },
+        "ingredients": ingredients,
+    }
+
+
+def _build_route_mapping_fingerprint(product_context: dict[str, Any]) -> str:
+    canonical = {
+        "category": str(product_context.get("category") or "").strip().lower(),
+        "rules_version": str(product_context.get("rules_version") or "").strip(),
+        "brand": str(product_context.get("brand") or "").strip(),
+        "name": str(product_context.get("name") or "").strip(),
+        "one_sentence": str(product_context.get("one_sentence") or "").strip(),
+        "summary": product_context.get("summary") if isinstance(product_context.get("summary"), dict) else {},
+        "ingredients": [],
+    }
+    ingredients = product_context.get("ingredients")
+    if isinstance(ingredients, list):
+        for item in ingredients:
+            if not isinstance(item, dict):
+                continue
+            canonical["ingredients"].append(
+                {
+                    "rank": int(item.get("rank") or 0),
+                    "ingredient_name_cn": str(item.get("ingredient_name_cn") or "").strip(),
+                    "ingredient_name_en": str(item.get("ingredient_name_en") or "").strip(),
+                    "ingredient_name_raw": str(item.get("ingredient_name_raw") or "").strip(),
+                    "type": str(item.get("type") or "").strip(),
+                    "functions": _safe_str_list(item.get("functions")),
+                    "risk": str(item.get("risk") or "").strip(),
+                    "notes": str(item.get("notes") or "").strip(),
+                }
+            )
+    raw = json.dumps(canonical, ensure_ascii=False, sort_keys=True)
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+
+
+def _split_ingredient_names(raw_name: str) -> tuple[str, str]:
+    text = str(raw_name or "").strip()
+    if not text:
+        return "", ""
+
+    english_candidates: list[str] = []
+    for match in re.finditer(r"[A-Za-z][A-Za-z0-9\-\s_/.,]*", text):
+        token = str(match.group(0) or "").strip(" ,.;，；")
+        if token:
+            english_candidates.append(token)
+
+    cn = re.sub(r"\([^)]*[A-Za-z][^)]*\)", "", text)
+    cn = re.sub(r"（[^）]*[A-Za-z][^）]*）", "", cn)
+    cn = re.sub(r"[A-Za-z][A-Za-z0-9\-\s_/.,]*", "", cn)
+    cn = cn.replace("[", "").replace("]", "")
+    cn = re.sub(r"\s+", "", cn).strip("，,;；()（）")
+
+    en = " ".join(dict.fromkeys(english_candidates)).strip()
+    return cn, en
 
 
 def _suggest_product_duplicates_impl(
@@ -1548,6 +2336,11 @@ def _safe_str_list(value: Any) -> list[str]:
 def _ensure_ingredient_index_table(db: Session) -> None:
     bind = db.get_bind()
     IngredientLibraryIndex.__table__.create(bind=bind, checkfirst=True)
+
+
+def _ensure_product_route_mapping_index_table(db: Session) -> None:
+    bind = db.get_bind()
+    ProductRouteMappingIndex.__table__.create(bind=bind, checkfirst=True)
 
 
 def _load_ingredient_index_map(db: Session, ingredient_ids: list[str]) -> dict[str, IngredientLibraryIndex]:

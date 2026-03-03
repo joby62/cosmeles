@@ -1,0 +1,111 @@
+{
+  "rules_version": "2026-03-03.1",
+  "category": "bodywash",
+  "questions": [
+    {
+      "key": "q1",
+      "title": "气候与微环境",
+      "options": {
+        "A": "干燥寒冷",
+        "B": "干燥炎热",
+        "C": "潮湿闷热",
+        "D": "潮湿寒冷"
+      }
+    },
+    {
+      "key": "q2",
+      "title": "耐受度",
+      "options": {
+        "A": "极度敏感",
+        "B": "屏障健康"
+      }
+    },
+    {
+      "key": "q3",
+      "title": "油脂与角质状态",
+      "options": {
+        "A": "出油旺盛",
+        "B": "缺油干涩",
+        "C": "角质堆积（鸡皮/厚茧）",
+        "D": "状态正常（无明显痛点）"
+      },
+      "required_when": "q2 == 'B'"
+    },
+    {
+      "key": "q4",
+      "title": "冲洗肤感偏好",
+      "options": {
+        "A": "清爽干脆",
+        "B": "柔滑滋润"
+      },
+      "required_when": "q2 == 'B'"
+    },
+    {
+      "key": "q5",
+      "title": "特殊限制",
+      "options": {
+        "A": "极致纯净",
+        "B": "情绪留香"
+      },
+      "required_when": "q2 == 'B'"
+    }
+  ],
+  "route_candidates": [
+    {
+      "route_key": "rescue",
+      "route_title": "恒温舒缓修护型"
+    },
+    {
+      "route_key": "purge",
+      "route_title": "水杨酸净彻控油型"
+    },
+    {
+      "route_key": "polish",
+      "route_title": "乳酸尿素更新型"
+    },
+    {
+      "route_key": "glow",
+      "route_title": "氨基酸亮肤型"
+    },
+    {
+      "route_key": "shield",
+      "route_title": "脂类补充油膏型"
+    },
+    {
+      "route_key": "vibe",
+      "route_title": "轻盈香氛平衡型"
+    }
+  ],
+  "route_mapping_rules_priority": [
+    {
+      "priority": 1,
+      "when_expr": "(q2 == 'A') OR (q5 == 'A')",
+      "route_key": "rescue"
+    },
+    {
+      "priority": 2,
+      "when_expr": "q3 == 'C'",
+      "route_key": "polish"
+    },
+    {
+      "priority": 3,
+      "when_expr": "q3 == 'A'",
+      "route_key": "purge"
+    },
+    {
+      "priority": 4,
+      "when_expr": "(q3 == 'B') OR (q1 == 'A') OR (q1 == 'D' AND q4 == 'B')",
+      "route_key": "shield"
+    },
+    {
+      "priority": 5,
+      "when_expr": "(q1 IN ['B','C']) AND (q3 == 'D') AND (q2 == 'B')",
+      "route_key": "glow"
+    },
+    {
+      "priority": 6,
+      "when_expr": "ELSE",
+      "route_key": "vibe"
+    }
+  ]
+}
