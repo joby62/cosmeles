@@ -70,7 +70,18 @@ MOBILE_OWNER_COOKIE_NAME = "mx_device_id"
 MOBILE_OWNER_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365 * 2
 MOBILE_OWNER_TYPE_DEVICE = "device"
 
-MOBILE_COMPARE_VERSION = "2026-03-03.2"
+MOBILE_COMPARE_VERSION = "2026-03-03.3"
+MOBILE_COMPARE_HEARTBEAT_SECONDS = 2
+MOBILE_COMPARE_STAGE_META: dict[str, str] = {
+    "prepare": "准备对比任务",
+    "resolve_targets": "读取待对比产品",
+    "resolve_target": "整理产品信息",
+    "stage1_vision": "识别图片文字",
+    "stage2_struct": "结构化成分信息",
+    "pair_compare": "生成两两分析",
+    "finalize": "整理最终结论",
+    "done": "对比完成",
+}
 
 CATEGORY_LABELS_ZH: dict[str, str] = {
     "shampoo": "洗发水",
@@ -735,9 +746,18 @@ def run_mobile_compare_job_stream(
     def event_iter():
         while True:
             try:
-                item = events.get(timeout=2)
+                item = events.get(timeout=MOBILE_COMPARE_HEARTBEAT_SECONDS)
             except queue.Empty:
-                yield ": keep-alive\n\n"
+                yield _to_sse(
+                    "heartbeat",
+                    {
+                        "status": "running",
+                        "stage": "pair_compare",
+                        "stage_label": MOBILE_COMPARE_STAGE_META.get("pair_compare"),
+                        "message": "系统仍在分析中，请稍候。",
+                        "ts": now_iso(),
+                    },
+                )
                 continue
             if item is None:
                 break
@@ -818,14 +838,12 @@ def _run_mobile_compare_job(
     category = _normalize_required_category(payload.category)
     compare_id = new_id()
 
-    event_callback(
-        "progress",
-        {
-            "trace_id": compare_id,
-            "stage": "prepare",
-            "message": "已开始准备对比上下文。",
-            "percent": 5,
-        },
+    _emit_compare_progress(
+        event_callback,
+        trace_id=compare_id,
+        stage="prepare",
+        message="正在准备对比上下文。",
+        percent=5,
     )
 
     recommendation_session = _latest_selection_session(
@@ -854,26 +872,22 @@ def _run_mobile_compare_job(
     )
 
     normalized_targets = _normalize_compare_targets(payload=payload, trace_id=compare_id)
-    event_callback(
-        "progress",
-        {
-            "trace_id": compare_id,
-            "stage": "resolve_targets",
-            "message": f"已收到 {len(normalized_targets)} 款产品，正在准备两两对比。",
-            "percent": 12,
-        },
+    _emit_compare_progress(
+        event_callback,
+        trace_id=compare_id,
+        stage="resolve_targets",
+        message=f"已收到 {len(normalized_targets)} 款产品。",
+        percent=12,
     )
 
     resolved_targets: list[dict[str, Any]] = []
     for idx, target in enumerate(normalized_targets, start=1):
-        event_callback(
-            "progress",
-            {
-                "trace_id": compare_id,
-                "stage": "resolve_target",
-                "message": f"正在准备第 {idx}/{len(normalized_targets)} 款产品。",
-                "percent": 18 + idx * 8,
-            },
+        _emit_compare_progress(
+            event_callback,
+            trace_id=compare_id,
+            stage="resolve_target",
+            message=f"正在准备第 {idx}/{len(normalized_targets)} 款产品。",
+            percent=18 + idx * 8,
         )
         target_doc_payload = _resolve_target_product_doc(
             category=category,
@@ -928,14 +942,14 @@ def _run_mobile_compare_job(
     pair_results: list[MobileComparePairResult] = []
     used_models: list[str] = []
     for idx, pair in enumerate(pair_inputs, start=1):
-        event_callback(
-            "progress",
-            {
-                "trace_id": compare_id,
-                "stage": "mobile_compare_summary",
-                "message": f"正在生成第 {idx}/{len(pair_inputs)} 组两两对比结论。",
-                "percent": 62 + int((idx - 1) * 30 / max(1, len(pair_inputs))),
-            },
+        _emit_compare_progress(
+            event_callback,
+            trace_id=compare_id,
+            stage="pair_compare",
+            message=f"正在生成第 {idx}/{len(pair_inputs)} 组两两对比结论。",
+            percent=62 + int((idx - 1) * 30 / max(1, len(pair_inputs))),
+            pair_index=idx,
+            pair_total=len(pair_inputs),
         )
         compare_context = _build_mobile_compare_context(
             category=category,
@@ -1038,16 +1052,46 @@ def _run_mobile_compare_job(
             "result": result.model_dump(),
         },
     )
-    event_callback(
-        "progress",
-        {
-            "trace_id": compare_id,
-            "stage": "done",
-            "message": "对比已完成。",
-            "percent": 100,
-        },
+    _emit_compare_progress(
+        event_callback,
+        trace_id=compare_id,
+        stage="finalize",
+        message="正在整理最终结果。",
+        percent=96,
+    )
+    _emit_compare_progress(
+        event_callback,
+        trace_id=compare_id,
+        stage="done",
+        message="对比已完成。",
+        percent=100,
     )
     return result
+
+
+def _emit_compare_progress(
+    event_callback: Callable[[str, dict[str, Any]], None],
+    *,
+    trace_id: str,
+    stage: str,
+    message: str,
+    percent: int | None = None,
+    pair_index: int | None = None,
+    pair_total: int | None = None,
+) -> None:
+    payload: dict[str, Any] = {
+        "trace_id": trace_id,
+        "stage": stage,
+        "stage_label": MOBILE_COMPARE_STAGE_META.get(stage, "处理中"),
+        "message": str(message or "").strip(),
+        "ts": now_iso(),
+    }
+    if percent is not None:
+        payload["percent"] = int(max(0, min(100, percent)))
+    if pair_index is not None and pair_total is not None and pair_total > 0:
+        payload["pair_index"] = int(pair_index)
+        payload["pair_total"] = int(pair_total)
+    event_callback("progress", payload)
 
 
 def _resolve_compare_profile_context(
@@ -1271,53 +1315,28 @@ def _resolve_target_product_doc(
     pipeline = DoubaoPipelineService()
 
     def on_pipeline_event(event: dict[str, Any]) -> None:
-        event_type = str(event.get("type") or "").strip().lower()
-        stage = str(event.get("stage") or "").strip() or "pipeline"
-        if event_type == "step":
-            event_callback(
-                "progress",
-                {
-                    "trace_id": trace_id,
-                    "stage": stage,
-                    "message": str(event.get("message") or "").strip(),
-                },
-            )
-            return
-        if event_type == "delta":
-            delta = str(event.get("delta") or "")
-            if delta:
-                event_callback(
-                    "partial_text",
-                    {
-                        "trace_id": trace_id,
-                        "channel": stage,
-                        "text": delta,
-                    },
-                )
-            return
-        if event_type.startswith("job_"):
-            event_callback(
-                "progress",
-                {
-                    "trace_id": trace_id,
-                    "stage": stage,
-                    "message": event_type,
-                },
-            )
+        _ = event
+        # Do not forward low-level pipeline deltas/steps to mobile users.
+        return
 
+    _emit_compare_progress(
+        event_callback,
+        trace_id=trace_id,
+        stage="stage1_vision",
+        message="正在识别图片中的品牌、品类与成分信息。",
+        percent=32,
+    )
     stage1 = pipeline.analyze_stage1(
         image_path=image_path,
         trace_id=trace_id,
         event_callback=on_pipeline_event,
     )
-    event_callback(
-        "progress",
-        {
-            "trace_id": trace_id,
-            "stage": "stage2_struct",
-            "message": "正在结构化提取成分与摘要。",
-            "percent": 40,
-        },
+    _emit_compare_progress(
+        event_callback,
+        trace_id=trace_id,
+        stage="stage2_struct",
+        message="正在结构化提取成分与摘要。",
+        percent=40,
     )
     stage2 = pipeline.analyze_stage2(
         vision_text=str(stage1.get("vision_text") or ""),
@@ -1550,38 +1569,27 @@ def _emit_mobile_compare_ai_event(
     event_callback: Callable[[str, dict[str, Any]], None],
 ) -> None:
     event_type = str(event.get("type") or "").strip().lower()
-    stage = str(event.get("stage") or "").strip() or "mobile_compare_summary"
+    stage = str(event.get("stage") or "").strip() or "pair_compare"
     if event_type == "step":
-        event_callback(
-            "progress",
-            {
-                "trace_id": trace_id,
-                "stage": stage,
-                "message": str(event.get("message") or "").strip(),
-            },
+        raw_message = str(event.get("message") or "").strip()
+        lowered = raw_message.lower()
+        # Drop verbose model internals, only keep user-facing milestones.
+        if not raw_message:
+            return
+        if "calling model" in lowered:
+            return
+        if lowered.startswith("job_"):
+            return
+        _emit_compare_progress(
+            event_callback,
+            trace_id=trace_id,
+            stage="pair_compare" if stage == "mobile_compare_summary" else stage,
+            message="本组分析已完成，正在整理建议。" if "completed" in lowered else raw_message,
         )
         return
-    if event_type == "delta":
-        delta = str(event.get("delta") or "")
-        if delta:
-            event_callback(
-                "partial_text",
-                {
-                    "trace_id": trace_id,
-                    "channel": "analysis_live",
-                    "text": delta,
-                },
-            )
+    # Never forward model deltas or orchestrator events to user-facing stream.
+    if event_type in {"delta", "job_started", "job_succeeded", "job_failed"}:
         return
-    if event_type.startswith("job_"):
-        event_callback(
-            "progress",
-            {
-                "trace_id": trace_id,
-                "stage": stage,
-                "message": event_type,
-            },
-        )
 
 
 def _build_mobile_compare_context(
@@ -1954,7 +1962,7 @@ def _latest_selection_session(
             .where(MobileSelectionSession.owner_id == owner_id)
             .where(MobileSelectionSession.category == category)
             .where(MobileSelectionSession.deleted_at.is_(None))
-            .order_by(*_selection_session_order_expr())
+            .order_by(MobileSelectionSession.created_at.desc())
             .limit(1)
         )
         .scalars()
@@ -1965,7 +1973,7 @@ def _latest_selection_session(
 def _selection_basis(row: MobileSelectionSession | None) -> str:
     if row is None:
         return "none"
-    return "pinned" if bool(row.is_pinned) else "latest"
+    return "latest"
 
 
 def _build_profile_summary_from_session(row: MobileSelectionSession | None) -> list[str]:

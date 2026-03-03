@@ -16,6 +16,27 @@ import {
 
 const CATEGORY_ORDER: MobileSelectionCategory[] = ["shampoo", "bodywash", "conditioner", "lotion", "cleanser"];
 const MAX_TOTAL_SELECTION = 3;
+const WAITING_STAGE_ORDER = [
+  "prepare",
+  "resolve_targets",
+  "resolve_target",
+  "stage1_vision",
+  "stage2_struct",
+  "pair_compare",
+  "finalize",
+  "done",
+] as const;
+type WaitingStage = (typeof WAITING_STAGE_ORDER)[number];
+const WAITING_STAGE_LABEL: Record<WaitingStage, string> = {
+  prepare: "准备对比任务",
+  resolve_targets: "读取待对比产品",
+  resolve_target: "整理产品信息",
+  stage1_vision: "识别图片文字",
+  stage2_struct: "结构化成分信息",
+  pair_compare: "生成两两分析",
+  finalize: "整理最终结论",
+  done: "对比完成",
+};
 const CATEGORY_LABEL_ZH: Record<MobileSelectionCategory, string> = {
   shampoo: "洗发水",
   bodywash: "沐浴露",
@@ -39,8 +60,11 @@ export default function MobileComparePage() {
   const [running, setRunning] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
   const [progressHint, setProgressHint] = useState("等待开始");
-  const [liveText, setLiveText] = useState("");
-  const [stageText, setStageText] = useState("");
+  const [activeStage, setActiveStage] = useState<WaitingStage>("prepare");
+  const [activeStageLabel, setActiveStageLabel] = useState(WAITING_STAGE_LABEL.prepare);
+  const [progressPercent, setProgressPercent] = useState(0);
+  const [pairProgress, setPairProgress] = useState<{ index: number; total: number } | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   const recommendationReady = Boolean(bootstrap?.recommendation?.exists);
   const hasHistoryProfile = Boolean(bootstrap?.profile?.has_history_profile);
@@ -94,8 +118,11 @@ export default function MobileComparePage() {
     setBootstrap(null);
     setRunError(null);
     setProgressHint("等待开始");
-    setLiveText("");
-    setStageText("");
+    setActiveStage("prepare");
+    setActiveStageLabel(WAITING_STAGE_LABEL.prepare);
+    setProgressPercent(0);
+    setPairProgress(null);
+    setElapsedSeconds(0);
     setSelectedProductIds([]);
 
     void fetchMobileCompareBootstrap(category)
@@ -128,13 +155,29 @@ export default function MobileComparePage() {
     setSelectedProductIds((prev) => prev.slice(0, maxLibrarySelection));
   }, [maxLibrarySelection, selectedProductIds.length]);
 
+  useEffect(() => {
+    if (!running) {
+      setElapsedSeconds(0);
+      return;
+    }
+    const started = Date.now();
+    const timer = window.setInterval(() => {
+      setElapsedSeconds(Math.max(0, Math.floor((Date.now() - started) / 1000)));
+    }, 1000);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [running]);
+
   async function startCompare() {
     if (running) return;
     setRunError(null);
     setRunning(true);
     setProgressHint("开始准备对比产品...");
-    setLiveText("");
-    setStageText("");
+    setActiveStage("prepare");
+    setActiveStageLabel(WAITING_STAGE_LABEL.prepare);
+    setProgressPercent(4);
+    setPairProgress(null);
 
     void safeTrack("compare_run_start", {
       category,
@@ -180,13 +223,27 @@ export default function MobileComparePage() {
           if (event.event === "progress") {
             const message = String(event.data.message || "").trim();
             const stage = String(event.data.stage || "").trim();
+            const stageLabel = String(event.data.stage_label || "").trim();
+            const percent = Number(event.data.percent);
+            const pairIndex = Number(event.data.pair_index);
+            const pairTotal = Number(event.data.pair_total);
             if (message) setProgressHint(message);
-            if (stage) setStageText((prev) => `${prev}\n[${stage}] ${message || "-"}`.trim());
+            if (stage) {
+              const normalizedStage = WAITING_STAGE_ORDER.includes(stage as WaitingStage) ? (stage as WaitingStage) : "pair_compare";
+              setActiveStage(normalizedStage);
+              setActiveStageLabel(stageLabel || WAITING_STAGE_LABEL[normalizedStage]);
+            }
+            if (Number.isFinite(percent)) {
+              setProgressPercent(Math.max(0, Math.min(100, Math.round(percent))));
+            }
+            if (Number.isFinite(pairIndex) && Number.isFinite(pairTotal) && pairTotal > 0) {
+              setPairProgress({ index: Math.max(1, Math.round(pairIndex)), total: Math.max(1, Math.round(pairTotal)) });
+            }
             return;
           }
-          if (event.event === "partial_text") {
-            const chunk = String(event.data.text || "");
-            if (chunk) setLiveText((prev) => prev + chunk);
+          if (event.event === "heartbeat") {
+            const message = String(event.data.message || "").trim();
+            if (message) setProgressHint(message);
           }
         },
       );
@@ -435,32 +492,103 @@ export default function MobileComparePage() {
         </button>
       </div>
 
-      <div className="mt-3 text-[12px] text-black/55">当前状态：{progressHint}</div>
-
       {runError ? (
         <div className="mt-3 rounded-2xl border border-[#ff8f8f]/45 bg-[#ff5f5f]/10 px-4 py-3 text-[13px] text-[#b53a3a]">
           {runError}
         </div>
       ) : null}
 
-      {(liveText || stageText || running) && (
-        <div className="mt-4 grid grid-cols-1 gap-3">
-          <div className="rounded-xl border border-black/10 bg-[#fbfcff] p-3">
-            <div className="text-[11px] font-semibold text-[#3151d8]">实时文本</div>
-            <pre className="mt-1 max-h-52 overflow-auto whitespace-pre-wrap text-[12px] leading-[1.55] text-black/74">
-              {liveText || (running ? "等待模型输出..." : "-")}
-            </pre>
-          </div>
-          <div className="rounded-xl border border-black/10 bg-white p-3">
-            <div className="text-[11px] font-semibold text-[#3151d8]">阶段进度</div>
-            <pre className="mt-1 max-h-52 overflow-auto whitespace-pre-wrap text-[12px] leading-[1.55] text-black/68">
-              {stageText || "-"}
-            </pre>
-          </div>
-        </div>
+      {running ? (
+        <CompareWaitingPanel
+          stage={activeStage}
+          stageLabel={activeStageLabel}
+          hint={progressHint}
+          percent={progressPercent}
+          pairProgress={pairProgress}
+          elapsedSeconds={elapsedSeconds}
+        />
+      ) : (
+        <div className="mt-3 text-[12px] text-black/55">当前状态：{progressHint}</div>
       )}
     </section>
   );
+}
+
+function CompareWaitingPanel({
+  stage,
+  stageLabel,
+  hint,
+  percent,
+  pairProgress,
+  elapsedSeconds,
+}: {
+  stage: WaitingStage;
+  stageLabel: string;
+  hint: string;
+  percent: number;
+  pairProgress: { index: number; total: number } | null;
+  elapsedSeconds: number;
+}) {
+  const currentStageIndex = WAITING_STAGE_ORDER.indexOf(stage);
+  return (
+    <div className="mt-4 overflow-hidden rounded-[26px] border border-black/10 bg-[linear-gradient(180deg,#f8fbff_0%,#eef4ff_44%,#ffffff_100%)] p-4 shadow-[0_10px_28px_rgba(35,61,102,0.08)]">
+      <div className="flex items-center justify-between">
+        <span className="inline-flex h-7 items-center rounded-full border border-[#b7cef8] bg-[#eaf2ff] px-3 text-[11px] font-semibold text-[#2d5dbc]">
+          豆包正在工作
+        </span>
+        <span className="text-[11px] font-medium text-black/50">{formatDuration(elapsedSeconds)}</span>
+      </div>
+
+      <h3 className="mt-3 text-[19px] font-semibold tracking-[-0.01em] text-black/90">{stageLabel || "正在分析中"}</h3>
+      <p className="mt-1 text-[12px] leading-[1.5] text-black/62">{hint || "系统仍在分析中，请稍候。"}</p>
+
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/80">
+        <div
+          className="h-full rounded-full bg-[linear-gradient(90deg,#82b3ff_0%,#3d7dff_55%,#1f5ce5_100%)] transition-all duration-500"
+          style={{ width: `${Math.max(8, Math.min(100, percent || 8))}%` }}
+        />
+      </div>
+      {pairProgress ? (
+        <div className="mt-2 text-[11px] text-black/56">
+          正在处理第 {pairProgress.index}/{pairProgress.total} 组对比
+        </div>
+      ) : null}
+
+      <div className="mt-4 grid gap-2">
+        {WAITING_STAGE_ORDER.map((item, idx) => {
+          const done = idx < currentStageIndex;
+          const active = item === stage;
+          return (
+            <div
+              key={item}
+              className={`flex items-center justify-between rounded-xl border px-3 py-2 text-[12px] ${
+                active
+                  ? "border-[#9cbcff]/70 bg-[#edf4ff] text-[#2d5dbc]"
+                  : done
+                    ? "border-[#d2dff5] bg-white/85 text-black/66"
+                    : "border-black/8 bg-white/70 text-black/45"
+              }`}
+            >
+              <span>{WAITING_STAGE_LABEL[item]}</span>
+              <span className="text-[11px]">{active ? "进行中" : done ? "已完成" : "等待中"}</span>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 gap-2">
+        <div className="h-20 animate-pulse rounded-2xl border border-black/8 bg-white/75" />
+        <div className="h-20 animate-pulse rounded-2xl border border-black/8 bg-white/75" />
+      </div>
+    </div>
+  );
+}
+
+function formatDuration(totalSeconds: number): string {
+  const seconds = Math.max(0, Math.floor(totalSeconds));
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
 type ProductBadge = "recommendation_primary" | "most_used_primary" | "most_used_secondary";

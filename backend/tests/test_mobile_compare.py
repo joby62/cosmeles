@@ -11,7 +11,12 @@ def _install_fake_ingest_pipeline(monkeypatch: pytest.MonkeyPatch, plan: dict) -
         if event_callback:
             event_callback({"type": "step", "stage": "stage1_vision", "message": "mock"})
         return {
-            "vision_text": f"【品牌】{plan['brand']}\n【产品名】{plan['name']}\n【品类】{plan['category']}",
+            "vision_text": (
+                f"【品牌】{plan['brand']}\n"
+                f"【产品名】{plan['name']}\n"
+                f"【品类】{plan['category']}\n"
+                "【成分表原文】甘油，椰油酰胺丙基甜菜碱"
+            ),
             "model": "doubao-stage1-mini",
             "artifact": f"doubao_runs/{trace_id}/stage1_vision.json",
         }
@@ -73,6 +78,30 @@ def _ingest_one(client, image_name: str = "sample.jpg") -> str:
     return trace_id
 
 
+def _set_featured_slot(client, *, category: str, target_type_key: str, product_id: str) -> None:
+    resp = client.post(
+        "/api/products/featured-slots",
+        json={
+            "category": category,
+            "target_type_key": target_type_key,
+            "product_id": product_id,
+            "updated_by": "pytest",
+        },
+    )
+    assert resp.status_code == 200
+
+
+def _set_shampoo_featured_slots(client, *, product_id: str) -> None:
+    for target_type_key in (
+        "deep-oil-control",
+        "anti-dandruff-itch",
+        "gentle-soothing",
+        "deep-repair",
+        "volume-support",
+    ):
+        _set_featured_slot(client, category="shampoo", target_type_key=target_type_key, product_id=product_id)
+
+
 def _parse_sse_events(raw: str) -> list[tuple[str, dict]]:
     events: list[tuple[str, dict]] = []
     for block in raw.replace("\r\n", "\n").split("\n\n"):
@@ -116,7 +145,8 @@ def test_mobile_compare_stream_success_and_fetch_result(test_client, monkeypatch
             "one_sentence": "洗发测试",
         },
     )
-    _ingest_one(client, "shampoo.jpg")
+    featured_product_id = _ingest_one(client, "shampoo.jpg")
+    _set_shampoo_featured_slots(client, product_id=featured_product_id)
 
     # 先生成历史首推会话
     selection = client.post(
@@ -213,6 +243,7 @@ def test_mobile_compare_stream_success_and_fetch_result(test_client, monkeypatch
 
     assert "error" not in by_event
     assert "result" in by_event
+    assert "partial_text" not in by_event
     result = by_event["result"][0]
     assert result["status"] == "ok"
     assert result["verdict"]["decision"] == "switch"
@@ -275,6 +306,7 @@ def test_mobile_compare_bootstrap_product_library_marks_recommendation_and_most_
         },
     )
     recommendation_product_id = _ingest_one(client, "recommended.jpg")
+    _set_shampoo_featured_slots(client, product_id=current_product_id)
 
     selection = client.post(
         "/api/mobile/selection/resolve",
@@ -390,6 +422,7 @@ def test_mobile_compare_stream_three_targets_runs_three_pairwise_ai_calls(test_c
         {"category": "shampoo", "brand": "BrandB", "name": "ProdB", "one_sentence": "B"},
     )
     product_b = _ingest_one(client, "b.jpg")
+    _set_shampoo_featured_slots(client, product_id=product_a)
 
     selection = client.post(
         "/api/mobile/selection/resolve",
@@ -499,7 +532,8 @@ def test_mobile_compare_bootstrap_uses_latest_session_even_if_older_is_pinned(te
             "one_sentence": "置顶优先",
         },
     )
-    _ingest_one(client, "pin-pref.jpg")
+    featured_product_id = _ingest_one(client, "pin-pref.jpg")
+    _set_shampoo_featured_slots(client, product_id=featured_product_id)
 
     older = client.post(
         "/api/mobile/selection/resolve",
