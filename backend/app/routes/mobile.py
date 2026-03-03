@@ -3,6 +3,7 @@ import json
 import queue
 import threading
 from collections import defaultdict
+from itertools import combinations
 from uuid import uuid4
 from typing import Any, Callable
 
@@ -24,7 +25,10 @@ from app.schemas import (
     MobileCompareIngredientOrderDiff,
     MobileCompareFunctionRankDiff,
     MobileCompareJobRequest,
+    MobileCompareJobTargetInput,
     MobileCompareLibraryProductItem,
+    MobileCompareOverallVerdict,
+    MobileComparePairResult,
     MobileComparePersonalization,
     MobileCompareProfileBootstrap,
     MobileCompareProductLibrary,
@@ -32,6 +36,7 @@ from app.schemas import (
     MobileCompareResultResponse,
     MobileCompareResultSection,
     MobileCompareSourceGuide,
+    MobileCompareTargetProduct,
     MobileCompareTransparency,
     MobileCompareUploadResponse,
     MobileCompareVerdict,
@@ -67,7 +72,7 @@ MOBILE_OWNER_TYPE_DEVICE = "device"
 
 # Bump this version when rule mapping changes.
 MOBILE_RULES_VERSION = "2026-03-03.1"
-MOBILE_COMPARE_VERSION = "2026-03-03.1"
+MOBILE_COMPARE_VERSION = "2026-03-03.2"
 
 FEATURED_PRODUCT_IDS: dict[str, str] = {
     "shampoo": "db1422ec-6263-45cc-966e-0ee9292fd8f1",
@@ -536,7 +541,7 @@ def mobile_compare_bootstrap(
 ):
     owner_type, owner_id, owner_cookie_new = _resolve_owner(request)
     selected_category = _normalize_category_or_default(category)
-    selected_session = _preferred_selection_session(
+    selected_session = _latest_selection_session(
         db=db,
         owner_type=owner_type,
         owner_id=owner_id,
@@ -584,7 +589,7 @@ def mobile_compare_bootstrap(
         recommendation=recommendation,
         product_library=product_library,
         source_guide=MobileCompareSourceGuide(
-            title="上传你正在用的产品，和首推做一次专业对比",
+            title="上传你正在用的产品，和产品库做一次专业对比",
             value_points=[
                 "看懂成分差异，不只看营销词。",
                 "结合你填写的个人情况，给到可执行建议。",
@@ -816,7 +821,7 @@ def _run_mobile_compare_job(
         },
     )
 
-    recommendation_session = _preferred_selection_session(
+    recommendation_session = _latest_selection_session(
         db=db,
         owner_type=owner_type,
         owner_id=owner_id,
@@ -841,114 +846,133 @@ def _run_mobile_compare_job(
         trace_id=compare_id,
     )
 
+    normalized_targets = _normalize_compare_targets(payload=payload, trace_id=compare_id)
     event_callback(
         "progress",
         {
             "trace_id": compare_id,
-            "stage": "stage1_vision",
-            "message": "正在识别你当前产品的包装与成分表。",
-            "percent": 15,
+            "stage": "resolve_targets",
+            "message": f"已收到 {len(normalized_targets)} 款产品，正在准备两两对比。",
+            "percent": 12,
         },
     )
-    current_doc_payload = _resolve_current_product_doc(
-        category=category,
-        payload=payload,
-        owner_type=owner_type,
-        owner_id=owner_id,
-        trace_id=compare_id,
-        event_callback=event_callback,
-        db=db,
-    )
-    current_doc = ProductDoc.model_validate(current_doc_payload)
 
-    event_callback(
-        "progress",
-        {
-            "trace_id": compare_id,
-            "stage": "load_recommended",
-            "message": "正在加载历史首推产品。",
-            "percent": 55,
-        },
-    )
-    recommended_doc_payload = _load_product_doc_payload_by_id(
-        db=db,
-        product_id=recommendation.recommended_product.id,
-        expected_category=category,
-        trace_id=compare_id,
-    )
-    recommended_doc = ProductDoc.model_validate(recommended_doc_payload)
-
-    ingredient_diff = _build_deterministic_ingredient_diff(
-        current_doc=current_doc,
-        recommended_doc=recommended_doc,
-        include_inci_order_diff=payload.options.include_inci_order_diff,
-        include_function_rank_diff=payload.options.include_function_rank_diff,
-    )
-
-    compare_context = _build_mobile_compare_context(
-        category=category,
-        personalization=profile_ctx,
-        recommendation=recommendation,
-        current_doc=current_doc,
-        recommended_doc=recommended_doc,
-        ingredient_diff=ingredient_diff,
-    )
-
-    event_callback(
-        "progress",
-        {
-            "trace_id": compare_id,
-            "stage": "mobile_compare_summary",
-            "message": "正在生成个性化结论。",
-            "percent": 70,
-        },
-    )
-    summary_output = run_capability_now(
-        capability="doubao.mobile_compare_summary",
-        input_payload={"compare_context_json": json.dumps(compare_context, ensure_ascii=False)},
-        trace_id=compare_id,
-        event_callback=lambda e: _emit_mobile_compare_ai_event(
-            event=e,
+    resolved_targets: list[dict[str, Any]] = []
+    for idx, target in enumerate(normalized_targets, start=1):
+        event_callback(
+            "progress",
+            {
+                "trace_id": compare_id,
+                "stage": "resolve_target",
+                "message": f"正在准备第 {idx}/{len(normalized_targets)} 款产品。",
+                "percent": 18 + idx * 8,
+            },
+        )
+        target_doc_payload = _resolve_target_product_doc(
+            category=category,
+            target=target,
+            owner_type=owner_type,
+            owner_id=owner_id,
             trace_id=compare_id,
             event_callback=event_callback,
-        ),
-    )
+            db=db,
+        )
+        target_doc = ProductDoc.model_validate(target_doc_payload)
+        target_id = _target_identity(target)
+        resolved_targets.append(
+            {
+                "target": target,
+                "target_id": target_id,
+                "title": _target_title_from_doc(target_doc),
+                "doc": target_doc,
+            }
+        )
 
-    summary_sections = summary_output.get("sections")
-    if not isinstance(summary_sections, dict):
+    pair_inputs: list[dict[str, Any]] = []
+    for left_idx, right_idx in combinations(range(len(resolved_targets)), 2):
+        left = resolved_targets[left_idx]
+        right = resolved_targets[right_idx]
+        ingredient_diff = _build_deterministic_ingredient_diff(
+            current_doc=left["doc"],
+            recommended_doc=right["doc"],
+            include_inci_order_diff=payload.options.include_inci_order_diff,
+            include_function_rank_diff=payload.options.include_function_rank_diff,
+        )
+        pair_inputs.append(
+            {
+                "pair_key": f"{left_idx + 1}-{right_idx + 1}",
+                "left": left,
+                "right": right,
+                "ingredient_diff": ingredient_diff,
+            }
+        )
+
+    if not pair_inputs:
         raise HTTPException(
-            status_code=500,
+            status_code=422,
             detail={
-                "code": "COMPARE_SUMMARY_INVALID",
-                "detail": "AI summary output sections is invalid.",
-                "retryable": True,
+                "code": "COMPARE_TARGET_COUNT_INVALID",
+                "detail": "At least 2 products are required for compare.",
+                "retryable": False,
                 "trace_id": compare_id,
             },
         )
 
-    sections = [
-        MobileCompareResultSection(
-            key="keep_benefits",
-            title="继续用这款，你最能得到什么",
-            items=[str(item).strip() for item in summary_sections.get("keep_benefits", []) if str(item).strip()],
-        ),
-        MobileCompareResultSection(
-            key="keep_watchouts",
-            title="如果继续用，这些点要多留意",
-            items=[str(item).strip() for item in summary_sections.get("keep_watchouts", []) if str(item).strip()],
-        ),
-        MobileCompareResultSection(
-            key="ingredient_order_diff",
-            title="两款成分排位，哪里不一样",
-            items=[str(item).strip() for item in summary_sections.get("ingredient_order_diff", []) if str(item).strip()],
-        ),
-        MobileCompareResultSection(
-            key="profile_fit_advice",
-            title="结合你填写的个人情况，更适合你的用法",
-            items=[str(item).strip() for item in summary_sections.get("profile_fit_advice", []) if str(item).strip()],
-        ),
-    ]
+    pair_results: list[MobileComparePairResult] = []
+    used_models: list[str] = []
+    for idx, pair in enumerate(pair_inputs, start=1):
+        event_callback(
+            "progress",
+            {
+                "trace_id": compare_id,
+                "stage": "mobile_compare_summary",
+                "message": f"正在生成第 {idx}/{len(pair_inputs)} 组两两对比结论。",
+                "percent": 62 + int((idx - 1) * 30 / max(1, len(pair_inputs))),
+            },
+        )
+        compare_context = _build_mobile_compare_context(
+            category=category,
+            personalization=profile_ctx,
+            recommendation=recommendation,
+            current_doc=pair["left"]["doc"],
+            recommended_doc=pair["right"]["doc"],
+            ingredient_diff=pair["ingredient_diff"],
+        )
+        summary_output = run_capability_now(
+            capability="doubao.mobile_compare_summary",
+            input_payload={"compare_context_json": json.dumps(compare_context, ensure_ascii=False)},
+            trace_id=compare_id,
+            event_callback=lambda e: _emit_mobile_compare_ai_event(
+                event=e,
+                trace_id=compare_id,
+                event_callback=event_callback,
+            ),
+        )
 
+        sections = _build_compare_sections_from_summary(summary_output=summary_output, trace_id=compare_id)
+        verdict = MobileCompareVerdict(
+            decision=str(summary_output.get("decision") or "hybrid"),
+            headline=str(summary_output.get("headline") or "").strip(),
+            confidence=float(summary_output.get("confidence") or 0.0),
+        )
+        pair_results.append(
+            MobileComparePairResult(
+                pair_key=str(pair["pair_key"]),
+                left_target_id=str(pair["left"]["target_id"]),
+                right_target_id=str(pair["right"]["target_id"]),
+                left_title=str(pair["left"]["title"]),
+                right_title=str(pair["right"]["title"]),
+                verdict=verdict,
+                sections=sections,
+                ingredient_diff=pair["ingredient_diff"],
+            )
+        )
+        model_name = str(summary_output.get("model") or "").strip()
+        if model_name and model_name not in used_models:
+            used_models.append(model_name)
+
+    primary_pair = pair_results[0]
+    overall = _build_overall_verdict(pair_results)
     personalization = MobileComparePersonalization(
         status=profile_ctx["status"],
         basis=profile_ctx["basis"],
@@ -959,6 +983,17 @@ def _run_mobile_compare_job(
     if personalization.status != "complete":
         warnings.append("你这次没有补全个人情况，个性化结论置信度会下降。")
 
+    products = [
+        MobileCompareTargetProduct(
+            target_id=str(item["target_id"]),
+            source=str(item["target"].source),
+            brand=item["doc"].product.brand,
+            name=item["doc"].product.name,
+            one_sentence=item["doc"].summary.one_sentence,
+        )
+        for item in resolved_targets
+    ]
+
     result = MobileCompareResultResponse(
         status="ok",
         trace_id=compare_id,
@@ -966,20 +1001,23 @@ def _run_mobile_compare_job(
         category=category,
         personalization=personalization,
         verdict=MobileCompareVerdict(
-            decision=str(summary_output.get("decision") or "hybrid"),
-            headline=str(summary_output.get("headline") or "").strip(),
-            confidence=float(summary_output.get("confidence") or 0.0),
+            decision=overall.decision,
+            headline=overall.headline,
+            confidence=overall.confidence,
         ),
-        sections=sections,
-        ingredient_diff=ingredient_diff,
+        sections=primary_pair.sections,
+        ingredient_diff=primary_pair.ingredient_diff,
         transparency=MobileCompareTransparency(
-            model=str(summary_output.get("model") or "") or None,
+            model="|".join(used_models) if used_models else None,
             warnings=warnings,
             missing_fields=list(profile_ctx["missing_fields"]),
         ),
         recommendation=recommendation,
-        current_product=current_doc,
-        recommended_product=recommended_doc,
+        current_product=resolved_targets[0]["doc"],
+        recommended_product=resolved_targets[1]["doc"],
+        products=products,
+        pair_results=pair_results,
+        overall=overall,
         created_at=now_iso(),
     )
 
@@ -1040,19 +1078,136 @@ def _resolve_compare_profile_context(
     }
 
 
-def _resolve_current_product_doc(
+def _normalize_compare_targets(
+    *,
+    payload: MobileCompareJobRequest,
+    trace_id: str,
+) -> list[MobileCompareJobTargetInput]:
+    raw_targets = list(payload.targets or [])
+    if not raw_targets:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "COMPARE_TARGETS_REQUIRED",
+                "detail": "targets is required and must include 2 or 3 products.",
+                "retryable": False,
+                "trace_id": trace_id,
+            },
+        )
+
+    normalized: list[MobileCompareJobTargetInput] = []
+    seen: set[str] = set()
+    upload_count = 0
+    for item in raw_targets:
+        source = str(item.source or "").strip().lower()
+        if source == "upload_new":
+            upload_id = str(item.upload_id or "").strip()
+            if not upload_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "code": "COMPARE_UPLOAD_ID_REQUIRED",
+                        "detail": "upload_id is required when source=upload_new.",
+                        "retryable": False,
+                        "trace_id": trace_id,
+                    },
+                )
+            key = f"upload:{upload_id}"
+            upload_count += 1
+            target = MobileCompareJobTargetInput(source="upload_new", upload_id=upload_id)
+        elif source == "history_product":
+            product_id = str(item.product_id or "").strip()
+            if not product_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "code": "COMPARE_CURRENT_PRODUCT_ID_REQUIRED",
+                        "detail": "product_id is required when source=history_product.",
+                        "retryable": False,
+                        "trace_id": trace_id,
+                    },
+                )
+            key = f"history:{product_id}"
+            target = MobileCompareJobTargetInput(source="history_product", product_id=product_id)
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "COMPARE_SOURCE_INVALID",
+                    "detail": f"Unsupported target.source: {source}.",
+                    "retryable": False,
+                    "trace_id": trace_id,
+                },
+            )
+
+        if key in seen:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "COMPARE_TARGET_DUPLICATE",
+                    "detail": f"Duplicate target is not allowed: {key}.",
+                    "retryable": False,
+                    "trace_id": trace_id,
+                },
+            )
+        seen.add(key)
+        normalized.append(target)
+
+    if upload_count > 1:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "COMPARE_UPLOAD_TARGET_LIMIT",
+                "detail": "At most one upload target is supported.",
+                "retryable": False,
+                "trace_id": trace_id,
+            },
+        )
+    if len(normalized) < 2 or len(normalized) > 3:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "COMPARE_TARGET_COUNT_INVALID",
+                "detail": "targets count must be between 2 and 3.",
+                "retryable": False,
+                "trace_id": trace_id,
+            },
+        )
+    return normalized
+
+
+def _target_identity(target: MobileCompareJobTargetInput) -> str:
+    source = str(target.source or "").strip().lower()
+    if source == "upload_new":
+        return f"upload:{str(target.upload_id or '').strip()}"
+    return f"product:{str(target.product_id or '').strip()}"
+
+
+def _target_title_from_doc(doc: ProductDoc) -> str:
+    brand = str(doc.product.brand or "").strip()
+    name = str(doc.product.name or "").strip()
+    if brand and name:
+        return f"{brand} {name}"
+    if name:
+        return name
+    if brand:
+        return brand
+    return "未命名产品"
+
+
+def _resolve_target_product_doc(
     *,
     category: str,
-    payload: MobileCompareJobRequest,
+    target: MobileCompareJobTargetInput,
     owner_type: str,
     owner_id: str,
     trace_id: str,
     event_callback: Callable[[str, dict[str, Any]], None],
     db: Session,
 ) -> dict[str, Any]:
-    source = str(payload.current_product.source or "upload_new").strip().lower()
+    source = str(target.source or "upload_new").strip().lower()
     if source == "history_product":
-        product_id = str(payload.current_product.product_id or "").strip()
+        product_id = str(target.product_id or "").strip()
         if not product_id:
             raise HTTPException(
                 status_code=400,
@@ -1069,7 +1224,6 @@ def _resolve_current_product_doc(
             expected_category=category,
             trace_id=trace_id,
         )
-        _increase_product_usage_count(product_id=product_id, category=category)
         return doc
 
     if source != "upload_new":
@@ -1077,13 +1231,13 @@ def _resolve_current_product_doc(
             status_code=400,
             detail={
                 "code": "COMPARE_SOURCE_INVALID",
-                "detail": f"Unsupported current_product.source: {source}.",
+                "detail": f"Unsupported target.source: {source}.",
                 "retryable": False,
                 "trace_id": trace_id,
             },
         )
 
-    upload_id = str(payload.current_product.upload_id or "").strip()
+    upload_id = str(target.upload_id or "").strip()
     if not upload_id:
         raise HTTPException(
             status_code=400,
@@ -1222,6 +1376,91 @@ def _resolve_current_product_doc(
     if matched_product_id:
         _increase_product_usage_count(product_id=matched_product_id, category=category)
     return normalized
+
+
+def _build_compare_sections_from_summary(
+    *,
+    summary_output: dict[str, Any],
+    trace_id: str,
+) -> list[MobileCompareResultSection]:
+    summary_sections = summary_output.get("sections")
+    if not isinstance(summary_sections, dict):
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "COMPARE_SUMMARY_INVALID",
+                "detail": "AI summary output sections is invalid.",
+                "retryable": True,
+                "trace_id": trace_id,
+            },
+        )
+    return [
+        MobileCompareResultSection(
+            key="keep_benefits",
+            title="继续用这款，你最能得到什么",
+            items=[str(item).strip() for item in summary_sections.get("keep_benefits", []) if str(item).strip()],
+        ),
+        MobileCompareResultSection(
+            key="keep_watchouts",
+            title="如果继续用，这些点要多留意",
+            items=[str(item).strip() for item in summary_sections.get("keep_watchouts", []) if str(item).strip()],
+        ),
+        MobileCompareResultSection(
+            key="ingredient_order_diff",
+            title="两款成分排位，哪里不一样",
+            items=[str(item).strip() for item in summary_sections.get("ingredient_order_diff", []) if str(item).strip()],
+        ),
+        MobileCompareResultSection(
+            key="profile_fit_advice",
+            title="结合你填写的个人情况，更适合你的用法",
+            items=[str(item).strip() for item in summary_sections.get("profile_fit_advice", []) if str(item).strip()],
+        ),
+    ]
+
+
+def _build_overall_verdict(pair_results: list[MobileComparePairResult]) -> MobileCompareOverallVerdict:
+    if not pair_results:
+        return MobileCompareOverallVerdict(
+            decision="hybrid",
+            headline="暂无可用对比结论。",
+            confidence=0.0,
+            summary_items=[],
+        )
+
+    if len(pair_results) == 1:
+        first = pair_results[0]
+        return MobileCompareOverallVerdict(
+            decision=first.verdict.decision,
+            headline=first.verdict.headline,
+            confidence=first.verdict.confidence,
+            summary_items=[f"{first.left_title} vs {first.right_title}：{first.verdict.headline}"],
+        )
+
+    decisions = {item.verdict.decision for item in pair_results}
+    confidence = sum(float(item.verdict.confidence or 0.0) for item in pair_results) / len(pair_results)
+    if len(decisions) == 1:
+        decision = pair_results[0].verdict.decision
+    else:
+        decision = "hybrid"
+
+    if decision == "keep":
+        headline = "多组两两对比后，整体更建议优先选择更稳妥的一款。"
+    elif decision == "switch":
+        headline = "多组两两对比后，整体更建议替换到更匹配的一款。"
+    else:
+        headline = "多组两两对比后，按场景分配使用会更合适。"
+
+    summary_items = [
+        f"{item.left_title} vs {item.right_title}：{item.verdict.headline}"
+        for item in pair_results[:3]
+        if str(item.verdict.headline or "").strip()
+    ]
+    return MobileCompareOverallVerdict(
+        decision=decision,
+        headline=headline,
+        confidence=round(confidence, 4),
+        summary_items=summary_items,
+    )
 
 
 def _load_mobile_compare_upload_meta(
@@ -1694,7 +1933,7 @@ def _selection_session_order_expr():
     )
 
 
-def _preferred_selection_session(
+def _latest_selection_session(
     *,
     db: Session,
     owner_type: str,
@@ -1708,7 +1947,7 @@ def _preferred_selection_session(
             .where(MobileSelectionSession.owner_id == owner_id)
             .where(MobileSelectionSession.category == category)
             .where(MobileSelectionSession.deleted_at.is_(None))
-            .order_by(*_selection_session_order_expr())
+            .order_by(MobileSelectionSession.created_at.desc())
             .limit(1)
         )
         .scalars()
@@ -1719,7 +1958,7 @@ def _preferred_selection_session(
 def _selection_basis(row: MobileSelectionSession | None) -> str:
     if row is None:
         return "none"
-    return "pinned" if bool(row.is_pinned) else "latest"
+    return "latest"
 
 
 def _build_profile_summary_from_session(row: MobileSelectionSession | None) -> list[str]:

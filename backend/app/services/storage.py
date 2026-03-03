@@ -18,7 +18,8 @@ CONTENT_TYPE_TO_EXT = {
 }
 
 def now_iso():
-    return datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    # Keep UTC ISO format but include microseconds to avoid same-second ordering ties.
+    return datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 def ensure_dirs():
     os.makedirs(settings.storage_dir, exist_ok=True)

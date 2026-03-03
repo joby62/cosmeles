@@ -425,7 +425,7 @@ class MobileCompareUploadResponse(BaseModel):
     created_at: str
 
 
-class MobileCompareJobCurrentProductInput(BaseModel):
+class MobileCompareJobTargetInput(BaseModel):
     source: Literal["upload_new", "history_product"] = "upload_new"
     upload_id: Optional[str] = None
     product_id: Optional[str] = None
@@ -441,7 +441,7 @@ class MobileCompareJobRequest(BaseModel):
     category: str
     profile_mode: Literal["reuse_latest"] = "reuse_latest"
     profile_answers: dict[str, str] = Field(default_factory=dict)
-    current_product: MobileCompareJobCurrentProductInput
+    targets: List[MobileCompareJobTargetInput] = Field(default_factory=list)
     options: MobileCompareJobOptions = Field(default_factory=MobileCompareJobOptions)
 
 
@@ -489,6 +489,32 @@ class MobileCompareTransparency(BaseModel):
     missing_fields: List[str] = Field(default_factory=list)
 
 
+class MobileCompareTargetProduct(BaseModel):
+    target_id: str
+    source: Literal["upload_new", "history_product"]
+    brand: Optional[str] = None
+    name: Optional[str] = None
+    one_sentence: Optional[str] = None
+
+
+class MobileComparePairResult(BaseModel):
+    pair_key: str
+    left_target_id: str
+    right_target_id: str
+    left_title: str
+    right_title: str
+    verdict: MobileCompareVerdict
+    sections: List[MobileCompareResultSection] = Field(default_factory=list)
+    ingredient_diff: MobileCompareIngredientDiff
+
+
+class MobileCompareOverallVerdict(BaseModel):
+    decision: Literal["keep", "switch", "hybrid"]
+    headline: str
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    summary_items: List[str] = Field(default_factory=list)
+
+
 class MobileCompareResultResponse(BaseModel):
     status: str
     trace_id: str
@@ -502,6 +528,9 @@ class MobileCompareResultResponse(BaseModel):
     recommendation: MobileSelectionResolveResponse
     current_product: ProductDoc
     recommended_product: ProductDoc
+    products: List[MobileCompareTargetProduct] = Field(default_factory=list)
+    pair_results: List[MobileComparePairResult] = Field(default_factory=list)
+    overall: Optional[MobileCompareOverallVerdict] = None
     created_at: str
 
 

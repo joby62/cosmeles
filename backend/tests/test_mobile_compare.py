@@ -124,6 +124,7 @@ def test_mobile_compare_stream_success_and_fetch_result(test_client, monkeypatch
         json={"category": "shampoo", "answers": {"q1": "A", "q2": "C", "q3": "B"}},
     )
     assert selection.status_code == 200
+    recommendation_product_id = selection.json()["recommended_product"]["id"]
 
     upload = client.post(
         "/api/mobile/compare/current-product/upload",
@@ -197,7 +198,10 @@ def test_mobile_compare_stream_success_and_fetch_result(test_client, monkeypatch
         json={
             "category": "shampoo",
             "profile_mode": "reuse_latest",
-            "current_product": {"source": "upload_new", "upload_id": upload_id},
+            "targets": [
+                {"source": "upload_new", "upload_id": upload_id},
+                {"source": "history_product", "product_id": recommendation_product_id},
+            ],
             "options": {"include_inci_order_diff": True, "include_function_rank_diff": True},
         },
     )
@@ -212,7 +216,8 @@ def test_mobile_compare_stream_success_and_fetch_result(test_client, monkeypatch
     result = by_event["result"][0]
     assert result["status"] == "ok"
     assert result["verdict"]["decision"] == "switch"
-    assert result["sections"][0]["key"] == "keep_benefits"
+    assert result["pair_results"][0]["sections"][0]["key"] == "keep_benefits"
+    assert len(result["pair_results"]) == 1
     assert result["trace_id"]
 
     fetched = client.get(f"/api/mobile/compare/results/{result['compare_id']}")
@@ -229,7 +234,10 @@ def test_mobile_compare_stream_returns_real_error_when_no_recommendation(test_cl
         json={
             "category": "shampoo",
             "profile_mode": "reuse_latest",
-            "current_product": {"source": "history_product", "product_id": "missing-id"},
+            "targets": [
+                {"source": "history_product", "product_id": "missing-id-1"},
+                {"source": "history_product", "product_id": "missing-id-2"},
+            ],
             "options": {"include_inci_order_diff": True, "include_function_rank_diff": True},
         },
     )
@@ -276,6 +284,7 @@ def test_mobile_compare_bootstrap_product_library_marks_recommendation_and_most_
     selected_recommendation_id = selection.json()["recommended_product"]["id"]
     assert selected_recommendation_id in {current_product_id, recommendation_product_id}
     usage_target_id = current_product_id if selected_recommendation_id != current_product_id else recommendation_product_id
+    usage_brand, usage_name = ("BrandA", "UseMe") if usage_target_id == current_product_id else ("BrandB", "TopPick")
 
     def fake_run_capability_now(capability: str, input_payload: dict, trace_id: str | None = None, event_callback=None):
         assert capability == "doubao.mobile_compare_summary"
@@ -292,14 +301,60 @@ def test_mobile_compare_bootstrap_product_library_marks_recommendation_and_most_
             "model": "doubao-pro",
         }
 
+    class FakePipeline:
+        def analyze_stage1(self, image_path: str, trace_id: str | None = None, event_callback=None):
+            if event_callback:
+                event_callback({"type": "step", "stage": "stage1_vision", "message": "stage1 done"})
+            return {
+                "vision_text": "mock vision",
+                "model": "doubao-stage1-mini",
+                "artifact": f"doubao_runs/{trace_id}/stage1_vision.json",
+            }
+
+        def analyze_stage2(self, vision_text: str, trace_id: str | None = None, event_callback=None):
+            if event_callback:
+                event_callback({"type": "step", "stage": "stage2_struct", "message": "stage2 done"})
+            return {
+                "doc": {
+                    "product": {"category": "shampoo", "brand": "UploadBrand", "name": "UploadName"},
+                    "summary": {
+                        "one_sentence": "上传产品摘要",
+                        "pros": ["即时顺滑"],
+                        "cons": ["可能偏干"],
+                        "who_for": ["正常发质"],
+                        "who_not_for": ["极敏感头皮"],
+                    },
+                    "ingredients": [
+                        {"name": "甘油", "type": "保湿剂", "functions": ["保湿"], "risk": "low", "notes": ""},
+                        {"name": "月桂醇硫酸酯钠", "type": "表活", "functions": ["清洁"], "risk": "high", "notes": ""},
+                    ],
+                    "evidence": {"doubao_raw": ""},
+                },
+                "struct_text": "{\"ok\":true}",
+                "model": "doubao-stage2-mini",
+                "artifact": f"doubao_runs/{trace_id}/stage2_struct.json",
+            }
+
+    monkeypatch.setattr(mobile_routes, "DoubaoPipelineService", FakePipeline)
     monkeypatch.setattr(mobile_routes, "run_capability_now", fake_run_capability_now)
+
+    upload = client.post(
+        "/api/mobile/compare/current-product/upload",
+        data={"category": "shampoo", "brand": usage_brand, "name": usage_name},
+        files={"image": ("usage.jpg", b"fake-current-jpeg", "image/jpeg")},
+    )
+    assert upload.status_code == 200
+    upload_id = upload.json()["upload_id"]
 
     stream_resp = client.post(
         "/api/mobile/compare/jobs/stream",
         json={
             "category": "shampoo",
             "profile_mode": "reuse_latest",
-            "current_product": {"source": "history_product", "product_id": usage_target_id},
+            "targets": [
+                {"source": "upload_new", "upload_id": upload_id},
+                {"source": "history_product", "product_id": selected_recommendation_id},
+            ],
         },
     )
     assert stream_resp.status_code == 200
@@ -321,7 +376,118 @@ def test_mobile_compare_bootstrap_product_library_marks_recommendation_and_most_
     assert most_used_item["usage_count"] == 1
 
 
-def test_mobile_compare_bootstrap_prefers_pinned_session(test_client, monkeypatch: pytest.MonkeyPatch):
+def test_mobile_compare_stream_three_targets_runs_three_pairwise_ai_calls(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, _ = test_client
+
+    _install_fake_ingest_pipeline(
+        monkeypatch,
+        {"category": "shampoo", "brand": "BrandA", "name": "ProdA", "one_sentence": "A"},
+    )
+    product_a = _ingest_one(client, "a.jpg")
+
+    _install_fake_ingest_pipeline(
+        monkeypatch,
+        {"category": "shampoo", "brand": "BrandB", "name": "ProdB", "one_sentence": "B"},
+    )
+    product_b = _ingest_one(client, "b.jpg")
+
+    selection = client.post(
+        "/api/mobile/selection/resolve",
+        json={"category": "shampoo", "answers": {"q1": "A", "q2": "C", "q3": "B"}},
+    )
+    assert selection.status_code == 200
+    recommended = selection.json()["recommended_product"]["id"]
+
+    upload = client.post(
+        "/api/mobile/compare/current-product/upload",
+        data={"category": "shampoo", "brand": "UploadBrand", "name": "UploadName"},
+        files={"image": ("upload.jpg", b"fake-current-jpeg", "image/jpeg")},
+    )
+    assert upload.status_code == 200
+    upload_id = upload.json()["upload_id"]
+
+    class FakePipeline:
+        def analyze_stage1(self, image_path: str, trace_id: str | None = None, event_callback=None):
+            if event_callback:
+                event_callback({"type": "step", "stage": "stage1_vision", "message": "stage1 done"})
+            return {
+                "vision_text": "mock vision",
+                "model": "doubao-stage1-mini",
+                "artifact": f"doubao_runs/{trace_id}/stage1_vision.json",
+            }
+
+        def analyze_stage2(self, vision_text: str, trace_id: str | None = None, event_callback=None):
+            if event_callback:
+                event_callback({"type": "step", "stage": "stage2_struct", "message": "stage2 done"})
+            return {
+                "doc": {
+                    "product": {"category": "shampoo", "brand": "UploadBrand", "name": "UploadName"},
+                    "summary": {
+                        "one_sentence": "上传产品摘要",
+                        "pros": ["即时顺滑"],
+                        "cons": ["可能偏干"],
+                        "who_for": ["正常发质"],
+                        "who_not_for": ["极敏感头皮"],
+                    },
+                    "ingredients": [
+                        {"name": "甘油", "type": "保湿剂", "functions": ["保湿"], "risk": "low", "notes": ""},
+                        {"name": "月桂醇硫酸酯钠", "type": "表活", "functions": ["清洁"], "risk": "high", "notes": ""},
+                    ],
+                    "evidence": {"doubao_raw": ""},
+                },
+                "struct_text": "{\"ok\":true}",
+                "model": "doubao-stage2-mini",
+                "artifact": f"doubao_runs/{trace_id}/stage2_struct.json",
+            }
+
+    pair_calls: list[str] = []
+
+    def fake_run_capability_now(capability: str, input_payload: dict, trace_id: str | None = None, event_callback=None):
+        assert capability == "doubao.mobile_compare_summary"
+        pair_calls.append(str(input_payload.get("compare_context_json") or ""))
+        return {
+            "decision": "hybrid",
+            "headline": "两款适合分场景使用。",
+            "confidence": 0.66,
+            "sections": {
+                "keep_benefits": ["A"],
+                "keep_watchouts": ["B"],
+                "ingredient_order_diff": ["C"],
+                "profile_fit_advice": ["D"],
+            },
+            "model": "doubao-pro",
+        }
+
+    monkeypatch.setattr(mobile_routes, "DoubaoPipelineService", FakePipeline)
+    monkeypatch.setattr(mobile_routes, "run_capability_now", fake_run_capability_now)
+
+    extra_history = product_b if recommended != product_b else product_a
+    stream_resp = client.post(
+        "/api/mobile/compare/jobs/stream",
+        json={
+            "category": "shampoo",
+            "profile_mode": "reuse_latest",
+            "targets": [
+                {"source": "upload_new", "upload_id": upload_id},
+                {"source": "history_product", "product_id": recommended},
+                {"source": "history_product", "product_id": extra_history},
+            ],
+        },
+    )
+    assert stream_resp.status_code == 200
+    events = _parse_sse_events(stream_resp.text)
+    by_event = {}
+    for name, payload in events:
+        by_event.setdefault(name, []).append(payload)
+    assert "error" not in by_event
+    assert "result" in by_event
+    result = by_event["result"][0]
+    assert len(result["pair_results"]) == 3
+    assert {item["pair_key"] for item in result["pair_results"]} == {"1-2", "1-3", "2-3"}
+    assert len(pair_calls) == 3
+
+
+def test_mobile_compare_bootstrap_uses_latest_session_even_if_older_is_pinned(test_client, monkeypatch: pytest.MonkeyPatch):
     client, _ = test_client
 
     _install_fake_ingest_pipeline(
@@ -360,5 +526,5 @@ def test_mobile_compare_bootstrap_prefers_pinned_session(test_client, monkeypatc
     bootstrap = client.get("/api/mobile/compare/bootstrap", params={"category": "shampoo"})
     assert bootstrap.status_code == 200
     body = bootstrap.json()
-    assert body["profile"]["basis"] == "pinned"
-    assert body["recommendation"]["session_id"] == older_session_id
+    assert body["profile"]["basis"] == "latest"
+    assert body["recommendation"]["session_id"] == latest_session_id

@@ -396,14 +396,16 @@ export type MobileCompareUploadResponse = {
   created_at: string;
 };
 
+export type MobileCompareJobTargetInput = {
+  source: "upload_new" | "history_product";
+  upload_id?: string | null;
+  product_id?: string | null;
+};
+
 export type MobileCompareJobRequest = {
   category: MobileSelectionCategory;
   profile_mode: "reuse_latest";
-  current_product: {
-    source: "upload_new" | "history_product";
-    upload_id?: string | null;
-    product_id?: string | null;
-  };
+  targets: MobileCompareJobTargetInput[];
   options?: {
     language?: string;
     include_inci_order_diff?: boolean;
@@ -456,6 +458,47 @@ export type MobileCompareResult = {
   recommendation: MobileSelectionResolveResponse;
   current_product: ProductDoc;
   recommended_product: ProductDoc;
+  products?: Array<{
+    target_id: string;
+    source: "upload_new" | "history_product";
+    brand?: string | null;
+    name?: string | null;
+    one_sentence?: string | null;
+  }>;
+  pair_results?: Array<{
+    pair_key: string;
+    left_target_id: string;
+    right_target_id: string;
+    left_title: string;
+    right_title: string;
+    verdict: {
+      decision: "keep" | "switch" | "hybrid";
+      headline: string;
+      confidence: number;
+    };
+    sections: MobileCompareResultSection[];
+    ingredient_diff: {
+      overlap: string[];
+      only_current: string[];
+      only_recommended: string[];
+      inci_order_diff: Array<{
+        ingredient: string;
+        current_rank: number;
+        recommended_rank: number;
+      }>;
+      function_rank_diff: Array<{
+        function: string;
+        current_score: number;
+        recommended_score: number;
+      }>;
+    };
+  }>;
+  overall?: {
+    decision: "keep" | "switch" | "hybrid";
+    headline: string;
+    confidence: number;
+    summary_items: string[];
+  } | null;
   created_at: string;
 };
 

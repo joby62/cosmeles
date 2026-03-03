@@ -606,7 +606,8 @@ def _cap_mobile_compare_summary(
             response_payload={"mode": "sample"},
         )
 
-    sdk, _, _, text_model = _build_sdk_and_models()
+    sdk, _, _, _ = _build_sdk_and_models()
+    text_model = settings.doubao_pro_model or "doubao-seed-2-0-pro-260215"
     _emit(
         event_callback,
         {"type": "step", "stage": "mobile_compare_summary", "message": f"Calling model {text_model}."},
