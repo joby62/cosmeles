@@ -137,20 +137,20 @@ function getConfidenceMeta(confidence: number): ConfidenceMeta {
     return {
       label: "证据较强",
       hint: "可直接参考",
-      chipClass: "border-[#4dd7a8]/40 bg-[#4dd7a8]/15 text-[#7ff2c8]",
+      chipClass: "m-wiki-chip m-wiki-chip-strong",
     };
   }
   if (confidence >= 60) {
     return {
       label: "证据中等",
       hint: "建议结合场景",
-      chipClass: "border-[#f4c465]/40 bg-[#f4c465]/15 text-[#ffd992]",
+      chipClass: "m-wiki-chip m-wiki-chip-medium",
     };
   }
   return {
     label: "证据较弱",
     hint: "先小范围尝试",
-    chipClass: "border-[#ff8f8f]/40 bg-[#ff8f8f]/15 text-[#ffb3b3]",
+    chipClass: "m-wiki-chip m-wiki-chip-weak",
   };
 }
 
@@ -297,8 +297,8 @@ export default async function IngredientDetailPage({
           </div>
 
           {weakEvidence ? (
-            <div className="mt-3 flex items-start gap-2 rounded-2xl border border-[#f4c465]/55 bg-[#f4c465]/16 px-3 py-2.5 text-[13px] leading-[1.45] text-[#ffe1a6]">
-              <span className="mt-[0.42em] h-1.5 w-1.5 shrink-0 rounded-full bg-[#ffd992]" />
+            <div className="m-wiki-alert mt-3 flex items-start gap-2 rounded-2xl border px-3 py-2.5 text-[13px] leading-[1.45]">
+              <span className="m-wiki-alert-dot mt-[0.42em] h-1.5 w-1.5 shrink-0 rounded-full" />
               <p>{weakEvidenceNotice}</p>
             </div>
           ) : null}
@@ -382,10 +382,10 @@ export default async function IngredientDetailPage({
 function KeyPill({ label, value, tone }: { label: string; value: string; tone: "good" | "warn" | "info" }) {
   const cls =
     tone === "good"
-      ? "border-[#4dd7a8]/35 bg-[#4dd7a8]/12 text-[#9ff5d7]"
+      ? "m-wiki-pill m-wiki-pill-good"
       : tone === "warn"
-        ? "border-[#ff8f8f]/35 bg-[#ff8f8f]/12 text-[#ffc3c3]"
-        : "border-[#6bb4ff]/35 bg-[#6bb4ff]/12 text-[#b5d8ff]";
+        ? "m-wiki-pill m-wiki-pill-warn"
+        : "m-wiki-pill m-wiki-pill-info";
 
   return (
     <span className={`inline-flex h-7 items-center gap-1 rounded-full border px-2.5 text-[12px] ${cls}`}>
@@ -406,7 +406,7 @@ function TagPanel({
   emptyText: string;
   tone: "good" | "warn";
 }) {
-  const cls = tone === "good" ? "border-[#4dd7a8]/30 bg-[#4dd7a8]/10 text-[#a9f7dc]" : "border-[#ff8f8f]/30 bg-[#ff8f8f]/10 text-[#ffcaca]";
+  const cls = tone === "good" ? "m-wiki-tag m-wiki-tag-good" : "m-wiki-tag m-wiki-tag-warn";
 
   return (
     <section className="rounded-[22px] border border-white/10 bg-white/[0.04] px-4 py-4 backdrop-blur-xl">

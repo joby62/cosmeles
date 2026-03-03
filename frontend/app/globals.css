@@ -294,15 +294,15 @@ html[data-nav-open="1"] #app-main{
   --m-nav-active-text: #0071e3;
 
   --m-wiki-canvas: #f2f5fa;
-  --m-wiki-text-strong: rgba(17,24,39,0.94);
-  --m-wiki-text-mid: rgba(36,48,71,0.76);
-  --m-wiki-text-soft: rgba(66,81,109,0.58);
-  --m-wiki-border: rgba(17,24,39,0.12);
-  --m-wiki-frost: rgba(255,255,255,0.66);
-  --m-wiki-elev: rgba(17,24,39,0.05);
-  --m-wiki-card-solid: rgba(255,255,255,0.78);
-  --m-wiki-sheet-bg: rgba(247,250,255,0.96);
-  --m-wiki-mask: rgba(9,14,24,0.36);
+  --m-wiki-text-strong: rgba(22,33,53,0.94);
+  --m-wiki-text-mid: rgba(37,52,82,0.8);
+  --m-wiki-text-soft: rgba(67,84,116,0.68);
+  --m-wiki-border: rgba(22,34,56,0.16);
+  --m-wiki-frost: rgba(255,255,255,0.82);
+  --m-wiki-elev: rgba(16,26,42,0.08);
+  --m-wiki-card-solid: rgba(255,255,255,0.82);
+  --m-wiki-sheet-bg: rgba(244,248,255,0.97);
+  --m-wiki-mask: rgba(12,18,30,0.34);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -355,6 +355,23 @@ html[data-nav-open="1"] #app-main{
   .m-shell .bg-white { background-color: rgba(22,28,41,0.9) !important; }
 }
 
+/* Dark mode choose page: keep cards and labels readable */
+@media (prefers-color-scheme: dark) {
+  .m-shell .m-choose-page .m-choose-card {
+    border-color: rgba(255,255,255,0.16) !important;
+    background-color: rgba(28,36,53,0.92) !important;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+  }
+
+  .m-shell .m-choose-page .m-choose-card-label {
+    color: rgba(241,246,255,0.9) !important;
+  }
+
+  .m-shell .m-choose-page .m-choose-card-label-muted {
+    color: rgba(199,211,232,0.72) !important;
+  }
+}
+
 /* Wiki pages: keep same layout, but remap neutral colors by system theme */
 .m-shell .m-wiki-page .text-white { color: var(--m-wiki-text-strong) !important; }
 .m-shell .m-wiki-page [class*="text-white/9"],
@@ -370,3 +387,155 @@ html[data-nav-open="1"] #app-main{
 .m-shell .m-wiki-page [class*="bg-[#111623]"] { background-color: var(--m-wiki-card-solid) !important; }
 .m-shell .m-wiki-page [class*="bg-[#111826]"] { background-color: var(--m-wiki-sheet-bg) !important; }
 .m-shell .m-wiki-page [class*="bg-[#05070d]"] { background-color: var(--m-wiki-mask) !important; }
+
+.m-shell .m-wiki-page .m-wiki-sheet {
+  border-color: var(--m-wiki-border) !important;
+  background-color: var(--m-wiki-sheet-bg) !important;
+}
+
+.m-shell .m-wiki-page .m-wiki-sheet-mask {
+  background-color: var(--m-wiki-mask) !important;
+}
+
+.m-shell .m-wiki-page .m-wiki-chip,
+.m-shell .m-wiki-page .m-wiki-pill,
+.m-shell .m-wiki-page .m-wiki-tag,
+.m-shell .m-wiki-page .m-wiki-risk-chip {
+  border-width: 1px;
+}
+
+.m-shell .m-wiki-page .m-wiki-chip-strong {
+  border-color: rgba(26,157,120,0.42) !important;
+  background-color: rgba(77,215,168,0.2) !important;
+  color: #117c5f !important;
+}
+
+.m-shell .m-wiki-page .m-wiki-chip-medium {
+  border-color: rgba(226,161,48,0.45) !important;
+  background-color: rgba(244,196,101,0.22) !important;
+  color: #94650a !important;
+}
+
+.m-shell .m-wiki-page .m-wiki-chip-weak {
+  border-color: rgba(216,91,101,0.42) !important;
+  background-color: rgba(255,143,143,0.2) !important;
+  color: #af3d49 !important;
+}
+
+.m-shell .m-wiki-page .m-wiki-alert {
+  border-color: rgba(226,161,48,0.46) !important;
+  background-color: rgba(244,196,101,0.2) !important;
+  color: #8a5f08 !important;
+}
+
+.m-shell .m-wiki-page .m-wiki-alert-dot {
+  background-color: #b77d11 !important;
+}
+
+.m-shell .m-wiki-page .m-wiki-pill-good,
+.m-shell .m-wiki-page .m-wiki-tag-good {
+  border-color: rgba(26,157,120,0.42) !important;
+  background-color: rgba(77,215,168,0.18) !important;
+  color: #117c5f !important;
+}
+
+.m-shell .m-wiki-page .m-wiki-pill-warn,
+.m-shell .m-wiki-page .m-wiki-tag-warn {
+  border-color: rgba(216,91,101,0.42) !important;
+  background-color: rgba(255,143,143,0.18) !important;
+  color: #ad3c48 !important;
+}
+
+.m-shell .m-wiki-page .m-wiki-pill-info,
+.m-shell .m-wiki-page .m-wiki-tag-info {
+  border-color: rgba(62,136,232,0.4) !important;
+  background-color: rgba(107,180,255,0.2) !important;
+  color: #255ea8 !important;
+}
+
+.m-shell .m-wiki-page .m-wiki-risk-high {
+  border-color: rgba(216,91,101,0.42) !important;
+  background-color: rgba(255,143,143,0.18) !important;
+  color: #ad3c48 !important;
+}
+
+.m-shell .m-wiki-page .m-wiki-risk-medium {
+  border-color: rgba(226,161,48,0.45) !important;
+  background-color: rgba(244,196,101,0.2) !important;
+  color: #94650a !important;
+}
+
+.m-shell .m-wiki-page .m-wiki-risk-low {
+  border-color: rgba(62,136,232,0.4) !important;
+  background-color: rgba(107,180,255,0.2) !important;
+  color: #255ea8 !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  .m-shell .m-wiki-page .m-wiki-chip-strong {
+    border-color: rgba(77,215,168,0.4) !important;
+    background-color: rgba(77,215,168,0.15) !important;
+    color: #7ff2c8 !important;
+  }
+
+  .m-shell .m-wiki-page .m-wiki-chip-medium {
+    border-color: rgba(244,196,101,0.4) !important;
+    background-color: rgba(244,196,101,0.15) !important;
+    color: #ffd992 !important;
+  }
+
+  .m-shell .m-wiki-page .m-wiki-chip-weak {
+    border-color: rgba(255,143,143,0.4) !important;
+    background-color: rgba(255,143,143,0.15) !important;
+    color: #ffb3b3 !important;
+  }
+
+  .m-shell .m-wiki-page .m-wiki-alert {
+    border-color: rgba(244,196,101,0.55) !important;
+    background-color: rgba(244,196,101,0.16) !important;
+    color: #ffe1a6 !important;
+  }
+
+  .m-shell .m-wiki-page .m-wiki-alert-dot {
+    background-color: #ffd992 !important;
+  }
+
+  .m-shell .m-wiki-page .m-wiki-pill-good,
+  .m-shell .m-wiki-page .m-wiki-tag-good {
+    border-color: rgba(77,215,168,0.35) !important;
+    background-color: rgba(77,215,168,0.12) !important;
+    color: #9ff5d7 !important;
+  }
+
+  .m-shell .m-wiki-page .m-wiki-pill-warn,
+  .m-shell .m-wiki-page .m-wiki-tag-warn {
+    border-color: rgba(255,143,143,0.35) !important;
+    background-color: rgba(255,143,143,0.12) !important;
+    color: #ffc3c3 !important;
+  }
+
+  .m-shell .m-wiki-page .m-wiki-pill-info,
+  .m-shell .m-wiki-page .m-wiki-tag-info {
+    border-color: rgba(107,180,255,0.35) !important;
+    background-color: rgba(107,180,255,0.12) !important;
+    color: #b5d8ff !important;
+  }
+
+  .m-shell .m-wiki-page .m-wiki-risk-high {
+    border-color: rgba(255,131,131,0.45) !important;
+    background-color: rgba(255,131,131,0.14) !important;
+    color: #ffb6b6 !important;
+  }
+
+  .m-shell .m-wiki-page .m-wiki-risk-medium {
+    border-color: rgba(244,196,101,0.45) !important;
+    background-color: rgba(244,196,101,0.14) !important;
+    color: #ffd992 !important;
+  }
+
+  .m-shell .m-wiki-page .m-wiki-risk-low {
+    border-color: rgba(107,180,255,0.4) !important;
+    background-color: rgba(107,180,255,0.12) !important;
+    color: #b5d8ff !important;
+  }
+}

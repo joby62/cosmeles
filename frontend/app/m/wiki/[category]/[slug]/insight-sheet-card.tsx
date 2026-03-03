@@ -37,18 +37,18 @@ function getRiskLevelMeta(line: string): RiskLevelMeta {
   if (/风险程度高|高风险|严重|急性|禁用|避免|过敏|炎症|灼|红肿|糜烂|强刺激|明显加重/.test(text)) {
     return {
       label: "高风险",
-      className: "border-[#ff8383]/45 bg-[#ff8383]/14 text-[#ffb6b6]",
+      className: "m-wiki-risk-chip m-wiki-risk-high",
     };
   }
   if (/风险程度中|中风险|可能|谨慎|注意|不适|刺激|泛红|瘙痒|影响/.test(text)) {
     return {
       label: "中风险",
-      className: "border-[#f4c465]/45 bg-[#f4c465]/14 text-[#ffd992]",
+      className: "m-wiki-risk-chip m-wiki-risk-medium",
     };
   }
   return {
     label: "低风险",
-    className: "border-[#6bb4ff]/40 bg-[#6bb4ff]/12 text-[#b5d8ff]",
+    className: "m-wiki-risk-chip m-wiki-risk-low",
   };
 }
 
@@ -56,18 +56,18 @@ function toneClass(tone: Tone): { bullet: string; chip: string } {
   if (tone === "good") {
     return {
       bullet: "bg-[#4dd7a8]",
-      chip: "border-[#4dd7a8]/28 bg-[#4dd7a8]/9 text-[#a6f6da]",
+      chip: "m-wiki-tag m-wiki-tag-good",
     };
   }
   if (tone === "warn") {
     return {
       bullet: "bg-[#ff8f8f]",
-      chip: "border-[#ff8f8f]/28 bg-[#ff8f8f]/10 text-[#ffc7c7]",
+      chip: "m-wiki-tag m-wiki-tag-warn",
     };
   }
   return {
     bullet: "bg-[#6bb4ff]",
-    chip: "border-[#6bb4ff]/28 bg-[#6bb4ff]/9 text-[#b5d8ff]",
+    chip: "m-wiki-tag m-wiki-tag-info",
   };
 }
 
@@ -170,10 +170,10 @@ export function InsightSheetCard({
             onClick={() => {
               setOpen(false);
             }}
-            className="absolute inset-0 bg-[#05070d]/78 backdrop-blur-sm"
+            className="m-wiki-sheet-mask absolute inset-0 backdrop-blur-sm"
           />
 
-          <div className="absolute inset-x-0 bottom-0 max-h-[82dvh] overflow-hidden rounded-t-[30px] border border-white/12 bg-[#111826]/96 shadow-[0_-28px_72px_rgba(0,0,0,0.56)] backdrop-blur-2xl">
+          <div className="m-wiki-sheet absolute inset-x-0 bottom-0 max-h-[82dvh] overflow-hidden rounded-t-[30px] border shadow-[0_-28px_72px_rgba(0,0,0,0.56)] backdrop-blur-2xl">
             <div className="mx-auto mt-2 h-1 w-11 rounded-full bg-white/26" />
             <div className="flex items-center justify-between border-b border-white/10 px-5 py-3">
               <h4 className="text-[17px] font-semibold text-white/92">{title} · 全部内容</h4>

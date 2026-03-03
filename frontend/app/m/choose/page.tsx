@@ -11,7 +11,7 @@ const CATS = [
 
 export default function MobileChoose() {
   return (
-    <div>
+    <div className="m-choose-page">
       <div className="text-[13px] font-medium text-black/45">选择品类</div>
       <div className="mt-2 text-[28px] leading-[1.12] font-semibold tracking-[-0.02em] text-black/90">
         你想先解决哪一件
@@ -27,22 +27,22 @@ export default function MobileChoose() {
             <Link
               key={c.key}
               href={c.href}
-              className="flex aspect-square w-[96px] shrink-0 flex-col rounded-[22px] border border-[#d9dbe3] bg-[#ececf1] px-2 pt-2 pb-2 active:brightness-[0.98]"
+              className="m-choose-card flex aspect-square w-[96px] shrink-0 flex-col rounded-[22px] border border-[#d9dbe3] bg-[#ececf1] px-2 pt-2 pb-2 active:brightness-[0.98]"
             >
               <div className="flex min-h-0 flex-1 items-center justify-center">
                 <Image src={c.image} alt={c.zh} width={74} height={58} className="h-[58px] w-[74px] object-contain" />
               </div>
-              <div className="mt-1 text-center text-[13px] leading-[1.15] font-medium tracking-[-0.01em] text-black/88">{c.zh}</div>
+              <div className="m-choose-card-label mt-1 text-center text-[13px] leading-[1.15] font-medium tracking-[-0.01em] text-black/88">{c.zh}</div>
             </Link>
           ) : (
             <div
               key={c.key}
-              className="flex aspect-square w-[96px] shrink-0 flex-col rounded-[22px] border border-[#d9dbe3] bg-[#ececf1] px-2 pt-2 pb-2"
+              className="m-choose-card flex aspect-square w-[96px] shrink-0 flex-col rounded-[22px] border border-[#d9dbe3] bg-[#ececf1] px-2 pt-2 pb-2"
             >
               <div className="flex min-h-0 flex-1 items-center justify-center">
                 <Image src={c.image} alt={c.zh} width={74} height={58} className="h-[58px] w-[74px] object-contain opacity-58" />
               </div>
-              <div className="mt-1 text-center text-[13px] leading-[1.15] font-medium tracking-[-0.01em] text-black/58">{c.zh}</div>
+              <div className="m-choose-card-label-muted mt-1 text-center text-[13px] leading-[1.15] font-medium tracking-[-0.01em] text-black/58">{c.zh}</div>
             </div>
           )
         ))}
