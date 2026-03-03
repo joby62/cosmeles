@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { fetchMobileCompareResult } from "@/lib/api";
+import { formatRuntimeError } from "@/lib/error";
 
 export default async function MobileCompareResultPage({
   params,
@@ -7,7 +8,45 @@ export default async function MobileCompareResultPage({
   params: { compareId: string } | Promise<{ compareId: string }>;
 }) {
   const { compareId } = await Promise.resolve(params);
-  const result = await fetchMobileCompareResult(compareId);
+  let result: Awaited<ReturnType<typeof fetchMobileCompareResult>> | null = null;
+  let loadError: string | null = null;
+  try {
+    result = await fetchMobileCompareResult(compareId);
+  } catch (err) {
+    loadError = formatRuntimeError(err);
+  }
+
+  if (!result) {
+    return (
+      <section className="pb-12">
+        <article className="rounded-[24px] border border-[#ffb39e]/55 bg-[linear-gradient(180deg,#fff8f4_0%,#fff2ed_100%)] px-5 py-5">
+          <div className="text-[12px] font-semibold tracking-[0.04em] text-[#b6543f]">对比结果加载失败</div>
+          <h1 className="mt-2 text-[26px] leading-[1.18] font-semibold tracking-[-0.02em] text-[#452016]">本次对比未能完成展示</h1>
+          <p className="mt-3 text-[14px] leading-[1.55] text-[#6c3428]">
+            页面没有中断，已保留后端真实错误，方便继续排查。
+          </p>
+          <p className="mt-3 rounded-2xl border border-[#f6c6bc] bg-white/82 px-3 py-2 text-[13px] leading-[1.55] text-[#7a2d21]">
+            真实错误：{loadError || "unknown"}
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link
+              href="/m/compare"
+              className="inline-flex h-10 items-center justify-center rounded-full bg-black px-5 text-[14px] font-semibold text-white"
+            >
+              返回横向对比
+            </Link>
+            <Link
+              href="/m"
+              className="inline-flex h-10 items-center justify-center rounded-full border border-black/15 px-5 text-[14px] font-semibold text-black/78"
+            >
+              回到移动首页
+            </Link>
+          </div>
+        </article>
+      </section>
+    );
+  }
+
   const pairResults = result.pair_results || [];
   const overall = result.overall || null;
   const finalDecision = overall?.decision || result.verdict.decision;

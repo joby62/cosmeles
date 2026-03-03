@@ -19,12 +19,44 @@ function categoryLabel(category?: string | null): string {
 }
 
 export default async function ProductManagementPage() {
-  const [products, aiMetrics, routeMappings, featuredSlots] = await Promise.all([
+  const [productsRes, aiMetricsRes, routeMappingsRes, featuredSlotsRes] = await Promise.allSettled([
     fetchAllProducts(),
     fetchAIMetricsSummary({ sinceHours: 24 * 7 }),
     fetchProductRouteMappingIndex(),
     fetchProductFeaturedSlots(),
   ]);
+
+  const loadErrors: Array<{ source: string; message: string }> = [];
+  if (productsRes.status === "rejected") loadErrors.push({ source: "products", message: formatErr(productsRes.reason) });
+  if (aiMetricsRes.status === "rejected") loadErrors.push({ source: "ai_metrics", message: formatErr(aiMetricsRes.reason) });
+  if (routeMappingsRes.status === "rejected") loadErrors.push({ source: "route_mapping_index", message: formatErr(routeMappingsRes.reason) });
+  if (featuredSlotsRes.status === "rejected") loadErrors.push({ source: "featured_slots", message: formatErr(featuredSlotsRes.reason) });
+
+  if (loadErrors.length > 0) {
+    return (
+      <main className="mx-auto min-h-screen w-full max-w-[1180px] px-6 py-12">
+        <section className="rounded-[24px] border border-[#ff9b8f]/55 bg-[#fff1ef] px-6 py-5 text-[#8e2e22]">
+          <h1 className="text-[28px] font-semibold tracking-[-0.02em] text-[#7b261d]">产品管理页加载失败（strict）</h1>
+          <p className="mt-2 text-[14px] leading-[1.6]">
+            已阻断页面继续渲染，不做降级兜底。请根据下列真实错误直接排查后重试。
+          </p>
+          <ul className="mt-4 space-y-2 text-[12px] leading-[1.55]">
+            {loadErrors.map((item, idx) => (
+              <li key={`${idx}-${item.source}`} className="rounded-xl border border-[#f2b0a8]/80 bg-[#fff8f7] px-3 py-2">
+                <div className="font-semibold">stage: {item.source}</div>
+                <pre className="mt-1 whitespace-pre-wrap font-sans">{item.message}</pre>
+              </li>
+            ))}
+          </ul>
+        </section>
+      </main>
+    );
+  }
+
+  const products = unwrapSettled(productsRes, "products");
+  const aiMetrics = unwrapSettled(aiMetricsRes, "ai_metrics");
+  const routeMappings = unwrapSettled(routeMappingsRes, "route_mapping_index");
+  const featuredSlots = unwrapSettled(featuredSlotsRes, "featured_slots");
 
   const categoryCounts = new Map<string, number>();
   for (const item of products) {
@@ -96,6 +128,21 @@ export default async function ProductManagementPage() {
       <ProductCleanupWorkbench initialProducts={products} />
     </main>
   );
+}
+
+function formatErr(err: unknown): string {
+  if (err instanceof Error && err.message) return err.message;
+  if (typeof err === "string") return err;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
+}
+
+function unwrapSettled<T>(result: PromiseSettledResult<T>, source: string): T {
+  if (result.status === "fulfilled") return result.value;
+  throw new Error(`Unreachable settled error for '${source}': ${formatErr(result.reason)}`);
 }
 
 function MetricsBadge({ label, value, sub }: { label: string; value: string; sub?: string }) {

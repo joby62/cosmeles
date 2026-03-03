@@ -10,6 +10,7 @@ from typing import Any, Callable
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func
+from sqlalchemy.exc import OperationalError
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import sessionmaker
 
@@ -213,9 +214,12 @@ def delete_product(product_id: str, db: Session = Depends(get_db)):
         if route_mapping_path and remove_rel_path(route_mapping_path):
             removed += 1
         db.delete(route_mapping_rec)
-    featured_slots = db.execute(
-        select(ProductFeaturedSlot).where(ProductFeaturedSlot.product_id == product_id)
-    ).scalars().all()
+    try:
+        featured_slots = db.execute(
+            select(ProductFeaturedSlot).where(ProductFeaturedSlot.product_id == product_id)
+        ).scalars().all()
+    except OperationalError as exc:
+        raise _featured_slot_schema_http_error(exc) from exc
     for slot in featured_slots:
         db.delete(slot)
 
@@ -464,7 +468,10 @@ def list_product_featured_slots(
     stmt = select(ProductFeaturedSlot)
     if normalized_category:
         stmt = stmt.where(ProductFeaturedSlot.category == normalized_category)
-    rows = db.execute(stmt.order_by(ProductFeaturedSlot.category.asc(), ProductFeaturedSlot.target_type_key.asc())).scalars().all()
+    try:
+        rows = db.execute(stmt.order_by(ProductFeaturedSlot.category.asc(), ProductFeaturedSlot.target_type_key.asc())).scalars().all()
+    except OperationalError as exc:
+        raise _featured_slot_schema_http_error(exc) from exc
     items = [
         ProductFeaturedSlotItem(
             category=str(row.category or "").strip().lower(),
@@ -502,28 +509,31 @@ def upsert_product_featured_slot(
             detail=f"Product '{product_id}' category mismatch: expected '{category}', got '{rec.category}'.",
         )
 
-    row = db.execute(
-        select(ProductFeaturedSlot)
-        .where(ProductFeaturedSlot.category == category)
-        .where(ProductFeaturedSlot.target_type_key == target_type_key)
-        .limit(1)
-    ).scalars().first()
-    now = now_iso()
-    updated_by = str(payload.updated_by or "").strip() or None
-    if row is None:
-        row = ProductFeaturedSlot(
-            category=category,
-            target_type_key=target_type_key,
-            product_id=product_id,
-            updated_at=now,
-            updated_by=updated_by,
-        )
-    else:
-        row.product_id = product_id
-        row.updated_at = now
-        row.updated_by = updated_by
-    db.add(row)
-    db.commit()
+    try:
+        row = db.execute(
+            select(ProductFeaturedSlot)
+            .where(ProductFeaturedSlot.category == category)
+            .where(ProductFeaturedSlot.target_type_key == target_type_key)
+            .limit(1)
+        ).scalars().first()
+        now = now_iso()
+        updated_by = str(payload.updated_by or "").strip() or None
+        if row is None:
+            row = ProductFeaturedSlot(
+                category=category,
+                target_type_key=target_type_key,
+                product_id=product_id,
+                updated_at=now,
+                updated_by=updated_by,
+            )
+        else:
+            row.product_id = product_id
+            row.updated_at = now
+            row.updated_by = updated_by
+        db.add(row)
+        db.commit()
+    except OperationalError as exc:
+        raise _featured_slot_schema_http_error(exc) from exc
     return ProductFeaturedSlotItem(
         category=category,
         target_type_key=target_type_key,
@@ -540,17 +550,20 @@ def clear_product_featured_slot(
 ):
     category = _normalize_required_category(payload.category)
     target_type_key = _normalize_target_type_key(payload.target_type_key)
-    row = db.execute(
-        select(ProductFeaturedSlot)
-        .where(ProductFeaturedSlot.category == category)
-        .where(ProductFeaturedSlot.target_type_key == target_type_key)
-        .limit(1)
-    ).scalars().first()
     deleted = False
-    if row is not None:
-        db.delete(row)
-        deleted = True
-    db.commit()
+    try:
+        row = db.execute(
+            select(ProductFeaturedSlot)
+            .where(ProductFeaturedSlot.category == category)
+            .where(ProductFeaturedSlot.target_type_key == target_type_key)
+            .limit(1)
+        ).scalars().first()
+        if row is not None:
+            db.delete(row)
+            deleted = True
+        db.commit()
+    except OperationalError as exc:
+        raise _featured_slot_schema_http_error(exc) from exc
     return ProductFeaturedSlotClearResponse(
         status="ok",
         category=category,
@@ -599,9 +612,12 @@ def batch_delete_products(payload: ProductBatchDeleteRequest, db: Session = Depe
             if route_mapping_path and remove_rel_path(route_mapping_path):
                 removed_files += 1
             db.delete(route_mapping_rec)
-        featured_slots = db.execute(
-            select(ProductFeaturedSlot).where(ProductFeaturedSlot.product_id == product_id)
-        ).scalars().all()
+        try:
+            featured_slots = db.execute(
+                select(ProductFeaturedSlot).where(ProductFeaturedSlot.product_id == product_id)
+            ).scalars().all()
+        except OperationalError as exc:
+            raise _featured_slot_schema_http_error(exc) from exc
         for slot in featured_slots:
             db.delete(slot)
 
@@ -2352,6 +2368,17 @@ def _normalize_target_type_key(raw: str) -> str:
     if len(value) > 128:
         raise HTTPException(status_code=400, detail="target_type_key is too long (max 128).")
     return value
+
+
+def _featured_slot_schema_http_error(exc: Exception) -> HTTPException:
+    return HTTPException(
+        status_code=500,
+        detail=(
+            "Featured slot table query failed. "
+            "Database schema may be outdated (missing table 'product_featured_slots'). "
+            f"Raw error: {exc}"
+        ),
+    )
 
 
 def _iter_ingredient_profile_rel_paths(category: str | None) -> list[str]:

@@ -10,6 +10,7 @@ from typing import Any, Callable
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.ai.errors import AIServiceError
@@ -2121,12 +2122,22 @@ def _pick_featured_product_row(
     category: str,
     target_type_key: str,
 ) -> ProductIndex | None:
-    slot = db.execute(
-        select(ProductFeaturedSlot)
-        .where(ProductFeaturedSlot.category == category)
-        .where(ProductFeaturedSlot.target_type_key == target_type_key)
-        .limit(1)
-    ).scalars().first()
+    try:
+        slot = db.execute(
+            select(ProductFeaturedSlot)
+            .where(ProductFeaturedSlot.category == category)
+            .where(ProductFeaturedSlot.target_type_key == target_type_key)
+            .limit(1)
+        ).scalars().first()
+    except OperationalError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Failed to query featured slots. "
+                "Database schema may be outdated (missing table 'product_featured_slots'). "
+                f"Raw error: {exc}"
+            ),
+        ) from exc
     if slot is None:
         return None
     product_id = str(slot.product_id or "").strip()
