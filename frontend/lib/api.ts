@@ -345,6 +345,13 @@ export type MobileCompareCategoryItem = {
   enabled: boolean;
 };
 
+export type MobileCompareProductLibraryItem = {
+  product: Product;
+  is_recommendation: boolean;
+  is_most_used: boolean;
+  usage_count: number;
+};
+
 export type MobileCompareBootstrapResponse = {
   status: string;
   trace_id: string;
@@ -361,6 +368,11 @@ export type MobileCompareBootstrapResponse = {
     session_id?: string | null;
     route_title?: string | null;
     product?: Product | null;
+  };
+  product_library: {
+    recommendation_product_id?: string | null;
+    most_used_product_id?: string | null;
+    items: MobileCompareProductLibraryItem[];
   };
   source_guide: {
     title: string;
@@ -379,8 +391,7 @@ export type MobileCompareUploadResponse = {
 
 export type MobileCompareJobRequest = {
   category: MobileSelectionCategory;
-  profile_mode: "reuse_latest" | "update_now" | "skip";
-  profile_answers?: Record<string, string>;
+  profile_mode: "reuse_latest";
   current_product: {
     source: "upload_new" | "history_product";
     upload_id?: string | null;

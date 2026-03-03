@@ -102,6 +102,7 @@ def test_mobile_compare_bootstrap_without_history(test_client):
     assert body["selected_category"] == "shampoo"
     assert body["recommendation"]["exists"] is False
     assert body["profile"]["has_history_profile"] is False
+    assert body["product_library"]["most_used_product_id"] is None
 
 
 def test_mobile_compare_stream_success_and_fetch_result(test_client, monkeypatch: pytest.MonkeyPatch):
@@ -227,7 +228,7 @@ def test_mobile_compare_stream_returns_real_error_when_no_recommendation(test_cl
         "/api/mobile/compare/jobs/stream",
         json={
             "category": "shampoo",
-            "profile_mode": "skip",
+            "profile_mode": "reuse_latest",
             "current_product": {"source": "history_product", "product_id": "missing-id"},
             "options": {"include_inci_order_diff": True, "include_function_rank_diff": True},
         },
@@ -237,3 +238,84 @@ def test_mobile_compare_stream_returns_real_error_when_no_recommendation(test_cl
     errors = [payload for name, payload in events if name == "error"]
     assert errors
     assert errors[0]["code"] == "COMPARE_RECOMMENDATION_NOT_FOUND"
+
+
+def test_mobile_compare_bootstrap_product_library_marks_recommendation_and_most_used(
+    test_client,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    client, _ = test_client
+
+    _install_fake_ingest_pipeline(
+        monkeypatch,
+        {
+            "category": "shampoo",
+            "brand": "BrandA",
+            "name": "UseMe",
+            "one_sentence": "在用产品",
+        },
+    )
+    current_product_id = _ingest_one(client, "current.jpg")
+
+    _install_fake_ingest_pipeline(
+        monkeypatch,
+        {
+            "category": "shampoo",
+            "brand": "BrandB",
+            "name": "TopPick",
+            "one_sentence": "历史首推",
+        },
+    )
+    recommendation_product_id = _ingest_one(client, "recommended.jpg")
+
+    selection = client.post(
+        "/api/mobile/selection/resolve",
+        json={"category": "shampoo", "answers": {"q1": "A", "q2": "C", "q3": "B"}},
+    )
+    assert selection.status_code == 200
+    selected_recommendation_id = selection.json()["recommended_product"]["id"]
+    assert selected_recommendation_id in {current_product_id, recommendation_product_id}
+    usage_target_id = current_product_id if selected_recommendation_id != current_product_id else recommendation_product_id
+
+    def fake_run_capability_now(capability: str, input_payload: dict, trace_id: str | None = None, event_callback=None):
+        assert capability == "doubao.mobile_compare_summary"
+        return {
+            "decision": "keep",
+            "headline": "继续用当前产品即可。",
+            "confidence": 0.77,
+            "sections": {
+                "keep_benefits": ["A"],
+                "keep_watchouts": ["B"],
+                "ingredient_order_diff": ["C"],
+                "profile_fit_advice": ["D"],
+            },
+            "model": "doubao-pro",
+        }
+
+    monkeypatch.setattr(mobile_routes, "run_capability_now", fake_run_capability_now)
+
+    stream_resp = client.post(
+        "/api/mobile/compare/jobs/stream",
+        json={
+            "category": "shampoo",
+            "profile_mode": "reuse_latest",
+            "current_product": {"source": "history_product", "product_id": usage_target_id},
+        },
+    )
+    assert stream_resp.status_code == 200
+    events = _parse_sse_events(stream_resp.text)
+    assert not [payload for name, payload in events if name == "error"]
+
+    bootstrap = client.get("/api/mobile/compare/bootstrap", params={"category": "shampoo"})
+    assert bootstrap.status_code == 200
+    body = bootstrap.json()
+    assert body["product_library"]["recommendation_product_id"] == selected_recommendation_id
+    assert body["product_library"]["most_used_product_id"] == usage_target_id
+
+    items = body["product_library"]["items"]
+    assert items[0]["product"]["id"] == selected_recommendation_id
+    assert items[0]["is_recommendation"] is True
+    most_used_item = next((item for item in items if item["product"]["id"] == usage_target_id), None)
+    assert most_used_item is not None
+    assert most_used_item["is_most_used"] is True
+    assert most_used_item["usage_count"] == 1

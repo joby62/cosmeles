@@ -24,8 +24,10 @@ from app.schemas import (
     MobileCompareIngredientOrderDiff,
     MobileCompareFunctionRankDiff,
     MobileCompareJobRequest,
+    MobileCompareLibraryProductItem,
     MobileComparePersonalization,
     MobileCompareProfileBootstrap,
+    MobileCompareProductLibrary,
     MobileCompareRecommendationBootstrap,
     MobileCompareResultResponse,
     MobileCompareResultSection,
@@ -507,7 +509,7 @@ def mobile_compare_bootstrap(
 
     profile = MobileCompareProfileBootstrap(
         has_history_profile=latest is not None,
-        can_skip=True,
+        can_skip=False,
         last_completed_at=latest.created_at if latest else None,
         summary=_build_profile_summary_from_session(latest),
     )
@@ -522,6 +524,17 @@ def mobile_compare_bootstrap(
             product=resolved.recommended_product,
         )
 
+    recommendation_product_id = (
+        str(recommendation.product.id)
+        if recommendation.product and str(recommendation.product.id).strip()
+        else None
+    )
+    product_library = _build_mobile_compare_product_library(
+        db=db,
+        category=selected_category,
+        recommendation_product_id=recommendation_product_id,
+    )
+
     out = MobileCompareBootstrapResponse(
         status="ok",
         trace_id=new_id(),
@@ -532,6 +545,7 @@ def mobile_compare_bootstrap(
         selected_category=selected_category,
         profile=profile,
         recommendation=recommendation,
+        product_library=product_library,
         source_guide=MobileCompareSourceGuide(
             title="上传你正在用的产品，和首推做一次专业对比",
             value_points=[
@@ -961,77 +975,32 @@ def _resolve_compare_profile_context(
     recommendation_session: MobileSelectionSession,
     trace_id: str,
 ) -> dict[str, Any]:
-    mode = str(payload.profile_mode or "reuse_latest").strip().lower()
-    if mode == "skip":
-        return {
-            "status": "skipped",
-            "basis": "skip",
-            "missing_fields": ["profile_answers"],
-            "answers": {},
-            "choices": [],
-            "rule_hits": [],
-            "route_title": recommendation_session.route_title,
-        }
-
-    if mode == "reuse_latest":
-        try:
-            raw = json.loads(recommendation_session.answers_json or "{}")
-        except Exception:
-            raw = {}
-        answers = _normalize_answers(raw if isinstance(raw, dict) else {})
-        if not answers:
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "code": "COMPARE_PROFILE_INSUFFICIENT",
-                    "detail": "No reusable profile answers found for this category.",
-                    "retryable": False,
-                    "trace_id": trace_id,
-                },
-            )
-        resolved = _resolve_selection(category=category, answers=answers)
-        return {
-            "status": "complete",
-            "basis": "reuse_latest",
-            "missing_fields": [],
-            "answers": resolved["answers"],
-            "choices": resolved["choices"],
-            "rule_hits": resolved["rule_hits"],
-            "route_title": resolved["route_title"],
-        }
-
-    if mode == "update_now":
-        answers = _normalize_answers(payload.profile_answers)
-        if not answers:
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "code": "COMPARE_PROFILE_INSUFFICIENT",
-                    "detail": "profile_answers is required when profile_mode=update_now.",
-                    "retryable": False,
-                    "trace_id": trace_id,
-                },
-            )
-        resolved = _resolve_selection(category=category, answers=answers)
-        return {
-            "status": "complete",
-            "basis": "update_now",
-            "missing_fields": [],
-            "answers": resolved["answers"],
-            "choices": resolved["choices"],
-            "rule_hits": resolved["rule_hits"],
-            "route_title": resolved["route_title"],
-        }
-
-    raise HTTPException(
-        status_code=400,
-        detail={
-            "code": "COMPARE_PROFILE_MODE_INVALID",
-            "detail": f"Unsupported profile_mode: {mode}.",
-            "retryable": False,
-            "trace_id": trace_id,
-        },
-    )
+    _ = payload
+    try:
+        raw = json.loads(recommendation_session.answers_json or "{}")
+    except Exception:
+        raw = {}
+    answers = _normalize_answers(raw if isinstance(raw, dict) else {})
+    if not answers:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "COMPARE_PROFILE_INSUFFICIENT",
+                "detail": "No reusable profile answers found for this category.",
+                "retryable": False,
+                "trace_id": trace_id,
+            },
+        )
+    resolved = _resolve_selection(category=category, answers=answers)
+    return {
+        "status": "complete",
+        "basis": "reuse_latest",
+        "missing_fields": [],
+        "answers": resolved["answers"],
+        "choices": resolved["choices"],
+        "rule_hits": resolved["rule_hits"],
+        "route_title": resolved["route_title"],
+    }
 
 
 def _resolve_current_product_doc(
@@ -1057,12 +1026,14 @@ def _resolve_current_product_doc(
                     "trace_id": trace_id,
                 },
             )
-        return _load_product_doc_payload_by_id(
+        doc = _load_product_doc_payload_by_id(
             db=db,
             product_id=product_id,
             expected_category=category,
             trace_id=trace_id,
         )
+        _increase_product_usage_count(product_id=product_id, category=category)
+        return doc
 
     if source != "upload_new":
         raise HTTPException(
@@ -1205,6 +1176,14 @@ def _resolve_current_product_doc(
         "vision": stage1.get("artifact"),
         "struct": stage2.get("artifact"),
     }
+    matched_product_id = _match_existing_product_id_for_usage(
+        db=db,
+        category=category,
+        brand=str(normalized.get("product", {}).get("brand") or ""),
+        name=str(normalized.get("product", {}).get("name") or ""),
+    )
+    if matched_product_id:
+        _increase_product_usage_count(product_id=matched_product_id, category=category)
     return normalized
 
 
@@ -1475,6 +1454,179 @@ def _function_priority_scores(items: list[dict[str, Any]]) -> dict[str, float]:
         return {}
     peak = max(raw.values()) or 1.0
     return {key: value / peak for key, value in raw.items()}
+
+
+def _usage_store_rel_path() -> str:
+    return "doubao_runs/mobile_compare_usage/usage_counts.json"
+
+
+def _load_mobile_compare_usage_map() -> dict[str, Any]:
+    rel_path = _usage_store_rel_path()
+    if not exists_rel_path(rel_path):
+        return {"products": {}, "updated_at": now_iso()}
+    raw = load_json(rel_path)
+    if not isinstance(raw, dict):
+        return {"products": {}, "updated_at": now_iso()}
+    products = raw.get("products")
+    if not isinstance(products, dict):
+        products = {}
+    return {
+        "products": products,
+        "updated_at": str(raw.get("updated_at") or now_iso()),
+    }
+
+
+def _save_mobile_compare_usage_map(payload: dict[str, Any]) -> None:
+    save_doubao_artifact("mobile_compare_usage", "usage_counts", payload)
+
+
+def _increase_product_usage_count(*, product_id: str, category: str) -> None:
+    pid = str(product_id or "").strip()
+    cat = str(category or "").strip().lower()
+    if not pid or not cat:
+        return
+    payload = _load_mobile_compare_usage_map()
+    products = payload.get("products")
+    if not isinstance(products, dict):
+        products = {}
+    row = products.get(pid)
+    if not isinstance(row, dict):
+        row = {"count": 0, "category": cat}
+    row["count"] = int(row.get("count") or 0) + 1
+    row["category"] = cat
+    row["updated_at"] = now_iso()
+    products[pid] = row
+    payload["products"] = products
+    payload["updated_at"] = now_iso()
+    _save_mobile_compare_usage_map(payload)
+
+
+def _usage_count_by_product_id(*, category: str) -> dict[str, int]:
+    payload = _load_mobile_compare_usage_map()
+    products = payload.get("products")
+    if not isinstance(products, dict):
+        return {}
+    out: dict[str, int] = {}
+    for product_id, item in products.items():
+        if not isinstance(item, dict):
+            continue
+        cat = str(item.get("category") or "").strip().lower()
+        if cat != category:
+            continue
+        try:
+            count = int(item.get("count") or 0)
+        except Exception:
+            count = 0
+        if count > 0:
+            out[str(product_id)] = count
+    return out
+
+
+def _build_mobile_compare_product_library(
+    *,
+    db: Session,
+    category: str,
+    recommendation_product_id: str | None,
+) -> MobileCompareProductLibrary:
+    rows = (
+        db.execute(
+            select(ProductIndex)
+            .where(ProductIndex.category == category)
+            .order_by(ProductIndex.created_at.desc())
+            .limit(80)
+        )
+        .scalars()
+        .all()
+    )
+    usage = _usage_count_by_product_id(category=category)
+    row_ids = {str(row.id) for row in rows}
+
+    most_used_product_id: str | None = None
+    if usage:
+        candidates = [(count, pid) for pid, count in usage.items() if pid in row_ids]
+        candidates.sort(key=lambda item: (-item[0], item[1]))
+        if candidates and candidates[0][0] > 0:
+            most_used_product_id = candidates[0][1]
+
+    items = []
+    row_order: dict[str, int] = {}
+    for idx, row in enumerate(rows):
+        row_order[str(row.id)] = idx
+    for row in rows:
+        pid = str(row.id)
+        item = MobileCompareLibraryProductItem(
+            product=_row_to_product_card(row),
+            is_recommendation=bool(recommendation_product_id and pid == recommendation_product_id),
+            is_most_used=bool(most_used_product_id and pid == most_used_product_id),
+            usage_count=int(usage.get(pid, 0)),
+        )
+        items.append(item)
+
+    def sort_key(item: MobileCompareLibraryProductItem) -> tuple[int, int, int]:
+        primary = 0
+        if item.is_recommendation:
+            primary = 0
+        elif item.is_most_used:
+            primary = 1
+        else:
+            primary = 2
+        usage_key = -int(item.usage_count or 0)
+        order_key = int(row_order.get(str(item.product.id), 10_000))
+        return (primary, usage_key, order_key)
+
+    items.sort(key=sort_key)
+    return MobileCompareProductLibrary(
+        recommendation_product_id=recommendation_product_id,
+        most_used_product_id=most_used_product_id,
+        items=items,
+    )
+
+
+def _match_existing_product_id_for_usage(
+    *,
+    db: Session,
+    category: str,
+    brand: str,
+    name: str,
+) -> str | None:
+    normalized_brand = _normalize_text_for_match(brand)
+    normalized_name = _normalize_text_for_match(name)
+    if not normalized_name and not normalized_brand:
+        return None
+
+    rows = (
+        db.execute(
+            select(ProductIndex)
+            .where(ProductIndex.category == category)
+            .order_by(ProductIndex.created_at.desc())
+            .limit(200)
+        )
+        .scalars()
+        .all()
+    )
+
+    # 优先：品牌 + 名称完全匹配
+    for row in rows:
+        row_brand = _normalize_text_for_match(row.brand)
+        row_name = _normalize_text_for_match(row.name)
+        if normalized_name and normalized_brand and row_name == normalized_name and row_brand == normalized_brand:
+            return str(row.id)
+
+    # 次优：名称完全匹配
+    if normalized_name:
+        for row in rows:
+            row_name = _normalize_text_for_match(row.name)
+            if row_name == normalized_name:
+                return str(row.id)
+
+    return None
+
+
+def _normalize_text_for_match(raw: str | None) -> str:
+    text = str(raw or "").strip().lower()
+    if not text:
+        return ""
+    return "".join(ch for ch in text if ch.isalnum())
 
 
 def _normalize_category_or_default(raw: str | None) -> str:

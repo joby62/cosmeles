@@ -368,7 +368,7 @@ class MobileCompareCategoryItem(BaseModel):
 
 class MobileCompareProfileBootstrap(BaseModel):
     has_history_profile: bool = False
-    can_skip: bool = True
+    can_skip: bool = False
     last_completed_at: Optional[str] = None
     summary: List[str] = Field(default_factory=list)
 
@@ -378,6 +378,19 @@ class MobileCompareRecommendationBootstrap(BaseModel):
     session_id: Optional[str] = None
     route_title: Optional[str] = None
     product: Optional[ProductCard] = None
+
+
+class MobileCompareLibraryProductItem(BaseModel):
+    product: ProductCard
+    is_recommendation: bool = False
+    is_most_used: bool = False
+    usage_count: int = 0
+
+
+class MobileCompareProductLibrary(BaseModel):
+    recommendation_product_id: Optional[str] = None
+    most_used_product_id: Optional[str] = None
+    items: List[MobileCompareLibraryProductItem] = Field(default_factory=list)
 
 
 class MobileCompareSourceGuide(BaseModel):
@@ -392,6 +405,7 @@ class MobileCompareBootstrapResponse(BaseModel):
     selected_category: str
     profile: MobileCompareProfileBootstrap
     recommendation: MobileCompareRecommendationBootstrap
+    product_library: MobileCompareProductLibrary
     source_guide: MobileCompareSourceGuide
 
 
@@ -418,7 +432,7 @@ class MobileCompareJobOptions(BaseModel):
 
 class MobileCompareJobRequest(BaseModel):
     category: str
-    profile_mode: Literal["reuse_latest", "update_now", "skip"] = "reuse_latest"
+    profile_mode: Literal["reuse_latest"] = "reuse_latest"
     profile_answers: dict[str, str] = Field(default_factory=dict)
     current_product: MobileCompareJobCurrentProductInput
     options: MobileCompareJobOptions = Field(default_factory=MobileCompareJobOptions)
