@@ -373,20 +373,45 @@ function getBaseForFetch(): string {
   return process.env.INTERNAL_API_BASE || "http://nginx";
 }
 
+async function getForwardedServerHeaders(): Promise<Record<string, string>> {
+  if (typeof window !== "undefined") return {};
+  try {
+    const { headers } = await import("next/headers");
+    const incoming = await headers();
+    const out: Record<string, string> = {};
+
+    const cookie = incoming.get("cookie");
+    if (cookie) out.cookie = cookie;
+
+    const deviceId = incoming.get("x-mobile-device-id");
+    if (deviceId) out["x-mobile-device-id"] = deviceId;
+    return out;
+  } catch {
+    return {};
+  }
+}
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const base = getBaseForFetch();
+  const forwarded = await getForwardedServerHeaders();
 
   // path 统一要求以 / 开头
   const url = base ? new URL(path, base).toString() : path;
+  const headers = new Headers({
+    "content-type": "application/json",
+    ...forwarded,
+  });
+  const initHeaders = new Headers(init?.headers || {});
+  initHeaders.forEach((value, key) => {
+    headers.set(key, value);
+  });
 
   const res = await fetch(url, {
     ...init,
     // 生产建议不缓存（你也可以按需调）
     cache: "no-store",
-    headers: {
-      "content-type": "application/json",
-      ...(init?.headers || {}),
-    },
+    credentials: "include",
+    headers,
   });
 
   if (!res.ok) {
@@ -741,13 +766,20 @@ async function postSSE<T>(
   onEvent: (event: SSEEvent) => void,
 ): Promise<T> {
   const base = getBaseForFetch();
+  const forwarded = await getForwardedServerHeaders();
   const url = base ? new URL(path, base).toString() : path;
+  const headers = new Headers({
+    ...forwarded,
+    accept: "text/event-stream",
+  });
+  const initHeaders = new Headers(init.headers || {});
+  initHeaders.forEach((value, key) => {
+    headers.set(key, value);
+  });
   const res = await fetch(url, {
     ...init,
-    headers: {
-      accept: "text/event-stream",
-      ...(init.headers || {}),
-    },
+    headers,
+    credentials: "include",
     cache: "no-store",
   });
 

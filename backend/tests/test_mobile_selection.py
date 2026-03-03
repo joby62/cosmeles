@@ -235,3 +235,44 @@ def test_mobile_selection_batch_delete_scoped_by_owner(test_client, monkeypatch:
     assert listed_self.status_code == 200
     listed_self_ids = [item["session_id"] for item in listed_self.json()]
     assert first_session_id in listed_self_ids
+
+
+def test_mobile_selection_resolve_with_forwarded_device_header(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, _ = test_client
+    _install_fake_ingest_pipeline(
+        monkeypatch,
+        {
+            "category": "lotion",
+            "brand": "CeraVe",
+            "name": "Lotion Header",
+            "one_sentence": "header 归属测试",
+        },
+    )
+    _ingest_one(client, "lotion.jpg")
+
+    headers = {"x-mobile-device-id": "device-header-001"}
+    payload = {
+        "category": "lotion",
+        "answers": {
+            "group": "dry-tight",
+            "issue": "itch-flake",
+            "scene": "after-shower",
+            "avoid": "none",
+        },
+    }
+    resolved = client.post("/api/mobile/selection/resolve", json=payload, headers=headers)
+    assert resolved.status_code == 200
+    session_id = resolved.json()["session_id"]
+
+    listed_same_owner = client.get("/api/mobile/selection/sessions", headers=headers)
+    assert listed_same_owner.status_code == 200
+    ids_same_owner = [item["session_id"] for item in listed_same_owner.json()]
+    assert session_id in ids_same_owner
+
+    listed_other_owner = client.get(
+        "/api/mobile/selection/sessions",
+        headers={"x-mobile-device-id": "device-header-002"},
+    )
+    assert listed_other_owner.status_code == 200
+    ids_other_owner = [item["session_id"] for item in listed_other_owner.json()]
+    assert session_id not in ids_other_owner

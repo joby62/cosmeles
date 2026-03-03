@@ -459,9 +459,12 @@ def _row_to_mobile_response(row: MobileSelectionSession) -> MobileSelectionResol
 
 
 def _resolve_owner(request: Request) -> tuple[str, str, bool]:
-    existing = str(request.cookies.get(MOBILE_OWNER_COOKIE_NAME) or "").strip()
+    existing = _normalize_owner_id(request.cookies.get(MOBILE_OWNER_COOKIE_NAME))
     if existing:
         return MOBILE_OWNER_TYPE_DEVICE, existing, False
+    forwarded = _normalize_owner_id(request.headers.get("x-mobile-device-id"))
+    if forwarded:
+        return MOBILE_OWNER_TYPE_DEVICE, forwarded, False
     return MOBILE_OWNER_TYPE_DEVICE, str(uuid4()), True
 
 
@@ -494,6 +497,15 @@ def _normalize_session_ids(raw_ids: list[str]) -> list[str]:
         seen.add(value)
         normalized.append(value)
     return normalized
+
+
+def _normalize_owner_id(raw: str | None) -> str:
+    value = str(raw or "").strip()
+    if not value:
+        return ""
+    if len(value) > 128:
+        return ""
+    return value
 
 
 def _build_answers_hash(category: str, answers: dict[str, str]) -> str:
