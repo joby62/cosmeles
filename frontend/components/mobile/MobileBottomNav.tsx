@@ -84,33 +84,29 @@ export default function MobileBottomNav() {
   useEffect(() => {
     if (typeof window === "undefined" || !window.visualViewport) return;
     const viewport = window.visualViewport;
-    let maxVisibleBottom = viewport.height + viewport.offsetTop;
 
     const updateInset = () => {
-      const currentVisibleBottom = viewport.height + viewport.offsetTop;
-      if (currentVisibleBottom > maxVisibleBottom) {
-        maxVisibleBottom = currentVisibleBottom;
-      }
-      const nextInset = Math.max(0, Math.round(maxVisibleBottom - currentVisibleBottom));
+      const layoutHeight = window.innerHeight;
+      const visibleBottom = viewport.height + viewport.offsetTop;
+      const rawInset = Math.max(0, Math.round(layoutHeight - visibleBottom));
+      // Limit browser chrome offset to avoid accidental jumps to mid-screen.
+      const nextInset = Math.min(96, rawInset);
       setChromeBottomInset((prev) => (Math.abs(prev - nextInset) < 1 ? prev : nextInset));
-    };
-
-    const resetBaseline = () => {
-      maxVisibleBottom = viewport.height + viewport.offsetTop;
-      updateInset();
     };
 
     updateInset();
     viewport.addEventListener("resize", updateInset);
     viewport.addEventListener("scroll", updateInset);
-    window.addEventListener("orientationchange", resetBaseline);
-    window.addEventListener("pageshow", resetBaseline);
+    window.addEventListener("resize", updateInset);
+    window.addEventListener("orientationchange", updateInset);
+    window.addEventListener("pageshow", updateInset);
 
     return () => {
       viewport.removeEventListener("resize", updateInset);
       viewport.removeEventListener("scroll", updateInset);
-      window.removeEventListener("orientationchange", resetBaseline);
-      window.removeEventListener("pageshow", resetBaseline);
+      window.removeEventListener("resize", updateInset);
+      window.removeEventListener("orientationchange", updateInset);
+      window.removeEventListener("pageshow", updateInset);
     };
   }, []);
 
