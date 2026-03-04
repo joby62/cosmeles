@@ -648,7 +648,9 @@ export default function MobileComparePage() {
                   void safeTrack("compare_category_selected", { category: item });
                 }}
                 className={`inline-flex h-11 items-center rounded-full border px-5 text-[14px] font-medium ${
-                  active ? "border-black/20 bg-black text-white" : "border-black/12 text-black/75 active:bg-black/[0.03]"
+                  active
+                    ? "border-[#0a84ff]/45 bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] text-white shadow-[0_8px_20px_rgba(0,113,227,0.28)]"
+                    : "border-black/12 text-black/75 active:bg-black/[0.03]"
                 }`}
               >
                 {label}
@@ -687,7 +689,7 @@ export default function MobileComparePage() {
               )}
             </>
           ) : (
-            <div className="text-[13px] leading-[1.6] text-[#b53a3a]">
+            <div className="text-[13px] leading-[1.6] text-[#b53a3a] dark:text-[#ffb4b4]">
               还没有可沿用的个人选项。先完成一次“{currentCategoryLabel}”问答后再来对比。
             </div>
           )}
@@ -728,7 +730,7 @@ export default function MobileComparePage() {
         {bootstrapLoading ? (
           <div className="mt-3 text-[13px] text-black/55">正在加载产品库...</div>
         ) : bootstrapError ? (
-          <div className="mt-3 text-[13px] text-[#b53a3a]">{bootstrapError}</div>
+          <div className="mt-3 text-[13px] text-[#b53a3a] dark:text-[#ffb4b4]">{bootstrapError}</div>
         ) : orderedLibraryItems.length === 0 ? (
           <div className="mt-3 text-[13px] text-black/55">该品类暂时还没有可用产品。</div>
         ) : (
@@ -882,12 +884,12 @@ export default function MobileComparePage() {
         </div>
 
         {!hasHistoryProfile && (
-          <div className="mt-3 rounded-2xl border border-[#ff8f8f]/45 bg-[#ff5f5f]/10 px-4 py-3 text-[13px] text-[#b53a3a]">
+          <div className="mt-3 rounded-2xl border border-[#ff8f8f]/45 bg-[#ff5f5f]/10 px-4 py-3 text-[13px] text-[#b53a3a] dark:border-[#ff8f8f]/35 dark:bg-[#5a1f26]/45 dark:text-[#ffd1d1]">
             还没有可沿用的个人选项。先完成一次该品类问答，再开始专业对比。
           </div>
         )}
         {!recommendationReady && (
-          <div className="mt-3 rounded-2xl border border-[#ff8f8f]/45 bg-[#ff5f5f]/10 px-4 py-3 text-[13px] text-[#b53a3a]">
+          <div className="mt-3 rounded-2xl border border-[#ff8f8f]/45 bg-[#ff5f5f]/10 px-4 py-3 text-[13px] text-[#b53a3a] dark:border-[#ff8f8f]/35 dark:bg-[#5a1f26]/45 dark:text-[#ffd1d1]">
             当前设备在“{currentCategoryLabel}”下还没有历史首推，请先完成一次对应问答路径。
           </div>
         )}
@@ -951,8 +953,8 @@ export default function MobileComparePage() {
         ) : null}
 
         {isDoneTask ? (
-          <div className="mt-4 rounded-[24px] border border-[#b7cef8] bg-[linear-gradient(180deg,#f5f9ff_0%,#edf4ff_100%)] p-4">
-            <div className="text-[12px] font-semibold tracking-[0.03em] text-[#2f5db2]">分析已完成</div>
+          <div className="mt-4 rounded-[24px] border border-[#b7cef8] bg-[linear-gradient(180deg,#f5f9ff_0%,#edf4ff_100%)] p-4 dark:border-[#6a8cc8]/48 dark:bg-[linear-gradient(180deg,rgba(25,39,64,0.95)_0%,rgba(20,33,56,0.92)_100%)]">
+            <div className="text-[12px] font-semibold tracking-[0.03em] text-[#2f5db2] dark:text-[#9dc5ff]">分析已完成</div>
             <div className="mt-2 text-[16px] font-semibold leading-[1.4] text-black/90">
               {activeSession?.result?.headline || "对比完成，点击查看完整结论。"}
             </div>
@@ -975,7 +977,7 @@ export default function MobileComparePage() {
         ) : null}
 
         {isFailedTask ? (
-          <div className="mt-4 rounded-[22px] border border-[#ff8f8f]/45 bg-[#ff5f5f]/10 px-4 py-3 text-[13px] text-[#b53a3a]">
+          <div className="mt-4 rounded-[22px] border border-[#ff8f8f]/45 bg-[#ff5f5f]/10 px-4 py-3 text-[13px] text-[#b53a3a] dark:border-[#ff8f8f]/35 dark:bg-[#5a1f26]/45 dark:text-[#ffd1d1]">
             {runError || activeSession?.error?.detail || "任务失败，请重置后重试。"}
           </div>
         ) : null}
@@ -999,7 +1001,7 @@ export default function MobileComparePage() {
           <button
             type="button"
             onClick={resetCompareFlow}
-            className="inline-flex h-10 items-center justify-center rounded-xl border border-[#0a84ff]/30 bg-[#f0f7ff] px-4 text-[13px] font-medium text-[#1d5fb8] active:bg-[#e2f0ff]"
+            className="inline-flex h-10 items-center justify-center rounded-xl border border-[#0a84ff]/30 bg-[#f0f7ff] px-4 text-[13px] font-medium text-[#1d5fb8] active:bg-[#e2f0ff] dark:border-[#69adff]/42 dark:bg-[#1e3558]/78 dark:text-[#b6d9ff] dark:active:bg-[#27436f]"
           >
             重置并重新开始
           </button>
@@ -1016,7 +1018,7 @@ export default function MobileComparePage() {
           <div className="pointer-events-none absolute -right-8 -top-10 h-40 w-40 rounded-full bg-[#6bb3ff]/40 blur-3xl" />
           <div className="pointer-events-none absolute -bottom-14 -left-8 h-44 w-44 rounded-full bg-[#7f8fff]/30 blur-3xl" />
           <div className="relative z-[1]">
-            <div className="inline-flex h-7 items-center rounded-full border border-[#c8dbff] bg-[#edf5ff] px-3 text-[11px] font-semibold tracking-[0.03em] text-[#2f5db2]">
+            <div className="inline-flex h-7 items-center rounded-full border border-[#c8dbff] bg-[#edf5ff] px-3 text-[11px] font-semibold tracking-[0.03em] text-[#2f5db2] dark:border-[#6f95d8]/48 dark:bg-[#223a62]/76 dark:text-[#b8d7ff]">
               专业对比
             </div>
             <h1 className="mt-3 text-[30px] leading-[1.16] font-semibold tracking-[-0.02em] text-black/92">
@@ -1047,7 +1049,7 @@ export default function MobileComparePage() {
             </div>
           </div>
         </article>
-        <div className="mt-4 rounded-[20px] border border-black/8 bg-white/68 px-4 py-3 text-[12px] leading-[1.55] text-black/56">
+        <div className="mt-4 rounded-[20px] border border-black/8 bg-white/68 px-4 py-3 text-[12px] leading-[1.55] text-black/56 dark:border-white/12 dark:bg-[rgba(21,30,46,0.82)] dark:text-[#cbdaf2]/72">
           之后是分步流程：每一步只处理一个决定，信息更少、看起来更轻。
         </div>
         {historySheet}
@@ -1084,7 +1086,7 @@ export default function MobileComparePage() {
       </div>
 
       {runError ? (
-        <div className="mt-3 rounded-2xl border border-[#ff8f8f]/45 bg-[#ff5f5f]/10 px-4 py-3 text-[13px] text-[#b53a3a]">
+        <div className="mt-3 rounded-2xl border border-[#ff8f8f]/45 bg-[#ff5f5f]/10 px-4 py-3 text-[13px] text-[#b53a3a] dark:border-[#ff8f8f]/35 dark:bg-[#5a1f26]/45 dark:text-[#ffd1d1]">
           {runError}
         </div>
       ) : null}
@@ -1138,7 +1140,7 @@ function CompareHistorySheet({
   return (
     <div className="fixed inset-0 z-[72] flex items-end bg-black/42 px-4 pb-[calc(92px+env(safe-area-inset-bottom))] backdrop-blur-[2px]" onClick={onClose}>
       <div
-        className="m-sheet-enter max-h-[70vh] w-full overflow-hidden rounded-[28px] border border-white/35 bg-white/92 shadow-[0_18px_44px_rgba(0,0,0,0.25)]"
+        className="m-sheet-enter max-h-[70vh] w-full overflow-hidden rounded-[28px] border border-white/35 bg-white/92 shadow-[0_18px_44px_rgba(0,0,0,0.25)] dark:border-white/12 dark:bg-[rgba(17,24,38,0.94)] dark:shadow-[0_18px_48px_rgba(0,0,0,0.48)]"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-black/8 px-4 py-3">
@@ -1166,13 +1168,13 @@ function CompareHistorySheet({
 
         <div className="max-h-[calc(70vh-64px)] overflow-y-auto p-3">
           {loading ? (
-            <div className="rounded-2xl border border-black/10 bg-white/70 px-4 py-4 text-[13px] text-black/58">正在读取历史记录...</div>
+            <div className="rounded-2xl border border-black/10 bg-white/70 px-4 py-4 text-[13px] text-black/58 dark:border-white/12 dark:bg-[rgba(27,38,58,0.74)] dark:text-[rgba(219,231,250,0.72)]">正在读取历史记录...</div>
           ) : null}
           {!loading && error ? (
-            <div className="rounded-2xl border border-[#ff8f8f]/45 bg-[#ff5f5f]/10 px-4 py-4 text-[13px] text-[#b53a3a]">{error}</div>
+            <div className="rounded-2xl border border-[#ff8f8f]/45 bg-[#ff5f5f]/10 px-4 py-4 text-[13px] text-[#b53a3a] dark:border-[#ff8f8f]/35 dark:bg-[#5a1f26]/45 dark:text-[#ffd1d1]">{error}</div>
           ) : null}
           {!loading && !error && items.length === 0 ? (
-            <div className="rounded-2xl border border-black/10 bg-white/70 px-4 py-4 text-[13px] text-black/58">还没有历史对比记录。</div>
+            <div className="rounded-2xl border border-black/10 bg-white/70 px-4 py-4 text-[13px] text-black/58 dark:border-white/12 dark:bg-[rgba(27,38,58,0.74)] dark:text-[rgba(219,231,250,0.72)]">还没有历史对比记录。</div>
           ) : null}
           {!loading && !error ? (
             <div className="space-y-2">
@@ -1180,10 +1182,10 @@ function CompareHistorySheet({
                 const statusLabel = item.status === "done" ? "已完成" : item.status === "failed" ? "失败" : "进行中";
                 const statusTone =
                   item.status === "done"
-                    ? "border-[#b7d4ff] bg-[#ebf4ff] text-[#2e61be]"
+                    ? "border-[#b7d4ff] bg-[#ebf4ff] text-[#2e61be] dark:border-[#6c97df]/45 dark:bg-[#233c66]/70 dark:text-[#bad8ff]"
                     : item.status === "failed"
-                      ? "border-[#ffb9b9] bg-[#ffecec] text-[#b23b3b]"
-                      : "border-[#ffd79e] bg-[#fff6e8] text-[#96631a]";
+                      ? "border-[#ffb9b9] bg-[#ffecec] text-[#b23b3b] dark:border-[#ff9b9b]/45 dark:bg-[#5a2429]/55 dark:text-[#ffd0d0]"
+                      : "border-[#ffd79e] bg-[#fff6e8] text-[#96631a] dark:border-[#f0bf70]/42 dark:bg-[#5b461f]/50 dark:text-[#ffdba5]";
                 return (
                   <article key={item.compare_id} className="rounded-2xl border border-black/10 bg-white/78 px-3 py-3">
                     <div className="flex items-start justify-between gap-2">
@@ -1237,9 +1239,9 @@ function CompareWaitingPanel({
   const currentStageIndex = WAITING_STAGE_ORDER.indexOf(stage);
   const showInsight = elapsedSeconds >= 8;
   return (
-    <div className="mt-4 overflow-hidden rounded-[26px] border border-black/10 bg-[linear-gradient(180deg,#f8fbff_0%,#eef4ff_44%,#ffffff_100%)] p-4 shadow-[0_10px_28px_rgba(35,61,102,0.08)]">
+    <div className="mt-4 overflow-hidden rounded-[26px] border border-black/10 bg-[linear-gradient(180deg,#f8fbff_0%,#eef4ff_44%,#ffffff_100%)] p-4 shadow-[0_10px_28px_rgba(35,61,102,0.08)] dark:border-white/12 dark:bg-[linear-gradient(180deg,rgba(20,33,56,0.94)_0%,rgba(17,28,48,0.9)_44%,rgba(15,24,41,0.92)_100%)] dark:shadow-[0_10px_30px_rgba(0,0,0,0.42)]">
       <div className="flex items-center justify-between">
-        <span className="inline-flex h-7 items-center rounded-full border border-[#b7cef8] bg-[#eaf2ff] px-3 text-[11px] font-semibold text-[#2d5dbc]">
+        <span className="inline-flex h-7 items-center rounded-full border border-[#b7cef8] bg-[#eaf2ff] px-3 text-[11px] font-semibold text-[#2d5dbc] dark:border-[#74a8f0]/48 dark:bg-[#24406a]/72 dark:text-[#badaff]">
           豆包正在工作
         </span>
         <span className="text-[11px] font-medium text-black/50">{formatDuration(elapsedSeconds)}</span>
@@ -1262,7 +1264,7 @@ function CompareWaitingPanel({
       ) : null}
 
       {showInsight ? (
-        <div className="mt-3 rounded-xl border border-[#bcd2ff] bg-[#edf4ff] px-3 py-2 text-[12px] text-[#305fb8]">
+        <div className="mt-3 rounded-xl border border-[#bcd2ff] bg-[#edf4ff] px-3 py-2 text-[12px] text-[#305fb8] dark:border-[#7aaef4]/42 dark:bg-[#213c66]/72 dark:text-[#c2deff]">
           已识别关键差异维度：清洁力、刺激风险、修护倾向。
         </div>
       ) : null}
@@ -1276,10 +1278,10 @@ function CompareWaitingPanel({
               key={item}
               className={`flex items-center justify-between rounded-xl border px-3 py-2 text-[12px] ${
                 active
-                  ? "border-[#9cbcff]/70 bg-[#edf4ff] text-[#2d5dbc]"
+                  ? "border-[#9cbcff]/70 bg-[#edf4ff] text-[#2d5dbc] dark:border-[#78aef8]/45 dark:bg-[#26436e]/62 dark:text-[#c8e2ff]"
                   : done
-                    ? "border-[#d2dff5] bg-white/85 text-black/66"
-                    : "border-black/8 bg-white/70 text-black/45"
+                    ? "border-[#d2dff5] bg-white/85 text-black/66 dark:border-white/14 dark:bg-white/8 dark:text-[rgba(214,229,255,0.78)]"
+                    : "border-black/8 bg-white/70 text-black/45 dark:border-white/10 dark:bg-white/5 dark:text-[rgba(198,213,239,0.52)]"
               }`}
             >
               <span>{WAITING_STAGE_LABEL[item]}</span>
