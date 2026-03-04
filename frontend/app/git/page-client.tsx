@@ -59,17 +59,17 @@ type GitDashboardData = {
 export type GitDashboardBundle = Record<RangeKey, GitDashboardData>;
 
 const MODULE_LABEL: Record<GitModuleBucket, string> = {
-  mobile: "Mobile",
-  backend: "Backend",
-  infra: "Infra",
-  mixed: "Mixed",
+  mobile: "移动端",
+  backend: "后端",
+  infra: "基础设施",
+  mixed: "跨域",
 };
 
 const MODULE_SCOPE_HINT: Record<GitModuleBucket, string> = {
   mobile: "frontend/app/m + components/mobile + lib/mobile",
   backend: "backend/**",
-  infra: "frontend non-mobile + deploy + docs + governance",
-  mixed: "single commit touched multiple domains",
+  infra: "frontend 非 mobile + deploy + docs + 治理文件",
+  mixed: "一次提交同时触达多个域",
 };
 
 const MODULE_BAR_COLOR: Record<GitModuleBucket, string> = {
@@ -89,44 +89,44 @@ const PANEL_LAYOUT: Record<PanelId, string> = {
 };
 
 const PANEL_TITLE: Record<PanelId, string> = {
-  overview: "Codeflow Snapshot",
-  trend: "Daily Add/Delete Flow",
-  modules: "Module Contribution",
-  impact: "Commit-by-Commit Strip",
-  heatmap: "Weekday / Hour Heatmap",
-  top: "Highest Impact Commits",
+  overview: "代码流快照",
+  trend: "每日新增/删除趋势",
+  modules: "模块贡献",
+  impact: "提交波动条带",
+  heatmap: "周 / 小时热力图",
+  top: "高影响提交",
 };
 
 const PANEL_SUBTITLE: Record<PanelId, string> = {
-  overview: "core metrics from git numstat",
-  trend: "upper area = add, lower area = delete",
-  modules: "drag cards to reorder this board",
-  impact: "left to right = old to new",
-  heatmap: "denser color means more commits",
-  top: "sorted by insertions + deletions",
+  overview: "来自 git numstat 的核心指标",
+  trend: "上半区是新增，下半区是删除",
+  modules: "拖拽卡片可调整板块顺序",
+  impact: "从左到右为时间从旧到新",
+  heatmap: "颜色越深表示提交越密集",
+  top: "按新增 + 删除行数排序",
 };
 
 const RANGE_LABEL: Record<RangeKey, string> = {
-  "7": "7D",
-  "30": "30D",
-  "90": "90D",
+  "7": "7天",
+  "30": "30天",
+  "90": "90天",
 };
 
 const FILTER_LABEL: Record<ModuleFilter, string> = {
-  all: "All",
-  mobile: "Mobile",
-  backend: "Backend",
-  infra: "Infra",
-  mixed: "Mixed",
+  all: "全部",
+  mobile: "移动端",
+  backend: "后端",
+  infra: "基础设施",
+  mixed: "跨域",
 };
 
-const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
+const WEEKDAY_LABELS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"] as const;
 const WEEKDAY_INDEX = [1, 2, 3, 4, 5, 6, 0] as const;
 const MODULE_ORDER: GitModuleBucket[] = ["mobile", "backend", "infra", "mixed"];
 const DEFAULT_PANEL_ORDER: PanelId[] = ["overview", "trend", "modules", "impact", "heatmap", "top"];
 
 function formatNumber(value: number): string {
-  return new Intl.NumberFormat("en-US").format(value);
+  return new Intl.NumberFormat("zh-CN").format(value);
 }
 
 function formatSigned(value: number): string {
@@ -300,7 +300,7 @@ function PanelShell({
           {rightSlot}
           <span
             className="git-panel-handle inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/10 bg-black/[0.03] text-black/45"
-            title="Drag to reorder"
+            title="拖拽调整位置"
             aria-hidden
           >
             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -409,7 +409,7 @@ export default function GitDashboardClient({ datasets }: { datasets: GitDashboar
     return (
       <section className="mx-auto max-w-[1180px] px-6 pb-24 pt-16 md:px-10">
         <div className="rounded-[32px] border border-black/10 bg-white/90 p-8 shadow-[0_28px_80px_rgba(7,12,20,0.1)]">
-          <p className="text-[12px] tracking-[0.14em] text-black/52 uppercase">Git Observatory</p>
+          <p className="text-[12px] tracking-[0.14em] text-black/52 uppercase">Git 工程观测台</p>
           <h1 className="mt-2 text-[40px] leading-[1.04] font-semibold tracking-[-0.03em] text-black/88">
             无法读取本地 Git 历史
           </h1>
@@ -443,37 +443,37 @@ export default function GitDashboardClient({ datasets }: { datasets: GitDashboar
             onClick={() => setPanelOrder(DEFAULT_PANEL_ORDER)}
             className="rounded-full border border-black/12 bg-black/[0.02] px-3 py-1 text-[11px] text-black/64 transition-colors hover:bg-black/[0.05]"
           >
-            Reset Layout
+            重置布局
           </button>
         }
       >
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <article className="rounded-2xl border border-black/10 bg-white/88 p-4">
-            <p className="text-[11px] tracking-[0.08em] text-black/52 uppercase">Insertions</p>
+            <p className="text-[11px] tracking-[0.08em] text-black/52 uppercase">新增行数</p>
             <p className="mt-2 text-[31px] leading-none font-semibold tracking-[-0.03em] text-emerald-700">
               +{formatNumber(computed.totals.insertions)}
             </p>
-            <p className="mt-2 text-[12px] text-black/54">{ratioLabel(computed.totals.insertions, totalChurn)} of churn</p>
+            <p className="mt-2 text-[12px] text-black/54">占总波动 {ratioLabel(computed.totals.insertions, totalChurn)}</p>
           </article>
 
           <article className="rounded-2xl border border-black/10 bg-white/88 p-4">
-            <p className="text-[11px] tracking-[0.08em] text-black/52 uppercase">Deletions</p>
+            <p className="text-[11px] tracking-[0.08em] text-black/52 uppercase">删除行数</p>
             <p className="mt-2 text-[31px] leading-none font-semibold tracking-[-0.03em] text-rose-700">
               -{formatNumber(computed.totals.deletions)}
             </p>
-            <p className="mt-2 text-[12px] text-black/54">{ratioLabel(computed.totals.deletions, totalChurn)} of churn</p>
+            <p className="mt-2 text-[12px] text-black/54">占总波动 {ratioLabel(computed.totals.deletions, totalChurn)}</p>
           </article>
 
           <article className="rounded-2xl border border-black/10 bg-white/88 p-4">
-            <p className="text-[11px] tracking-[0.08em] text-black/52 uppercase">Commits</p>
+            <p className="text-[11px] tracking-[0.08em] text-black/52 uppercase">提交次数</p>
             <p className="mt-2 text-[31px] leading-none font-semibold tracking-[-0.03em] text-black/86">
               {formatNumber(computed.totals.commits)}
             </p>
-            <p className="mt-2 text-[12px] text-black/54">files touched {formatNumber(computed.totals.files)}</p>
+            <p className="mt-2 text-[12px] text-black/54">影响文件 {formatNumber(computed.totals.files)}</p>
           </article>
 
           <article className="rounded-2xl border border-black/10 bg-white/88 p-4">
-            <p className="text-[11px] tracking-[0.08em] text-black/52 uppercase">Net Delta</p>
+            <p className="text-[11px] tracking-[0.08em] text-black/52 uppercase">净变化</p>
             <p
               className={`mt-2 text-[31px] leading-none font-semibold tracking-[-0.03em] ${
                 computed.totals.net >= 0 ? "text-cyan-700" : "text-orange-700"
@@ -481,7 +481,7 @@ export default function GitDashboardClient({ datasets }: { datasets: GitDashboar
             >
               {formatSigned(computed.totals.net)}
             </p>
-            <p className="mt-2 text-[12px] text-black/54">insertions - deletions</p>
+            <p className="mt-2 text-[12px] text-black/54">新增 - 删除</p>
           </article>
         </div>
       </PanelShell>
@@ -570,7 +570,7 @@ export default function GitDashboardClient({ datasets }: { datasets: GitDashboar
                   <p className="text-[11px] text-black/52">{MODULE_SCOPE_HINT[row.bucket]}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-[12px] font-medium text-black/74">{formatNumber(row.commits)} commits</p>
+                  <p className="text-[12px] font-medium text-black/74">{formatNumber(row.commits)} 次提交</p>
                   <p className={`text-[12px] ${row.net >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
                     {formatSigned(row.net)}
                   </p>
@@ -654,7 +654,7 @@ export default function GitDashboardClient({ datasets }: { datasets: GitDashboar
                     <div
                       key={`${actualDay}-${hour}`}
                       className="h-[11px] rounded-[4px] border border-black/[0.05]"
-                      title={`${WEEKDAY_LABELS[rowIndex]} ${hour}:00 · ${value} commits`}
+                      title={`${WEEKDAY_LABELS[rowIndex]} ${hour}:00 · ${value} 次提交`}
                       style={{ backgroundColor: `rgba(14,165,233,${alpha})` }}
                     />
                   );
@@ -680,11 +680,11 @@ export default function GitDashboardClient({ datasets }: { datasets: GitDashboar
           <table className="min-w-full table-fixed border-separate border-spacing-y-2">
             <thead>
               <tr>
-                <th className="w-[110px] px-3 text-left text-[11px] tracking-[0.06em] text-black/52 uppercase">Hash</th>
-                <th className="w-[120px] px-3 text-left text-[11px] tracking-[0.06em] text-black/52 uppercase">Date</th>
-                <th className="px-3 text-left text-[11px] tracking-[0.06em] text-black/52 uppercase">Subject</th>
+                <th className="w-[110px] px-3 text-left text-[11px] tracking-[0.06em] text-black/52 uppercase">提交</th>
+                <th className="w-[120px] px-3 text-left text-[11px] tracking-[0.06em] text-black/52 uppercase">日期</th>
+                <th className="px-3 text-left text-[11px] tracking-[0.06em] text-black/52 uppercase">说明</th>
                 <th className="w-[120px] px-3 text-right text-[11px] tracking-[0.06em] text-black/52 uppercase">+ / -</th>
-                <th className="w-[120px] px-3 text-right text-[11px] tracking-[0.06em] text-black/52 uppercase">Module</th>
+                <th className="w-[120px] px-3 text-right text-[11px] tracking-[0.06em] text-black/52 uppercase">模块</th>
               </tr>
             </thead>
             <tbody>
@@ -712,9 +712,9 @@ export default function GitDashboardClient({ datasets }: { datasets: GitDashboar
     <>
       <section className="mx-auto max-w-[1280px] px-6 pb-24 pt-14 md:px-10">
         <header className="relative overflow-hidden rounded-[34px] border border-black/10 bg-[radial-gradient(circle_at_16%_0%,rgba(56,189,248,0.32),rgba(245,247,252,0.98)_42%),radial-gradient(circle_at_84%_12%,rgba(236,72,153,0.16),rgba(245,247,252,0)_48%),linear-gradient(160deg,rgba(255,255,255,0.96),rgba(241,246,255,0.94))] px-7 py-8 shadow-[0_34px_84px_rgba(11,22,38,0.14)] md:px-10 md:py-10">
-          <p className="text-[12px] tracking-[0.16em] text-black/52 uppercase">Git Observatory</p>
+          <p className="text-[12px] tracking-[0.16em] text-black/52 uppercase">Git 工程观测台</p>
           <h1 className="mt-2 max-w-[860px] text-[42px] leading-[0.98] font-semibold tracking-[-0.035em] text-black/90 md:text-[56px]">
-            Desktop Codeflow Panel
+            桌面代码流仪表盘
           </h1>
           <p className="mt-4 max-w-[900px] text-[16px] leading-[1.72] text-black/62 md:text-[17px]">
             数据来自真实 <code>git log --numstat</code>。支持时间范围切换、模块过滤，以及拖拽重排面板。
@@ -753,7 +753,7 @@ export default function GitDashboardClient({ datasets }: { datasets: GitDashboar
           </div>
 
           <p className="mt-3 text-[12px] text-black/48">
-            current view: {range} days · filter {FILTER_LABEL[filter]} · generated{" "}
+            当前视图：最近 {RANGE_LABEL[range]} · 过滤：{FILTER_LABEL[filter]} · 生成时间{" "}
             {new Date(dataset.generatedAtIso).toLocaleString("zh-CN")}
           </p>
         </header>
