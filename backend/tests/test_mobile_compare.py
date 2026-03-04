@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -256,6 +257,130 @@ def test_mobile_compare_stream_success_and_fetch_result(test_client, monkeypatch
     fetched_body = fetched.json()
     assert fetched_body["compare_id"] == result["compare_id"]
     assert fetched_body["verdict"]["headline"] == result["verdict"]["headline"]
+
+    session_detail = client.get(f"/api/mobile/compare/sessions/{result['compare_id']}")
+    assert session_detail.status_code == 200
+    session_payload = session_detail.json()
+    assert session_payload["status"] == "done"
+    assert session_payload["compare_id"] == result["compare_id"]
+    assert session_payload["result"]["headline"] == result["verdict"]["headline"]
+
+    session_list = client.get("/api/mobile/compare/sessions", params={"category": "shampoo", "limit": 20})
+    assert session_list.status_code == 200
+    listed_ids = [item["compare_id"] for item in session_list.json()]
+    assert result["compare_id"] in listed_ids
+
+
+def test_mobile_compare_session_detail_fallback_to_result_when_session_file_missing(
+    test_client,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    client, storage_dir = test_client
+
+    _install_fake_ingest_pipeline(
+        monkeypatch,
+        {
+            "category": "shampoo",
+            "brand": "FallbackBrand",
+            "name": "FallbackA",
+            "one_sentence": "fallback",
+        },
+    )
+    featured_product_id = _ingest_one(client, "fallback.jpg")
+    _set_shampoo_featured_slots(client, product_id=featured_product_id)
+
+    selection = client.post(
+        "/api/mobile/selection/resolve",
+        json={"category": "shampoo", "answers": {"q1": "A", "q2": "C", "q3": "B"}},
+    )
+    assert selection.status_code == 200
+    recommendation_product_id = selection.json()["recommended_product"]["id"]
+
+    upload = client.post(
+        "/api/mobile/compare/current-product/upload",
+        data={"category": "shampoo", "brand": "FallbackBrand", "name": "FallbackUse"},
+        files={"image": ("fallback-current.jpg", b"fake-current-jpeg", "image/jpeg")},
+    )
+    assert upload.status_code == 200
+    upload_id = upload.json()["upload_id"]
+
+    class FakePipeline:
+        def analyze_stage1(self, image_path: str, trace_id: str | None = None, event_callback=None):
+            if event_callback:
+                event_callback({"type": "step", "stage": "stage1_vision", "message": "stage1 done"})
+            return {
+                "vision_text": "mock vision",
+                "model": "doubao-stage1-mini",
+                "artifact": f"doubao_runs/{trace_id}/stage1_vision.json",
+            }
+
+        def analyze_stage2(self, vision_text: str, trace_id: str | None = None, event_callback=None):
+            if event_callback:
+                event_callback({"type": "step", "stage": "stage2_struct", "message": "stage2 done"})
+            return {
+                "doc": {
+                    "product": {"category": "shampoo", "brand": "FallbackBrand", "name": "FallbackUse"},
+                    "summary": {
+                        "one_sentence": "fallback summary",
+                        "pros": ["A"],
+                        "cons": ["B"],
+                        "who_for": ["C"],
+                        "who_not_for": ["D"],
+                    },
+                    "ingredients": [
+                        {"name": "甘油", "type": "保湿剂", "functions": ["保湿"], "risk": "low", "notes": ""},
+                        {"name": "月桂醇硫酸酯钠", "type": "表活", "functions": ["清洁"], "risk": "high", "notes": ""},
+                    ],
+                    "evidence": {"doubao_raw": ""},
+                },
+                "struct_text": "{\"ok\":true}",
+                "model": "doubao-stage2-mini",
+                "artifact": f"doubao_runs/{trace_id}/stage2_struct.json",
+            }
+
+    def fake_run_capability_now(capability: str, input_payload: dict, trace_id: str | None = None, event_callback=None):
+        return {
+            "decision": "keep",
+            "headline": "可以继续使用。",
+            "confidence": 0.74,
+            "sections": {
+                "keep_benefits": ["A"],
+                "keep_watchouts": ["B"],
+                "ingredient_order_diff": ["C"],
+                "profile_fit_advice": ["D"],
+            },
+            "model": "doubao-pro",
+        }
+
+    monkeypatch.setattr(mobile_routes, "DoubaoPipelineService", FakePipeline)
+    monkeypatch.setattr(mobile_routes, "run_capability_now", fake_run_capability_now)
+
+    stream_resp = client.post(
+        "/api/mobile/compare/jobs/stream",
+        json={
+            "category": "shampoo",
+            "profile_mode": "reuse_latest",
+            "targets": [
+                {"source": "upload_new", "upload_id": upload_id},
+                {"source": "history_product", "product_id": recommendation_product_id},
+            ],
+        },
+    )
+    assert stream_resp.status_code == 200
+    events = _parse_sse_events(stream_resp.text)
+    result_payload = [payload for name, payload in events if name == "result"][0]
+    compare_id = result_payload["compare_id"]
+
+    session_file = Path(storage_dir) / "doubao_runs" / compare_id / "mobile_compare_session.json"
+    assert session_file.exists()
+    session_file.unlink()
+
+    fallback_detail = client.get(f"/api/mobile/compare/sessions/{compare_id}")
+    assert fallback_detail.status_code == 200
+    detail_payload = fallback_detail.json()
+    assert detail_payload["status"] == "done"
+    assert detail_payload["compare_id"] == compare_id
+    assert detail_payload["result"]["headline"] == result_payload["verdict"]["headline"]
 
 
 def test_mobile_compare_stream_returns_real_error_when_no_recommendation(test_client):

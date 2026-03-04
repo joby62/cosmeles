@@ -4,6 +4,7 @@ import queue
 import threading
 from collections import defaultdict
 from itertools import combinations
+from pathlib import Path
 from uuid import uuid4
 from typing import Any, Callable
 
@@ -36,6 +37,9 @@ from app.schemas import (
     MobileCompareRecommendationBootstrap,
     MobileCompareResultResponse,
     MobileCompareResultSection,
+    MobileCompareSessionError,
+    MobileCompareSessionResponse,
+    MobileCompareSessionResultBrief,
     MobileCompareSourceGuide,
     MobileCompareTargetProduct,
     MobileCompareTransparency,
@@ -73,6 +77,8 @@ MOBILE_OWNER_TYPE_DEVICE = "device"
 
 MOBILE_COMPARE_VERSION = "2026-03-03.3"
 MOBILE_COMPARE_HEARTBEAT_SECONDS = 2
+MOBILE_COMPARE_SESSION_STAGE = "mobile_compare_session"
+MOBILE_COMPARE_RESULT_STAGE = "mobile_compare_result"
 MOBILE_COMPARE_STAGE_META: dict[str, str] = {
     "prepare": "准备对比任务",
     "resolve_targets": "读取待对比产品",
@@ -708,45 +714,159 @@ def run_mobile_compare_job_stream(
     db: Session = Depends(get_db),
 ):
     owner_type, owner_id, owner_cookie_new = _resolve_owner(request)
+    category_hint = str(payload.category or "").strip().lower() or "unknown"
+    compare_id = new_id()
     events: queue.Queue[tuple[str, dict[str, Any]] | None] = queue.Queue()
     SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=db.get_bind())
 
     def emit(event: str, data: dict[str, Any]) -> None:
+        if event == "progress":
+            percent_raw = data.get("percent")
+            pair_index_raw = data.get("pair_index")
+            pair_total_raw = data.get("pair_total")
+            try:
+                percent_value = int(percent_raw) if percent_raw is not None else 0
+            except Exception:
+                percent_value = 0
+            try:
+                pair_index_value = int(pair_index_raw) if pair_index_raw is not None else None
+            except Exception:
+                pair_index_value = None
+            try:
+                pair_total_value = int(pair_total_raw) if pair_total_raw is not None else None
+            except Exception:
+                pair_total_value = None
+            _upsert_mobile_compare_session(
+                compare_id=compare_id,
+                owner_type=owner_type,
+                owner_id=owner_id,
+                category=category_hint,
+                patch={
+                    "status": "done" if str(data.get("stage") or "") == "done" else "running",
+                    "stage": str(data.get("stage") or "").strip() or None,
+                    "stage_label": str(data.get("stage_label") or "").strip() or None,
+                    "message": str(data.get("message") or "").strip() or None,
+                    "percent": percent_value,
+                    "pair_index": pair_index_value,
+                    "pair_total": pair_total_value,
+                },
+            )
         events.put((event, data))
+
+    _upsert_mobile_compare_session(
+        compare_id=compare_id,
+        owner_type=owner_type,
+        owner_id=owner_id,
+        category=category_hint,
+        patch={
+            "status": "running",
+            "stage": "prepare",
+            "stage_label": MOBILE_COMPARE_STAGE_META.get("prepare"),
+            "message": "任务已提交，正在准备分析。",
+            "percent": 2,
+        },
+    )
+    emit(
+        "accepted",
+        {
+            "status": "accepted",
+            "trace_id": compare_id,
+            "compare_id": compare_id,
+            "category": category_hint,
+            "stage": "prepare",
+            "stage_label": MOBILE_COMPARE_STAGE_META.get("prepare"),
+            "message": "任务已提交，正在准备分析。",
+            "percent": 2,
+            "ts": now_iso(),
+        },
+    )
 
     def worker() -> None:
         local_db = SessionMaker()
         try:
             result = _run_mobile_compare_job(
+                compare_id=compare_id,
                 payload=payload,
                 owner_type=owner_type,
                 owner_id=owner_id,
                 db=local_db,
                 event_callback=emit,
             )
+            _upsert_mobile_compare_session(
+                compare_id=compare_id,
+                owner_type=owner_type,
+                owner_id=owner_id,
+                category=result.category,
+                patch={
+                    "status": "done",
+                    "stage": "done",
+                    "stage_label": MOBILE_COMPARE_STAGE_META.get("done"),
+                    "message": "对比已完成。",
+                    "percent": 100,
+                    "pair_index": None,
+                    "pair_total": None,
+                    "error": None,
+                    "result": {
+                        "decision": result.verdict.decision,
+                        "headline": result.verdict.headline,
+                        "confidence": float(result.verdict.confidence or 0.0),
+                        "created_at": result.created_at,
+                    },
+                },
+            )
             emit("result", result.model_dump())
         except HTTPException as e:
-            emit("error", _compare_error_payload_from_http_exception(e))
+            err_payload = _compare_error_payload_from_http_exception(e)
+            _upsert_mobile_compare_session(
+                compare_id=compare_id,
+                owner_type=owner_type,
+                owner_id=owner_id,
+                category=category_hint,
+                patch={
+                    "status": "failed",
+                    "message": str(err_payload.get("detail") or "对比任务失败。"),
+                    "error": err_payload,
+                },
+            )
+            emit("error", err_payload)
         except AIServiceError as e:
-            emit(
-                "error",
-                {
-                    "code": e.code,
-                    "detail": e.message,
-                    "http_status": e.http_status,
-                    "retryable": e.http_status >= 500,
+            err_payload = {
+                "code": e.code,
+                "detail": e.message,
+                "http_status": e.http_status,
+                "retryable": e.http_status >= 500,
+            }
+            _upsert_mobile_compare_session(
+                compare_id=compare_id,
+                owner_type=owner_type,
+                owner_id=owner_id,
+                category=category_hint,
+                patch={
+                    "status": "failed",
+                    "message": str(err_payload.get("detail") or "对比任务失败。"),
+                    "error": err_payload,
                 },
             )
+            emit("error", err_payload)
         except Exception as e:  # pragma: no cover
-            emit(
-                "error",
-                {
-                    "code": "COMPARE_INTERNAL_ERROR",
-                    "detail": str(e),
-                    "http_status": 500,
-                    "retryable": True,
+            err_payload = {
+                "code": "COMPARE_INTERNAL_ERROR",
+                "detail": str(e),
+                "http_status": 500,
+                "retryable": True,
+            }
+            _upsert_mobile_compare_session(
+                compare_id=compare_id,
+                owner_type=owner_type,
+                owner_id=owner_id,
+                category=category_hint,
+                patch={
+                    "status": "failed",
+                    "message": str(err_payload.get("detail") or "对比任务失败。"),
+                    "error": err_payload,
                 },
             )
+            emit("error", err_payload)
         finally:
             emit("done", {"status": "done"})
             events.put(None)
@@ -790,6 +910,51 @@ def run_mobile_compare_job_stream(
     return stream
 
 
+@router.get("/compare/sessions", response_model=list[MobileCompareSessionResponse])
+def list_mobile_compare_sessions(
+    request: Request,
+    response: Response,
+    category: str | None = Query(None),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+):
+    owner_type, owner_id, owner_cookie_new = _resolve_owner(request)
+    normalized_category: str | None = None
+    if category:
+        normalized_category = str(category or "").strip().lower()
+        if normalized_category not in VALID_CATEGORIES:
+            raise HTTPException(status_code=400, detail=f"Invalid category: {normalized_category}.")
+    records = _list_mobile_compare_sessions(
+        owner_type=owner_type,
+        owner_id=owner_id,
+        category=normalized_category,
+        offset=offset,
+        limit=limit,
+    )
+    if owner_cookie_new:
+        _set_owner_cookie(response, owner_id, request)
+    return records
+
+
+@router.get("/compare/sessions/{compare_id}", response_model=MobileCompareSessionResponse)
+def get_mobile_compare_session(
+    compare_id: str,
+    request: Request,
+    response: Response,
+):
+    owner_type, owner_id, owner_cookie_new = _resolve_owner(request)
+    record = _get_mobile_compare_session_record(
+        compare_id=compare_id,
+        owner_type=owner_type,
+        owner_id=owner_id,
+    )
+    if record is None:
+        raise HTTPException(status_code=404, detail="Compare session not found.")
+    if owner_cookie_new:
+        _set_owner_cookie(response, owner_id, request)
+    return record
+
+
 @router.get("/compare/results/{compare_id}", response_model=MobileCompareResultResponse)
 def get_mobile_compare_result(
     compare_id: str,
@@ -797,7 +962,7 @@ def get_mobile_compare_result(
     response: Response,
 ):
     owner_type, owner_id, owner_cookie_new = _resolve_owner(request)
-    rel_path = f"doubao_runs/{compare_id}/mobile_compare_result.json"
+    rel_path = f"doubao_runs/{compare_id}/{MOBILE_COMPARE_RESULT_STAGE}.json"
     if not exists_rel_path(rel_path):
         raise HTTPException(status_code=404, detail="Compare result not found.")
 
@@ -840,6 +1005,7 @@ def record_mobile_compare_event(
 
 def _run_mobile_compare_job(
     *,
+    compare_id: str,
     payload: MobileCompareJobRequest,
     owner_type: str,
     owner_id: str,
@@ -847,7 +1013,6 @@ def _run_mobile_compare_job(
     event_callback: Callable[[str, dict[str, Any]], None],
 ) -> MobileCompareResultResponse:
     category = _normalize_required_category(payload.category)
-    compare_id = new_id()
 
     _emit_compare_progress(
         event_callback,
@@ -1055,7 +1220,7 @@ def _run_mobile_compare_job(
 
     save_doubao_artifact(
         compare_id,
-        "mobile_compare_result",
+        MOBILE_COMPARE_RESULT_STAGE,
         {
             "owner_type": owner_type,
             "owner_id": owner_id,
@@ -1648,6 +1813,243 @@ def _count_risks(doc: ProductDoc) -> dict[str, int]:
         if risk in out:
             out[risk] += 1
     return out
+
+
+def _mobile_compare_session_rel_path(compare_id: str) -> str:
+    return f"doubao_runs/{compare_id}/{MOBILE_COMPARE_SESSION_STAGE}.json"
+
+
+def _mobile_compare_result_rel_path(compare_id: str) -> str:
+    return f"doubao_runs/{compare_id}/{MOBILE_COMPARE_RESULT_STAGE}.json"
+
+
+def _session_payload_belongs_to_owner(payload: dict[str, Any], *, owner_type: str, owner_id: str) -> bool:
+    return (
+        str(payload.get("owner_type") or "") == owner_type
+        and str(payload.get("owner_id") or "") == owner_id
+    )
+
+
+def _upsert_mobile_compare_session(
+    *,
+    compare_id: str,
+    owner_type: str,
+    owner_id: str,
+    category: str,
+    patch: dict[str, Any],
+) -> MobileCompareSessionResponse:
+    existing_payload: dict[str, Any] = {}
+    rel_path = _mobile_compare_session_rel_path(compare_id)
+    if exists_rel_path(rel_path):
+        loaded = load_json(rel_path)
+        if isinstance(loaded, dict):
+            existing_payload = loaded
+
+    base_category = str(existing_payload.get("category") or category or "unknown").strip().lower() or "unknown"
+    status_value = str(patch.get("status") or existing_payload.get("status") or "running").strip().lower()
+    if status_value not in {"running", "done", "failed"}:
+        status_value = "running"
+
+    percent_raw = patch.get("percent", existing_payload.get("percent", 0))
+    try:
+        percent_value = int(percent_raw)
+    except Exception:
+        percent_value = 0
+    percent_value = max(0, min(100, percent_value))
+
+    created_at = str(existing_payload.get("created_at") or now_iso())
+    updated_at = now_iso()
+
+    merged: dict[str, Any] = {
+        "compare_id": compare_id,
+        "owner_type": owner_type,
+        "owner_id": owner_id,
+        "category": base_category,
+        "status": status_value,
+        "created_at": created_at,
+        "updated_at": updated_at,
+        "stage": patch.get("stage", existing_payload.get("stage")),
+        "stage_label": patch.get("stage_label", existing_payload.get("stage_label")),
+        "message": patch.get("message", existing_payload.get("message")),
+        "percent": percent_value,
+        "pair_index": patch.get("pair_index", existing_payload.get("pair_index")),
+        "pair_total": patch.get("pair_total", existing_payload.get("pair_total")),
+        "result": patch.get("result", existing_payload.get("result")),
+        "error": patch.get("error", existing_payload.get("error")),
+    }
+    if patch.get("result") is None and "result" in patch:
+        merged["result"] = None
+    if patch.get("error") is None and "error" in patch:
+        merged["error"] = None
+
+    save_doubao_artifact(compare_id, MOBILE_COMPARE_SESSION_STAGE, merged)
+    normalized = _normalize_mobile_compare_session_payload(merged)
+    if normalized is None:  # pragma: no cover
+        raise HTTPException(status_code=500, detail="Failed to persist mobile compare session.")
+    return normalized
+
+
+def _normalize_mobile_compare_session_payload(payload: dict[str, Any]) -> MobileCompareSessionResponse | None:
+    if not isinstance(payload, dict):
+        return None
+    compare_id = str(payload.get("compare_id") or "").strip()
+    category = str(payload.get("category") or "").strip().lower()
+    if not compare_id or not category:
+        return None
+
+    status_value = str(payload.get("status") or "running").strip().lower()
+    if status_value not in {"running", "done", "failed"}:
+        status_value = "running"
+
+    created_at = str(payload.get("created_at") or "").strip() or now_iso()
+    updated_at = str(payload.get("updated_at") or "").strip() or created_at
+
+    try:
+        percent = int(payload.get("percent") or 0)
+    except Exception:
+        percent = 0
+    percent = max(0, min(100, percent))
+
+    pair_index_raw = payload.get("pair_index")
+    pair_total_raw = payload.get("pair_total")
+    try:
+        pair_index = int(pair_index_raw) if pair_index_raw is not None else None
+    except Exception:
+        pair_index = None
+    try:
+        pair_total = int(pair_total_raw) if pair_total_raw is not None else None
+    except Exception:
+        pair_total = None
+
+    result_brief: MobileCompareSessionResultBrief | None = None
+    raw_result = payload.get("result")
+    if isinstance(raw_result, dict):
+        try:
+            result_brief = MobileCompareSessionResultBrief.model_validate(raw_result)
+        except Exception:
+            result_brief = None
+
+    error_payload: MobileCompareSessionError | None = None
+    raw_error = payload.get("error")
+    if isinstance(raw_error, dict):
+        try:
+            error_payload = MobileCompareSessionError.model_validate(raw_error)
+        except Exception:
+            error_payload = None
+
+    try:
+        return MobileCompareSessionResponse(
+            status=status_value,
+            compare_id=compare_id,
+            category=category,
+            created_at=created_at,
+            updated_at=updated_at,
+            stage=str(payload.get("stage") or "").strip() or None,
+            stage_label=str(payload.get("stage_label") or "").strip() or None,
+            message=str(payload.get("message") or "").strip() or None,
+            percent=percent,
+            pair_index=pair_index,
+            pair_total=pair_total,
+            result=result_brief,
+            error=error_payload,
+        )
+    except Exception:
+        return None
+
+
+def _fallback_mobile_compare_session_from_result_payload(
+    *,
+    compare_id: str,
+    result_payload: dict[str, Any],
+) -> MobileCompareSessionResponse | None:
+    try:
+        result = MobileCompareResultResponse.model_validate(result_payload)
+    except Exception:
+        return None
+    return MobileCompareSessionResponse(
+        status="done",
+        compare_id=compare_id,
+        category=str(result.category),
+        created_at=result.created_at,
+        updated_at=result.created_at,
+        stage="done",
+        stage_label=MOBILE_COMPARE_STAGE_META.get("done"),
+        message="对比已完成。",
+        percent=100,
+        result=MobileCompareSessionResultBrief(
+            decision=result.verdict.decision,
+            headline=result.verdict.headline,
+            confidence=float(result.verdict.confidence or 0.0),
+            created_at=result.created_at,
+        ),
+        error=None,
+    )
+
+
+def _get_mobile_compare_session_record(
+    *,
+    compare_id: str,
+    owner_type: str,
+    owner_id: str,
+) -> MobileCompareSessionResponse | None:
+    session_rel = _mobile_compare_session_rel_path(compare_id)
+    if exists_rel_path(session_rel):
+        payload = load_json(session_rel)
+        if (
+            isinstance(payload, dict)
+            and _session_payload_belongs_to_owner(payload, owner_type=owner_type, owner_id=owner_id)
+        ):
+            normalized = _normalize_mobile_compare_session_payload(payload)
+            if normalized is not None:
+                return normalized
+
+    result_rel = _mobile_compare_result_rel_path(compare_id)
+    if not exists_rel_path(result_rel):
+        return None
+    payload = load_json(result_rel)
+    if not isinstance(payload, dict):
+        return None
+    if not _session_payload_belongs_to_owner(payload, owner_type=owner_type, owner_id=owner_id):
+        return None
+    result_payload = payload.get("result")
+    if not isinstance(result_payload, dict):
+        return None
+    return _fallback_mobile_compare_session_from_result_payload(
+        compare_id=compare_id,
+        result_payload=result_payload,
+    )
+
+
+def _list_mobile_compare_sessions(
+    *,
+    owner_type: str,
+    owner_id: str,
+    category: str | None,
+    offset: int,
+    limit: int,
+) -> list[MobileCompareSessionResponse]:
+    runs_root = Path(settings.storage_dir).resolve() / "doubao_runs"
+    if not runs_root.exists() or not runs_root.is_dir():
+        return []
+
+    records: list[MobileCompareSessionResponse] = []
+    for item in runs_root.iterdir():
+        if not item.is_dir():
+            continue
+        compare_id = item.name
+        record = _get_mobile_compare_session_record(
+            compare_id=compare_id,
+            owner_type=owner_type,
+            owner_id=owner_id,
+        )
+        if record is None:
+            continue
+        if category and record.category != category:
+            continue
+        records.append(record)
+
+    records.sort(key=lambda row: (str(row.updated_at), str(row.created_at), row.compare_id), reverse=True)
+    return records[offset : offset + limit]
 
 
 def _build_deterministic_ingredient_diff(

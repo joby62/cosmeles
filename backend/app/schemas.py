@@ -662,3 +662,33 @@ class MobileCompareResultResponse(BaseModel):
 class MobileCompareEventRequest(BaseModel):
     name: str
     props: dict[str, Any] = Field(default_factory=dict)
+
+
+class MobileCompareSessionResultBrief(BaseModel):
+    decision: Optional[Literal["keep", "switch", "hybrid"]] = None
+    headline: Optional[str] = None
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    created_at: Optional[str] = None
+
+
+class MobileCompareSessionError(BaseModel):
+    code: str
+    detail: str
+    http_status: int = 500
+    retryable: bool = True
+
+
+class MobileCompareSessionResponse(BaseModel):
+    status: Literal["running", "done", "failed"] = "running"
+    compare_id: str
+    category: str
+    created_at: str
+    updated_at: str
+    stage: Optional[str] = None
+    stage_label: Optional[str] = None
+    message: Optional[str] = None
+    percent: int = Field(default=0, ge=0, le=100)
+    pair_index: Optional[int] = None
+    pair_total: Optional[int] = None
+    result: Optional[MobileCompareSessionResultBrief] = None
+    error: Optional[MobileCompareSessionError] = None

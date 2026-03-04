@@ -615,6 +615,32 @@ export type MobileCompareResult = {
   created_at: string;
 };
 
+export type MobileCompareSession = {
+  status: "running" | "done" | "failed";
+  compare_id: string;
+  category: MobileSelectionCategory | string;
+  created_at: string;
+  updated_at: string;
+  stage?: string | null;
+  stage_label?: string | null;
+  message?: string | null;
+  percent: number;
+  pair_index?: number | null;
+  pair_total?: number | null;
+  result?: {
+    decision?: "keep" | "switch" | "hybrid" | null;
+    headline?: string | null;
+    confidence: number;
+    created_at?: string | null;
+  } | null;
+  error?: {
+    code: string;
+    detail: string;
+    http_status: number;
+    retryable: boolean;
+  } | null;
+};
+
 function getBaseForFetch(): string {
   // 在浏览器里优先直连后端，避免 /api 重写层在 multipart 上传时吞掉真实错误。
   if (typeof window !== "undefined") {
@@ -1028,6 +1054,24 @@ export async function runMobileCompareJobStream(
 
 export async function fetchMobileCompareResult(compareId: string): Promise<MobileCompareResult> {
   return apiFetch<MobileCompareResult>(`/api/mobile/compare/results/${encodeURIComponent(compareId)}`);
+}
+
+export async function fetchMobileCompareSession(compareId: string): Promise<MobileCompareSession> {
+  return apiFetch<MobileCompareSession>(`/api/mobile/compare/sessions/${encodeURIComponent(compareId)}`);
+}
+
+export async function listMobileCompareSessions(params?: {
+  category?: MobileSelectionCategory;
+  offset?: number;
+  limit?: number;
+}): Promise<MobileCompareSession[]> {
+  const search = new URLSearchParams();
+  if (params?.category) search.set("category", params.category);
+  if (typeof params?.offset === "number") search.set("offset", String(params.offset));
+  if (typeof params?.limit === "number") search.set("limit", String(params.limit));
+  const query = search.toString();
+  const path = query ? `/api/mobile/compare/sessions?${query}` : "/api/mobile/compare/sessions";
+  return apiFetch<MobileCompareSession[]>(path);
 }
 
 export async function recordMobileCompareEvent(name: string, props: Record<string, unknown> = {}): Promise<{ status: string; trace_id: string }> {

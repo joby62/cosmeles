@@ -2,14 +2,17 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { memo, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
   fetchMobileCompareBootstrap,
+  fetchMobileCompareSession,
+  listMobileCompareSessions,
   recordMobileCompareEvent,
   runMobileCompareJobStream,
   type MobileCompareJobTargetInput,
   type MobileCompareProductLibraryItem,
+  type MobileCompareSession,
   type MobileSelectionCategory,
   uploadMobileCompareCurrentProduct,
 } from "@/lib/api";
@@ -17,6 +20,7 @@ import {
 const CATEGORY_ORDER: MobileSelectionCategory[] = ["shampoo", "bodywash", "conditioner", "lotion", "cleanser"];
 const MAX_TOTAL_SELECTION = 3;
 const TOTAL_STEPS = 4;
+const ACTIVE_COMPARE_STORAGE_KEY = "mx_mobile_compare_active";
 
 const WAITING_STAGE_ORDER = [
   "prepare",
@@ -58,6 +62,12 @@ const CATEGORY_LABEL_ZH: Record<MobileSelectionCategory, string> = {
   cleanser: "洗面奶",
 };
 
+type StoredActiveCompare = {
+  compare_id: string;
+  category: MobileSelectionCategory | string;
+  started_at: string;
+};
+
 export default function MobileComparePage() {
   const router = useRouter();
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
@@ -82,6 +92,14 @@ export default function MobileComparePage() {
   const [progressPercent, setProgressPercent] = useState(0);
   const [pairProgress, setPairProgress] = useState<{ index: number; total: number } | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [showGuide, setShowGuide] = useState(true);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyItems, setHistoryItems] = useState<MobileCompareSession[]>([]);
+  const [activeCompareId, setActiveCompareId] = useState<string | null>(null);
+  const [activeSession, setActiveSession] = useState<MobileCompareSession | null>(null);
+  const [restoringSession, setRestoringSession] = useState(true);
 
   const recommendationReady = Boolean(bootstrap?.recommendation?.exists);
   const hasHistoryProfile = Boolean(bootstrap?.profile?.has_history_profile);
@@ -140,13 +158,98 @@ export default function MobileComparePage() {
 
   const selectionAssistText = hasUpload
     ? `已包含在用产品；还可从产品库选 ${maxLibrarySelection} 款。`
-    : "补充上传在用产品后，可额外判断：继续用 / 建议替换 / 分场景混用。";
+    : "补充在用产品后，会额外判断：继续用 / 建议替换 / 分场景混用。";
+
+  const rememberActiveCompare = useCallback((compareId: string, targetCategory: MobileSelectionCategory | string) => {
+    if (typeof window === "undefined") return;
+    const payload: StoredActiveCompare = {
+      compare_id: compareId,
+      category: targetCategory,
+      started_at: new Date().toISOString(),
+    };
+    window.localStorage.setItem(ACTIVE_COMPARE_STORAGE_KEY, JSON.stringify(payload));
+  }, []);
+
+  const clearActiveCompare = useCallback(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.removeItem(ACTIVE_COMPARE_STORAGE_KEY);
+  }, []);
+
+  const applySessionProgress = useCallback((session: MobileCompareSession) => {
+    const stage = String(session.stage || "").trim();
+    const normalizedStage = WAITING_STAGE_ORDER.includes(stage as WaitingStage)
+      ? (stage as WaitingStage)
+      : session.status === "done"
+        ? "done"
+        : "pair_compare";
+    setActiveStage(normalizedStage);
+    setActiveStageLabel(String(session.stage_label || WAITING_STAGE_LABEL[normalizedStage] || "处理中"));
+    setProgressHint(
+      String(session.message || "").trim() ||
+        (session.status === "done" ? "对比已完成。" : session.status === "failed" ? "对比失败。" : "系统仍在分析中，请稍候。"),
+    );
+    const percent = Number(session.percent);
+    if (Number.isFinite(percent)) {
+      setProgressPercent(Math.max(0, Math.min(100, Math.round(percent))));
+    }
+    const pairIndex = Number(session.pair_index);
+    const pairTotal = Number(session.pair_total);
+    if (Number.isFinite(pairIndex) && Number.isFinite(pairTotal) && pairTotal > 0) {
+      setPairProgress({
+        index: Math.max(1, Math.round(pairIndex)),
+        total: Math.max(1, Math.round(pairTotal)),
+      });
+      return;
+    }
+    setPairProgress(null);
+  }, []);
+
+  const loadHistory = useCallback(async () => {
+    try {
+      setHistoryLoading(true);
+      setHistoryError(null);
+      const sessions = await listMobileCompareSessions({ limit: 50, offset: 0 });
+      setHistoryItems(sessions);
+    } catch (err) {
+      setHistoryError(err instanceof Error ? err.message : String(err));
+      setHistoryItems([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     const raw = new URLSearchParams(window.location.search).get("category");
     const normalized = (raw || "").trim().toLowerCase() as MobileSelectionCategory;
     if (CATEGORY_ORDER.includes(normalized)) setCategory(normalized);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      setRestoringSession(false);
+      return;
+    }
+    const raw = window.localStorage.getItem(ACTIVE_COMPARE_STORAGE_KEY);
+    if (!raw) {
+      setRestoringSession(false);
+      return;
+    }
+    try {
+      const parsed = JSON.parse(raw) as StoredActiveCompare;
+      const compareId = String(parsed?.compare_id || "").trim();
+      if (!compareId) {
+        window.localStorage.removeItem(ACTIVE_COMPARE_STORAGE_KEY);
+        setRestoringSession(false);
+        return;
+      }
+      setActiveCompareId(compareId);
+      setShowGuide(false);
+    } catch {
+      window.localStorage.removeItem(ACTIVE_COMPARE_STORAGE_KEY);
+    } finally {
+      setRestoringSession(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -190,6 +293,59 @@ export default function MobileComparePage() {
   }, [category]);
 
   useEffect(() => {
+    if (!activeCompareId) {
+      setActiveSession(null);
+      return;
+    }
+    let cancelled = false;
+    let timer: number | null = null;
+
+    const pull = async () => {
+      try {
+        const session = await fetchMobileCompareSession(activeCompareId);
+        if (cancelled) return;
+        setActiveSession(session);
+        applySessionProgress(session);
+        if (session.status === "running") {
+          setRunning(true);
+          timer = window.setTimeout(() => {
+            void pull();
+          }, 2400);
+          return;
+        }
+        setRunning(false);
+        if (session.status === "failed") {
+          const detail = String(session.error?.detail || "").trim() || "对比任务失败，请重试。";
+          setRunError(detail);
+        } else {
+          setRunError(null);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        const message = err instanceof Error ? err.message : String(err);
+        if (message.includes("404")) {
+          clearActiveCompare();
+          setActiveCompareId(null);
+          setActiveSession(null);
+          setShowGuide(true);
+          setRunError(null);
+          setRunning(false);
+          return;
+        }
+        setRunError(message);
+        setRunning(false);
+      }
+    };
+
+    void pull();
+
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [activeCompareId, applySessionProgress, clearActiveCompare]);
+
+  useEffect(() => {
     if (selectedProductIds.length <= maxLibrarySelection) return;
     setSelectedProductIds((prev) => prev.slice(0, maxLibrarySelection));
   }, [maxLibrarySelection, selectedProductIds.length]);
@@ -220,8 +376,55 @@ export default function MobileComparePage() {
     };
   }, [running]);
 
+  const openHistoryPanel = useCallback(() => {
+    setHistoryOpen(true);
+    void loadHistory();
+  }, [loadHistory]);
+
+  const resetCompareFlow = useCallback(() => {
+    setActiveCompareId(null);
+    setActiveSession(null);
+    setRunning(false);
+    setRunError(null);
+    setProgressHint("等待开始");
+    setActiveStage("prepare");
+    setActiveStageLabel(WAITING_STAGE_LABEL.prepare);
+    setProgressPercent(0);
+    setPairProgress(null);
+    setStep(1);
+    setShowGuide(true);
+    clearActiveCompare();
+    void safeTrack("compare_reset_to_intro", { category });
+  }, [category, clearActiveCompare]);
+
+  const handleHistorySessionAction = useCallback(
+    (session: MobileCompareSession) => {
+      setHistoryOpen(false);
+      const compareId = String(session.compare_id || "").trim();
+      if (!compareId) return;
+      if (CATEGORY_ORDER.includes(session.category as MobileSelectionCategory)) {
+        setCategory(session.category as MobileSelectionCategory);
+      }
+      setActiveCompareId(compareId);
+      setActiveSession(session);
+      setShowGuide(false);
+      rememberActiveCompare(compareId, session.category);
+      if (session.status === "done") {
+        router.push(`/m/compare/result/${encodeURIComponent(compareId)}`);
+        return;
+      }
+      if (session.status === "failed") {
+        setRunError(String(session.error?.detail || "该任务已失败，可重置后重试。"));
+      } else {
+        setRunError(null);
+      }
+    },
+    [rememberActiveCompare, router],
+  );
+
   async function startCompare() {
     if (running) return;
+    setShowGuide(false);
     setRunError(null);
     setRunning(true);
     setProgressHint("开始准备对比产品...");
@@ -271,7 +474,34 @@ export default function MobileComparePage() {
           },
         },
         (event) => {
+          if (event.event === "accepted") {
+            const compareId = String(event.data.compare_id || event.data.trace_id || "").trim();
+            if (compareId) {
+              setActiveCompareId(compareId);
+              rememberActiveCompare(compareId, category);
+            }
+            const stage = String(event.data.stage || "").trim();
+            if (stage) {
+              const normalizedStage = WAITING_STAGE_ORDER.includes(stage as WaitingStage)
+                ? (stage as WaitingStage)
+                : "prepare";
+              setActiveStage(normalizedStage);
+              setActiveStageLabel(String(event.data.stage_label || WAITING_STAGE_LABEL[normalizedStage]));
+            }
+            const message = String(event.data.message || "").trim();
+            if (message) setProgressHint(message);
+            const percent = Number(event.data.percent);
+            if (Number.isFinite(percent)) {
+              setProgressPercent(Math.max(0, Math.min(100, Math.round(percent))));
+            }
+            return;
+          }
           if (event.event === "progress") {
+            const compareId = String(event.data.trace_id || "").trim();
+            if (compareId && compareId !== activeCompareId) {
+              setActiveCompareId(compareId);
+              rememberActiveCompare(compareId, category);
+            }
             const message = String(event.data.message || "").trim();
             const stage = String(event.data.stage || "").trim();
             const stageLabel = String(event.data.stage_label || "").trim();
@@ -300,6 +530,29 @@ export default function MobileComparePage() {
           }
         },
       );
+
+      setActiveCompareId(result.compare_id);
+      setActiveSession({
+        status: "done",
+        compare_id: result.compare_id,
+        category: result.category,
+        created_at: result.created_at,
+        updated_at: result.created_at,
+        stage: "done",
+        stage_label: WAITING_STAGE_LABEL.done,
+        message: "对比已完成。",
+        percent: 100,
+        pair_index: null,
+        pair_total: null,
+        result: {
+          decision: result.verdict.decision,
+          headline: result.verdict.headline,
+          confidence: result.verdict.confidence,
+          created_at: result.created_at,
+        },
+        error: null,
+      });
+      rememberActiveCompare(result.compare_id, result.category);
 
       void safeTrack("compare_run_success", {
         category,
@@ -365,9 +618,9 @@ export default function MobileComparePage() {
 
   const primaryActionLabel = (() => {
     if (step === 1) return "下一步";
-    if (step === 2) return hasHistoryProfile ? "使用这组信息继续" : "去填写个人选项";
+    if (step === 2) return hasHistoryProfile ? "继续" : "去填写个人选项";
     if (step === 3) return totalSelectedCount < 2 ? "先选够 2 款产品" : "下一步";
-    return "开始专业分析";
+    return "开始对比";
   })();
 
   const primaryDisabled =
@@ -379,7 +632,7 @@ export default function MobileComparePage() {
   if (step === 1) {
     stepBody = (
       <div>
-        <h2 className="text-[26px] leading-[1.18] font-semibold tracking-[-0.02em] text-black/90">先选本次对比品类</h2>
+        <h2 className="text-[26px] leading-[1.18] font-semibold tracking-[-0.02em] text-black/90">先选你想改善的品类</h2>
         <p className="mt-2 text-[14px] leading-[1.55] text-black/62">选一个品类，建议会更贴合。</p>
         <div className="mt-5 flex flex-wrap gap-2.5">
           {CATEGORY_ORDER.map((item) => {
@@ -440,14 +693,6 @@ export default function MobileComparePage() {
           )}
         </div>
 
-        <div className="mt-3">
-          <Link
-            href={`/m/${category}/start`}
-            className="inline-flex h-10 items-center rounded-full border border-black/12 px-4 text-[13px] font-medium text-black/72 active:bg-black/[0.03]"
-          >
-            重新填写个人选项
-          </Link>
-        </div>
       </div>
     );
   } else if (step === 3) {
@@ -547,7 +792,7 @@ export default function MobileComparePage() {
         {hasUpload ? (
           <div className="mt-4 rounded-[20px] border border-black/10 bg-black/[0.02] p-3">
             <div className="flex items-center justify-between gap-2">
-              <div className="text-[12px] text-black/56">补充信息（可选，提升识别准确度）</div>
+              <div className="text-[12px] text-black/56">补充在用产品信息（可选，提升识别准确度）</div>
               <button
                 type="button"
                 onClick={() => {
@@ -650,51 +895,178 @@ export default function MobileComparePage() {
     );
   }
 
-  if (running) {
+  const hasActiveTask = Boolean(activeCompareId);
+  const isRestoring = restoringSession && hasActiveTask;
+  const isRunningTask = running || activeSession?.status === "running";
+  const isDoneTask = !isRunningTask && activeSession?.status === "done";
+  const isFailedTask = !isRunningTask && activeSession?.status === "failed";
+  const shouldShowTaskPanel = running || (hasActiveTask && (isRunningTask || isDoneTask || isFailedTask));
+  const activeResultId = String(activeSession?.compare_id || activeCompareId || "").trim();
+
+  const historySheet = historyOpen ? (
+    <CompareHistorySheet
+      loading={historyLoading}
+      error={historyError}
+      items={historyItems}
+      onClose={() => setHistoryOpen(false)}
+      onSelect={handleHistorySessionAction}
+      onRefresh={() => {
+        void loadHistory();
+      }}
+    />
+  ) : null;
+
+  if (isRestoring) {
     return (
       <section className="m-compare-page pb-10">
-        <h1 className="text-[30px] leading-[1.12] font-semibold tracking-[-0.02em] text-black/90">专业对比</h1>
-        <p className="mt-3 text-[15px] leading-[1.55] text-black/60">
-          任务已启动。约 3–5 分钟后将生成完整结论，你现在离开也不会丢失进度。
+        <div className="rounded-[24px] border border-black/10 bg-white/88 px-4 py-4 text-[14px] text-black/65 backdrop-blur">
+          正在恢复上次分析进度...
+        </div>
+        {historySheet}
+      </section>
+    );
+  }
+
+  if (shouldShowTaskPanel) {
+    return (
+      <section className="m-compare-page pb-10">
+        <h1 className="text-[28px] leading-[1.14] font-semibold tracking-[-0.02em] text-black/90">专业对比</h1>
+        <p className="mt-2 text-[14px] leading-[1.55] text-black/60">
+          {isDoneTask
+            ? "任务已经完成，你可以直接查看结果或继续浏览历史。"
+            : isFailedTask
+              ? "上次任务未完成，建议重置后重新开始。"
+              : "任务进行中。你离开页面也不会丢失进度。"}
         </p>
 
-        <CompareWaitingPanel
-          stage={activeStage}
-          stageLabel={activeStageLabel}
-          hint={progressHint}
-          percent={progressPercent}
-          pairProgress={pairProgress}
-          elapsedSeconds={elapsedSeconds}
-        />
+        {isRunningTask ? (
+          <CompareWaitingPanel
+            stage={activeStage}
+            stageLabel={activeStageLabel}
+            hint={progressHint}
+            percent={progressPercent}
+            pairProgress={pairProgress}
+            elapsedSeconds={elapsedSeconds}
+          />
+        ) : null}
 
-        <div className="mt-4 rounded-[22px] border border-black/10 bg-white p-4">
-          <div className="text-[13px] font-semibold text-black/84">等待时你可以</div>
-          <div className="mt-2 grid gap-2">
+        {isDoneTask ? (
+          <div className="mt-4 rounded-[24px] border border-[#b7cef8] bg-[linear-gradient(180deg,#f5f9ff_0%,#edf4ff_100%)] p-4">
+            <div className="text-[12px] font-semibold tracking-[0.03em] text-[#2f5db2]">分析已完成</div>
+            <div className="mt-2 text-[16px] font-semibold leading-[1.4] text-black/90">
+              {activeSession?.result?.headline || "对比完成，点击查看完整结论。"}
+            </div>
+            <div className="mt-3 flex gap-2">
+              <Link
+                href={`/m/compare/result/${encodeURIComponent(activeResultId)}`}
+                className="inline-flex h-10 flex-1 items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-4 text-[14px] font-semibold text-white"
+              >
+                查看结果
+              </Link>
+              <button
+                type="button"
+                onClick={openHistoryPanel}
+                className="inline-flex h-10 items-center justify-center rounded-full border border-black/12 bg-white/72 px-4 text-[14px] font-medium text-black/72 active:bg-black/[0.03]"
+              >
+                查看历史
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {isFailedTask ? (
+          <div className="mt-4 rounded-[22px] border border-[#ff8f8f]/45 bg-[#ff5f5f]/10 px-4 py-3 text-[13px] text-[#b53a3a]">
+            {runError || activeSession?.error?.detail || "任务失败，请重置后重试。"}
+          </div>
+        ) : null}
+
+        <div className="mt-4 grid gap-2">
+          {isRunningTask ? (
             <Link
               href="/m/wiki"
               className="inline-flex h-10 items-center justify-center rounded-xl border border-black/12 bg-white px-4 text-[13px] font-medium text-black/78 active:bg-black/[0.03]"
             >
               先去逛成分百科
             </Link>
-            <Link
-              href="/m/me"
-              className="inline-flex h-10 items-center justify-center rounded-xl border border-black/12 bg-white px-4 text-[13px] font-medium text-black/78 active:bg-black/[0.03]"
-            >
-              去“我的”查看历史记录
-            </Link>
-          </div>
-          <p className="mt-2 text-[12px] leading-[1.5] text-black/55">当前任务会在后台继续进行，完成后可在结果页或“我的”查看。</p>
+          ) : null}
+          <button
+            type="button"
+            onClick={openHistoryPanel}
+            className="inline-flex h-10 items-center justify-center rounded-xl border border-black/12 bg-white px-4 text-[13px] font-medium text-black/78 active:bg-black/[0.03]"
+          >
+            查看历史对比记录
+          </button>
+          <button
+            type="button"
+            onClick={resetCompareFlow}
+            className="inline-flex h-10 items-center justify-center rounded-xl border border-[#0a84ff]/30 bg-[#f0f7ff] px-4 text-[13px] font-medium text-[#1d5fb8] active:bg-[#e2f0ff]"
+          >
+            重置并重新开始
+          </button>
         </div>
+        {historySheet}
+      </section>
+    );
+  }
+
+  if (showGuide) {
+    return (
+      <section className="m-compare-page pb-10">
+        <article className="relative overflow-hidden rounded-[30px] border border-black/10 bg-white/84 px-5 py-6 shadow-[0_16px_44px_rgba(23,52,98,0.1)] backdrop-blur-[14px]">
+          <div className="pointer-events-none absolute -right-8 -top-10 h-40 w-40 rounded-full bg-[#6bb3ff]/40 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-14 -left-8 h-44 w-44 rounded-full bg-[#7f8fff]/30 blur-3xl" />
+          <div className="relative z-[1]">
+            <div className="inline-flex h-7 items-center rounded-full border border-[#c8dbff] bg-[#edf5ff] px-3 text-[11px] font-semibold tracking-[0.03em] text-[#2f5db2]">
+              专业对比
+            </div>
+            <h1 className="mt-3 text-[30px] leading-[1.16] font-semibold tracking-[-0.02em] text-black/92">
+              这次对比，只为帮你更快选对。
+            </h1>
+            <p className="mt-3 text-[14px] leading-[1.6] text-black/64">
+              你可以直接对比产品库；补充你正在用的产品后，还会额外判断“是否值得继续用”。
+            </p>
+            <div className="mt-6 flex flex-wrap gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowGuide(false);
+                  setStep(1);
+                  void safeTrack("compare_intro_start_clicked", { category });
+                }}
+                className="inline-flex h-11 items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-6 text-[15px] font-semibold text-white shadow-[0_12px_28px_rgba(0,113,227,0.3)] active:opacity-95"
+              >
+                开始对比
+              </button>
+              <button
+                type="button"
+                onClick={openHistoryPanel}
+                className="inline-flex h-11 items-center justify-center rounded-full border border-black/12 bg-white/70 px-5 text-[14px] font-medium text-black/72 active:bg-black/[0.03]"
+              >
+                查看历史对比记录
+              </button>
+            </div>
+          </div>
+        </article>
+        <div className="mt-4 rounded-[20px] border border-black/8 bg-white/68 px-4 py-3 text-[12px] leading-[1.55] text-black/56">
+          之后是分步流程：每一步只处理一个决定，信息更少、看起来更轻。
+        </div>
+        {historySheet}
       </section>
     );
   }
 
   return (
     <section className="m-compare-page pb-10">
-      <h1 className="text-[30px] leading-[1.12] font-semibold tracking-[-0.02em] text-black/90">专业对比</h1>
-      <p className="mt-3 text-[15px] leading-[1.55] text-black/60">
-        这次对比，只为帮你更快选对。你可以直接对比产品库；补充你正在用的产品后，还会额外判断“是否值得继续用”。
-      </p>
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-[26px] leading-[1.15] font-semibold tracking-[-0.02em] text-black/90">开始对比</h1>
+        <button
+          type="button"
+          onClick={openHistoryPanel}
+          className="inline-flex h-9 items-center rounded-full border border-black/12 bg-white/70 px-4 text-[13px] font-medium text-black/70 active:bg-black/[0.03]"
+        >
+          历史记录
+        </button>
+      </div>
 
       <div className="mt-4 rounded-[22px] border border-black/10 bg-white px-4 py-3">
         <div className="flex items-center justify-between text-[12px] text-black/55">
@@ -730,29 +1102,120 @@ export default function MobileComparePage() {
           </button>
         ) : null}
 
-        {step === 2 ? (
-          <Link
-            href={`/m/${category}/start`}
-            className="inline-flex h-11 items-center justify-center rounded-full border border-black/12 bg-white px-4 text-[14px] font-medium text-black/72 active:bg-black/[0.03]"
-          >
-            重新填写
-          </Link>
-        ) : null}
-
         <button
           type="button"
           onClick={() => {
             void handlePrimaryAction();
           }}
           disabled={primaryDisabled}
-          className="inline-flex h-11 flex-1 items-center justify-center rounded-full bg-black px-5 text-[15px] font-semibold text-white disabled:bg-black/25"
+          className="inline-flex h-11 flex-1 items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-5 text-[15px] font-semibold text-white shadow-[0_10px_24px_rgba(0,113,227,0.28)] disabled:opacity-45"
         >
           {primaryActionLabel}
         </button>
       </div>
 
       <div className="mt-3 text-[12px] text-black/55">当前状态：{progressHint}</div>
+      {historySheet}
     </section>
+  );
+}
+
+function CompareHistorySheet({
+  loading,
+  error,
+  items,
+  onClose,
+  onSelect,
+  onRefresh,
+}: {
+  loading: boolean;
+  error: string | null;
+  items: MobileCompareSession[];
+  onClose: () => void;
+  onSelect: (session: MobileCompareSession) => void;
+  onRefresh: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[72] flex items-end bg-black/42 px-4 pb-[calc(92px+env(safe-area-inset-bottom))] backdrop-blur-[2px]" onClick={onClose}>
+      <div
+        className="m-sheet-enter max-h-[70vh] w-full overflow-hidden rounded-[28px] border border-white/35 bg-white/92 shadow-[0_18px_44px_rgba(0,0,0,0.25)]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-black/8 px-4 py-3">
+          <div>
+            <div className="text-[17px] font-semibold text-black/90">历史对比记录</div>
+            <div className="mt-0.5 text-[12px] text-black/55">当前设备可直接回看</div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onRefresh}
+              className="inline-flex h-8 items-center rounded-full border border-black/12 px-3 text-[12px] text-black/65 active:bg-black/[0.04]"
+            >
+              刷新
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex h-8 items-center rounded-full border border-black/12 px-3 text-[12px] text-black/65 active:bg-black/[0.04]"
+            >
+              关闭
+            </button>
+          </div>
+        </div>
+
+        <div className="max-h-[calc(70vh-64px)] overflow-y-auto p-3">
+          {loading ? (
+            <div className="rounded-2xl border border-black/10 bg-white/70 px-4 py-4 text-[13px] text-black/58">正在读取历史记录...</div>
+          ) : null}
+          {!loading && error ? (
+            <div className="rounded-2xl border border-[#ff8f8f]/45 bg-[#ff5f5f]/10 px-4 py-4 text-[13px] text-[#b53a3a]">{error}</div>
+          ) : null}
+          {!loading && !error && items.length === 0 ? (
+            <div className="rounded-2xl border border-black/10 bg-white/70 px-4 py-4 text-[13px] text-black/58">还没有历史对比记录。</div>
+          ) : null}
+          {!loading && !error ? (
+            <div className="space-y-2">
+              {items.map((item) => {
+                const statusLabel = item.status === "done" ? "已完成" : item.status === "failed" ? "失败" : "进行中";
+                const statusTone =
+                  item.status === "done"
+                    ? "border-[#b7d4ff] bg-[#ebf4ff] text-[#2e61be]"
+                    : item.status === "failed"
+                      ? "border-[#ffb9b9] bg-[#ffecec] text-[#b23b3b]"
+                      : "border-[#ffd79e] bg-[#fff6e8] text-[#96631a]";
+                return (
+                  <article key={item.compare_id} className="rounded-2xl border border-black/10 bg-white/78 px-3 py-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="line-clamp-1 text-[14px] font-semibold text-black/86">
+                          {item.result?.headline || item.message || "对比记录"}
+                        </div>
+                        <div className="mt-1 text-[12px] text-black/52">
+                          {String(item.category || "").toUpperCase()} · {formatHistoryTime(item.updated_at || item.created_at)}
+                        </div>
+                      </div>
+                      <span className={`inline-flex h-7 shrink-0 items-center rounded-full border px-2.5 text-[11px] font-semibold ${statusTone}`}>
+                        {statusLabel}
+                      </span>
+                    </div>
+                    <div className="mt-3 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => onSelect(item)}
+                        className="inline-flex h-9 items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-4 text-[13px] font-semibold text-white"
+                      >
+                        {item.status === "done" ? "查看结果" : item.status === "failed" ? "查看详情" : "恢复进度"}
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -834,6 +1297,17 @@ function formatDuration(totalSeconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+function formatHistoryTime(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function formatFileSize(size: number): string {
