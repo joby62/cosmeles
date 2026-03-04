@@ -196,3 +196,32 @@ class MobileCompareUsageStat(Base):
     product_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     usage_count: Mapped[int] = mapped_column(Integer, default=0, index=True)
     updated_at: Mapped[str] = mapped_column(String(32), index=True)
+
+
+class MobileBagItem(Base):
+    __tablename__ = "mobile_bag_items"
+    __table_args__ = (
+        Index(
+            "ix_mobile_bag_owner_scope",
+            "owner_type",
+            "owner_id",
+            "category",
+            "updated_at",
+        ),
+        Index(
+            "ix_mobile_bag_owner_product",
+            "owner_type",
+            "owner_id",
+            "product_id",
+            unique=True,
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner_type: Mapped[str] = mapped_column(String(32), index=True, default="device")
+    owner_id: Mapped[str] = mapped_column(String(128), index=True)
+    category: Mapped[str] = mapped_column(String(32), index=True)
+    product_id: Mapped[str] = mapped_column(String(36), index=True)
+    quantity: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[str] = mapped_column(String(32), index=True)
+    updated_at: Mapped[str] = mapped_column(String(32), index=True)

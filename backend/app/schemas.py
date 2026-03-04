@@ -491,6 +491,96 @@ class MobileSelectionPinRequest(BaseModel):
     pinned: bool = True
 
 
+class MobileWikiProductItem(BaseModel):
+    product: ProductCard
+    category_label: str
+    target_type_key: Optional[str] = None
+    target_type_title: Optional[str] = None
+    target_type_level: Literal["subcategory", "category", "unknown"] = "unknown"
+    mapping_ready: bool = False
+    primary_confidence: Optional[int] = None
+    secondary_type_key: Optional[str] = None
+    secondary_type_title: Optional[str] = None
+    secondary_confidence: Optional[int] = None
+    is_featured: bool = False
+
+
+class MobileWikiCategoryFacet(BaseModel):
+    key: str
+    label: str
+    count: int = 0
+
+
+class MobileWikiSubtypeFacet(BaseModel):
+    key: str
+    label: str
+    count: int = 0
+
+
+class MobileWikiProductListResponse(BaseModel):
+    status: str
+    category: Optional[str] = None
+    target_type_key: Optional[str] = None
+    query: Optional[str] = None
+    total: int = 0
+    offset: int = 0
+    limit: int = 0
+    categories: List[MobileWikiCategoryFacet] = Field(default_factory=list)
+    subtypes: List[MobileWikiSubtypeFacet] = Field(default_factory=list)
+    items: List[MobileWikiProductItem] = Field(default_factory=list)
+
+
+class MobileWikiProductDetailItem(BaseModel):
+    product: ProductCard
+    doc: ProductDoc
+    category_label: str
+    target_type_key: Optional[str] = None
+    target_type_title: Optional[str] = None
+    target_type_level: Literal["subcategory", "category", "unknown"] = "unknown"
+    mapping_ready: bool = False
+    primary_confidence: Optional[int] = None
+    secondary_type_key: Optional[str] = None
+    secondary_type_title: Optional[str] = None
+    secondary_confidence: Optional[int] = None
+    is_featured: bool = False
+
+
+class MobileWikiProductDetailResponse(BaseModel):
+    status: str
+    item: MobileWikiProductDetailItem
+
+
+class MobileBagUpsertRequest(BaseModel):
+    product_id: str
+    quantity: int = Field(default=1, ge=1, le=99)
+
+
+class MobileBagItem(BaseModel):
+    item_id: str
+    quantity: int = Field(default=1, ge=1, le=99)
+    created_at: str
+    updated_at: str
+    product: ProductCard
+    target_type_key: Optional[str] = None
+    target_type_title: Optional[str] = None
+    target_type_level: Literal["subcategory", "category", "unknown"] = "unknown"
+    is_featured: bool = False
+
+
+class MobileBagListResponse(BaseModel):
+    status: str
+    category: Optional[str] = None
+    total_items: int = 0
+    total_quantity: int = 0
+    items: List[MobileBagItem] = Field(default_factory=list)
+
+
+class MobileBagDeleteResponse(BaseModel):
+    status: str
+    item_id: str
+    deleted: bool = False
+
+
 class MobileCompareCategoryItem(BaseModel):
     key: str
     label: str

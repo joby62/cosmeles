@@ -6,7 +6,7 @@ from collections import defaultdict
 from itertools import combinations
 from pathlib import Path
 from uuid import uuid4
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
@@ -18,6 +18,7 @@ from app.ai.errors import AIServiceError
 from app.ai.orchestrator import run_capability_now
 from app.constants import VALID_CATEGORIES, MOBILE_RULES_VERSION, ROUTE_MAPPING_SUPPORTED_CATEGORIES
 from app.db.models import (
+    MobileBagItem,
     MobileCompareSessionIndex,
     MobileCompareUsageStat,
     MobileSelectionSession,
@@ -27,6 +28,10 @@ from app.db.models import (
 )
 from app.db.session import get_db
 from app.schemas import (
+    MobileBagDeleteResponse,
+    MobileBagItem as MobileBagItemView,
+    MobileBagListResponse,
+    MobileBagUpsertRequest,
     MobileCompareBootstrapResponse,
     MobileCompareCategoryItem,
     MobileCompareEventRequest,
@@ -61,6 +66,12 @@ from app.schemas import (
     MobileSelectionResolveResponse,
     MobileSelectionRoute,
     MobileSelectionRuleHit,
+    MobileWikiCategoryFacet,
+    MobileWikiProductDetailItem,
+    MobileWikiProductDetailResponse,
+    MobileWikiProductItem,
+    MobileWikiProductListResponse,
+    MobileWikiSubtypeFacet,
     ProductDoc,
     ProductCard,
 )
@@ -104,6 +115,8 @@ CATEGORY_LABELS_ZH: dict[str, str] = {
     "lotion": "润肤霜",
     "cleanser": "洗面奶",
 }
+ROUTE_MAPPED_CATEGORIES = {"shampoo", "bodywash"}
+CATEGORY_LEVEL_TARGET_KEY = "__category__"
 
 CATEGORY_ALIASES: dict[str, str] = {
     "shampoo": "shampoo",
@@ -588,6 +601,319 @@ def batch_delete_mobile_selection_sessions(
         not_found_ids=not_found_ids,
         forbidden_ids=forbidden_ids,
     )
+
+
+@router.get("/wiki/products", response_model=MobileWikiProductListResponse)
+def list_mobile_wiki_products(
+    request: Request,
+    response: Response,
+    category: str | None = Query(None),
+    target_type_key: str | None = Query(None),
+    q: str | None = Query(None, description="search brand/name/summary"),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    _, owner_id, owner_cookie_new = _resolve_owner(request)
+    normalized_category = str(category or "").strip().lower() or None
+    if normalized_category and normalized_category not in VALID_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Invalid category: {normalized_category}.")
+
+    normalized_target_type_key = str(target_type_key or "").strip() or None
+    if normalized_target_type_key and not normalized_category:
+        raise HTTPException(status_code=400, detail="target_type_key requires category.")
+    if normalized_target_type_key and normalized_category and normalized_category not in ROUTE_MAPPED_CATEGORIES:
+        if normalized_target_type_key != CATEGORY_LEVEL_TARGET_KEY:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Invalid target_type_key '{normalized_target_type_key}' for category '{normalized_category}'. "
+                    f"Use '{CATEGORY_LEVEL_TARGET_KEY}'."
+                ),
+            )
+    if normalized_target_type_key and normalized_category in ROUTE_MAPPED_CATEGORIES:
+        if normalized_target_type_key == CATEGORY_LEVEL_TARGET_KEY:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Invalid target_type_key '{normalized_target_type_key}' for route-mapped category "
+                    f"'{normalized_category}'."
+                ),
+            )
+
+    normalized_query = str(q or "").strip()
+    stmt = select(ProductIndex)
+    if normalized_category:
+        stmt = stmt.where(ProductIndex.category == normalized_category)
+    if normalized_query:
+        like = f"%{normalized_query}%"
+        stmt = stmt.where(
+            (ProductIndex.name.like(like))
+            | (ProductIndex.brand.like(like))
+            | (ProductIndex.one_sentence.like(like))
+        )
+    rows = db.execute(stmt.order_by(ProductIndex.created_at.desc())).scalars().all()
+    rows = [row for row in rows if exists_rel_path(str(row.json_path or ""))]
+
+    product_ids = [str(row.id or "").strip() for row in rows if str(row.id or "").strip()]
+    route_mapping_by_product_id = _route_mapping_by_product_id(db=db, product_ids=product_ids)
+    featured_by_slot = _featured_slot_by_slot_key(db=db, categories={str(row.category or "").strip().lower() for row in rows})
+
+    category_counts: dict[str, int] = defaultdict(int)
+    subtype_counts: dict[str, tuple[str, int]] = {}
+    built_items: list[MobileWikiProductItem] = []
+
+    for row in rows:
+        category_key = str(row.category or "").strip().lower()
+        if not category_key:
+            continue
+        mapping = route_mapping_by_product_id.get(str(row.id))
+        item = _build_mobile_wiki_product_item(
+            row=row,
+            mapping=mapping,
+            featured_by_slot=featured_by_slot,
+        )
+        category_counts[category_key] += 1
+
+        if normalized_category == category_key and item.target_type_level == "subcategory":
+            sub_key = str(item.target_type_key or "").strip()
+            sub_label = str(item.target_type_title or "").strip()
+            if sub_key and sub_label:
+                prev = subtype_counts.get(sub_key)
+                if prev:
+                    subtype_counts[sub_key] = (sub_label, prev[1] + 1)
+                else:
+                    subtype_counts[sub_key] = (sub_label, 1)
+
+        if normalized_target_type_key and item.target_type_key != normalized_target_type_key:
+            continue
+        built_items.append(item)
+
+    categories = [
+        MobileWikiCategoryFacet(
+            key=cat,
+            label=CATEGORY_LABELS_ZH.get(cat, cat),
+            count=count,
+        )
+        for cat, count in sorted(category_counts.items(), key=lambda x: (-x[1], x[0]))
+    ]
+    subtypes = [
+        MobileWikiSubtypeFacet(
+            key=key,
+            label=value[0],
+            count=value[1],
+        )
+        for key, value in sorted(subtype_counts.items(), key=lambda x: (-x[1][1], x[0]))
+    ]
+
+    total = len(built_items)
+    sliced = built_items[offset : offset + limit]
+    if owner_cookie_new:
+        _set_owner_cookie(response, owner_id, request)
+    return MobileWikiProductListResponse(
+        status="ok",
+        category=normalized_category,
+        target_type_key=normalized_target_type_key,
+        query=normalized_query or None,
+        total=total,
+        offset=offset,
+        limit=limit,
+        categories=categories,
+        subtypes=subtypes,
+        items=sliced,
+    )
+
+
+@router.get("/wiki/products/{product_id}", response_model=MobileWikiProductDetailResponse)
+def get_mobile_wiki_product_detail(
+    product_id: str,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    _, owner_id, owner_cookie_new = _resolve_owner(request)
+    pid = str(product_id or "").strip()
+    if not pid:
+        raise HTTPException(status_code=400, detail="product_id is required.")
+    row = db.get(ProductIndex, pid)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Product '{pid}' not found.")
+    json_path = str(row.json_path or "").strip()
+    if not json_path or not exists_rel_path(json_path):
+        raise HTTPException(status_code=404, detail=f"Product doc for '{pid}' is missing.")
+
+    try:
+        raw_doc = load_json(json_path)
+        normalized_doc = normalize_doc(
+            raw_doc,
+            image_rel_path=str(row.image_path or "").strip() or None,
+            doubao_raw=str(raw_doc.get("evidence", {}).get("doubao_raw") or ""),
+        )
+        doc = ProductDoc.model_validate(normalized_doc)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Invalid product doc for '{pid}': {exc}") from exc
+
+    mapping = db.get(ProductRouteMappingIndex, pid)
+    featured_by_slot = _featured_slot_by_slot_key(db=db, categories={str(row.category or "").strip().lower()})
+    item = _build_mobile_wiki_product_item(
+        row=row,
+        mapping=mapping,
+        featured_by_slot=featured_by_slot,
+    )
+    if owner_cookie_new:
+        _set_owner_cookie(response, owner_id, request)
+    return MobileWikiProductDetailResponse(
+        status="ok",
+        item=MobileWikiProductDetailItem(
+            product=item.product,
+            doc=doc,
+            category_label=item.category_label,
+            target_type_key=item.target_type_key,
+            target_type_title=item.target_type_title,
+            target_type_level=item.target_type_level,
+            mapping_ready=item.mapping_ready,
+            primary_confidence=item.primary_confidence,
+            secondary_type_key=item.secondary_type_key,
+            secondary_type_title=item.secondary_type_title,
+            secondary_confidence=item.secondary_confidence,
+            is_featured=item.is_featured,
+        ),
+    )
+
+
+@router.get("/bag/items", response_model=MobileBagListResponse)
+def list_mobile_bag_items(
+    request: Request,
+    response: Response,
+    category: str | None = Query(None),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    owner_type, owner_id, owner_cookie_new = _resolve_owner(request)
+    normalized_category = str(category or "").strip().lower() or None
+    if normalized_category and normalized_category not in VALID_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Invalid category: {normalized_category}.")
+
+    stmt = (
+        select(MobileBagItem)
+        .where(MobileBagItem.owner_type == owner_type)
+        .where(MobileBagItem.owner_id == owner_id)
+    )
+    if normalized_category:
+        stmt = stmt.where(MobileBagItem.category == normalized_category)
+    rows = (
+        db.execute(
+            stmt.order_by(
+                MobileBagItem.updated_at.desc(),
+                MobileBagItem.created_at.desc(),
+                MobileBagItem.id.desc(),
+            )
+            .offset(offset)
+            .limit(limit)
+        )
+        .scalars()
+        .all()
+    )
+    item_views = _build_mobile_bag_item_views(db=db, bag_rows=rows)
+    total_quantity = sum(max(1, int(item.quantity)) for item in item_views)
+    if owner_cookie_new:
+        _set_owner_cookie(response, owner_id, request)
+    return MobileBagListResponse(
+        status="ok",
+        category=normalized_category,
+        total_items=len(item_views),
+        total_quantity=total_quantity,
+        items=item_views,
+    )
+
+
+@router.post("/bag/items", response_model=MobileBagItemView)
+def upsert_mobile_bag_item(
+    payload: MobileBagUpsertRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    owner_type, owner_id, owner_cookie_new = _resolve_owner(request)
+    product_id = str(payload.product_id or "").strip()
+    if not product_id:
+        raise HTTPException(status_code=400, detail="product_id is required.")
+    product = db.get(ProductIndex, product_id)
+    if product is None:
+        raise HTTPException(status_code=404, detail=f"Product '{product_id}' not found.")
+    if not exists_rel_path(str(product.json_path or "")):
+        raise HTTPException(status_code=404, detail=f"Product doc for '{product_id}' is missing.")
+
+    row = (
+        db.execute(
+            select(MobileBagItem)
+            .where(MobileBagItem.owner_type == owner_type)
+            .where(MobileBagItem.owner_id == owner_id)
+            .where(MobileBagItem.product_id == product_id)
+            .limit(1)
+        )
+        .scalars()
+        .first()
+    )
+    now = now_iso()
+    if row is None:
+        row = MobileBagItem(
+            id=str(uuid4()),
+            owner_type=owner_type,
+            owner_id=owner_id,
+            category=str(product.category or "").strip().lower(),
+            product_id=product_id,
+            quantity=int(payload.quantity),
+            created_at=now,
+            updated_at=now,
+        )
+    else:
+        row.quantity = min(99, max(1, int(row.quantity or 0) + int(payload.quantity)))
+        row.updated_at = now
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+
+    views = _build_mobile_bag_item_views(db=db, bag_rows=[row])
+    if not views:
+        raise HTTPException(status_code=500, detail=f"Failed to build bag item view for '{row.id}'.")
+    if owner_cookie_new:
+        _set_owner_cookie(response, owner_id, request)
+    return views[0]
+
+
+@router.delete("/bag/items/{item_id}", response_model=MobileBagDeleteResponse)
+def delete_mobile_bag_item(
+    item_id: str,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    owner_type, owner_id, owner_cookie_new = _resolve_owner(request)
+    normalized_item_id = str(item_id or "").strip()
+    if not normalized_item_id:
+        raise HTTPException(status_code=400, detail="item_id is required.")
+    row = (
+        db.execute(
+            select(MobileBagItem)
+            .where(MobileBagItem.id == normalized_item_id)
+            .where(MobileBagItem.owner_type == owner_type)
+            .where(MobileBagItem.owner_id == owner_id)
+            .limit(1)
+        )
+        .scalars()
+        .first()
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Bag item '{normalized_item_id}' not found.")
+    db.delete(row)
+    db.commit()
+    if owner_cookie_new:
+        _set_owner_cookie(response, owner_id, request)
+    return MobileBagDeleteResponse(status="ok", item_id=normalized_item_id, deleted=True)
 
 
 @router.get("/compare/bootstrap", response_model=MobileCompareBootstrapResponse)
@@ -2449,6 +2775,193 @@ def _get_mobile_compare_session_record(
     return fallback
 
 
+def _featured_slot_schema_http_error(exc: Exception) -> HTTPException:
+    return HTTPException(
+        status_code=500,
+        detail=(
+            "Failed to query featured slots. "
+            "Database schema may be outdated (missing table 'product_featured_slots'). "
+            f"Raw error: {exc}"
+        ),
+    )
+
+
+def _route_mapping_by_product_id(
+    *,
+    db: Session,
+    product_ids: list[str],
+) -> dict[str, ProductRouteMappingIndex]:
+    normalized_ids = [str(item or "").strip() for item in product_ids if str(item or "").strip()]
+    if not normalized_ids:
+        return {}
+    try:
+        rows = db.execute(
+            select(ProductRouteMappingIndex).where(ProductRouteMappingIndex.product_id.in_(normalized_ids))
+        ).scalars().all()
+    except OperationalError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Failed to query route mapping index. "
+                "Database schema may be outdated (missing table 'product_route_mapping_index'). "
+                f"Raw error: {exc}"
+            ),
+        ) from exc
+    out: dict[str, ProductRouteMappingIndex] = {}
+    for row in rows:
+        out[str(row.product_id)] = row
+    return out
+
+
+def _featured_slot_by_slot_key(
+    *,
+    db: Session,
+    categories: set[str],
+) -> dict[str, ProductFeaturedSlot]:
+    normalized_categories = sorted({str(item or "").strip().lower() for item in categories if str(item or "").strip()})
+    if not normalized_categories:
+        return {}
+    try:
+        rows = db.execute(
+            select(ProductFeaturedSlot).where(ProductFeaturedSlot.category.in_(normalized_categories))
+        ).scalars().all()
+    except OperationalError as exc:
+        raise _featured_slot_schema_http_error(exc) from exc
+    out: dict[str, ProductFeaturedSlot] = {}
+    for row in rows:
+        category = str(row.category or "").strip().lower()
+        target_type_key = str(row.target_type_key or "").strip()
+        if not category or not target_type_key:
+            continue
+        out[f"{category}::{target_type_key}"] = row
+    return out
+
+
+def _build_mobile_wiki_product_item(
+    *,
+    row: ProductIndex,
+    mapping: ProductRouteMappingIndex | None,
+    featured_by_slot: dict[str, ProductFeaturedSlot],
+) -> MobileWikiProductItem:
+    category = str(row.category or "").strip().lower()
+    category_label = CATEGORY_LABELS_ZH.get(category, category or "-")
+
+    target_type_key: str | None = None
+    target_type_title: str | None = None
+    target_type_level: Literal["subcategory", "category", "unknown"] = "unknown"
+    mapping_ready = False
+    primary_confidence: int | None = None
+    secondary_type_key: str | None = None
+    secondary_type_title: str | None = None
+    secondary_confidence: int | None = None
+
+    if category in ROUTE_MAPPED_CATEGORIES:
+        if mapping is not None and str(mapping.status or "").strip().lower() == "ready":
+            key = str(mapping.primary_route_key or "").strip()
+            if key:
+                target_type_key = key
+                target_type_title = str(mapping.primary_route_title or "").strip() or key
+                target_type_level = "subcategory"
+                mapping_ready = True
+                try:
+                    primary_confidence = int(mapping.primary_confidence or 0)
+                except Exception:
+                    primary_confidence = 0
+                secondary_key = str(mapping.secondary_route_key or "").strip()
+                secondary_title = str(mapping.secondary_route_title or "").strip()
+                secondary_type_key = secondary_key or None
+                secondary_type_title = secondary_title or None
+                if mapping.secondary_confidence is not None:
+                    try:
+                        secondary_confidence = int(mapping.secondary_confidence)
+                    except Exception:
+                        secondary_confidence = None
+    else:
+        target_type_key = CATEGORY_LEVEL_TARGET_KEY
+        target_type_title = category_label
+        target_type_level = "category"
+        mapping_ready = True
+
+    slot = featured_by_slot.get(f"{category}::{target_type_key}") if target_type_key else None
+    is_featured = bool(slot and str(slot.product_id or "").strip() == str(row.id))
+    return MobileWikiProductItem(
+        product=_row_to_product_card(row),
+        category_label=category_label,
+        target_type_key=target_type_key,
+        target_type_title=target_type_title,
+        target_type_level=target_type_level,
+        mapping_ready=mapping_ready,
+        primary_confidence=primary_confidence,
+        secondary_type_key=secondary_type_key,
+        secondary_type_title=secondary_type_title,
+        secondary_confidence=secondary_confidence,
+        is_featured=is_featured,
+    )
+
+
+def _build_mobile_bag_item_views(
+    *,
+    db: Session,
+    bag_rows: list[MobileBagItem],
+) -> list[MobileBagItemView]:
+    if not bag_rows:
+        return []
+    product_ids = [str(row.product_id or "").strip() for row in bag_rows if str(row.product_id or "").strip()]
+    product_rows = db.execute(select(ProductIndex).where(ProductIndex.id.in_(product_ids))).scalars().all()
+    product_by_id = {str(row.id): row for row in product_rows}
+    mapping_by_product_id = _route_mapping_by_product_id(db=db, product_ids=product_ids)
+    featured_by_slot = _featured_slot_by_slot_key(
+        db=db,
+        categories={str(row.category or "").strip().lower() for row in product_rows},
+    )
+
+    out: list[MobileBagItemView] = []
+    for bag_row in bag_rows:
+        product_id = str(bag_row.product_id or "").strip()
+        product_row = product_by_id.get(product_id)
+        if product_row is None:
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    f"Bag item '{bag_row.id}' references missing product '{product_id}'. "
+                    "Please clean invalid bag data."
+                ),
+            )
+        if not exists_rel_path(str(product_row.json_path or "")):
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    f"Bag item '{bag_row.id}' references product '{product_id}' with missing doc file. "
+                    "Please repair product storage."
+                ),
+            )
+
+        wiki_item = _build_mobile_wiki_product_item(
+            row=product_row,
+            mapping=mapping_by_product_id.get(product_id),
+            featured_by_slot=featured_by_slot,
+        )
+        try:
+            quantity = int(bag_row.quantity or 1)
+        except Exception:
+            quantity = 1
+        quantity = min(99, max(1, quantity))
+        out.append(
+            MobileBagItemView(
+                item_id=str(bag_row.id),
+                quantity=quantity,
+                created_at=str(bag_row.created_at),
+                updated_at=str(bag_row.updated_at),
+                product=wiki_item.product,
+                target_type_key=wiki_item.target_type_key,
+                target_type_title=wiki_item.target_type_title,
+                target_type_level=wiki_item.target_type_level,
+                is_featured=wiki_item.is_featured,
+            )
+        )
+    return out
+
+
 def _list_mobile_compare_sessions(
     *,
     db: Session,
@@ -2970,7 +3483,7 @@ def _selection_target_type_key(category: str, route_key: str) -> str | None:
     normalized_route_key = str(route_key or "").strip()
     if normalized_category not in ROUTE_MAPPING_SUPPORTED_CATEGORIES:
         if normalized_category in VALID_CATEGORIES:
-            return "__category__"
+            return CATEGORY_LEVEL_TARGET_KEY
         return None
     if normalized_category == "shampoo":
         decision = SHAMPOO_ROUTE_DECISIONS.get(normalized_route_key)
@@ -2996,14 +3509,7 @@ def _pick_featured_product_row(
             .limit(1)
         ).scalars().first()
     except OperationalError as exc:
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                "Failed to query featured slots. "
-                "Database schema may be outdated (missing table 'product_featured_slots'). "
-                f"Raw error: {exc}"
-            ),
-        ) from exc
+        raise _featured_slot_schema_http_error(exc) from exc
     if slot is None:
         return None
     product_id = str(slot.product_id or "").strip()

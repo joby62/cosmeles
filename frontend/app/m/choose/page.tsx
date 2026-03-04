@@ -12,12 +12,12 @@ const CATS = [
 export default function MobileChoose() {
   return (
     <div className="m-choose-page">
-      <div className="text-[13px] font-medium text-black/45">选择品类</div>
+      <div className="text-[13px] font-medium text-black/45">智能推荐</div>
       <div className="mt-2 text-[28px] leading-[1.12] font-semibold tracking-[-0.02em] text-black/90">
-        你想先解决哪一件
+        你属于哪类需求人群
       </div>
       <p className="mt-2 text-[15px] leading-[1.52] text-black/58">
-        横向滑动，进入对应决策路径。每个品类只会给一个最终答案。
+        先选品类，再按你的画像走决策链路，每个品类只给一个最终答案。
       </p>
 
       <div className="mt-6 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">

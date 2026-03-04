@@ -458,6 +458,66 @@ export type MobileSelectionPinRequest = {
   pinned: boolean;
 };
 
+export type MobileWikiProductItem = {
+  product: Product;
+  category_label: string;
+  target_type_key?: string | null;
+  target_type_title?: string | null;
+  target_type_level: "subcategory" | "category" | "unknown";
+  mapping_ready: boolean;
+  primary_confidence?: number | null;
+  secondary_type_key?: string | null;
+  secondary_type_title?: string | null;
+  secondary_confidence?: number | null;
+  is_featured: boolean;
+};
+
+export type MobileWikiFacet = {
+  key: string;
+  label: string;
+  count: number;
+};
+
+export type MobileWikiProductListResponse = {
+  status: string;
+  category?: string | null;
+  target_type_key?: string | null;
+  query?: string | null;
+  total: number;
+  offset: number;
+  limit: number;
+  categories: MobileWikiFacet[];
+  subtypes: MobileWikiFacet[];
+  items: MobileWikiProductItem[];
+};
+
+export type MobileWikiProductDetailResponse = {
+  status: string;
+  item: MobileWikiProductItem & {
+    doc: ProductDoc;
+  };
+};
+
+export type MobileBagItem = {
+  item_id: string;
+  quantity: number;
+  created_at: string;
+  updated_at: string;
+  product: Product;
+  target_type_key?: string | null;
+  target_type_title?: string | null;
+  target_type_level: "subcategory" | "category" | "unknown";
+  is_featured: boolean;
+};
+
+export type MobileBagListResponse = {
+  status: string;
+  category?: string | null;
+  total_items: number;
+  total_quantity: number;
+  items: MobileBagItem[];
+};
+
 export type MobileCompareCategoryItem = {
   key: MobileSelectionCategory;
   label: string;
@@ -1002,6 +1062,66 @@ export async function pinMobileSelectionSession(
       method: "POST",
       body: JSON.stringify(payload),
     },
+  );
+}
+
+export async function fetchMobileWikiProducts(params?: {
+  category?: MobileSelectionCategory;
+  target_type_key?: string;
+  q?: string;
+  offset?: number;
+  limit?: number;
+}): Promise<MobileWikiProductListResponse> {
+  const search = new URLSearchParams();
+  if (params?.category) search.set("category", params.category);
+  if (params?.target_type_key) search.set("target_type_key", params.target_type_key);
+  if (params?.q) search.set("q", params.q);
+  if (typeof params?.offset === "number") search.set("offset", String(params.offset));
+  if (typeof params?.limit === "number") search.set("limit", String(params.limit));
+  const query = search.toString();
+  const path = query ? `/api/mobile/wiki/products?${query}` : "/api/mobile/wiki/products";
+  return apiFetch<MobileWikiProductListResponse>(path);
+}
+
+export async function fetchMobileWikiProductDetail(productId: string): Promise<MobileWikiProductDetailResponse> {
+  const value = productId.trim();
+  if (!value) throw new Error("productId is required.");
+  return apiFetch<MobileWikiProductDetailResponse>(`/api/mobile/wiki/products/${encodeURIComponent(value)}`);
+}
+
+export async function fetchMobileBagItems(params?: {
+  category?: MobileSelectionCategory;
+  offset?: number;
+  limit?: number;
+}): Promise<MobileBagListResponse> {
+  const search = new URLSearchParams();
+  if (params?.category) search.set("category", params.category);
+  if (typeof params?.offset === "number") search.set("offset", String(params.offset));
+  if (typeof params?.limit === "number") search.set("limit", String(params.limit));
+  const query = search.toString();
+  const path = query ? `/api/mobile/bag/items?${query}` : "/api/mobile/bag/items";
+  return apiFetch<MobileBagListResponse>(path);
+}
+
+export async function upsertMobileBagItem(payload: {
+  product_id: string;
+  quantity?: number;
+}): Promise<MobileBagItem> {
+  return apiFetch<MobileBagItem>("/api/mobile/bag/items", {
+    method: "POST",
+    body: JSON.stringify({
+      product_id: payload.product_id,
+      quantity: payload.quantity ?? 1,
+    }),
+  });
+}
+
+export async function deleteMobileBagItem(itemId: string): Promise<{ status: string; item_id: string; deleted: boolean }> {
+  const value = itemId.trim();
+  if (!value) throw new Error("itemId is required.");
+  return apiFetch<{ status: string; item_id: string; deleted: boolean }>(
+    `/api/mobile/bag/items/${encodeURIComponent(value)}`,
+    { method: "DELETE" },
   );
 }
 

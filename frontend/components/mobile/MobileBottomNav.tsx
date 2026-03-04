@@ -4,14 +4,14 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
-type NavKey = "wiki" | "choose" | "compare" | "bag";
+type NavKey = "wiki" | "choose" | "compare";
 
 const CATEGORY_TABS = [
-  { prefix: "/m/shampoo", label: "洗发挑选", href: "/m/shampoo/start" },
-  { prefix: "/m/bodywash", label: "沐浴挑选", href: "/m/bodywash/start" },
-  { prefix: "/m/conditioner", label: "护发挑选", href: "/m/conditioner/start" },
-  { prefix: "/m/lotion", label: "润肤挑选", href: "/m/lotion/start" },
-  { prefix: "/m/cleanser", label: "洁面挑选", href: "/m/cleanser/start" },
+  { prefix: "/m/shampoo", label: "洗发推荐", href: "/m/shampoo/start" },
+  { prefix: "/m/bodywash", label: "沐浴推荐", href: "/m/bodywash/start" },
+  { prefix: "/m/conditioner", label: "护发推荐", href: "/m/conditioner/start" },
+  { prefix: "/m/lotion", label: "润肤推荐", href: "/m/lotion/start" },
+  { prefix: "/m/cleanser", label: "洁面推荐", href: "/m/cleanser/start" },
 ] as const;
 
 function getChooseItem(pathname: string) {
@@ -19,7 +19,7 @@ function getChooseItem(pathname: string) {
   if (matched) {
     return { key: "choose" as const, label: matched.label, href: matched.href };
   }
-  return { key: "choose" as const, label: "开始选择", href: "/m/choose" };
+  return { key: "choose" as const, label: "智能推荐", href: "/m/choose" };
 }
 
 function isActive(pathname: string, key: NavKey): boolean {
@@ -27,27 +27,18 @@ function isActive(pathname: string, key: NavKey): boolean {
   if (key === "choose") {
     return pathname.startsWith("/m/choose") || CATEGORY_TABS.some((item) => pathname.startsWith(item.prefix));
   }
-  if (key === "compare") return pathname.startsWith("/m/compare");
-  return pathname.startsWith("/m/bag");
+  return pathname.startsWith("/m/compare");
 }
 
 function NavIcon({ name }: { name: NavKey }) {
   const cls = "currentColor";
 
-  if (name === "wiki") {
-    return (
-      <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-        <path d="M3.5 4.1A1.6 1.6 0 0 1 5.1 2.5h7.8v11.4H5.1a1.6 1.6 0 0 0-1.6 1.6V4.1Z" fill="none" stroke={cls} strokeWidth="1.4" />
-        <path d="M5.9 5.6h4.9M5.9 8h4.9" fill="none" stroke={cls} strokeWidth="1.4" strokeLinecap="round" />
-      </svg>
-    );
-  }
-
   if (name === "choose") {
     return (
       <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-        <rect x="2.5" y="3" width="13" height="12" rx="2.2" fill="none" stroke={cls} strokeWidth="1.4" />
-        <path d="M5.5 6.2h7M5.5 9h7M5.5 11.8h4.3" fill="none" stroke={cls} strokeWidth="1.4" strokeLinecap="round" />
+        <circle cx="9" cy="9" r="6.3" fill="none" stroke={cls} strokeWidth="1.4" />
+        <circle cx="9" cy="9" r="3.2" fill="none" stroke={cls} strokeWidth="1.4" />
+        <circle cx="9" cy="9" r="1.2" fill={cls} />
       </svg>
     );
   }
@@ -55,15 +46,16 @@ function NavIcon({ name }: { name: NavKey }) {
   if (name === "compare") {
     return (
       <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-        <path d="M3.8 13.8h3.6V7.2H3.8v6.6Zm6.4 0h3.6V4.2h-3.6v9.6Z" fill="none" stroke={cls} strokeWidth="1.4" />
+        <rect x="2.5" y="2.7" width="13" height="12.6" rx="3.2" fill="none" stroke={cls} strokeWidth="1.4" />
+        <path d="M5.1 6.3l2.3 5.4M7.4 6.3l-2.3 5.4M10.6 6.8h2.4M11.8 6.8v5.2" fill="none" stroke={cls} strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     );
   }
 
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-      <path d="M4 6.8h10l-1.1 7.2H5.1L4 6.8Z" fill="none" stroke={cls} strokeWidth="1.4" strokeLinejoin="round" />
-      <path d="M6.1 6.8V6a2.9 2.9 0 0 1 5.8 0v.8" fill="none" stroke={cls} strokeWidth="1.4" strokeLinecap="round" />
+      <circle cx="8.1" cy="8.1" r="4.3" fill="none" stroke={cls} strokeWidth="1.4" />
+      <path d="M11.4 11.4L14.8 14.8" fill="none" stroke={cls} strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   );
 }
@@ -73,13 +65,12 @@ export default function MobileBottomNav() {
   const chooseItem = getChooseItem(pathname);
   const [chromeBottomInset, setChromeBottomInset] = useState(0);
   const items = [
-    { key: "wiki" as const, label: "成份百科", href: "/m/wiki" },
     chooseItem,
-    { key: "compare" as const, label: "横向对比", href: "/m/compare" },
-    { key: "bag" as const, label: "购物袋", href: "/m/bag" },
+    { key: "compare" as const, label: "VS对比", href: "/m/compare" },
+    { key: "wiki" as const, label: "百科", href: "/m/wiki" },
   ];
 
-  const meActive = pathname.startsWith("/m/me");
+  const meActive = pathname.startsWith("/m/me") || pathname.startsWith("/m/bag");
 
   useEffect(() => {
     if (typeof window === "undefined" || !window.visualViewport) return;
