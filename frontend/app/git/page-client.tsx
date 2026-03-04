@@ -1,8 +1,9 @@
 "use client";
 
 import type { CSSProperties, DragEvent, ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { getInitialLang, pickLang, subscribeLang, type Lang } from "@/lib/i18n";
 
 type RangeKey = "7" | "30" | "90";
 type ModuleFilter = "all" | GitModuleBucket;
@@ -58,18 +59,32 @@ type GitDashboardData = {
 
 export type GitDashboardBundle = Record<RangeKey, GitDashboardData>;
 
-const MODULE_LABEL: Record<GitModuleBucket, string> = {
-  mobile: "移动端",
-  backend: "后端",
-  infra: "基础设施",
-  mixed: "跨域",
+type CopyToken = {
+  zh: string;
+  en: string;
 };
 
-const MODULE_SCOPE_HINT: Record<GitModuleBucket, string> = {
-  mobile: "frontend/app/m + components/mobile + lib/mobile",
-  backend: "backend/**",
-  infra: "frontend 非 mobile + deploy + docs + 治理文件",
-  mixed: "一次提交同时触达多个域",
+const MODULE_LABEL: Record<GitModuleBucket, CopyToken> = {
+  mobile: { zh: "移动端", en: "Mobile" },
+  backend: { zh: "后端", en: "Backend" },
+  infra: { zh: "基础设施", en: "Infra" },
+  mixed: { zh: "跨域", en: "Mixed" },
+};
+
+const MODULE_SCOPE_HINT: Record<GitModuleBucket, CopyToken> = {
+  mobile: {
+    zh: "frontend/app/m + components/mobile + lib/mobile",
+    en: "frontend/app/m + components/mobile + lib/mobile",
+  },
+  backend: { zh: "backend/**", en: "backend/**" },
+  infra: {
+    zh: "frontend 非 mobile + deploy + docs + 治理文件",
+    en: "frontend non-mobile + deploy + docs + governance",
+  },
+  mixed: {
+    zh: "一次提交同时触达多个域",
+    en: "single commit touched multiple domains",
+  },
 };
 
 const MODULE_BAR_COLOR: Record<GitModuleBucket, string> = {
@@ -88,50 +103,57 @@ const PANEL_LAYOUT: Record<PanelId, string> = {
   top: "xl:col-span-12",
 };
 
-const PANEL_TITLE: Record<PanelId, string> = {
-  overview: "代码流快照",
-  trend: "每日新增/删除趋势",
-  modules: "模块贡献",
-  impact: "提交波动条带",
-  heatmap: "周 / 小时热力图",
-  top: "高影响提交",
+const PANEL_TITLE: Record<PanelId, CopyToken> = {
+  overview: { zh: "代码流快照", en: "Codeflow Snapshot" },
+  trend: { zh: "每日新增/删除趋势", en: "Daily Add/Delete Flow" },
+  modules: { zh: "模块贡献", en: "Module Contribution" },
+  impact: { zh: "提交波动条带", en: "Commit-by-Commit Strip" },
+  heatmap: { zh: "周 / 小时热力图", en: "Weekday / Hour Heatmap" },
+  top: { zh: "高影响提交", en: "Highest Impact Commits" },
 };
 
-const PANEL_SUBTITLE: Record<PanelId, string> = {
-  overview: "来自 git numstat 的核心指标",
-  trend: "上半区是新增，下半区是删除",
-  modules: "拖拽卡片可调整板块顺序",
-  impact: "从左到右为时间从旧到新",
-  heatmap: "颜色越深表示提交越密集",
-  top: "按新增 + 删除行数排序",
+const PANEL_SUBTITLE: Record<PanelId, CopyToken> = {
+  overview: { zh: "来自 git numstat 的核心指标", en: "core metrics from git numstat" },
+  trend: { zh: "上半区是新增，下半区是删除", en: "upper area = add, lower area = delete" },
+  modules: { zh: "拖拽卡片可调整板块顺序", en: "drag cards to reorder this board" },
+  impact: { zh: "从左到右为时间从旧到新", en: "left to right = old to new" },
+  heatmap: { zh: "颜色越深表示提交越密集", en: "denser color means more commits" },
+  top: { zh: "按新增 + 删除行数排序", en: "sorted by insertions + deletions" },
 };
 
-const RANGE_LABEL: Record<RangeKey, string> = {
-  "7": "7天",
-  "30": "30天",
-  "90": "90天",
+const RANGE_LABEL: Record<RangeKey, CopyToken> = {
+  "7": { zh: "7天", en: "7D" },
+  "30": { zh: "30天", en: "30D" },
+  "90": { zh: "90天", en: "90D" },
 };
 
-const FILTER_LABEL: Record<ModuleFilter, string> = {
-  all: "全部",
-  mobile: "移动端",
-  backend: "后端",
-  infra: "基础设施",
-  mixed: "跨域",
+const FILTER_LABEL: Record<ModuleFilter, CopyToken> = {
+  all: { zh: "全部", en: "All" },
+  mobile: { zh: "移动端", en: "Mobile" },
+  backend: { zh: "后端", en: "Backend" },
+  infra: { zh: "基础设施", en: "Infra" },
+  mixed: { zh: "跨域", en: "Mixed" },
 };
 
-const WEEKDAY_LABELS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"] as const;
+const WEEKDAY_LABELS: Record<Lang, readonly string[]> = {
+  zh: ["周一", "周二", "周三", "周四", "周五", "周六", "周日"],
+  en: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+} as const;
 const WEEKDAY_INDEX = [1, 2, 3, 4, 5, 6, 0] as const;
 const MODULE_ORDER: GitModuleBucket[] = ["mobile", "backend", "infra", "mixed"];
 const DEFAULT_PANEL_ORDER: PanelId[] = ["overview", "trend", "modules", "impact", "heatmap", "top"];
 
-function formatNumber(value: number): string {
-  return new Intl.NumberFormat("zh-CN").format(value);
+function copy(lang: Lang, token: CopyToken): string {
+  return pickLang(lang, token.zh, token.en);
 }
 
-function formatSigned(value: number): string {
-  if (value > 0) return `+${formatNumber(value)}`;
-  if (value < 0) return `-${formatNumber(Math.abs(value))}`;
+function formatNumber(value: number, lang: Lang): string {
+  return new Intl.NumberFormat(lang === "zh" ? "zh-CN" : "en-US").format(value);
+}
+
+function formatSigned(value: number, lang: Lang): string {
+  if (value > 0) return `+${formatNumber(value, lang)}`;
+  if (value < 0) return `-${formatNumber(Math.abs(value), lang)}`;
   return "0";
 }
 
@@ -258,6 +280,7 @@ function aggregateDashboard(dataset: GitDashboardData, filter: ModuleFilter) {
 }
 
 function PanelShell({
+  lang,
   panelId,
   dragging,
   over,
@@ -268,6 +291,7 @@ function PanelShell({
   rightSlot,
   children,
 }: {
+  lang: Lang;
   panelId: PanelId;
   dragging: boolean;
   over: boolean;
@@ -291,16 +315,16 @@ function PanelShell({
     >
       <header className="flex items-start justify-between border-b border-black/8 px-6 py-4">
         <div>
-          <p className="text-[11px] tracking-[0.11em] text-black/50 uppercase">{PANEL_SUBTITLE[panelId]}</p>
+          <p className="text-[11px] tracking-[0.11em] text-black/50 uppercase">{copy(lang, PANEL_SUBTITLE[panelId])}</p>
           <h2 className="mt-1 text-[24px] leading-[1.03] font-semibold tracking-[-0.025em] text-black/88">
-            {PANEL_TITLE[panelId]}
+            {copy(lang, PANEL_TITLE[panelId])}
           </h2>
         </div>
         <div className="flex items-center gap-2">
           {rightSlot}
           <span
             className="git-panel-handle inline-flex h-8 w-8 items-center justify-center rounded-full border border-black/10 bg-black/[0.03] text-black/45"
-            title="拖拽调整位置"
+            title={pickLang(lang, "拖拽调整位置", "Drag to reorder")}
             aria-hidden
           >
             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -315,13 +339,22 @@ function PanelShell({
 }
 
 export default function GitDashboardClient({ datasets }: { datasets: GitDashboardBundle }) {
+  const [lang, setLang] = useState<Lang>(() => getInitialLang());
   const [range, setRange] = useState<RangeKey>("30");
   const [filter, setFilter] = useState<ModuleFilter>("all");
   const [panelOrder, setPanelOrder] = useState<PanelId[]>(DEFAULT_PANEL_ORDER);
   const [draggingId, setDraggingId] = useState<PanelId | null>(null);
   const [overId, setOverId] = useState<PanelId | null>(null);
 
+  useEffect(() => {
+    return subscribeLang(() => setLang(getInitialLang()));
+  }, []);
+
   const dataset = datasets[range];
+  const weekdayLabels = WEEKDAY_LABELS[lang];
+  const datetimeLocale = lang === "zh" ? "zh-CN" : "en-US";
+  const fmtNum = (value: number) => formatNumber(value, lang);
+  const fmtSigned = (value: number) => formatSigned(value, lang);
 
   const computed = useMemo(() => {
     return aggregateDashboard(dataset, filter);
@@ -409,18 +442,18 @@ export default function GitDashboardClient({ datasets }: { datasets: GitDashboar
     return (
       <section className="mx-auto max-w-[1180px] px-6 pb-24 pt-16 md:px-10">
         <div className="rounded-[32px] border border-black/10 bg-white/90 p-8 shadow-[0_28px_80px_rgba(7,12,20,0.1)]">
-          <p className="text-[12px] tracking-[0.14em] text-black/52 uppercase">Git 工程观测台</p>
+          <p className="text-[12px] tracking-[0.14em] text-black/52 uppercase">{pickLang(lang, "Git 工程观测台", "Git Observatory")}</p>
           <h1 className="mt-2 text-[40px] leading-[1.04] font-semibold tracking-[-0.03em] text-black/88">
-            无法读取本地 Git 历史
+            {pickLang(lang, "无法读取本地 Git 历史", "Unable to read local Git history")}
           </h1>
           <p className="mt-4 max-w-[760px] text-[16px] leading-[1.7] text-black/64">
-            {dataset.error || "当前运行环境可能没有 .git 仓库信息。"}
+            {dataset.error || pickLang(lang, "当前运行环境可能没有 .git 仓库信息。", "The runtime may not include a .git directory.")}
           </p>
           <Link
             href="/"
             className="mt-7 inline-flex items-center rounded-full border border-black/12 bg-black/[0.02] px-5 py-2 text-[13px] font-medium text-black/72"
           >
-            返回首页
+            {pickLang(lang, "返回首页", "Back to home")}
           </Link>
         </div>
       </section>
@@ -430,6 +463,7 @@ export default function GitDashboardClient({ datasets }: { datasets: GitDashboar
   const panels: Record<PanelId, ReactNode> = {
     overview: (
       <PanelShell
+        lang={lang}
         panelId="overview"
         dragging={draggingId === "overview"}
         over={overId === "overview"}
@@ -443,45 +477,51 @@ export default function GitDashboardClient({ datasets }: { datasets: GitDashboar
             onClick={() => setPanelOrder(DEFAULT_PANEL_ORDER)}
             className="rounded-full border border-black/12 bg-black/[0.02] px-3 py-1 text-[11px] text-black/64 transition-colors hover:bg-black/[0.05]"
           >
-            重置布局
+            {pickLang(lang, "重置布局", "Reset Layout")}
           </button>
         }
       >
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <article className="rounded-2xl border border-black/10 bg-white/88 p-4">
-            <p className="text-[11px] tracking-[0.08em] text-black/52 uppercase">新增行数</p>
+            <p className="text-[11px] tracking-[0.08em] text-black/52 uppercase">{pickLang(lang, "新增行数", "Insertions")}</p>
             <p className="mt-2 text-[31px] leading-none font-semibold tracking-[-0.03em] text-emerald-700">
-              +{formatNumber(computed.totals.insertions)}
+              +{fmtNum(computed.totals.insertions)}
             </p>
-            <p className="mt-2 text-[12px] text-black/54">占总波动 {ratioLabel(computed.totals.insertions, totalChurn)}</p>
+            <p className="mt-2 text-[12px] text-black/54">
+              {pickLang(lang, "占总波动", "Share of churn")} {ratioLabel(computed.totals.insertions, totalChurn)}
+            </p>
           </article>
 
           <article className="rounded-2xl border border-black/10 bg-white/88 p-4">
-            <p className="text-[11px] tracking-[0.08em] text-black/52 uppercase">删除行数</p>
+            <p className="text-[11px] tracking-[0.08em] text-black/52 uppercase">{pickLang(lang, "删除行数", "Deletions")}</p>
             <p className="mt-2 text-[31px] leading-none font-semibold tracking-[-0.03em] text-rose-700">
-              -{formatNumber(computed.totals.deletions)}
+              -{fmtNum(computed.totals.deletions)}
             </p>
-            <p className="mt-2 text-[12px] text-black/54">占总波动 {ratioLabel(computed.totals.deletions, totalChurn)}</p>
+            <p className="mt-2 text-[12px] text-black/54">
+              {pickLang(lang, "占总波动", "Share of churn")} {ratioLabel(computed.totals.deletions, totalChurn)}
+            </p>
           </article>
 
           <article className="rounded-2xl border border-black/10 bg-white/88 p-4">
-            <p className="text-[11px] tracking-[0.08em] text-black/52 uppercase">提交次数</p>
+            <p className="text-[11px] tracking-[0.08em] text-black/52 uppercase">{pickLang(lang, "提交次数", "Commits")}</p>
             <p className="mt-2 text-[31px] leading-none font-semibold tracking-[-0.03em] text-black/86">
-              {formatNumber(computed.totals.commits)}
+              {fmtNum(computed.totals.commits)}
             </p>
-            <p className="mt-2 text-[12px] text-black/54">影响文件 {formatNumber(computed.totals.files)}</p>
+            <p className="mt-2 text-[12px] text-black/54">
+              {pickLang(lang, "影响文件", "Files touched")} {fmtNum(computed.totals.files)}
+            </p>
           </article>
 
           <article className="rounded-2xl border border-black/10 bg-white/88 p-4">
-            <p className="text-[11px] tracking-[0.08em] text-black/52 uppercase">净变化</p>
+            <p className="text-[11px] tracking-[0.08em] text-black/52 uppercase">{pickLang(lang, "净变化", "Net Delta")}</p>
             <p
               className={`mt-2 text-[31px] leading-none font-semibold tracking-[-0.03em] ${
                 computed.totals.net >= 0 ? "text-cyan-700" : "text-orange-700"
               }`}
             >
-              {formatSigned(computed.totals.net)}
+              {fmtSigned(computed.totals.net)}
             </p>
-            <p className="mt-2 text-[12px] text-black/54">新增 - 删除</p>
+            <p className="mt-2 text-[12px] text-black/54">{pickLang(lang, "新增 - 删除", "Insertions - Deletions")}</p>
           </article>
         </div>
       </PanelShell>
@@ -489,6 +529,7 @@ export default function GitDashboardClient({ datasets }: { datasets: GitDashboar
 
     trend: (
       <PanelShell
+        lang={lang}
         panelId="trend"
         dragging={draggingId === "trend"}
         over={overId === "trend"}
@@ -528,7 +569,7 @@ export default function GitDashboardClient({ datasets }: { datasets: GitDashboar
                 const row = dailyForTrend[index];
                 return (
                   <circle key={row.day} cx={point.x} cy={point.y} r="2.1" fill="rgba(4,120,87,0.86)">
-                    <title>{`${row.day} +${formatNumber(row.insertions)} / -${formatNumber(row.deletions)}`}</title>
+                    <title>{`${row.day} +${fmtNum(row.insertions)} / -${fmtNum(row.deletions)}`}</title>
                   </circle>
                 );
               })}
@@ -553,6 +594,7 @@ export default function GitDashboardClient({ datasets }: { datasets: GitDashboar
 
     modules: (
       <PanelShell
+        lang={lang}
         panelId="modules"
         dragging={draggingId === "modules"}
         over={overId === "modules"}
@@ -566,13 +608,15 @@ export default function GitDashboardClient({ datasets }: { datasets: GitDashboar
             <div key={row.bucket}>
               <div className="flex items-end justify-between">
                 <div>
-                  <p className="text-[14px] font-semibold text-black/80">{MODULE_LABEL[row.bucket]}</p>
-                  <p className="text-[11px] text-black/52">{MODULE_SCOPE_HINT[row.bucket]}</p>
+                  <p className="text-[14px] font-semibold text-black/80">{copy(lang, MODULE_LABEL[row.bucket])}</p>
+                  <p className="text-[11px] text-black/52">{copy(lang, MODULE_SCOPE_HINT[row.bucket])}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-[12px] font-medium text-black/74">{formatNumber(row.commits)} 次提交</p>
+                  <p className="text-[12px] font-medium text-black/74">
+                    {fmtNum(row.commits)} {pickLang(lang, "次提交", "commits")}
+                  </p>
                   <p className={`text-[12px] ${row.net >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
-                    {formatSigned(row.net)}
+                    {fmtSigned(row.net)}
                   </p>
                 </div>
               </div>
@@ -586,7 +630,7 @@ export default function GitDashboardClient({ datasets }: { datasets: GitDashboar
                 />
               </div>
               <p className="mt-1 text-[11px] text-black/54">
-                +{formatNumber(row.insertions)} / -{formatNumber(row.deletions)} ({ratioLabel(row.churn, totalChurn)})
+                +{fmtNum(row.insertions)} / -{fmtNum(row.deletions)} ({ratioLabel(row.churn, totalChurn)})
               </p>
             </div>
           ))}
@@ -596,6 +640,7 @@ export default function GitDashboardClient({ datasets }: { datasets: GitDashboar
 
     impact: (
       <PanelShell
+        lang={lang}
         panelId="impact"
         dragging={draggingId === "impact"}
         over={overId === "impact"}
@@ -613,14 +658,14 @@ export default function GitDashboardClient({ datasets }: { datasets: GitDashboar
                     <div
                       className="w-full rounded-t-[3px] bg-emerald-500/82"
                       style={{ height: `${clamp(4, (commit.insertions / maxCommitChurn) * 100, 100)}%` }}
-                      title={`${commit.hash.slice(0, 7)} +${formatNumber(commit.insertions)}`}
+                      title={`${commit.hash.slice(0, 7)} +${fmtNum(commit.insertions)}`}
                     />
                   </div>
                   <div className="flex h-1/2 items-start justify-center">
                     <div
                       className="w-full rounded-b-[3px] bg-rose-500/82"
                       style={{ height: `${clamp(4, (commit.deletions / maxCommitChurn) * 100, 100)}%` }}
-                      title={`${commit.hash.slice(0, 7)} -${formatNumber(commit.deletions)}`}
+                      title={`${commit.hash.slice(0, 7)} -${fmtNum(commit.deletions)}`}
                     />
                   </div>
                 </div>
@@ -633,6 +678,7 @@ export default function GitDashboardClient({ datasets }: { datasets: GitDashboar
 
     heatmap: (
       <PanelShell
+        lang={lang}
         panelId="heatmap"
         dragging={draggingId === "heatmap"}
         over={overId === "heatmap"}
@@ -643,9 +689,9 @@ export default function GitDashboardClient({ datasets }: { datasets: GitDashboar
       >
         <div className="space-y-[7px]">
           {WEEKDAY_INDEX.map((actualDay, rowIndex) => (
-            <div key={WEEKDAY_LABELS[rowIndex]} className="flex items-center gap-3">
+            <div key={weekdayLabels[rowIndex]} className="flex items-center gap-3">
               <span className="w-9 text-right text-[11px] tracking-[0.04em] text-black/48">
-                {WEEKDAY_LABELS[rowIndex]}
+                {weekdayLabels[rowIndex]}
               </span>
               <div className="grid flex-1 gap-[5px]" style={{ gridTemplateColumns: "repeat(24, minmax(0, 1fr))" }}>
                 {computed.heatmap[actualDay].map((value, hour) => {
@@ -654,7 +700,7 @@ export default function GitDashboardClient({ datasets }: { datasets: GitDashboar
                     <div
                       key={`${actualDay}-${hour}`}
                       className="h-[11px] rounded-[4px] border border-black/[0.05]"
-                      title={`${WEEKDAY_LABELS[rowIndex]} ${hour}:00 · ${value} 次提交`}
+                      title={`${weekdayLabels[rowIndex]} ${hour}:00 · ${value} ${pickLang(lang, "次提交", "commits")}`}
                       style={{ backgroundColor: `rgba(14,165,233,${alpha})` }}
                     />
                   );
@@ -668,6 +714,7 @@ export default function GitDashboardClient({ datasets }: { datasets: GitDashboar
 
     top: (
       <PanelShell
+        lang={lang}
         panelId="top"
         dragging={draggingId === "top"}
         over={overId === "top"}
@@ -680,11 +727,11 @@ export default function GitDashboardClient({ datasets }: { datasets: GitDashboar
           <table className="min-w-full table-fixed border-separate border-spacing-y-2">
             <thead>
               <tr>
-                <th className="w-[110px] px-3 text-left text-[11px] tracking-[0.06em] text-black/52 uppercase">提交</th>
-                <th className="w-[120px] px-3 text-left text-[11px] tracking-[0.06em] text-black/52 uppercase">日期</th>
-                <th className="px-3 text-left text-[11px] tracking-[0.06em] text-black/52 uppercase">说明</th>
+                <th className="w-[110px] px-3 text-left text-[11px] tracking-[0.06em] text-black/52 uppercase">{pickLang(lang, "提交", "Hash")}</th>
+                <th className="w-[120px] px-3 text-left text-[11px] tracking-[0.06em] text-black/52 uppercase">{pickLang(lang, "日期", "Date")}</th>
+                <th className="px-3 text-left text-[11px] tracking-[0.06em] text-black/52 uppercase">{pickLang(lang, "说明", "Subject")}</th>
                 <th className="w-[120px] px-3 text-right text-[11px] tracking-[0.06em] text-black/52 uppercase">+ / -</th>
-                <th className="w-[120px] px-3 text-right text-[11px] tracking-[0.06em] text-black/52 uppercase">模块</th>
+                <th className="w-[120px] px-3 text-right text-[11px] tracking-[0.06em] text-black/52 uppercase">{pickLang(lang, "模块", "Module")}</th>
               </tr>
             </thead>
             <tbody>
@@ -694,11 +741,11 @@ export default function GitDashboardClient({ datasets }: { datasets: GitDashboar
                   <td className="px-3 py-3 text-[12px] text-black/62">{commit.dayKey}</td>
                   <td className="px-3 py-3 text-[13px] text-black/78">{commit.subject}</td>
                   <td className="px-3 py-3 text-right text-[12px] font-medium">
-                    <span className="text-emerald-700">+{formatNumber(commit.insertions)}</span>
+                    <span className="text-emerald-700">+{fmtNum(commit.insertions)}</span>
                     <span className="text-black/45"> / </span>
-                    <span className="text-rose-700">-{formatNumber(commit.deletions)}</span>
+                    <span className="text-rose-700">-{fmtNum(commit.deletions)}</span>
                   </td>
-                  <td className="rounded-r-xl px-3 py-3 text-right text-[12px] text-black/68">{MODULE_LABEL[commit.module]}</td>
+                  <td className="rounded-r-xl px-3 py-3 text-right text-[12px] text-black/68">{copy(lang, MODULE_LABEL[commit.module])}</td>
                 </tr>
               ))}
             </tbody>
@@ -712,12 +759,16 @@ export default function GitDashboardClient({ datasets }: { datasets: GitDashboar
     <>
       <section className="mx-auto max-w-[1280px] px-6 pb-24 pt-14 md:px-10">
         <header className="relative overflow-hidden rounded-[34px] border border-black/10 bg-[radial-gradient(circle_at_16%_0%,rgba(56,189,248,0.32),rgba(245,247,252,0.98)_42%),radial-gradient(circle_at_84%_12%,rgba(236,72,153,0.16),rgba(245,247,252,0)_48%),linear-gradient(160deg,rgba(255,255,255,0.96),rgba(241,246,255,0.94))] px-7 py-8 shadow-[0_34px_84px_rgba(11,22,38,0.14)] md:px-10 md:py-10">
-          <p className="text-[12px] tracking-[0.16em] text-black/52 uppercase">Git 工程观测台</p>
+          <p className="text-[12px] tracking-[0.16em] text-black/52 uppercase">{pickLang(lang, "Git 工程观测台", "Git Observatory")}</p>
           <h1 className="mt-2 max-w-[860px] text-[42px] leading-[0.98] font-semibold tracking-[-0.035em] text-black/90 md:text-[56px]">
-            桌面代码流仪表盘
+            {pickLang(lang, "桌面代码流仪表盘", "Desktop Codeflow Panel")}
           </h1>
           <p className="mt-4 max-w-[900px] text-[16px] leading-[1.72] text-black/62 md:text-[17px]">
-            数据来自真实 <code>git log --numstat</code>。支持时间范围切换、模块过滤，以及拖拽重排面板。
+            {pickLang(
+              lang,
+              "数据来自真实 git log --numstat。支持时间范围切换、模块过滤，以及拖拽重排面板。",
+              "Powered by real git log --numstat. Supports range switch, module filter, and drag-to-reorder panels.",
+            )}
           </p>
 
           <div className="mt-5 flex flex-wrap items-center gap-3">
@@ -731,7 +782,7 @@ export default function GitDashboardClient({ datasets }: { datasets: GitDashboar
                     range === item ? "bg-black text-white" : "text-black/68 hover:bg-black/[0.05]"
                   }`}
                 >
-                  {RANGE_LABEL[item]}
+                  {copy(lang, RANGE_LABEL[item])}
                 </button>
               ))}
             </div>
@@ -746,15 +797,17 @@ export default function GitDashboardClient({ datasets }: { datasets: GitDashboar
                     filter === item ? "bg-black text-white" : "text-black/68 hover:bg-black/[0.05]"
                   }`}
                 >
-                  {FILTER_LABEL[item]}
+                  {copy(lang, FILTER_LABEL[item])}
                 </button>
               ))}
             </div>
           </div>
 
           <p className="mt-3 text-[12px] text-black/48">
-            当前视图：最近 {RANGE_LABEL[range]} · 过滤：{FILTER_LABEL[filter]} · 生成时间{" "}
-            {new Date(dataset.generatedAtIso).toLocaleString("zh-CN")}
+            {pickLang(lang, "当前视图：最近", "Current view:")} {copy(lang, RANGE_LABEL[range])} ·{" "}
+            {pickLang(lang, "过滤：", "Filter:")} {copy(lang, FILTER_LABEL[filter])} ·{" "}
+            {pickLang(lang, "生成时间", "Generated at")}{" "}
+            {new Date(dataset.generatedAtIso).toLocaleString(datetimeLocale)}
           </p>
         </header>
 
