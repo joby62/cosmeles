@@ -18,8 +18,14 @@ def _install_fake_ingest_pipeline(monkeypatch: pytest.MonkeyPatch, plans: list[d
             raise AssertionError("No more plans available for fake stage1.")
         plan = plans[index]
         by_trace[trace_id] = plan
+        ingredient_text = "、".join(str(item or "").strip() for item in plan.get("ingredients") or [] if str(item or "").strip())
         return {
-            "vision_text": f"【品牌】{plan['brand']}\\n【产品名】{plan['name']}\\n【品类】{plan['category']}",
+            "vision_text": (
+                f"【品牌】{plan['brand']}\n"
+                f"【产品名】{plan['name']}\n"
+                f"【品类】{plan['category']}\n"
+                f"【成分表原文】{ingredient_text or '未识别'}"
+            ),
             "model": "doubao-stage1-mini",
             "artifact": f"doubao_runs/{trace_id}/stage1_vision.json",
         }

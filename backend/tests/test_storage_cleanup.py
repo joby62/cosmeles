@@ -12,7 +12,7 @@ def _install_fake_ingest_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
         if event_callback:
             event_callback({"type": "step", "stage": "stage1_vision", "message": "mock"})
         return {
-            "vision_text": "【品牌】Dove\n【产品名】Deep Moisture Body Wash\n【品类】bodywash",
+            "vision_text": "【品牌】Dove\n【产品名】Deep Moisture Body Wash\n【品类】bodywash\n【成分表原文】水、甘氨酸",
             "model": "doubao-stage1-mini",
             "artifact": f"doubao_runs/{trace_id}/stage1_vision.json",
         }
