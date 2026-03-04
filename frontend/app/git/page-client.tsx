@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { getInitialLang, pickLang, subscribeLang, type Lang } from "@/lib/i18n";
 
-type RangeKey = "7" | "30" | "90";
+type RangeKey = "3" | "5" | "7" | "30" | "all";
 type ModuleFilter = "all" | GitModuleBucket;
 type PanelId = "overview" | "trend" | "modules" | "impact" | "heatmap" | "top";
 
@@ -122,9 +122,11 @@ const PANEL_SUBTITLE: Record<PanelId, CopyToken> = {
 };
 
 const RANGE_LABEL: Record<RangeKey, CopyToken> = {
+  "3": { zh: "3天", en: "3D" },
+  "5": { zh: "5天", en: "5D" },
   "7": { zh: "7天", en: "7D" },
   "30": { zh: "30天", en: "30D" },
-  "90": { zh: "90天", en: "90D" },
+  all: { zh: "全部", en: "All" },
 };
 
 const FILTER_LABEL: Record<ModuleFilter, CopyToken> = {
@@ -353,6 +355,10 @@ export default function GitDashboardClient({ datasets }: { datasets: GitDashboar
   const dataset = datasets[range];
   const weekdayLabels = WEEKDAY_LABELS[lang];
   const datetimeLocale = lang === "zh" ? "zh-CN" : "en-US";
+  const rangeSummary =
+    range === "all"
+      ? pickLang(lang, "全部", "All history")
+      : `${pickLang(lang, "最近", "Last")} ${copy(lang, RANGE_LABEL[range])}`;
   const fmtNum = (value: number) => formatNumber(value, lang);
   const fmtSigned = (value: number) => formatSigned(value, lang);
 
@@ -804,7 +810,7 @@ export default function GitDashboardClient({ datasets }: { datasets: GitDashboar
           </div>
 
           <p className="mt-3 text-[12px] text-black/48">
-            {pickLang(lang, "当前视图：最近", "Current view:")} {copy(lang, RANGE_LABEL[range])} ·{" "}
+            {pickLang(lang, "当前视图：", "Current view:")} {rangeSummary} ·{" "}
             {pickLang(lang, "过滤：", "Filter:")} {copy(lang, FILTER_LABEL[filter])} ·{" "}
             {pickLang(lang, "生成时间", "Generated at")}{" "}
             {new Date(dataset.generatedAtIso).toLocaleString(datetimeLocale)}

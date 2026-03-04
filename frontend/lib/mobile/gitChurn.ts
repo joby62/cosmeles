@@ -51,7 +51,7 @@ export type GitChurnDashboard = {
 };
 
 type GitChurnOptions = {
-  sinceDays?: number;
+  sinceDays?: number | "all";
   maxCommits?: number;
 };
 
@@ -148,7 +148,9 @@ function finalizeState(state: MutableCommitState | null): GitChurnCommit | null 
 }
 
 export function getGitChurnDashboard(options: GitChurnOptions = {}): GitChurnDashboard {
-  const sinceDays = Math.max(1, Math.floor(options.sinceDays ?? 30));
+  const useAllHistory = options.sinceDays === "all";
+  const sinceDaysInput = typeof options.sinceDays === "number" ? options.sinceDays : 30;
+  const sinceDays = useAllHistory ? 0 : Math.max(1, Math.floor(sinceDaysInput));
   const maxCommits = Math.max(20, Math.floor(options.maxCommits ?? 140));
   const generatedAtIso = new Date().toISOString();
 
@@ -171,17 +173,18 @@ export function getGitChurnDashboard(options: GitChurnOptions = {}): GitChurnDas
 
   let stdout = "";
   try {
+    const args = [
+      "log",
+      ...(useAllHistory ? [] : [`--since=${sinceDays} days ago`]),
+      `--max-count=${maxCommits}`,
+      "--date=iso-strict",
+      `--pretty=format:${COMMIT_PREFIX}%H|%ad|%s`,
+      "--numstat",
+      "--",
+    ];
     stdout = execFileSync(
       "git",
-      [
-        "log",
-        `--since=${sinceDays} days ago`,
-        `--max-count=${maxCommits}`,
-        "--date=iso-strict",
-        `--pretty=format:${COMMIT_PREFIX}%H|%ad|%s`,
-        "--numstat",
-        "--",
-      ],
+      args,
       {
         encoding: "utf8",
         maxBuffer: 16 * 1024 * 1024,
