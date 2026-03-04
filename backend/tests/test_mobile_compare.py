@@ -687,3 +687,122 @@ def test_mobile_compare_bootstrap_uses_latest_session_even_if_older_is_pinned(te
     body = bootstrap.json()
     assert body["profile"]["basis"] == "latest"
     assert body["recommendation"]["session_id"] == latest_session_id
+
+
+def test_mobile_compare_sessions_reindex_backfills_from_session_file(test_client):
+    client, storage_dir = test_client
+    compare_id = "cmp-reindex-session-001"
+    owner_id = "device-reindex-session"
+
+    run_dir = Path(storage_dir) / "doubao_runs" / compare_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    session_payload = {
+        "compare_id": compare_id,
+        "owner_type": "device",
+        "owner_id": owner_id,
+        "category": "shampoo",
+        "status": "done",
+        "created_at": "2026-03-04T00:00:00.000000Z",
+        "updated_at": "2026-03-04T00:00:01.000000Z",
+        "stage": "done",
+        "stage_label": "对比完成",
+        "message": "历史任务完成",
+        "percent": 100,
+        "result": {
+            "decision": "keep",
+            "headline": "保持当前产品即可。",
+            "confidence": 0.9,
+            "created_at": "2026-03-04T00:00:01.000000Z",
+        },
+    }
+    (run_dir / "mobile_compare_session.json").write_text(
+        json.dumps(session_payload, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    client.cookies.set("mx_device_id", owner_id)
+    before = client.get("/api/mobile/compare/sessions", params={"category": "shampoo", "limit": 20})
+    assert before.status_code == 200
+    assert before.json() == []
+
+    reindex = client.post("/api/mobile/compare/sessions/reindex", params={"limit": 50})
+    assert reindex.status_code == 200
+    body = reindex.json()
+    assert body["status"] == "ok"
+    assert body["indexed"] == 1
+    assert body["sources"]["session"] == 1
+    assert body["sources"]["result_fallback"] == 0
+
+    listed = client.get("/api/mobile/compare/sessions", params={"category": "shampoo", "limit": 20})
+    assert listed.status_code == 200
+    listed_ids = [item["compare_id"] for item in listed.json()]
+    assert compare_id in listed_ids
+
+    detail = client.get(f"/api/mobile/compare/sessions/{compare_id}")
+    assert detail.status_code == 200
+    detail_payload = detail.json()
+    assert detail_payload["compare_id"] == compare_id
+    assert detail_payload["status"] == "done"
+    assert detail_payload["result"]["headline"] == "保持当前产品即可。"
+
+
+def test_mobile_compare_sessions_reindex_uses_result_fallback_when_session_missing(
+    test_client,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    client, storage_dir = test_client
+    compare_id = "cmp-reindex-result-001"
+    owner_id = "device-reindex-result"
+
+    run_dir = Path(storage_dir) / "doubao_runs" / compare_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    result_container = {
+        "owner_type": "device",
+        "owner_id": owner_id,
+        "result": {"mock": True},
+    }
+    (run_dir / "mobile_compare_result.json").write_text(
+        json.dumps(result_container, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    def fake_fallback(*, compare_id: str, result_payload: dict):
+        assert compare_id == "cmp-reindex-result-001"
+        assert result_payload == {"mock": True}
+        return mobile_routes.MobileCompareSessionResponse(
+            status="done",
+            compare_id=compare_id,
+            category="shampoo",
+            created_at="2026-03-04T01:00:00.000000Z",
+            updated_at="2026-03-04T01:00:00.000000Z",
+            stage="done",
+            stage_label="对比完成",
+            message="结果文件回填",
+            percent=100,
+            pair_index=None,
+            pair_total=None,
+            result=mobile_routes.MobileCompareSessionResultBrief(
+                decision="switch",
+                headline="建议替换。",
+                confidence=0.8,
+                created_at="2026-03-04T01:00:00.000000Z",
+            ),
+            error=None,
+        )
+
+    monkeypatch.setattr(mobile_routes, "_fallback_mobile_compare_session_from_result_payload", fake_fallback)
+
+    client.cookies.set("mx_device_id", owner_id)
+    reindex = client.post("/api/mobile/compare/sessions/reindex", params={"limit": 50})
+    assert reindex.status_code == 200
+    body = reindex.json()
+    assert body["status"] == "ok"
+    assert body["indexed"] == 1
+    assert body["sources"]["session"] == 0
+    assert body["sources"]["result_fallback"] == 1
+
+    detail = client.get(f"/api/mobile/compare/sessions/{compare_id}")
+    assert detail.status_code == 200
+    detail_payload = detail.json()
+    assert detail_payload["compare_id"] == compare_id
+    assert detail_payload["result"]["headline"] == "建议替换。"

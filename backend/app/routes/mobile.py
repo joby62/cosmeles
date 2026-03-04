@@ -4,6 +4,7 @@ import queue
 import threading
 from collections import defaultdict
 from itertools import combinations
+from pathlib import Path
 from uuid import uuid4
 from typing import Any, Callable
 
@@ -970,6 +971,23 @@ def list_mobile_compare_sessions(
     return records
 
 
+@router.post("/compare/sessions/reindex")
+def reindex_mobile_compare_sessions(
+    limit: int = Query(5000, ge=1, le=200_000),
+    only_missing: bool = Query(True),
+    dry_run: bool = Query(False),
+    db: Session = Depends(get_db),
+):
+    _ensure_mobile_compare_index_tables(db)
+    result = _backfill_mobile_compare_session_index_from_storage(
+        db=db,
+        limit=limit,
+        only_missing=only_missing,
+        dry_run=dry_run,
+    )
+    return {"status": "ok", **result}
+
+
 @router.get("/compare/sessions/{compare_id}", response_model=MobileCompareSessionResponse)
 def get_mobile_compare_session(
     compare_id: str,
@@ -1910,6 +1928,203 @@ def _normalize_model_category(raw: str | None) -> str:
     if alias:
         return alias
     return lowered
+
+
+def _ensure_mobile_compare_index_tables(db: Session) -> None:
+    bind = db.get_bind()
+    MobileCompareSessionIndex.__table__.create(bind=bind, checkfirst=True)
+    MobileCompareUsageStat.__table__.create(bind=bind, checkfirst=True)
+
+
+def _coerce_mobile_compare_session_index_payload(
+    *,
+    compare_id: str,
+    payload: dict[str, Any],
+) -> dict[str, Any] | None:
+    owner_type = str(payload.get("owner_type") or "").strip()
+    owner_id = str(payload.get("owner_id") or "").strip()
+    if not owner_type or not owner_id:
+        return None
+
+    status_value = str(payload.get("status") or "running").strip().lower()
+    if status_value not in {"running", "done", "failed"}:
+        status_value = "running"
+
+    category = _normalize_model_category(payload.get("category"))
+    if category not in VALID_CATEGORIES:
+        category = "unknown"
+
+    percent_raw = payload.get("percent")
+    try:
+        percent = int(percent_raw) if percent_raw is not None else 0
+    except Exception:
+        percent = 0
+    percent = max(0, min(100, percent))
+
+    pair_index_raw = payload.get("pair_index")
+    pair_total_raw = payload.get("pair_total")
+    try:
+        pair_index = int(pair_index_raw) if pair_index_raw is not None else None
+    except Exception:
+        pair_index = None
+    try:
+        pair_total = int(pair_total_raw) if pair_total_raw is not None else None
+    except Exception:
+        pair_total = None
+
+    created_at = str(payload.get("created_at") or now_iso())
+    updated_at = str(payload.get("updated_at") or created_at)
+
+    out: dict[str, Any] = {
+        "compare_id": compare_id,
+        "owner_type": owner_type,
+        "owner_id": owner_id,
+        "category": category,
+        "status": status_value,
+        "created_at": created_at,
+        "updated_at": updated_at,
+        "stage": str(payload.get("stage") or "").strip() or None,
+        "stage_label": str(payload.get("stage_label") or "").strip() or None,
+        "message": str(payload.get("message") or "").strip() or None,
+        "percent": percent,
+        "pair_index": pair_index,
+        "pair_total": pair_total,
+    }
+
+    result_value = payload.get("result")
+    error_value = payload.get("error")
+    if isinstance(result_value, dict):
+        out["result"] = result_value
+    if isinstance(error_value, dict):
+        out["error"] = error_value
+    return out
+
+
+def _coerce_mobile_compare_session_index_payload_from_result(
+    *,
+    compare_id: str,
+    payload: dict[str, Any],
+) -> dict[str, Any] | None:
+    owner_type = str(payload.get("owner_type") or "").strip()
+    owner_id = str(payload.get("owner_id") or "").strip()
+    if not owner_type or not owner_id:
+        return None
+    result_payload = payload.get("result")
+    if not isinstance(result_payload, dict):
+        return None
+    fallback = _fallback_mobile_compare_session_from_result_payload(
+        compare_id=compare_id,
+        result_payload=result_payload,
+    )
+    if fallback is None:
+        return None
+    return {
+        "compare_id": fallback.compare_id,
+        "owner_type": owner_type,
+        "owner_id": owner_id,
+        "category": fallback.category,
+        "status": fallback.status,
+        "created_at": fallback.created_at,
+        "updated_at": fallback.updated_at,
+        "stage": fallback.stage,
+        "stage_label": fallback.stage_label,
+        "message": fallback.message,
+        "percent": fallback.percent,
+        "pair_index": fallback.pair_index,
+        "pair_total": fallback.pair_total,
+        "result": fallback.result.model_dump() if fallback.result else None,
+        "error": fallback.error.model_dump() if fallback.error else None,
+    }
+
+
+def _backfill_mobile_compare_session_index_from_storage(
+    *,
+    db: Session,
+    limit: int,
+    only_missing: bool,
+    dry_run: bool,
+) -> dict[str, Any]:
+    runs_root = Path(settings.storage_dir).resolve() / "doubao_runs"
+    stats: dict[str, Any] = {
+        "limit": int(limit),
+        "only_missing": bool(only_missing),
+        "dry_run": bool(dry_run),
+        "visited_dirs": 0,
+        "runs_with_compare_artifacts": 0,
+        "indexed": 0,
+        "skipped_existing": 0,
+        "skipped_invalid": 0,
+        "errors": 0,
+        "sources": {"session": 0, "result_fallback": 0},
+    }
+    if not runs_root.exists() or not runs_root.is_dir():
+        return stats
+
+    for run_dir in sorted(runs_root.iterdir(), key=lambda item: item.name):
+        if stats["visited_dirs"] >= limit:
+            break
+        if not run_dir.is_dir():
+            continue
+
+        compare_id = str(run_dir.name or "").strip()
+        if not compare_id:
+            continue
+        stats["visited_dirs"] += 1
+
+        session_rel = _mobile_compare_session_rel_path(compare_id)
+        result_rel = _mobile_compare_result_rel_path(compare_id)
+        has_session = exists_rel_path(session_rel)
+        has_result = exists_rel_path(result_rel)
+        if not has_session and not has_result:
+            continue
+        stats["runs_with_compare_artifacts"] += 1
+
+        if only_missing and db.get(MobileCompareSessionIndex, compare_id) is not None:
+            stats["skipped_existing"] += 1
+            continue
+
+        source: str | None = None
+        index_payload: dict[str, Any] | None = None
+
+        if has_session:
+            session_payload = _safe_load_json_dict(session_rel)
+            if session_payload is not None:
+                index_payload = _coerce_mobile_compare_session_index_payload(
+                    compare_id=compare_id,
+                    payload=session_payload,
+                )
+                if index_payload is not None:
+                    source = "session"
+
+        if index_payload is None and has_result:
+            result_container = _safe_load_json_dict(result_rel)
+            if result_container is not None:
+                index_payload = _coerce_mobile_compare_session_index_payload_from_result(
+                    compare_id=compare_id,
+                    payload=result_container,
+                )
+                if index_payload is not None:
+                    source = "result_fallback"
+
+        if index_payload is None or source is None:
+            stats["skipped_invalid"] += 1
+            continue
+
+        if dry_run:
+            stats["indexed"] += 1
+            stats["sources"][source] = int(stats["sources"].get(source, 0)) + 1
+            continue
+
+        try:
+            _upsert_mobile_compare_session_index(db=db, payload=index_payload)
+            stats["indexed"] += 1
+            stats["sources"][source] = int(stats["sources"].get(source, 0)) + 1
+        except Exception:
+            db.rollback()
+            stats["errors"] += 1
+            continue
+
+    return stats
 
 
 def _upsert_mobile_compare_session(
