@@ -39,7 +39,13 @@ def _resolve_rel_path(rel_path: str) -> Path:
         raise ValueError("Invalid storage path.")
     return target
 
-def save_image(product_id: str, filename: str, content: bytes, content_type: str | None = None) -> str:
+def save_image(
+    product_id: str,
+    filename: str,
+    content: bytes,
+    content_type: str | None = None,
+    subdir: str | None = None,
+) -> str:
     ensure_dirs()
     ext = os.path.splitext(filename)[1].lower().strip()
     if ext not in ALLOWED_IMAGE_EXTS:
@@ -51,8 +57,16 @@ def save_image(product_id: str, filename: str, content: bytes, content_type: str
                 f"Unsupported image extension '{ext or '(empty)'}' and content_type '{content_type or '(empty)'}'."
             )
     target_ext, payload = _normalize_image_for_storage(ext=ext, content=content)
-    rel = f"images/{product_id}{target_ext}"
+    rel_dir = "images"
+    if subdir:
+        clean_subdir = "/".join(
+            part.strip() for part in str(subdir).strip().strip("/").split("/") if part.strip()
+        )
+        if clean_subdir:
+            rel_dir = f"images/{clean_subdir}"
+    rel = f"{rel_dir}/{product_id}{target_ext}"
     abs_path = _resolve_rel_path(rel)
+    abs_path.parent.mkdir(parents=True, exist_ok=True)
     with open(abs_path, "wb") as f:
         f.write(payload)
     return rel
@@ -112,10 +126,15 @@ def _convert_image_to_jpeg(content: bytes, source_ext: str) -> bytes:
     except Exception as e:
         raise ValueError(f"Failed to convert source image ({source_ext}) to JPEG: {e}") from e
 
-def save_product_json(product_id: str, doc: dict) -> str:
+def save_product_json(product_id: str, doc: dict, category: str | None = None) -> str:
     ensure_dirs()
-    rel = f"products/{product_id}.json"
+    safe_category = _safe_storage_segment(category or "", fallback="")
+    if safe_category:
+        rel = f"products/{safe_category}/{product_id}.json"
+    else:
+        rel = f"products/{product_id}.json"
     abs_path = _resolve_rel_path(rel)
+    abs_path.parent.mkdir(parents=True, exist_ok=True)
     with open(abs_path, "w", encoding="utf-8") as f:
         json.dump(doc, f, ensure_ascii=False, indent=2)
     return rel
@@ -220,7 +239,7 @@ def remove_product_images(product_id: str, image_path: str | None = None) -> tup
     base = Path(settings.storage_dir).resolve()
     prefix = f"{product_id}."
 
-    for path in images_root.iterdir():
+    for path in images_root.rglob("*"):
         if not path.is_file():
             continue
         name = path.name
@@ -235,6 +254,38 @@ def remove_product_images(product_id: str, image_path: str | None = None) -> tup
             continue
 
     return (len(removed_paths), removed_paths)
+
+
+def move_image_to_category(
+    image_rel: str | None,
+    *,
+    category: str,
+    image_id: str,
+) -> str | None:
+    if not image_rel:
+        return image_rel
+
+    try:
+        source_abs = _resolve_rel_path(image_rel)
+    except ValueError:
+        return image_rel
+    if not source_abs.exists() or not source_abs.is_file():
+        return image_rel
+
+    source_ext = source_abs.suffix.lower().strip() or ".jpg"
+    safe_category = _safe_storage_segment(category, fallback="unknown")
+    safe_image_id = _safe_storage_segment(image_id, fallback=new_id())
+    target_rel = f"images/{safe_category}/{safe_image_id}{source_ext}"
+    target_abs = _resolve_rel_path(target_rel)
+    target_abs.parent.mkdir(parents=True, exist_ok=True)
+
+    if source_abs.resolve() == target_abs.resolve():
+        return target_rel
+
+    if target_abs.exists() and target_abs.is_file():
+        target_abs.unlink()
+    shutil.move(str(source_abs), str(target_abs))
+    return target_rel
 
 def remove_rel_dir(rel_path: str | None) -> tuple[int, int]:
     if not rel_path:

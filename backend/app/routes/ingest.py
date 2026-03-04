@@ -17,6 +17,7 @@ from app.services.storage import (
     cleanup_doubao_artifacts,
     exists_rel_path,
     load_json,
+    move_image_to_category,
     new_id,
     now_iso,
     save_doubao_artifact,
@@ -120,8 +121,21 @@ async def ingest(
     # 3) normalize + validate
     normalized = _normalize_with_error_reporting(doc, image_rel=image_rel)
 
+    normalized_category = str(normalized.get("product", {}).get("category") or "").strip().lower()
+    if image_rel and normalized_category:
+        moved_image_rel = move_image_to_category(
+            image_rel,
+            category=normalized_category,
+            image_id=product_id,
+        )
+        if moved_image_rel:
+            image_rel = moved_image_rel
+            evidence = normalized.setdefault("evidence", {})
+            if isinstance(evidence, dict):
+                evidence["image_path"] = image_rel
+
     # 4) save json
-    json_rel = save_product_json(product_id, normalized)
+    json_rel = save_product_json(product_id, normalized, category=normalized_category or None)
 
     # 5) index into sqlite
     one_sentence = normalized.get("summary", {}).get("one_sentence")
@@ -705,7 +719,20 @@ def _finalize_stage2(
     _emit_progress(event_callback, {"step": "stage2_normalize", "message": "Normalizing structured document."})
 
     normalized = _normalize_with_error_reporting(doc, image_rel=image_rel)
-    json_rel = save_product_json(trace_id, normalized)
+    normalized_category = str(normalized.get("product", {}).get("category") or "").strip().lower()
+    if image_rel and normalized_category:
+        moved_image_rel = move_image_to_category(
+            image_rel,
+            category=normalized_category,
+            image_id=trace_id,
+        )
+        if moved_image_rel:
+            image_rel = moved_image_rel
+            evidence = normalized.setdefault("evidence", {})
+            if isinstance(evidence, dict):
+                evidence["image_path"] = image_rel
+
+    json_rel = save_product_json(trace_id, normalized, category=normalized_category or None)
 
     one_sentence = normalized.get("summary", {}).get("one_sentence")
     tags = _derive_tags(normalized)
@@ -727,6 +754,7 @@ def _finalize_stage2(
     except Exception as e:
         db.rollback()
         remove_rel_path(json_rel)
+        remove_rel_path(image_rel)
         raise HTTPException(status_code=500, detail=f"Failed to persist product index: {e}") from e
 
     _emit_progress(event_callback, {"step": "stage2_done", "message": "Product persisted."})

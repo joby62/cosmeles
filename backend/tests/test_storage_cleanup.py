@@ -101,7 +101,9 @@ def test_cleanup_orphan_storage_removes_orphan_images_and_runs(test_client, monk
     assert not orphan_image.exists()
     assert not orphan_run_dir.exists()
 
-    keep_image_candidates = list((Path(storage_dir) / "images").glob(f"{keep_id}.*"))
+    keep_image_candidates = [
+        path for path in (Path(storage_dir) / "images").rglob(f"{keep_id}.*") if path.is_file()
+    ]
     assert len(keep_image_candidates) >= 1
     assert (Path(storage_dir) / "doubao_runs" / keep_id).exists()
 
@@ -121,5 +123,5 @@ def test_delete_product_removes_image_variants_and_runs(test_client, monkeypatch
     body = resp.json()
     assert body["status"] == "deleted"
 
-    assert list((Path(storage_dir) / "images").glob(f"{product_id}.*")) == []
+    assert [path for path in (Path(storage_dir) / "images").rglob(f"{product_id}.*") if path.is_file()] == []
     assert not (Path(storage_dir) / "doubao_runs" / product_id).exists()

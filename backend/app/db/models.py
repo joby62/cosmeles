@@ -1,5 +1,5 @@
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import Boolean, Integer, String, Text
+from sqlalchemy import Boolean, Integer, String, Text, Index
 
 class Base(DeclarativeBase):
     pass
@@ -147,3 +147,52 @@ class MobileSelectionSession(Base):
     deleted_at: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     deleted_by: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[str] = mapped_column(String(32), index=True)
+
+
+class MobileCompareSessionIndex(Base):
+    __tablename__ = "mobile_compare_session_index"
+    __table_args__ = (
+        Index(
+            "ix_mobile_compare_session_owner_scope",
+            "owner_type",
+            "owner_id",
+            "category",
+            "updated_at",
+        ),
+    )
+
+    compare_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner_type: Mapped[str] = mapped_column(String(32), index=True, default="device")
+    owner_id: Mapped[str] = mapped_column(String(128), index=True)
+    category: Mapped[str] = mapped_column(String(32), index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True, default="running")
+    stage: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    stage_label: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    percent: Mapped[int] = mapped_column(Integer, default=0)
+    pair_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pair_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[str] = mapped_column(String(32), index=True)
+    updated_at: Mapped[str] = mapped_column(String(32), index=True)
+
+
+class MobileCompareUsageStat(Base):
+    __tablename__ = "mobile_compare_usage_stats"
+    __table_args__ = (
+        Index(
+            "ix_mobile_compare_usage_owner_category",
+            "owner_type",
+            "owner_id",
+            "category",
+            "updated_at",
+        ),
+    )
+
+    owner_type: Mapped[str] = mapped_column(String(32), primary_key=True, default="device")
+    owner_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    category: Mapped[str] = mapped_column(String(32), primary_key=True)
+    product_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    usage_count: Mapped[int] = mapped_column(Integer, default=0, index=True)
+    updated_at: Mapped[str] = mapped_column(String(32), index=True)

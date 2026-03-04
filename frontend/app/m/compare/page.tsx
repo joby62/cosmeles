@@ -100,6 +100,7 @@ export default function MobileComparePage() {
   const [activeCompareId, setActiveCompareId] = useState<string | null>(null);
   const [activeSession, setActiveSession] = useState<MobileCompareSession | null>(null);
   const [restoringSession, setRestoringSession] = useState(true);
+  const activeCompareIdRef = useRef<string | null>(null);
 
   const recommendationReady = Boolean(bootstrap?.recommendation?.exists);
   const hasHistoryProfile = Boolean(bootstrap?.profile?.has_history_profile);
@@ -174,6 +175,10 @@ export default function MobileComparePage() {
     if (typeof window === "undefined") return;
     window.localStorage.removeItem(ACTIVE_COMPARE_STORAGE_KEY);
   }, []);
+
+  useEffect(() => {
+    activeCompareIdRef.current = activeCompareId;
+  }, [activeCompareId]);
 
   const applySessionProgress = useCallback((session: MobileCompareSession) => {
     const stage = String(session.stage || "").trim();
@@ -477,7 +482,10 @@ export default function MobileComparePage() {
           if (event.event === "accepted") {
             const compareId = String(event.data.compare_id || event.data.trace_id || "").trim();
             if (compareId) {
-              setActiveCompareId(compareId);
+              if (activeCompareIdRef.current !== compareId) {
+                activeCompareIdRef.current = compareId;
+                setActiveCompareId(compareId);
+              }
               rememberActiveCompare(compareId, category);
             }
             const stage = String(event.data.stage || "").trim();
@@ -498,7 +506,8 @@ export default function MobileComparePage() {
           }
           if (event.event === "progress") {
             const compareId = String(event.data.trace_id || "").trim();
-            if (compareId && compareId !== activeCompareId) {
+            if (compareId && compareId !== activeCompareIdRef.current) {
+              activeCompareIdRef.current = compareId;
               setActiveCompareId(compareId);
               rememberActiveCompare(compareId, category);
             }

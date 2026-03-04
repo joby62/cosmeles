@@ -4,7 +4,6 @@ import queue
 import threading
 from collections import defaultdict
 from itertools import combinations
-from pathlib import Path
 from uuid import uuid4
 from typing import Any, Callable
 
@@ -17,7 +16,14 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.ai.errors import AIServiceError
 from app.ai.orchestrator import run_capability_now
 from app.constants import VALID_CATEGORIES, MOBILE_RULES_VERSION, ROUTE_MAPPING_SUPPORTED_CATEGORIES
-from app.db.models import MobileSelectionSession, ProductIndex, ProductRouteMappingIndex, ProductFeaturedSlot
+from app.db.models import (
+    MobileCompareSessionIndex,
+    MobileCompareUsageStat,
+    MobileSelectionSession,
+    ProductFeaturedSlot,
+    ProductIndex,
+    ProductRouteMappingIndex,
+)
 from app.db.session import get_db
 from app.schemas import (
     MobileCompareBootstrapResponse,
@@ -60,12 +66,12 @@ from app.schemas import (
 from app.services.doubao_pipeline_service import DoubaoPipelineService
 from app.services.parser import normalize_doc
 from app.services.storage import (
-    now_iso,
-    new_id,
-    save_image,
-    save_doubao_artifact,
     exists_rel_path,
     load_json,
+    new_id,
+    now_iso,
+    save_doubao_artifact,
+    save_image,
 )
 from app.settings import settings
 
@@ -96,6 +102,22 @@ CATEGORY_LABELS_ZH: dict[str, str] = {
     "conditioner": "护发素",
     "lotion": "润肤霜",
     "cleanser": "洗面奶",
+}
+
+CATEGORY_ALIASES: dict[str, str] = {
+    "shampoo": "shampoo",
+    "洗发水": "shampoo",
+    "bodywash": "bodywash",
+    "沐浴露": "bodywash",
+    "沐浴乳": "bodywash",
+    "conditioner": "conditioner",
+    "护发素": "conditioner",
+    "lotion": "lotion",
+    "润肤霜": "lotion",
+    "身体乳": "lotion",
+    "cleanser": "cleanser",
+    "洗面奶": "cleanser",
+    "洁面乳": "cleanser",
 }
 
 SHAMPOO_Q1_LABELS = {
@@ -609,6 +631,8 @@ def mobile_compare_bootstrap(
     product_library = _build_mobile_compare_product_library(
         db=db,
         category=selected_category,
+        owner_type=owner_type,
+        owner_id=owner_id,
         recommendation_product_id=recommendation_product_id,
     )
 
@@ -674,6 +698,7 @@ async def upload_mobile_compare_current_product(
             image.filename or "upload.jpg",
             content,
             content_type=image.content_type,
+            subdir=f"mobile_compare/{normalized_category}",
         )
     except ValueError as e:
         raise HTTPException(
@@ -719,7 +744,7 @@ def run_mobile_compare_job_stream(
     events: queue.Queue[tuple[str, dict[str, Any]] | None] = queue.Queue()
     SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=db.get_bind())
 
-    def emit(event: str, data: dict[str, Any]) -> None:
+    def emit(event: str, data: dict[str, Any], *, db_session: Session) -> None:
         if event == "progress":
             percent_raw = data.get("percent")
             pair_index_raw = data.get("pair_index")
@@ -741,6 +766,7 @@ def run_mobile_compare_job_stream(
                 owner_type=owner_type,
                 owner_id=owner_id,
                 category=category_hint,
+                db=db_session,
                 patch={
                     "status": "done" if str(data.get("stage") or "") == "done" else "running",
                     "stage": str(data.get("stage") or "").strip() or None,
@@ -758,6 +784,7 @@ def run_mobile_compare_job_stream(
         owner_type=owner_type,
         owner_id=owner_id,
         category=category_hint,
+        db=db,
         patch={
             "status": "running",
             "stage": "prepare",
@@ -779,6 +806,7 @@ def run_mobile_compare_job_stream(
             "percent": 2,
             "ts": now_iso(),
         },
+        db_session=db,
     )
 
     def worker() -> None:
@@ -790,13 +818,14 @@ def run_mobile_compare_job_stream(
                 owner_type=owner_type,
                 owner_id=owner_id,
                 db=local_db,
-                event_callback=emit,
+                event_callback=lambda event, data: emit(event, data, db_session=local_db),
             )
             _upsert_mobile_compare_session(
                 compare_id=compare_id,
                 owner_type=owner_type,
                 owner_id=owner_id,
                 category=result.category,
+                db=local_db,
                 patch={
                     "status": "done",
                     "stage": "done",
@@ -814,7 +843,7 @@ def run_mobile_compare_job_stream(
                     },
                 },
             )
-            emit("result", result.model_dump())
+            emit("result", result.model_dump(), db_session=local_db)
         except HTTPException as e:
             err_payload = _compare_error_payload_from_http_exception(e)
             _upsert_mobile_compare_session(
@@ -822,13 +851,14 @@ def run_mobile_compare_job_stream(
                 owner_type=owner_type,
                 owner_id=owner_id,
                 category=category_hint,
+                db=local_db,
                 patch={
                     "status": "failed",
                     "message": str(err_payload.get("detail") or "对比任务失败。"),
                     "error": err_payload,
                 },
             )
-            emit("error", err_payload)
+            emit("error", err_payload, db_session=local_db)
         except AIServiceError as e:
             err_payload = {
                 "code": e.code,
@@ -841,13 +871,14 @@ def run_mobile_compare_job_stream(
                 owner_type=owner_type,
                 owner_id=owner_id,
                 category=category_hint,
+                db=local_db,
                 patch={
                     "status": "failed",
                     "message": str(err_payload.get("detail") or "对比任务失败。"),
                     "error": err_payload,
                 },
             )
-            emit("error", err_payload)
+            emit("error", err_payload, db_session=local_db)
         except Exception as e:  # pragma: no cover
             err_payload = {
                 "code": "COMPARE_INTERNAL_ERROR",
@@ -860,15 +891,16 @@ def run_mobile_compare_job_stream(
                 owner_type=owner_type,
                 owner_id=owner_id,
                 category=category_hint,
+                db=local_db,
                 patch={
                     "status": "failed",
                     "message": str(err_payload.get("detail") or "对比任务失败。"),
                     "error": err_payload,
                 },
             )
-            emit("error", err_payload)
+            emit("error", err_payload, db_session=local_db)
         finally:
-            emit("done", {"status": "done"})
+            emit("done", {"status": "done"}, db_session=local_db)
             events.put(None)
             local_db.close()
 
@@ -917,6 +949,7 @@ def list_mobile_compare_sessions(
     category: str | None = Query(None),
     offset: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
 ):
     owner_type, owner_id, owner_cookie_new = _resolve_owner(request)
     normalized_category: str | None = None
@@ -925,6 +958,7 @@ def list_mobile_compare_sessions(
         if normalized_category not in VALID_CATEGORIES:
             raise HTTPException(status_code=400, detail=f"Invalid category: {normalized_category}.")
     records = _list_mobile_compare_sessions(
+        db=db,
         owner_type=owner_type,
         owner_id=owner_id,
         category=normalized_category,
@@ -941,9 +975,11 @@ def get_mobile_compare_session(
     compare_id: str,
     request: Request,
     response: Response,
+    db: Session = Depends(get_db),
 ):
     owner_type, owner_id, owner_cookie_new = _resolve_owner(request)
     record = _get_mobile_compare_session_record(
+        db=db,
         compare_id=compare_id,
         owner_type=owner_type,
         owner_id=owner_id,
@@ -1533,13 +1569,30 @@ def _resolve_target_product_doc(
         )
 
     product = doc.setdefault("product", {})
-    raw_category = str(product.get("category") or "").strip().lower()
-    if raw_category and raw_category != category:
+    raw_category = str(product.get("category") or "").strip()
+    normalized_raw_category = _normalize_model_category(raw_category)
+    if normalized_raw_category and normalized_raw_category not in VALID_CATEGORIES:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "COMPARE_CATEGORY_INVALID",
+                "detail": (
+                    "Current product category extracted from image is invalid: "
+                    f"'{raw_category}'."
+                ),
+                "retryable": False,
+                "trace_id": trace_id,
+            },
+        )
+    if normalized_raw_category and normalized_raw_category != category:
         raise HTTPException(
             status_code=422,
             detail={
                 "code": "COMPARE_CATEGORY_MISMATCH",
-                "detail": f"Current product category '{raw_category}' does not match selected category '{category}'.",
+                "detail": (
+                    "Current product category "
+                    f"'{raw_category}' does not match selected category '{category}'."
+                ),
                 "retryable": False,
                 "trace_id": trace_id,
             },
@@ -1576,7 +1629,13 @@ def _resolve_target_product_doc(
         name=str(normalized.get("product", {}).get("name") or ""),
     )
     if matched_product_id:
-        _increase_product_usage_count(product_id=matched_product_id, category=category)
+        _increase_product_usage_count(
+            db=db,
+            owner_type=owner_type,
+            owner_id=owner_id,
+            product_id=matched_product_id,
+            category=category,
+        )
     return normalized
 
 
@@ -1830,20 +1889,43 @@ def _session_payload_belongs_to_owner(payload: dict[str, Any], *, owner_type: st
     )
 
 
+def _safe_load_json_dict(rel_path: str) -> dict[str, Any] | None:
+    if not exists_rel_path(rel_path):
+        return None
+    try:
+        payload = load_json(rel_path)
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
+def _normalize_model_category(raw: str | None) -> str:
+    text = str(raw or "").strip()
+    if not text:
+        return ""
+    lowered = text.lower()
+    alias = CATEGORY_ALIASES.get(text) or CATEGORY_ALIASES.get(lowered)
+    if alias:
+        return alias
+    return lowered
+
+
 def _upsert_mobile_compare_session(
     *,
     compare_id: str,
     owner_type: str,
     owner_id: str,
     category: str,
+    db: Session,
     patch: dict[str, Any],
 ) -> MobileCompareSessionResponse:
     existing_payload: dict[str, Any] = {}
     rel_path = _mobile_compare_session_rel_path(compare_id)
-    if exists_rel_path(rel_path):
-        loaded = load_json(rel_path)
-        if isinstance(loaded, dict):
-            existing_payload = loaded
+    loaded = _safe_load_json_dict(rel_path)
+    if loaded is not None:
+        existing_payload = loaded
 
     base_category = str(existing_payload.get("category") or category or "unknown").strip().lower() or "unknown"
     status_value = str(patch.get("status") or existing_payload.get("status") or "running").strip().lower()
@@ -1883,6 +1965,7 @@ def _upsert_mobile_compare_session(
         merged["error"] = None
 
     save_doubao_artifact(compare_id, MOBILE_COMPARE_SESSION_STAGE, merged)
+    _upsert_mobile_compare_session_index(db=db, payload=merged)
     normalized = _normalize_mobile_compare_session_payload(merged)
     if normalized is None:  # pragma: no cover
         raise HTTPException(status_code=500, detail="Failed to persist mobile compare session.")
@@ -1957,6 +2040,104 @@ def _normalize_mobile_compare_session_payload(payload: dict[str, Any]) -> Mobile
         return None
 
 
+def _upsert_mobile_compare_session_index(*, db: Session, payload: dict[str, Any]) -> None:
+    compare_id = str(payload.get("compare_id") or "").strip()
+    owner_type = str(payload.get("owner_type") or "").strip()
+    owner_id = str(payload.get("owner_id") or "").strip()
+    if not compare_id or not owner_type or not owner_id:
+        return
+
+    row = db.get(MobileCompareSessionIndex, compare_id)
+    if row is None:
+        row = MobileCompareSessionIndex(
+            compare_id=compare_id,
+            owner_type=owner_type,
+            owner_id=owner_id,
+            category=str(payload.get("category") or "unknown").strip().lower() or "unknown",
+            status="running",
+            created_at=str(payload.get("created_at") or now_iso()),
+            updated_at=str(payload.get("updated_at") or now_iso()),
+        )
+
+    status_value = str(payload.get("status") or row.status or "running").strip().lower()
+    if status_value not in {"running", "done", "failed"}:
+        status_value = "running"
+
+    pair_index_raw = payload.get("pair_index")
+    pair_total_raw = payload.get("pair_total")
+    try:
+        percent = int(payload.get("percent") or 0)
+    except Exception:
+        percent = 0
+    try:
+        pair_index = int(pair_index_raw) if pair_index_raw is not None else None
+    except Exception:
+        pair_index = None
+    try:
+        pair_total = int(pair_total_raw) if pair_total_raw is not None else None
+    except Exception:
+        pair_total = None
+
+    result_json: str | None = None
+    error_json: str | None = None
+    result_value = payload.get("result")
+    error_value = payload.get("error")
+    if isinstance(result_value, dict):
+        result_json = json.dumps(result_value, ensure_ascii=False)
+    if isinstance(error_value, dict):
+        error_json = json.dumps(error_value, ensure_ascii=False)
+
+    row.owner_type = owner_type
+    row.owner_id = owner_id
+    row.category = str(payload.get("category") or row.category or "unknown").strip().lower() or "unknown"
+    row.status = status_value
+    row.stage = str(payload.get("stage") or "").strip() or None
+    row.stage_label = str(payload.get("stage_label") or "").strip() or None
+    row.message = str(payload.get("message") or "").strip() or None
+    row.percent = max(0, min(100, int(percent)))
+    row.pair_index = pair_index
+    row.pair_total = pair_total
+    row.result_json = result_json
+    row.error_json = error_json
+    row.created_at = str(payload.get("created_at") or row.created_at or now_iso())
+    row.updated_at = str(payload.get("updated_at") or now_iso())
+    db.add(row)
+    db.commit()
+
+
+def _session_payload_from_index_row(row: MobileCompareSessionIndex) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "compare_id": row.compare_id,
+        "owner_type": row.owner_type,
+        "owner_id": row.owner_id,
+        "category": row.category,
+        "status": row.status,
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+        "stage": row.stage,
+        "stage_label": row.stage_label,
+        "message": row.message,
+        "percent": int(row.percent or 0),
+        "pair_index": row.pair_index,
+        "pair_total": row.pair_total,
+    }
+    if row.result_json:
+        try:
+            parsed = json.loads(row.result_json)
+            if isinstance(parsed, dict):
+                payload["result"] = parsed
+        except Exception:
+            pass
+    if row.error_json:
+        try:
+            parsed = json.loads(row.error_json)
+            if isinstance(parsed, dict):
+                payload["error"] = parsed
+        except Exception:
+            pass
+    return payload
+
+
 def _fallback_mobile_compare_session_from_result_payload(
     *,
     compare_id: str,
@@ -1988,68 +2169,250 @@ def _fallback_mobile_compare_session_from_result_payload(
 
 def _get_mobile_compare_session_record(
     *,
+    db: Session,
     compare_id: str,
     owner_type: str,
     owner_id: str,
 ) -> MobileCompareSessionResponse | None:
+    row = db.get(MobileCompareSessionIndex, compare_id)
+    if row is not None:
+        if row.owner_type != owner_type or row.owner_id != owner_id:
+            return None
+        normalized = _normalize_mobile_compare_session_payload(_session_payload_from_index_row(row))
+        if normalized is not None:
+            return normalized
+
     session_rel = _mobile_compare_session_rel_path(compare_id)
-    if exists_rel_path(session_rel):
-        payload = load_json(session_rel)
-        if (
-            isinstance(payload, dict)
-            and _session_payload_belongs_to_owner(payload, owner_type=owner_type, owner_id=owner_id)
-        ):
-            normalized = _normalize_mobile_compare_session_payload(payload)
+    session_payload = _safe_load_json_dict(session_rel)
+    if session_payload is not None:
+        if _session_payload_belongs_to_owner(session_payload, owner_type=owner_type, owner_id=owner_id):
+            _upsert_mobile_compare_session_index(db=db, payload=session_payload)
+            payload_from_index = db.get(MobileCompareSessionIndex, compare_id)
+            if payload_from_index is not None:
+                normalized = _normalize_mobile_compare_session_payload(_session_payload_from_index_row(payload_from_index))
+                if normalized is not None:
+                    return normalized
+            normalized = _normalize_mobile_compare_session_payload(session_payload)
             if normalized is not None:
                 return normalized
 
     result_rel = _mobile_compare_result_rel_path(compare_id)
-    if not exists_rel_path(result_rel):
+    result_container = _safe_load_json_dict(result_rel)
+    if result_container is None:
         return None
-    payload = load_json(result_rel)
-    if not isinstance(payload, dict):
+    if not _session_payload_belongs_to_owner(result_container, owner_type=owner_type, owner_id=owner_id):
         return None
-    if not _session_payload_belongs_to_owner(payload, owner_type=owner_type, owner_id=owner_id):
-        return None
-    result_payload = payload.get("result")
+    result_payload = result_container.get("result")
     if not isinstance(result_payload, dict):
         return None
-    return _fallback_mobile_compare_session_from_result_payload(
+    fallback = _fallback_mobile_compare_session_from_result_payload(
         compare_id=compare_id,
         result_payload=result_payload,
     )
+    if fallback is None:
+        return None
+    _upsert_mobile_compare_session_index(
+        db=db,
+        payload={
+            "compare_id": fallback.compare_id,
+            "owner_type": owner_type,
+            "owner_id": owner_id,
+            "category": fallback.category,
+            "status": fallback.status,
+            "created_at": fallback.created_at,
+            "updated_at": fallback.updated_at,
+            "stage": fallback.stage,
+            "stage_label": fallback.stage_label,
+            "message": fallback.message,
+            "percent": fallback.percent,
+            "pair_index": fallback.pair_index,
+            "pair_total": fallback.pair_total,
+            "result": fallback.result.model_dump() if fallback.result else None,
+            "error": fallback.error.model_dump() if fallback.error else None,
+        },
+    )
+    return fallback
 
 
 def _list_mobile_compare_sessions(
     *,
+    db: Session,
     owner_type: str,
     owner_id: str,
     category: str | None,
     offset: int,
     limit: int,
 ) -> list[MobileCompareSessionResponse]:
-    runs_root = Path(settings.storage_dir).resolve() / "doubao_runs"
-    if not runs_root.exists() or not runs_root.is_dir():
-        return []
+    stmt = (
+        select(MobileCompareSessionIndex)
+        .where(MobileCompareSessionIndex.owner_type == owner_type)
+        .where(MobileCompareSessionIndex.owner_id == owner_id)
+    )
+    if category:
+        stmt = stmt.where(MobileCompareSessionIndex.category == category)
+    rows = (
+        db.execute(
+            stmt.order_by(
+                MobileCompareSessionIndex.updated_at.desc(),
+                MobileCompareSessionIndex.created_at.desc(),
+                MobileCompareSessionIndex.compare_id.desc(),
+            )
+            .offset(offset)
+            .limit(limit)
+        )
+        .scalars()
+        .all()
+    )
 
     records: list[MobileCompareSessionResponse] = []
-    for item in runs_root.iterdir():
-        if not item.is_dir():
-            continue
-        compare_id = item.name
-        record = _get_mobile_compare_session_record(
-            compare_id=compare_id,
-            owner_type=owner_type,
-            owner_id=owner_id,
-        )
-        if record is None:
-            continue
-        if category and record.category != category:
-            continue
-        records.append(record)
+    for row in rows:
+        normalized = _normalize_mobile_compare_session_payload(_session_payload_from_index_row(row))
+        if normalized is not None:
+            records.append(normalized)
+    return records
 
-    records.sort(key=lambda row: (str(row.updated_at), str(row.created_at), row.compare_id), reverse=True)
-    return records[offset : offset + limit]
+
+def _increase_product_usage_count(
+    *,
+    db: Session,
+    owner_type: str,
+    owner_id: str,
+    product_id: str,
+    category: str,
+) -> None:
+    pid = str(product_id or "").strip()
+    cat = str(category or "").strip().lower()
+    normalized_owner_type = str(owner_type or "").strip() or MOBILE_OWNER_TYPE_DEVICE
+    normalized_owner_id = str(owner_id or "").strip()
+    if not pid or not cat or not normalized_owner_id:
+        return
+    row = db.get(
+        MobileCompareUsageStat,
+        {
+            "owner_type": normalized_owner_type,
+            "owner_id": normalized_owner_id,
+            "category": cat,
+            "product_id": pid,
+        },
+    )
+    if row is None:
+        row = MobileCompareUsageStat(
+            owner_type=normalized_owner_type,
+            owner_id=normalized_owner_id,
+            category=cat,
+            product_id=pid,
+            usage_count=0,
+            updated_at=now_iso(),
+        )
+    row.usage_count = int(row.usage_count or 0) + 1
+    row.updated_at = now_iso()
+    db.add(row)
+    db.commit()
+
+
+def _usage_count_by_product_id(
+    *,
+    db: Session,
+    owner_type: str,
+    owner_id: str,
+    category: str,
+) -> dict[str, int]:
+    cat = str(category or "").strip().lower()
+    normalized_owner_type = str(owner_type or "").strip() or MOBILE_OWNER_TYPE_DEVICE
+    normalized_owner_id = str(owner_id or "").strip()
+    if not cat or not normalized_owner_id:
+        return {}
+    rows = (
+        db.execute(
+            select(MobileCompareUsageStat)
+            .where(MobileCompareUsageStat.owner_type == normalized_owner_type)
+            .where(MobileCompareUsageStat.owner_id == normalized_owner_id)
+            .where(MobileCompareUsageStat.category == cat)
+            .order_by(
+                MobileCompareUsageStat.usage_count.desc(),
+                MobileCompareUsageStat.updated_at.desc(),
+            )
+            .limit(200)
+        )
+        .scalars()
+        .all()
+    )
+    out: dict[str, int] = {}
+    for row in rows:
+        try:
+            count = int(row.usage_count or 0)
+        except Exception:
+            count = 0
+        if count > 0:
+            out[str(row.product_id)] = count
+    return out
+
+
+def _build_mobile_compare_product_library(
+    *,
+    db: Session,
+    category: str,
+    owner_type: str,
+    owner_id: str,
+    recommendation_product_id: str | None,
+) -> MobileCompareProductLibrary:
+    rows = (
+        db.execute(
+            select(ProductIndex)
+            .where(ProductIndex.category == category)
+            .order_by(ProductIndex.created_at.desc())
+            .limit(80)
+        )
+        .scalars()
+        .all()
+    )
+    usage = _usage_count_by_product_id(
+        db=db,
+        owner_type=owner_type,
+        owner_id=owner_id,
+        category=category,
+    )
+    row_ids = {str(row.id) for row in rows}
+
+    most_used_product_id: str | None = None
+    if usage:
+        candidates = [(count, pid) for pid, count in usage.items() if pid in row_ids]
+        candidates.sort(key=lambda item: (-item[0], item[1]))
+        if candidates and candidates[0][0] > 0:
+            most_used_product_id = candidates[0][1]
+
+    items = []
+    row_order: dict[str, int] = {}
+    for idx, row in enumerate(rows):
+        row_order[str(row.id)] = idx
+    for row in rows:
+        pid = str(row.id)
+        item = MobileCompareLibraryProductItem(
+            product=_row_to_product_card(row),
+            is_recommendation=bool(recommendation_product_id and pid == recommendation_product_id),
+            is_most_used=bool(most_used_product_id and pid == most_used_product_id),
+            usage_count=int(usage.get(pid, 0)),
+        )
+        items.append(item)
+
+    def sort_key(item: MobileCompareLibraryProductItem) -> tuple[int, int, int]:
+        primary = 0
+        if item.is_recommendation:
+            primary = 0
+        elif item.is_most_used:
+            primary = 1
+        else:
+            primary = 2
+        usage_key = -int(item.usage_count or 0)
+        order_key = int(row_order.get(str(item.product.id), 10_000))
+        return (primary, usage_key, order_key)
+
+    items.sort(key=sort_key)
+    return MobileCompareProductLibrary(
+        recommendation_product_id=recommendation_product_id,
+        most_used_product_id=most_used_product_id,
+        items=items,
+    )
 
 
 def _build_deterministic_ingredient_diff(
@@ -2160,130 +2523,6 @@ def _function_priority_scores(items: list[dict[str, Any]]) -> dict[str, float]:
     return {key: value / peak for key, value in raw.items()}
 
 
-def _usage_store_rel_path() -> str:
-    return "doubao_runs/mobile_compare_usage/usage_counts.json"
-
-
-def _load_mobile_compare_usage_map() -> dict[str, Any]:
-    rel_path = _usage_store_rel_path()
-    if not exists_rel_path(rel_path):
-        return {"products": {}, "updated_at": now_iso()}
-    raw = load_json(rel_path)
-    if not isinstance(raw, dict):
-        return {"products": {}, "updated_at": now_iso()}
-    products = raw.get("products")
-    if not isinstance(products, dict):
-        products = {}
-    return {
-        "products": products,
-        "updated_at": str(raw.get("updated_at") or now_iso()),
-    }
-
-
-def _save_mobile_compare_usage_map(payload: dict[str, Any]) -> None:
-    save_doubao_artifact("mobile_compare_usage", "usage_counts", payload)
-
-
-def _increase_product_usage_count(*, product_id: str, category: str) -> None:
-    pid = str(product_id or "").strip()
-    cat = str(category or "").strip().lower()
-    if not pid or not cat:
-        return
-    payload = _load_mobile_compare_usage_map()
-    products = payload.get("products")
-    if not isinstance(products, dict):
-        products = {}
-    row = products.get(pid)
-    if not isinstance(row, dict):
-        row = {"count": 0, "category": cat}
-    row["count"] = int(row.get("count") or 0) + 1
-    row["category"] = cat
-    row["updated_at"] = now_iso()
-    products[pid] = row
-    payload["products"] = products
-    payload["updated_at"] = now_iso()
-    _save_mobile_compare_usage_map(payload)
-
-
-def _usage_count_by_product_id(*, category: str) -> dict[str, int]:
-    payload = _load_mobile_compare_usage_map()
-    products = payload.get("products")
-    if not isinstance(products, dict):
-        return {}
-    out: dict[str, int] = {}
-    for product_id, item in products.items():
-        if not isinstance(item, dict):
-            continue
-        cat = str(item.get("category") or "").strip().lower()
-        if cat != category:
-            continue
-        try:
-            count = int(item.get("count") or 0)
-        except Exception:
-            count = 0
-        if count > 0:
-            out[str(product_id)] = count
-    return out
-
-
-def _build_mobile_compare_product_library(
-    *,
-    db: Session,
-    category: str,
-    recommendation_product_id: str | None,
-) -> MobileCompareProductLibrary:
-    rows = (
-        db.execute(
-            select(ProductIndex)
-            .where(ProductIndex.category == category)
-            .order_by(ProductIndex.created_at.desc())
-            .limit(80)
-        )
-        .scalars()
-        .all()
-    )
-    usage = _usage_count_by_product_id(category=category)
-    row_ids = {str(row.id) for row in rows}
-
-    most_used_product_id: str | None = None
-    if usage:
-        candidates = [(count, pid) for pid, count in usage.items() if pid in row_ids]
-        candidates.sort(key=lambda item: (-item[0], item[1]))
-        if candidates and candidates[0][0] > 0:
-            most_used_product_id = candidates[0][1]
-
-    items = []
-    row_order: dict[str, int] = {}
-    for idx, row in enumerate(rows):
-        row_order[str(row.id)] = idx
-    for row in rows:
-        pid = str(row.id)
-        item = MobileCompareLibraryProductItem(
-            product=_row_to_product_card(row),
-            is_recommendation=bool(recommendation_product_id and pid == recommendation_product_id),
-            is_most_used=bool(most_used_product_id and pid == most_used_product_id),
-            usage_count=int(usage.get(pid, 0)),
-        )
-        items.append(item)
-
-    def sort_key(item: MobileCompareLibraryProductItem) -> tuple[int, int, int]:
-        primary = 0
-        if item.is_recommendation:
-            primary = 0
-        elif item.is_most_used:
-            primary = 1
-        else:
-            primary = 2
-        usage_key = -int(item.usage_count or 0)
-        order_key = int(row_order.get(str(item.product.id), 10_000))
-        return (primary, usage_key, order_key)
-
-    items.sort(key=sort_key)
-    return MobileCompareProductLibrary(
-        recommendation_product_id=recommendation_product_id,
-        most_used_product_id=most_used_product_id,
-        items=items,
-    )
 
 
 def _match_existing_product_id_for_usage(
