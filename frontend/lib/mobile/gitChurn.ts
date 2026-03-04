@@ -67,15 +67,22 @@ export type GitRecentDiffCommit = {
   files: GitRecentDiffFile[];
 };
 
+export type GitBranchRef = {
+  ref: string;
+  label: string;
+};
+
 type GitChurnOptions = {
   sinceDays?: number | "all";
   maxCommits?: number;
+  ref?: string;
 };
 
 type GitRecentDiffOptions = {
   count?: number;
   maxFilesPerCommit?: number;
   maxPatchCharsPerFile?: number;
+  ref?: string;
 };
 
 type MutableCommitState = {
@@ -92,6 +99,127 @@ type MutableCommitState = {
 
 const COMMIT_PREFIX = "__COMMIT__";
 const MOBILE_PREFIXES = ["frontend/app/m/", "frontend/components/mobile/", "frontend/lib/mobile/"] as const;
+const DEFAULT_BRANCH_PRIORITY = ["origin/main", "main"] as const;
+
+function runGit(args: string[], maxBuffer = 16 * 1024 * 1024): string {
+  return execFileSync("git", args, {
+    encoding: "utf8",
+    maxBuffer,
+  });
+}
+
+function normalizeBranchLabel(ref: string, hasOriginMain: boolean): string {
+  if (ref === "origin/main") return "main";
+  if (ref === "main" && hasOriginMain) return "main (local)";
+  if (ref.startsWith("origin/")) return `${ref.slice("origin/".length)} (origin)`;
+  return ref;
+}
+
+function branchPriority(ref: string): number {
+  const fixed = DEFAULT_BRANCH_PRIORITY.indexOf(ref as (typeof DEFAULT_BRANCH_PRIORITY)[number]);
+  if (fixed >= 0) return fixed;
+  if (ref.startsWith("origin/")) return 10;
+  return 20;
+}
+
+function parsePatchSections(
+  patchRaw: string,
+  maxFilesPerCommit: number,
+  maxPatchCharsPerFile: number,
+): GitRecentDiffFile[] {
+  type MutableSection = {
+    path: string;
+    lines: string[];
+    insertions: number;
+    deletions: number;
+    isBinary: boolean;
+  };
+  const sections: MutableSection[] = [];
+  let current: MutableSection | null = null;
+
+  function finalizeCurrent() {
+    if (!current) return;
+    sections.push(current);
+    current = null;
+  }
+
+  const lines = patchRaw.split(/\r?\n/);
+  for (const line of lines) {
+    if (line.startsWith("diff --git ")) {
+      finalizeCurrent();
+      const match = /^diff --git a\/(.+) b\/(.+)$/.exec(line);
+      const fromPath = match?.[1] ?? "unknown";
+      const toPath = match?.[2] ?? "unknown";
+      const path = toPath !== "/dev/null" ? toPath : fromPath;
+      current = {
+        path,
+        lines: [line],
+        insertions: 0,
+        deletions: 0,
+        isBinary: false,
+      };
+      continue;
+    }
+
+    if (!current) continue;
+    current.lines.push(line);
+    if (line.startsWith("Binary files ") || line === "GIT binary patch") {
+      current.isBinary = true;
+      continue;
+    }
+    if (line.startsWith("+") && !line.startsWith("+++")) {
+      current.insertions += 1;
+      continue;
+    }
+    if (line.startsWith("-") && !line.startsWith("---")) {
+      current.deletions += 1;
+    }
+  }
+  finalizeCurrent();
+
+  return sections.slice(0, maxFilesPerCommit).map((section) => {
+    const patch = section.lines.join("\n");
+    return {
+      path: section.path,
+      insertions: section.insertions,
+      deletions: section.deletions,
+      isBinary: section.isBinary,
+      patch:
+        patch.length > maxPatchCharsPerFile
+          ? `${patch.slice(0, maxPatchCharsPerFile)}\n... (truncated)`
+          : patch,
+    };
+  });
+}
+
+export function getGitBranchRefs(): GitBranchRef[] {
+  let output = "";
+  try {
+    output = runGit(["for-each-ref", "--format=%(refname:short)", "refs/heads", "refs/remotes"], 4 * 1024 * 1024);
+  } catch {
+    return [{ ref: "HEAD", label: "HEAD" }];
+  }
+
+  const refs = output
+    .split(/\r?\n/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .filter((ref) => ref !== "origin/HEAD" && !ref.endsWith("/HEAD"));
+
+  const uniq = Array.from(new Set(refs));
+  uniq.sort((a, b) => {
+    const pa = branchPriority(a);
+    const pb = branchPriority(b);
+    if (pa !== pb) return pa - pb;
+    return a.localeCompare(b);
+  });
+
+  const hasOriginMain = uniq.includes("origin/main");
+  return uniq.map((ref) => ({
+    ref,
+    label: normalizeBranchLabel(ref, hasOriginMain),
+  }));
+}
 
 function emptyModuleTotal(): GitChurnModuleTotal {
   return { commits: 0, insertions: 0, deletions: 0, net: 0 };
@@ -193,6 +321,7 @@ export function getGitChurnDashboard(options: GitChurnOptions = {}): GitChurnDas
   const sinceDaysInput = typeof options.sinceDays === "number" ? options.sinceDays : 30;
   const sinceDays = useAllHistory ? 0 : Math.max(1, Math.floor(sinceDaysInput));
   const maxCommits = Math.max(20, Math.floor(options.maxCommits ?? 140));
+  const ref = options.ref?.trim();
   const generatedAtIso = new Date().toISOString();
 
   const base: GitChurnDashboard = {
@@ -216,6 +345,7 @@ export function getGitChurnDashboard(options: GitChurnOptions = {}): GitChurnDas
   try {
     const args = [
       "log",
+      ...(ref ? [ref] : []),
       ...(useAllHistory ? [] : [`--since=${sinceDays} days ago`]),
       `--max-count=${maxCommits}`,
       "--date=iso-strict",
@@ -223,14 +353,7 @@ export function getGitChurnDashboard(options: GitChurnOptions = {}): GitChurnDas
       "--numstat",
       "--",
     ];
-    stdout = execFileSync(
-      "git",
-      args,
-      {
-        encoding: "utf8",
-        maxBuffer: 16 * 1024 * 1024,
-      },
-    );
+    stdout = runGit(args);
   } catch (error) {
     return {
       ...base,
@@ -337,21 +460,20 @@ export function getRecentCommitDiffs(options: GitRecentDiffOptions = {}): GitRec
   const count = Math.max(1, Math.floor(options.count ?? 5));
   const maxFilesPerCommit = Math.max(1, Math.floor(options.maxFilesPerCommit ?? 8));
   const maxPatchCharsPerFile = Math.max(800, Math.floor(options.maxPatchCharsPerFile ?? 9000));
+  const ref = options.ref?.trim();
 
   let metaOutput = "";
   try {
-    metaOutput = execFileSync(
-      "git",
+    metaOutput = runGit(
       [
         "log",
+        ...(ref ? [ref] : []),
+        "--no-merges",
         `--max-count=${count}`,
         "--date=iso-strict",
         "--pretty=format:%H|%ad|%an|%s",
       ],
-      {
-        encoding: "utf8",
-        maxBuffer: 8 * 1024 * 1024,
-      },
+      8 * 1024 * 1024,
     );
   } catch {
     return [];
@@ -364,62 +486,24 @@ export function getRecentCommitDiffs(options: GitRecentDiffOptions = {}): GitRec
     const meta = parseCommitMeta(line);
     if (!meta) continue;
 
-    let numstatOutput = "";
+    let patchOutput = "";
     try {
-      numstatOutput = execFileSync(
-        "git",
-        ["show", "--no-color", "--format=", "--numstat", meta.hash],
-        {
-          encoding: "utf8",
-          maxBuffer: 8 * 1024 * 1024,
-        },
+      patchOutput = runGit(
+        ["show", "--no-color", "--format=", "--unified=2", `${meta.hash}^!`, "--"],
+        8 * 1024 * 1024,
       );
     } catch {
-      numstatOutput = "";
-    }
-
-    const files: GitRecentDiffFile[] = [];
-    const rows = numstatOutput.split(/\r?\n/).filter(Boolean).slice(0, maxFilesPerCommit);
-    for (const row of rows) {
-      const parts = row.split("\t");
-      if (parts.length < 3) continue;
-      const insRaw = parts[0];
-      const delRaw = parts[1];
-      const path = parts.slice(2).join("\t");
-      const isBinary = insRaw === "-" || delRaw === "-";
-      const insertions = Number.isFinite(Number.parseInt(insRaw, 10)) ? Number.parseInt(insRaw, 10) : 0;
-      const deletions = Number.isFinite(Number.parseInt(delRaw, 10)) ? Number.parseInt(delRaw, 10) : 0;
-
-      let patch: string | null = null;
-      if (!isBinary) {
-        try {
-          const patchRaw = execFileSync(
-            "git",
-            ["show", "--no-color", "--format=", "--unified=2", meta.hash, "--", path],
-            {
-              encoding: "utf8",
-              maxBuffer: 8 * 1024 * 1024,
-            },
-          );
-          if (patchRaw.trim().length > 0) {
-            patch =
-              patchRaw.length > maxPatchCharsPerFile
-                ? `${patchRaw.slice(0, maxPatchCharsPerFile)}\n... (truncated)`
-                : patchRaw;
-          }
-        } catch {
-          patch = null;
-        }
+      try {
+        patchOutput = runGit(
+          ["show", "--no-color", "--format=", "--unified=2", meta.hash, "--"],
+          8 * 1024 * 1024,
+        );
+      } catch {
+        patchOutput = "";
       }
-
-      files.push({
-        path,
-        insertions,
-        deletions,
-        isBinary,
-        patch,
-      });
     }
+
+    const files = parsePatchSections(patchOutput, maxFilesPerCommit, maxPatchCharsPerFile);
 
     commits.push({
       hash: meta.hash,

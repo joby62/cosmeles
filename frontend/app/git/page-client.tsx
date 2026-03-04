@@ -1,8 +1,9 @@
 "use client";
 
 import type { CSSProperties, DragEvent, ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { getInitialLang, pickLang, subscribeLang, type Lang } from "@/lib/i18n";
 
 type RangeKey = "3" | "5" | "7" | "30" | "all";
@@ -74,7 +75,19 @@ type GitRecentDiffCommit = {
   files: GitRecentDiffFile[];
 };
 
+type GitBranchRef = {
+  ref: string;
+  label: string;
+};
+
 export type GitDashboardBundle = Record<RangeKey, GitDashboardData>;
+
+type DiffDisplayLine = {
+  kind: "meta" | "hunk" | "add" | "del" | "ctx";
+  text: string;
+  oldLine: number | null;
+  newLine: number | null;
+};
 
 type CopyToken = {
   zh: string;
@@ -202,6 +215,84 @@ function ratioLabel(value: number, total: number): string {
 
 function churn(insertions: number, deletions: number): number {
   return insertions + deletions;
+}
+
+function parsePatchForDisplay(patch: string): DiffDisplayLine[] {
+  const hunkRegex = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
+  const lines = patch.split(/\r?\n/);
+  const parsed: DiffDisplayLine[] = [];
+  let oldLine = 0;
+  let newLine = 0;
+  let inHunk = false;
+
+  for (const text of lines) {
+    const hunkMatch = hunkRegex.exec(text);
+    if (hunkMatch) {
+      oldLine = Number.parseInt(hunkMatch[1], 10);
+      newLine = Number.parseInt(hunkMatch[2], 10);
+      inHunk = true;
+      parsed.push({ kind: "hunk", text, oldLine: null, newLine: null });
+      continue;
+    }
+
+    if (!inHunk) {
+      parsed.push({ kind: "meta", text, oldLine: null, newLine: null });
+      continue;
+    }
+
+    if (text.startsWith("+") && !text.startsWith("+++")) {
+      parsed.push({ kind: "add", text, oldLine: null, newLine });
+      newLine += 1;
+      continue;
+    }
+
+    if (text.startsWith("-") && !text.startsWith("---")) {
+      parsed.push({ kind: "del", text, oldLine, newLine: null });
+      oldLine += 1;
+      continue;
+    }
+
+    if (text.startsWith("\\ No newline at end of file")) {
+      parsed.push({ kind: "meta", text, oldLine: null, newLine: null });
+      continue;
+    }
+
+    parsed.push({ kind: "ctx", text, oldLine, newLine });
+    oldLine += 1;
+    newLine += 1;
+  }
+
+  return parsed;
+}
+
+function diffRowClass(kind: DiffDisplayLine["kind"]): string {
+  switch (kind) {
+    case "add":
+      return "border-l-[3px] border-emerald-500/90 bg-emerald-50/82 text-emerald-950";
+    case "del":
+      return "border-l-[3px] border-rose-500/88 bg-rose-50/84 text-rose-950";
+    case "hunk":
+      return "border-l-[3px] border-sky-500/86 bg-sky-50/86 text-sky-900";
+    case "meta":
+      return "border-l-[3px] border-black/12 bg-black/[0.03] text-black/58";
+    default:
+      return "border-l-[3px] border-transparent bg-white text-black/78";
+  }
+}
+
+function diffGutterClass(kind: DiffDisplayLine["kind"]): string {
+  switch (kind) {
+    case "add":
+      return "text-emerald-700";
+    case "del":
+      return "text-rose-700";
+    case "hunk":
+      return "text-sky-700";
+    case "meta":
+      return "text-black/42";
+    default:
+      return "text-black/44";
+  }
 }
 
 function emptyModuleTotal(): GitChurnModuleTotal {
@@ -371,16 +462,24 @@ function PanelShell({
 export default function GitDashboardClient({
   datasets,
   recentDiffs,
+  branchRefs,
+  selectedRef,
 }: {
   datasets: GitDashboardBundle;
   recentDiffs: GitRecentDiffCommit[];
+  branchRefs: GitBranchRef[];
+  selectedRef: string;
 }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [lang, setLang] = useState<Lang>(() => getInitialLang());
   const [range, setRange] = useState<RangeKey>("30");
   const [filter, setFilter] = useState<ModuleFilter>("all");
   const [panelOrder, setPanelOrder] = useState<PanelId[]>(DEFAULT_PANEL_ORDER);
   const [draggingId, setDraggingId] = useState<PanelId | null>(null);
   const [overId, setOverId] = useState<PanelId | null>(null);
+  const [isBranchPending, startBranchTransition] = useTransition();
 
   useEffect(() => {
     return subscribeLang(() => setLang(getInitialLang()));
@@ -395,6 +494,17 @@ export default function GitDashboardClient({
       : `${pickLang(lang, "最近", "Last")} ${copy(lang, RANGE_LABEL[range])}`;
   const fmtNum = (value: number) => formatNumber(value, lang);
   const fmtSigned = (value: number) => formatSigned(value, lang);
+  const selectedBranchLabel = branchRefs.find((item) => item.ref === selectedRef)?.label ?? selectedRef;
+
+  const switchBranch = (targetRef: string) => {
+    if (!targetRef || targetRef === selectedRef) return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("branch", targetRef);
+    const nextHref = params.toString() ? `${pathname}?${params.toString()}` : pathname;
+    startBranchTransition(() => {
+      router.push(nextHref);
+    });
+  };
 
   const computed = useMemo(() => {
     return aggregateDashboard(dataset, filter);
@@ -859,9 +969,24 @@ export default function GitDashboardClient({
                           {file.isBinary ? (
                             <p className="text-[12px] text-black/56">{pickLang(lang, "二进制文件，无法展示文本 patch。", "Binary file; patch text is not shown.")}</p>
                           ) : file.patch ? (
-                            <pre className="max-h-[320px] overflow-auto rounded-lg border border-black/8 bg-black/[0.04] p-3 text-[11px] leading-[1.45] text-black/74">
-{file.patch}
-                            </pre>
+                            <div className="overflow-auto rounded-xl border border-black/10 bg-white/92">
+                              <div className="min-w-[720px] font-mono text-[11px] leading-[1.44]">
+                                {parsePatchForDisplay(file.patch).map((line, index) => (
+                                  <div
+                                    key={`${commit.hash}-${file.path}-${index}`}
+                                    className={`grid grid-cols-[56px_56px_minmax(0,1fr)] ${diffRowClass(line.kind)}`}
+                                  >
+                                    <span className={`border-r border-black/8 px-2 py-[2px] text-right ${diffGutterClass(line.kind)}`}>
+                                      {line.oldLine ?? ""}
+                                    </span>
+                                    <span className={`border-r border-black/8 px-2 py-[2px] text-right ${diffGutterClass(line.kind)}`}>
+                                      {line.newLine ?? ""}
+                                    </span>
+                                    <code className="block whitespace-pre px-3 py-[2px]">{line.text || " "}</code>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
                           ) : (
                             <p className="text-[12px] text-black/56">{pickLang(lang, "无可展示的 patch 内容。", "No patch text available.")}</p>
                           )}
@@ -894,7 +1019,30 @@ export default function GitDashboardClient({
             )}
           </p>
 
-          <div className="mt-5 flex flex-wrap items-center gap-3">
+          <div className="mt-5 space-y-3">
+            <div>
+              <p className="text-[11px] tracking-[0.08em] text-black/52 uppercase">{pickLang(lang, "分支", "Branch")}</p>
+              <div className="mt-2 overflow-x-auto pb-1">
+                <div className="inline-flex min-w-max rounded-full border border-black/12 bg-white/74 p-1">
+                  {branchRefs.map((item) => (
+                    <button
+                      key={item.ref}
+                      type="button"
+                      onClick={() => switchBranch(item.ref)}
+                      disabled={isBranchPending}
+                      title={item.ref}
+                      className={`rounded-full px-3 py-1 text-[12px] font-medium transition ${
+                        selectedRef === item.ref ? "bg-black text-white" : "text-black/68 hover:bg-black/[0.05]"
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
             <div className="inline-flex rounded-full border border-black/12 bg-white/74 p-1">
               {(Object.keys(RANGE_LABEL) as RangeKey[]).map((item) => (
                 <button
@@ -924,9 +1072,11 @@ export default function GitDashboardClient({
                 </button>
               ))}
             </div>
+            </div>
           </div>
 
           <p className="mt-3 text-[12px] text-black/48">
+            {pickLang(lang, "分支：", "Branch:")} {selectedBranchLabel} ·{" "}
             {pickLang(lang, "当前视图：", "Current view:")} {rangeSummary} ·{" "}
             {pickLang(lang, "过滤：", "Filter:")} {copy(lang, FILTER_LABEL[filter])} ·{" "}
             {pickLang(lang, "生成时间", "Generated at")}{" "}
