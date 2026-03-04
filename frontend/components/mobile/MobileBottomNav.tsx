@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 
 type NavKey = "wiki" | "choose" | "compare" | "bag";
 
@@ -70,6 +71,7 @@ function NavIcon({ name }: { name: NavKey }) {
 export default function MobileBottomNav() {
   const pathname = usePathname() || "/m/choose";
   const chooseItem = getChooseItem(pathname);
+  const [chromeBottomInset, setChromeBottomInset] = useState(0);
   const items = [
     { key: "wiki" as const, label: "成份百科", href: "/m/wiki" },
     chooseItem,
@@ -79,8 +81,44 @@ export default function MobileBottomNav() {
 
   const meActive = pathname.startsWith("/m/me");
 
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.visualViewport) return;
+    const viewport = window.visualViewport;
+    let maxVisibleBottom = viewport.height + viewport.offsetTop;
+
+    const updateInset = () => {
+      const currentVisibleBottom = viewport.height + viewport.offsetTop;
+      if (currentVisibleBottom > maxVisibleBottom) {
+        maxVisibleBottom = currentVisibleBottom;
+      }
+      const nextInset = Math.max(0, Math.round(maxVisibleBottom - currentVisibleBottom));
+      setChromeBottomInset((prev) => (Math.abs(prev - nextInset) < 1 ? prev : nextInset));
+    };
+
+    const resetBaseline = () => {
+      maxVisibleBottom = viewport.height + viewport.offsetTop;
+      updateInset();
+    };
+
+    updateInset();
+    viewport.addEventListener("resize", updateInset);
+    viewport.addEventListener("scroll", updateInset);
+    window.addEventListener("orientationchange", resetBaseline);
+    window.addEventListener("pageshow", resetBaseline);
+
+    return () => {
+      viewport.removeEventListener("resize", updateInset);
+      viewport.removeEventListener("scroll", updateInset);
+      window.removeEventListener("orientationchange", resetBaseline);
+      window.removeEventListener("pageshow", resetBaseline);
+    };
+  }, []);
+
   return (
-    <nav className="fixed inset-x-0 bottom-3 z-[60] px-4 pb-[max(env(safe-area-inset-bottom),0px)]">
+    <nav
+      className="fixed inset-x-0 z-[60] px-4"
+      style={{ bottom: `calc(12px + max(env(safe-area-inset-bottom), 0px) + ${chromeBottomInset}px)` }}
+    >
       <div className="mx-auto flex max-w-[680px] items-center gap-2.5">
         <div
           className="m-bottom-dock flex h-[60px] min-w-0 flex-1 items-center rounded-[30px] border border-[color:var(--m-nav-border)] bg-[color:var(--m-nav-bg)] px-1.5 shadow-[0_14px_34px_rgba(0,0,0,0.26)]"

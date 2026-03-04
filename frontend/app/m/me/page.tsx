@@ -353,7 +353,7 @@ export default function MobileMePage() {
           disabled={loading || entries.length === 0 || deleting}
           className="inline-flex h-9 items-center rounded-full border border-black/15 bg-white/60 px-4 text-[13px] font-medium text-black/78 backdrop-blur disabled:opacity-40 active:bg-black/[0.04]"
         >
-          {selectionMode ? "完成" : "选择"}
+          {selectionMode ? "完成" : "多选"}
         </button>
       </div>
 
@@ -548,7 +548,7 @@ export default function MobileMePage() {
 
       {confirmDelete && (
         <div
-          className="fixed inset-0 z-50 flex items-end bg-black/45 px-4 pb-5 backdrop-blur-[1.5px]"
+          className="fixed inset-0 z-[120] flex items-end bg-black/45 px-4 pb-5 backdrop-blur-[1.5px]"
           onClick={() => {
             if (deleting) return;
             setConfirmDelete(null);
