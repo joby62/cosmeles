@@ -701,6 +701,19 @@ export type MobileCompareSession = {
   } | null;
 };
 
+export type MobileCompareBatchDeleteRequest = {
+  ids: string[];
+};
+
+export type MobileCompareBatchDeleteResponse = {
+  status: string;
+  deleted_ids: string[];
+  not_found_ids: string[];
+  forbidden_ids: string[];
+  removed_files: number;
+  removed_dirs: number;
+};
+
 function getBaseForFetch(): string {
   // 在浏览器里优先直连后端，避免 /api 重写层在 multipart 上传时吞掉真实错误。
   if (typeof window !== "undefined") {
@@ -1192,6 +1205,15 @@ export async function listMobileCompareSessions(params?: {
   const query = search.toString();
   const path = query ? `/api/mobile/compare/sessions?${query}` : "/api/mobile/compare/sessions";
   return apiFetch<MobileCompareSession[]>(path);
+}
+
+export async function deleteMobileCompareSessionsBatch(
+  payload: MobileCompareBatchDeleteRequest,
+): Promise<MobileCompareBatchDeleteResponse> {
+  return apiFetch<MobileCompareBatchDeleteResponse>("/api/mobile/compare/sessions/batch/delete", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function recordMobileCompareEvent(name: string, props: Record<string, unknown> = {}): Promise<{ status: string; trace_id: string }> {

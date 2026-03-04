@@ -28,6 +28,8 @@ from app.db.models import (
 )
 from app.db.session import get_db
 from app.schemas import (
+    MobileCompareBatchDeleteRequest,
+    MobileCompareBatchDeleteResponse,
     MobileBagDeleteResponse,
     MobileBagItem as MobileBagItemView,
     MobileBagListResponse,
@@ -82,6 +84,7 @@ from app.services.storage import (
     load_json,
     new_id,
     now_iso,
+    remove_rel_dir,
     save_doubao_artifact,
     save_image,
 )
@@ -1295,6 +1298,62 @@ def list_mobile_compare_sessions(
     if owner_cookie_new:
         _set_owner_cookie(response, owner_id, request)
     return records
+
+
+@router.post(
+    "/compare/sessions/batch/delete",
+    response_model=MobileCompareBatchDeleteResponse,
+)
+def batch_delete_mobile_compare_sessions(
+    payload: MobileCompareBatchDeleteRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    owner_type, owner_id, owner_cookie_new = _resolve_owner(request)
+    normalized_ids = _normalize_session_ids(payload.ids)
+    if not normalized_ids:
+        raise HTTPException(status_code=400, detail="ids cannot be empty.")
+
+    rows = db.execute(
+        select(MobileCompareSessionIndex).where(MobileCompareSessionIndex.compare_id.in_(normalized_ids))
+    ).scalars().all()
+    by_id = {str(row.compare_id): row for row in rows}
+
+    deleted_ids: list[str] = []
+    not_found_ids: list[str] = []
+    forbidden_ids: list[str] = []
+    removed_files = 0
+    removed_dirs = 0
+    dirty = False
+
+    for compare_id in normalized_ids:
+        row = by_id.get(compare_id)
+        if row is None:
+            not_found_ids.append(compare_id)
+            continue
+        if row.owner_type != owner_type or row.owner_id != owner_id:
+            forbidden_ids.append(compare_id)
+            continue
+        db.delete(row)
+        files_count, dirs_count = remove_rel_dir(f"doubao_runs/{compare_id}")
+        removed_files += files_count
+        removed_dirs += dirs_count
+        deleted_ids.append(compare_id)
+        dirty = True
+
+    if dirty:
+        db.commit()
+    if owner_cookie_new:
+        _set_owner_cookie(response, owner_id, request)
+    return MobileCompareBatchDeleteResponse(
+        status="ok",
+        deleted_ids=deleted_ids,
+        not_found_ids=not_found_ids,
+        forbidden_ids=forbidden_ids,
+        removed_files=removed_files,
+        removed_dirs=removed_dirs,
+    )
 
 
 @router.post("/compare/sessions/reindex")

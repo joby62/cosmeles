@@ -47,8 +47,9 @@ function NavIcon({ name }: { name: NavKey }) {
   if (name === "compare") {
     return (
       <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-        <rect x="2.5" y="2.7" width="13" height="12.6" rx="3.2" fill="none" stroke={cls} strokeWidth="1.4" />
-        <path d="M5.1 6.3l2.3 5.4M7.4 6.3l-2.3 5.4M10.6 6.8h2.4M11.8 6.8v5.2" fill="none" stroke={cls} strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M3.8 4.8l2 5.9 1.9-5.9" fill="none" stroke={cls} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M13.2 5.2c-1.4 0-2.2.5-2.2 1.4 0 .8.7 1.1 1.8 1.3 1.1.2 1.7.5 1.7 1.3 0 .9-.7 1.4-2 1.4-1 0-1.9-.3-2.4-.8" fill="none" stroke={cls} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M2.6 13.3h5.1M10.8 3.2h4.6" fill="none" stroke={cls} strokeWidth="1.4" strokeLinecap="round" />
       </svg>
     );
   }

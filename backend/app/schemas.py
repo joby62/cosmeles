@@ -782,3 +782,16 @@ class MobileCompareSessionResponse(BaseModel):
     pair_total: Optional[int] = None
     result: Optional[MobileCompareSessionResultBrief] = None
     error: Optional[MobileCompareSessionError] = None
+
+
+class MobileCompareBatchDeleteRequest(BaseModel):
+    ids: List[str] = Field(default_factory=list)
+
+
+class MobileCompareBatchDeleteResponse(BaseModel):
+    status: str
+    deleted_ids: List[str] = Field(default_factory=list)
+    not_found_ids: List[str] = Field(default_factory=list)
+    forbidden_ids: List[str] = Field(default_factory=list)
+    removed_files: int = 0
+    removed_dirs: int = 0
