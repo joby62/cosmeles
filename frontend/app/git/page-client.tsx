@@ -7,7 +7,7 @@ import { getInitialLang, pickLang, subscribeLang, type Lang } from "@/lib/i18n";
 
 type RangeKey = "3" | "5" | "7" | "30" | "all";
 type ModuleFilter = "all" | GitModuleBucket;
-type PanelId = "overview" | "trend" | "modules" | "impact" | "heatmap" | "top";
+type PanelId = "overview" | "trend" | "modules" | "impact" | "heatmap" | "recent" | "top";
 
 type GitModuleBucket = "mobile" | "backend" | "infra" | "mixed";
 
@@ -57,6 +57,23 @@ type GitDashboardData = {
   commits: GitChurnCommit[];
 };
 
+type GitRecentDiffFile = {
+  path: string;
+  insertions: number;
+  deletions: number;
+  isBinary: boolean;
+  patch: string | null;
+};
+
+type GitRecentDiffCommit = {
+  hash: string;
+  shortHash: string;
+  dateIso: string;
+  author: string;
+  subject: string;
+  files: GitRecentDiffFile[];
+};
+
 export type GitDashboardBundle = Record<RangeKey, GitDashboardData>;
 
 type CopyToken = {
@@ -100,6 +117,7 @@ const PANEL_LAYOUT: Record<PanelId, string> = {
   modules: "xl:col-span-4",
   impact: "xl:col-span-7",
   heatmap: "xl:col-span-5",
+  recent: "xl:col-span-12",
   top: "xl:col-span-12",
 };
 
@@ -109,6 +127,7 @@ const PANEL_TITLE: Record<PanelId, CopyToken> = {
   modules: { zh: "模块贡献", en: "Module Contribution" },
   impact: { zh: "提交波动条带", en: "Commit-by-Commit Strip" },
   heatmap: { zh: "周 / 小时热力图", en: "Weekday / Hour Heatmap" },
+  recent: { zh: "最近提交与 Diff", en: "Recent Commits & Diffs" },
   top: { zh: "高影响提交", en: "Highest Impact Commits" },
 };
 
@@ -118,6 +137,7 @@ const PANEL_SUBTITLE: Record<PanelId, CopyToken> = {
   modules: { zh: "拖拽卡片可调整板块顺序", en: "drag cards to reorder this board" },
   impact: { zh: "从左到右为时间从旧到新", en: "left to right = old to new" },
   heatmap: { zh: "颜色越深表示提交越密集", en: "denser color means more commits" },
+  recent: { zh: "按文件点击展开 patch", en: "click file rows to expand patches" },
   top: { zh: "按新增 + 删除行数排序", en: "sorted by insertions + deletions" },
 };
 
@@ -143,7 +163,15 @@ const WEEKDAY_LABELS: Record<Lang, readonly string[]> = {
 } as const;
 const WEEKDAY_INDEX = [1, 2, 3, 4, 5, 6, 0] as const;
 const MODULE_ORDER: GitModuleBucket[] = ["mobile", "backend", "infra", "mixed"];
-const DEFAULT_PANEL_ORDER: PanelId[] = ["overview", "trend", "modules", "impact", "heatmap", "top"];
+const DEFAULT_PANEL_ORDER: PanelId[] = [
+  "overview",
+  "trend",
+  "modules",
+  "impact",
+  "heatmap",
+  "recent",
+  "top",
+];
 
 function copy(lang: Lang, token: CopyToken): string {
   return pickLang(lang, token.zh, token.en);
@@ -340,7 +368,13 @@ function PanelShell({
   );
 }
 
-export default function GitDashboardClient({ datasets }: { datasets: GitDashboardBundle }) {
+export default function GitDashboardClient({
+  datasets,
+  recentDiffs,
+}: {
+  datasets: GitDashboardBundle;
+  recentDiffs: GitRecentDiffCommit[];
+}) {
   const [lang, setLang] = useState<Lang>(() => getInitialLang());
   const [range, setRange] = useState<RangeKey>("30");
   const [filter, setFilter] = useState<ModuleFilter>("all");
@@ -770,6 +804,76 @@ export default function GitDashboardClient({ datasets }: { datasets: GitDashboar
             </tbody>
           </table>
         </div>
+      </PanelShell>
+    ),
+
+    recent: (
+      <PanelShell
+        lang={lang}
+        panelId="recent"
+        dragging={draggingId === "recent"}
+        over={overId === "recent"}
+        onDragStart={onPanelDragStart("recent")}
+        onDragEnd={onPanelDragEnd}
+        onDragOver={onPanelDragOver("recent")}
+        onDrop={onPanelDrop("recent")}
+      >
+        {recentDiffs.length === 0 ? (
+          <p className="text-[13px] text-black/56">{pickLang(lang, "暂无可展示的提交 diff。", "No commit diff data available.")}</p>
+        ) : (
+          <div className="space-y-3">
+            {recentDiffs.map((commit) => (
+              <details key={commit.hash} className="group rounded-2xl border border-black/10 bg-black/[0.02] px-4 py-3">
+                <summary className="cursor-pointer list-none">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-[14px] font-semibold text-black/82">{commit.subject}</p>
+                      <p className="mt-1 text-[12px] text-black/54">
+                        {commit.shortHash} · {new Date(commit.dateIso).toLocaleString(datetimeLocale)} · {commit.author}
+                      </p>
+                    </div>
+                    <span className="rounded-full border border-black/12 bg-white/78 px-2 py-1 text-[11px] text-black/62">
+                      {commit.files.length} {pickLang(lang, "个文件", "files")}
+                    </span>
+                  </div>
+                </summary>
+
+                <div className="mt-3 space-y-2">
+                  {commit.files.length === 0 ? (
+                    <p className="text-[12px] text-black/54">{pickLang(lang, "该提交无文件 diff。", "No file diffs in this commit.")}</p>
+                  ) : (
+                    commit.files.map((file) => (
+                      <details key={`${commit.hash}-${file.path}`} className="rounded-xl border border-black/10 bg-white/80 px-3 py-2">
+                        <summary className="cursor-pointer list-none">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <code className="text-[12px] text-black/78">{file.path}</code>
+                            <span className="text-[12px]">
+                              <span className="text-emerald-700">+{fmtNum(file.insertions)}</span>
+                              <span className="text-black/45"> / </span>
+                              <span className="text-rose-700">-{fmtNum(file.deletions)}</span>
+                            </span>
+                          </div>
+                        </summary>
+
+                        <div className="mt-2">
+                          {file.isBinary ? (
+                            <p className="text-[12px] text-black/56">{pickLang(lang, "二进制文件，无法展示文本 patch。", "Binary file; patch text is not shown.")}</p>
+                          ) : file.patch ? (
+                            <pre className="max-h-[320px] overflow-auto rounded-lg border border-black/8 bg-black/[0.04] p-3 text-[11px] leading-[1.45] text-black/74">
+{file.patch}
+                            </pre>
+                          ) : (
+                            <p className="text-[12px] text-black/56">{pickLang(lang, "无可展示的 patch 内容。", "No patch text available.")}</p>
+                          )}
+                        </div>
+                      </details>
+                    ))
+                  )}
+                </div>
+              </details>
+            ))}
+          </div>
+        )}
       </PanelShell>
     ),
   };

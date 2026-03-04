@@ -1,5 +1,5 @@
 import GitDashboardClient, { type GitDashboardBundle } from "@/app/git/page-client";
-import { getGitChurnDashboard } from "@/lib/mobile/gitChurn";
+import { getGitChurnDashboard, getRecentCommitDiffs } from "@/lib/mobile/gitChurn";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,6 +13,11 @@ export default function GitDesktopPage() {
     "30": getGitChurnDashboard({ sinceDays: 30, maxCommits: 360 }),
     all: getGitChurnDashboard({ sinceDays: "all", maxCommits: 3000 }),
   };
+  const recentDiffs = getRecentCommitDiffs({
+    count: 6,
+    maxFilesPerCommit: 8,
+    maxPatchCharsPerFile: 10000,
+  });
 
-  return <GitDashboardClient datasets={datasets} />;
+  return <GitDashboardClient datasets={datasets} recentDiffs={recentDiffs} />;
 }

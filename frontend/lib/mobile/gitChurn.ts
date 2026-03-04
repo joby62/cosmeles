@@ -50,9 +50,32 @@ export type GitChurnDashboard = {
   commits: GitChurnCommit[];
 };
 
+export type GitRecentDiffFile = {
+  path: string;
+  insertions: number;
+  deletions: number;
+  isBinary: boolean;
+  patch: string | null;
+};
+
+export type GitRecentDiffCommit = {
+  hash: string;
+  shortHash: string;
+  dateIso: string;
+  author: string;
+  subject: string;
+  files: GitRecentDiffFile[];
+};
+
 type GitChurnOptions = {
   sinceDays?: number | "all";
   maxCommits?: number;
+};
+
+type GitRecentDiffOptions = {
+  count?: number;
+  maxFilesPerCommit?: number;
+  maxPatchCharsPerFile?: number;
 };
 
 type MutableCommitState = {
@@ -144,6 +167,24 @@ function finalizeState(state: MutableCommitState | null): GitChurnCommit | null 
     deletions: state.deletions,
     files: state.files,
     module: bucket,
+  };
+}
+
+function parseCommitMeta(line: string): {
+  hash: string;
+  dateIso: string;
+  author: string;
+  subject: string;
+} | null {
+  const first = line.indexOf("|");
+  const second = line.indexOf("|", first + 1);
+  const third = line.indexOf("|", second + 1);
+  if (first <= 0 || second <= first || third <= second) return null;
+  return {
+    hash: line.slice(0, first),
+    dateIso: line.slice(first + 1, second),
+    author: line.slice(second + 1, third),
+    subject: line.slice(third + 1),
   };
 }
 
@@ -290,4 +331,105 @@ export function getGitChurnDashboard(options: GitChurnOptions = {}): GitChurnDas
       files: totalFiles,
     },
   };
+}
+
+export function getRecentCommitDiffs(options: GitRecentDiffOptions = {}): GitRecentDiffCommit[] {
+  const count = Math.max(1, Math.floor(options.count ?? 5));
+  const maxFilesPerCommit = Math.max(1, Math.floor(options.maxFilesPerCommit ?? 8));
+  const maxPatchCharsPerFile = Math.max(800, Math.floor(options.maxPatchCharsPerFile ?? 9000));
+
+  let metaOutput = "";
+  try {
+    metaOutput = execFileSync(
+      "git",
+      [
+        "log",
+        `--max-count=${count}`,
+        "--date=iso-strict",
+        "--pretty=format:%H|%ad|%an|%s",
+      ],
+      {
+        encoding: "utf8",
+        maxBuffer: 8 * 1024 * 1024,
+      },
+    );
+  } catch {
+    return [];
+  }
+
+  const commits: GitRecentDiffCommit[] = [];
+  const metaLines = metaOutput.split(/\r?\n/).filter(Boolean);
+
+  for (const line of metaLines) {
+    const meta = parseCommitMeta(line);
+    if (!meta) continue;
+
+    let numstatOutput = "";
+    try {
+      numstatOutput = execFileSync(
+        "git",
+        ["show", "--no-color", "--format=", "--numstat", meta.hash],
+        {
+          encoding: "utf8",
+          maxBuffer: 8 * 1024 * 1024,
+        },
+      );
+    } catch {
+      numstatOutput = "";
+    }
+
+    const files: GitRecentDiffFile[] = [];
+    const rows = numstatOutput.split(/\r?\n/).filter(Boolean).slice(0, maxFilesPerCommit);
+    for (const row of rows) {
+      const parts = row.split("\t");
+      if (parts.length < 3) continue;
+      const insRaw = parts[0];
+      const delRaw = parts[1];
+      const path = parts.slice(2).join("\t");
+      const isBinary = insRaw === "-" || delRaw === "-";
+      const insertions = Number.isFinite(Number.parseInt(insRaw, 10)) ? Number.parseInt(insRaw, 10) : 0;
+      const deletions = Number.isFinite(Number.parseInt(delRaw, 10)) ? Number.parseInt(delRaw, 10) : 0;
+
+      let patch: string | null = null;
+      if (!isBinary) {
+        try {
+          const patchRaw = execFileSync(
+            "git",
+            ["show", "--no-color", "--format=", "--unified=2", meta.hash, "--", path],
+            {
+              encoding: "utf8",
+              maxBuffer: 8 * 1024 * 1024,
+            },
+          );
+          if (patchRaw.trim().length > 0) {
+            patch =
+              patchRaw.length > maxPatchCharsPerFile
+                ? `${patchRaw.slice(0, maxPatchCharsPerFile)}\n... (truncated)`
+                : patchRaw;
+          }
+        } catch {
+          patch = null;
+        }
+      }
+
+      files.push({
+        path,
+        insertions,
+        deletions,
+        isBinary,
+        patch,
+      });
+    }
+
+    commits.push({
+      hash: meta.hash,
+      shortHash: meta.hash.slice(0, 7),
+      dateIso: meta.dateIso,
+      author: meta.author,
+      subject: meta.subject,
+      files,
+    });
+  }
+
+  return commits;
 }
