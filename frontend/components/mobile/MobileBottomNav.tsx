@@ -7,11 +7,11 @@ import { useEffect, useState } from "react";
 type NavKey = "wiki" | "choose" | "compare";
 
 const CATEGORY_TABS = [
-  { prefix: "/m/shampoo", label: "洗发推荐", href: "/m/shampoo/start" },
-  { prefix: "/m/bodywash", label: "沐浴推荐", href: "/m/bodywash/start" },
-  { prefix: "/m/conditioner", label: "护发推荐", href: "/m/conditioner/start" },
-  { prefix: "/m/lotion", label: "润肤推荐", href: "/m/lotion/start" },
-  { prefix: "/m/cleanser", label: "洁面推荐", href: "/m/cleanser/start" },
+  { prefix: "/m/shampoo", label: "个性测配", href: "/m/shampoo/start" },
+  { prefix: "/m/bodywash", label: "个性测配", href: "/m/bodywash/start" },
+  { prefix: "/m/conditioner", label: "个性测配", href: "/m/conditioner/start" },
+  { prefix: "/m/lotion", label: "个性测配", href: "/m/lotion/start" },
+  { prefix: "/m/cleanser", label: "个性测配", href: "/m/cleanser/start" },
 ] as const;
 
 function getChooseItem(pathname: string) {
@@ -19,7 +19,7 @@ function getChooseItem(pathname: string) {
   if (matched) {
     return { key: "choose" as const, label: matched.label, href: matched.href };
   }
-  return { key: "choose" as const, label: "智能推荐", href: "/m/choose" };
+  return { key: "choose" as const, label: "个性测配", href: "/m/choose" };
 }
 
 function isActive(pathname: string, key: NavKey): boolean {
@@ -36,9 +36,10 @@ function NavIcon({ name }: { name: NavKey }) {
   if (name === "choose") {
     return (
       <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-        <circle cx="9" cy="9" r="6.3" fill="none" stroke={cls} strokeWidth="1.4" />
-        <circle cx="9" cy="9" r="3.2" fill="none" stroke={cls} strokeWidth="1.4" />
-        <circle cx="9" cy="9" r="1.2" fill={cls} />
+        <circle cx="9" cy="9" r="5.6" fill="none" stroke={cls} strokeWidth="1.3" />
+        <circle cx="9" cy="9" r="3.2" fill="none" stroke={cls} strokeWidth="1.3" />
+        <circle cx="9" cy="9" r="1.1" fill={cls} />
+        <path d="M11.2 6.8l3.8-3.8M12.4 5.6l2.3-.3-.3 2.3" fill="none" stroke={cls} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     );
   }
@@ -54,8 +55,8 @@ function NavIcon({ name }: { name: NavKey }) {
 
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-      <circle cx="8.1" cy="8.1" r="4.3" fill="none" stroke={cls} strokeWidth="1.4" />
-      <path d="M11.4 11.4L14.8 14.8" fill="none" stroke={cls} strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M3.5 4.1A1.6 1.6 0 0 1 5.1 2.5h7.8v11.4H5.1a1.6 1.6 0 0 0-1.6 1.6V4.1Z" fill="none" stroke={cls} strokeWidth="1.4" />
+      <path d="M5.9 5.6h4.9M5.9 8h4.9M5.9 10.4h3.6" fill="none" stroke={cls} strokeWidth="1.4" strokeLinecap="round" />
     </svg>
   );
 }
@@ -66,7 +67,7 @@ export default function MobileBottomNav() {
   const [chromeBottomInset, setChromeBottomInset] = useState(0);
   const items = [
     chooseItem,
-    { key: "compare" as const, label: "VS对比", href: "/m/compare" },
+    { key: "compare" as const, label: "横向对比", href: "/m/compare" },
     { key: "wiki" as const, label: "百科", href: "/m/wiki" },
   ];
 

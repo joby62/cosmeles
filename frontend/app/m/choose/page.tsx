@@ -12,7 +12,7 @@ const CATS = [
 export default function MobileChoose() {
   return (
     <div className="m-choose-page">
-      <div className="text-[13px] font-medium text-black/45">智能推荐</div>
+      <div className="text-[13px] font-medium text-black/45">个性测配</div>
       <div className="mt-2 text-[28px] leading-[1.12] font-semibold tracking-[-0.02em] text-black/90">
         你属于哪类需求人群
       </div>
