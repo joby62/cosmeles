@@ -365,6 +365,11 @@ export default function GitDashboardClient({ datasets }: { datasets: GitDashboar
   const computed = useMemo(() => {
     return aggregateDashboard(dataset, filter);
   }, [dataset, filter]);
+  const baselineAll = useMemo(() => {
+    const allDataset = datasets.all;
+    if (!allDataset?.available) return null;
+    return aggregateDashboard(allDataset, filter);
+  }, [datasets, filter]);
 
   const totalChurn = churn(computed.totals.insertions, computed.totals.deletions);
   const dailyForTrend = computed.daily.slice(-56);
@@ -494,7 +499,11 @@ export default function GitDashboardClient({ datasets }: { datasets: GitDashboar
               +{fmtNum(computed.totals.insertions)}
             </p>
             <p className="mt-2 text-[12px] text-black/54">
-              {pickLang(lang, "占总波动", "Share of churn")} {ratioLabel(computed.totals.insertions, totalChurn)}
+              {pickLang(lang, "占全部新增", "Share of all insertions")}{" "}
+              {ratioLabel(
+                computed.totals.insertions,
+                baselineAll?.totals.insertions ?? computed.totals.insertions,
+              )}
             </p>
           </article>
 
@@ -504,7 +513,11 @@ export default function GitDashboardClient({ datasets }: { datasets: GitDashboar
               -{fmtNum(computed.totals.deletions)}
             </p>
             <p className="mt-2 text-[12px] text-black/54">
-              {pickLang(lang, "占总波动", "Share of churn")} {ratioLabel(computed.totals.deletions, totalChurn)}
+              {pickLang(lang, "占全部删除", "Share of all deletions")}{" "}
+              {ratioLabel(
+                computed.totals.deletions,
+                baselineAll?.totals.deletions ?? computed.totals.deletions,
+              )}
             </p>
           </article>
 
