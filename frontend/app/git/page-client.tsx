@@ -970,26 +970,22 @@ export default function GitDashboardClient({
                 </div>
                 <div className="grid flex-1 gap-[5px]" style={{ gridTemplateColumns: "repeat(24, minmax(0, 1fr))" }}>
                   {computed.heatmap[actualDay].map((value, hour) => {
-                    const isCurrentHour = hour === currentHour;
                     const isCurrentSlot = rowIndex === currentRowIndex && hour === currentHour;
                     return (
                       <div
                         key={`${actualDay}-${hour}`}
                         className={`relative h-[15px] rounded-[5px] border ${
                           isCurrentSlot
-                            ? "border-orange-500 ring-2 ring-orange-500/58 shadow-[0_0_0_1px_rgba(251,146,60,0.32)]"
-                            : isCurrentHour
-                              ? "border-orange-300/92"
-                              : "border-black/[0.07]"
+                            ? "border-sky-500 ring-2 ring-sky-500/45 shadow-[0_0_0_1px_rgba(14,165,233,0.24)]"
+                            : "border-black/[0.07]"
                         }`}
                         title={`${weekdayLabels[rowIndex]} ${weekdayDateLabels[rowIndex]} ${formatHourSlot(hour)} · ${fmtNum(value)} ${pickLang(lang, "次提交", "commits")}${isCurrentSlot ? ` · ${pickLang(lang, "当前时刻", "current time")}` : ""}`}
                         style={{ backgroundColor: hourHeatColor(value, maxHeatHour) }}
                       >
-                        {isCurrentHour ? <span className="pointer-events-none absolute inset-0 rounded-[4px] bg-orange-400/12" /> : null}
                         {isCurrentSlot ? (
                           <>
-                            <span className="pointer-events-none absolute inset-0 rounded-[4px] bg-orange-500/22" />
-                            <span className="pointer-events-none absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-orange-700" />
+                            <span className="pointer-events-none absolute inset-0 rounded-[4px] bg-sky-500/18" />
+                            <span className="pointer-events-none absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-sky-700" />
                           </>
                         ) : null}
                       </div>
