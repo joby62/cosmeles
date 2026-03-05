@@ -8,7 +8,7 @@ import { getInitialLang, pickLang, subscribeLang, type Lang } from "@/lib/i18n";
 
 type RangeKey = "3" | "5" | "7" | "30" | "all";
 type ModuleFilter = "all" | GitModuleBucket;
-type PanelId = "overview" | "trend" | "modules" | "impact" | "heatmap" | "recent" | "top";
+type PanelId = "overview" | "trend" | "modules" | "impact" | "heatHour" | "heatWeek" | "recent" | "top";
 
 type GitModuleBucket = "mobile" | "backend" | "infra" | "mixed";
 
@@ -89,6 +89,26 @@ type DiffDisplayLine = {
   newLine: number | null;
 };
 
+type CalendarCell = {
+  dayKey: string;
+  value: number;
+  inRange: boolean;
+};
+
+type CalendarWeekColumn = {
+  monthLabel: string | null;
+  cells: (CalendarCell | null)[];
+};
+
+type CalendarHeatmapData = {
+  weeks: CalendarWeekColumn[];
+  maxValue: number;
+  activeDays: number;
+  totalRangeDays: number;
+  rangeStartKey: string;
+  rangeEndKey: string;
+};
+
 type CopyToken = {
   zh: string;
   en: string;
@@ -128,8 +148,9 @@ const PANEL_LAYOUT: Record<PanelId, string> = {
   overview: "xl:col-span-12",
   trend: "xl:col-span-8",
   modules: "xl:col-span-4",
-  impact: "xl:col-span-7",
-  heatmap: "xl:col-span-5",
+  impact: "xl:col-span-6",
+  heatHour: "xl:col-span-6",
+  heatWeek: "xl:col-span-12",
   recent: "xl:col-span-12",
   top: "xl:col-span-12",
 };
@@ -139,7 +160,8 @@ const PANEL_TITLE: Record<PanelId, CopyToken> = {
   trend: { zh: "每日新增/删除趋势", en: "Daily Add/Delete Flow" },
   modules: { zh: "模块贡献", en: "Module Contribution" },
   impact: { zh: "提交波动条带", en: "Commit-by-Commit Strip" },
-  heatmap: { zh: "周 / 小时热力图", en: "Weekday / Hour Heatmap" },
+  heatHour: { zh: "周内小时热力图", en: "Weekday-Hour Heatmap" },
+  heatWeek: { zh: "按周日历热力图", en: "Weekly Calendar Heatmap" },
   recent: { zh: "最近提交与 Diff", en: "Recent Commits & Diffs" },
   top: { zh: "高影响提交", en: "Highest Impact Commits" },
 };
@@ -149,7 +171,8 @@ const PANEL_SUBTITLE: Record<PanelId, CopyToken> = {
   trend: { zh: "上半区是新增，下半区是删除", en: "upper area = add, lower area = delete" },
   modules: { zh: "拖拽卡片可调整板块顺序", en: "drag cards to reorder this board" },
   impact: { zh: "从左到右为时间从旧到新", en: "left to right = old to new" },
-  heatmap: { zh: "颜色越深表示提交越密集", en: "denser color means more commits" },
+  heatHour: { zh: "横轴=小时，纵轴=周几；颜色越深提交越多", en: "x=hour, y=weekday; darker means more commits" },
+  heatWeek: { zh: "横轴=按周时间线，纵轴=周几；可读具体日期", en: "x=weekly timeline, y=weekday; inspect exact dates" },
   recent: { zh: "按文件点击展开 patch", en: "click file rows to expand patches" },
   top: { zh: "按新增 + 删除行数排序", en: "sorted by insertions + deletions" },
 };
@@ -175,13 +198,15 @@ const WEEKDAY_LABELS: Record<Lang, readonly string[]> = {
   en: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
 } as const;
 const WEEKDAY_INDEX = [1, 2, 3, 4, 5, 6, 0] as const;
+const HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 const MODULE_ORDER: GitModuleBucket[] = ["mobile", "backend", "infra", "mixed"];
 const DEFAULT_PANEL_ORDER: PanelId[] = [
   "overview",
   "trend",
   "modules",
   "impact",
-  "heatmap",
+  "heatHour",
+  "heatWeek",
   "recent",
   "top",
 ];
@@ -293,6 +318,164 @@ function diffGutterClass(kind: DiffDisplayLine["kind"]): string {
     default:
       return "text-black/44";
   }
+}
+
+function startOfDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function dayKeyFromDate(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function parseDayKey(dayKey: string): Date | null {
+  const matched = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dayKey);
+  if (!matched) return null;
+  const year = Number.parseInt(matched[1], 10);
+  const month = Number.parseInt(matched[2], 10);
+  const day = Number.parseInt(matched[3], 10);
+  const parsed = new Date(year, month - 1, day);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function addDayOffset(date: Date, offset: number): Date {
+  const next = startOfDay(date);
+  next.setDate(next.getDate() + offset);
+  return next;
+}
+
+function dayDistance(from: Date, to: Date): number {
+  const ms = startOfDay(to).getTime() - startOfDay(from).getTime();
+  return Math.round(ms / 86_400_000);
+}
+
+function weekdayToRowIndex(jsWeekday: number): number {
+  return jsWeekday === 0 ? 6 : jsWeekday - 1;
+}
+
+function formatMonthLabel(date: Date, lang: Lang): string {
+  if (lang === "zh") return `${date.getMonth() + 1}月`;
+  return new Intl.DateTimeFormat("en-US", { month: "short" }).format(date);
+}
+
+function formatDayLabel(dayKey: string, lang: Lang): string {
+  const date = parseDayKey(dayKey);
+  if (!date) return dayKey;
+  return date.toLocaleDateString(lang === "zh" ? "zh-CN" : "en-US", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+}
+
+function hourHeatColor(value: number, maxValue: number): string {
+  if (value <= 0) return "rgba(14,165,233,0.08)";
+  const alpha = 0.18 + (value / Math.max(1, maxValue)) * 0.76;
+  return `rgba(14,165,233,${Math.min(alpha, 0.94).toFixed(3)})`;
+}
+
+function weekHeatColor(value: number, maxValue: number, inRange: boolean): string {
+  if (!inRange) return "rgba(15,23,42,0.03)";
+  if (value <= 0) return "rgba(16,185,129,0.08)";
+  const alpha = 0.16 + (value / Math.max(1, maxValue)) * 0.78;
+  return `rgba(16,185,129,${Math.min(alpha, 0.94).toFixed(3)})`;
+}
+
+function buildLegendStops(maxValue: number): number[] {
+  const marks = [0, Math.ceil(maxValue * 0.25), Math.ceil(maxValue * 0.5), Math.ceil(maxValue * 0.75), maxValue];
+  const unique = Array.from(new Set(marks)).sort((a, b) => a - b);
+  return unique.slice(0, 5);
+}
+
+function buildCalendarHeatmap(
+  commits: GitChurnCommit[],
+  range: RangeKey,
+  generatedAtIso: string,
+  lang: Lang,
+): CalendarHeatmapData {
+  const dayCount = new Map<string, number>();
+  for (const commit of commits) {
+    dayCount.set(commit.dayKey, (dayCount.get(commit.dayKey) ?? 0) + 1);
+  }
+
+  const generatedRaw = new Date(generatedAtIso);
+  const fallbackToday = startOfDay(Number.isNaN(generatedRaw.getTime()) ? new Date() : generatedRaw);
+  let rangeStart = fallbackToday;
+  let rangeEnd = fallbackToday;
+
+  if (range === "all") {
+    const sortedKeys = Array.from(dayCount.keys()).sort((a, b) => a.localeCompare(b));
+    if (sortedKeys.length > 0) {
+      const first = parseDayKey(sortedKeys[0]);
+      const last = parseDayKey(sortedKeys[sortedKeys.length - 1]);
+      if (first && last) {
+        rangeStart = startOfDay(first);
+        rangeEnd = startOfDay(last);
+      }
+    }
+  } else {
+    const days = Math.max(1, Number.parseInt(range, 10) || 7);
+    rangeEnd = fallbackToday;
+    rangeStart = addDayOffset(rangeEnd, -(days - 1));
+  }
+
+  if (rangeStart.getTime() > rangeEnd.getTime()) {
+    const temp = rangeStart;
+    rangeStart = rangeEnd;
+    rangeEnd = temp;
+  }
+
+  const gridStart = addDayOffset(rangeStart, -weekdayToRowIndex(rangeStart.getDay()));
+  const gridEnd = addDayOffset(rangeEnd, 6 - weekdayToRowIndex(rangeEnd.getDay()));
+  const daySpan = Math.max(1, dayDistance(gridStart, gridEnd) + 1);
+  const weekCount = Math.ceil(daySpan / 7);
+  const weeks: CalendarWeekColumn[] = Array.from({ length: weekCount }, () => ({
+    monthLabel: null,
+    cells: Array.from({ length: 7 }, () => null),
+  }));
+
+  for (let dayOffset = 0; dayOffset < daySpan; dayOffset += 1) {
+    const date = addDayOffset(gridStart, dayOffset);
+    const weekIndex = Math.floor(dayOffset / 7);
+    const rowIndex = weekdayToRowIndex(date.getDay());
+    const dayKey = dayKeyFromDate(date);
+    const inRange = date.getTime() >= rangeStart.getTime() && date.getTime() <= rangeEnd.getTime();
+    const value = inRange ? (dayCount.get(dayKey) ?? 0) : 0;
+    weeks[weekIndex].cells[rowIndex] = { dayKey, value, inRange };
+
+    if (!weeks[weekIndex].monthLabel && inRange && date.getDate() === 1) {
+      weeks[weekIndex].monthLabel = formatMonthLabel(date, lang);
+    }
+  }
+
+  if (weeks.length > 0 && !weeks[0].monthLabel) {
+    const firstInRange = weeks[0].cells.find((cell) => cell?.inRange);
+    if (firstInRange) {
+      const monthDate = parseDayKey(firstInRange.dayKey);
+      if (monthDate) {
+        weeks[0].monthLabel = formatMonthLabel(monthDate, lang);
+      }
+    }
+  }
+
+  const inRangeValues = weeks
+    .flatMap((week) => week.cells)
+    .filter((cell): cell is CalendarCell => Boolean(cell && cell.inRange))
+    .map((cell) => cell.value);
+  const maxValue = Math.max(1, ...inRangeValues);
+  const activeDays = inRangeValues.filter((value) => value > 0).length;
+
+  return {
+    weeks,
+    maxValue,
+    activeDays,
+    totalRangeDays: inRangeValues.length,
+    rangeStartKey: dayKeyFromDate(rangeStart),
+    rangeEndKey: dayKeyFromDate(rangeEnd),
+  };
 }
 
 function emptyModuleTotal(): GitChurnModuleTotal {
@@ -533,7 +716,25 @@ export default function GitDashboardClient({
   const maxDaily = Math.max(1, ...dailyForTrend.map((row) => Math.max(row.insertions, row.deletions)));
   const maxModuleChurn = Math.max(1, ...moduleRows.map((row) => row.churn));
   const maxCommitChurn = Math.max(1, ...stripCommits.map((row) => churn(row.insertions, row.deletions)));
-  const maxHeat = Math.max(1, ...computed.heatmap.flat());
+  const maxHeatHour = Math.max(1, ...computed.heatmap.flat());
+  const hourLegendStops = buildLegendStops(maxHeatHour);
+  const weekCalendar = useMemo(
+    () => buildCalendarHeatmap(computed.commits, range, dataset.generatedAtIso, lang),
+    [computed.commits, dataset.generatedAtIso, lang, range],
+  );
+  const weekLegendStops = buildLegendStops(weekCalendar.maxValue);
+  const hourHotspots = WEEKDAY_INDEX.flatMap((actualDay, rowIndex) =>
+    computed.heatmap[actualDay].map((value, hour) => ({
+      value,
+      hour,
+      label: weekdayLabels[rowIndex],
+    })),
+  )
+    .filter((item) => item.value > 0)
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 4);
+  const bestHourSlot = hourHotspots[0] ?? null;
+  const activeHourSlots = computed.heatmap.flat().filter((value) => value > 0).length;
 
   const chartHeight = 292;
   const chartWidth = Math.max(760, dailyForTrend.length * 16);
@@ -559,6 +760,9 @@ export default function GitDashboardClient({
   const labelStep = Math.max(1, Math.ceil(dailyForTrend.length / 9));
   const stripColumns: CSSProperties = {
     gridTemplateColumns: `repeat(${Math.max(stripCommits.length, 1)}, minmax(8px, 1fr))`,
+  };
+  const weekColumns: CSSProperties = {
+    gridTemplateColumns: `repeat(${Math.max(weekCalendar.weeks.length, 1)}, minmax(12px, 1fr))`,
   };
 
   const onPanelDragStart = (panelId: PanelId) => (event: DragEvent<HTMLElement>) => {
@@ -839,38 +1043,210 @@ export default function GitDashboardClient({
       </PanelShell>
     ),
 
-    heatmap: (
+    heatHour: (
       <PanelShell
         lang={lang}
-        panelId="heatmap"
-        dragging={draggingId === "heatmap"}
-        over={overId === "heatmap"}
-        onDragStart={onPanelDragStart("heatmap")}
+        panelId="heatHour"
+        dragging={draggingId === "heatHour"}
+        over={overId === "heatHour"}
+        onDragStart={onPanelDragStart("heatHour")}
         onDragEnd={onPanelDragEnd}
-        onDragOver={onPanelDragOver("heatmap")}
-        onDrop={onPanelDrop("heatmap")}
+        onDragOver={onPanelDragOver("heatHour")}
+        onDrop={onPanelDrop("heatHour")}
       >
-        <div className="space-y-[7px]">
-          {WEEKDAY_INDEX.map((actualDay, rowIndex) => (
-            <div key={weekdayLabels[rowIndex]} className="flex items-center gap-3">
-              <span className="w-9 text-right text-[11px] tracking-[0.04em] text-black/48">
-                {weekdayLabels[rowIndex]}
-              </span>
-              <div className="grid flex-1 gap-[5px]" style={{ gridTemplateColumns: "repeat(24, minmax(0, 1fr))" }}>
-                {computed.heatmap[actualDay].map((value, hour) => {
-                  const alpha = value <= 0 ? 0.08 : 0.15 + (value / maxHeat) * 0.78;
-                  return (
+        <div className="space-y-4">
+          <div className="grid grid-cols-[42px_minmax(0,1fr)] items-center gap-3">
+            <span />
+            <div className="grid gap-[5px]" style={{ gridTemplateColumns: "repeat(24, minmax(0, 1fr))" }}>
+              {HOURS.map((hour) => (
+                <span
+                  key={`hour-label-${hour}`}
+                  className={`text-center text-[10px] text-black/48 ${hour % 3 === 0 ? "opacity-100" : "opacity-0"}`}
+                >
+                  {hour}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-[7px]">
+            {WEEKDAY_INDEX.map((actualDay, rowIndex) => (
+              <div key={`hour-row-${actualDay}`} className="flex items-center gap-3">
+                <span className="w-9 text-right text-[11px] tracking-[0.04em] text-black/52">
+                  {weekdayLabels[rowIndex]}
+                </span>
+                <div className="grid flex-1 gap-[5px]" style={{ gridTemplateColumns: "repeat(24, minmax(0, 1fr))" }}>
+                  {computed.heatmap[actualDay].map((value, hour) => (
                     <div
                       key={`${actualDay}-${hour}`}
-                      className="h-[11px] rounded-[4px] border border-black/[0.05]"
-                      title={`${weekdayLabels[rowIndex]} ${hour}:00 · ${value} ${pickLang(lang, "次提交", "commits")}`}
-                      style={{ backgroundColor: `rgba(14,165,233,${alpha})` }}
+                      className="h-[14px] rounded-[5px] border border-black/[0.07]"
+                      title={`${weekdayLabels[rowIndex]} ${hour}:00-${String((hour + 1) % 24).padStart(2, "0")}:00 · ${fmtNum(value)} ${pickLang(lang, "次提交", "commits")}`}
+                      style={{ backgroundColor: hourHeatColor(value, maxHeatHour) }}
                     />
-                  );
-                })}
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-[11px] text-black/56">{pickLang(lang, "提交强度", "Commit intensity")}</span>
+            <div className="flex flex-wrap items-center gap-2">
+              {hourLegendStops.map((value) => (
+                <span key={`hour-legend-${value}`} className="inline-flex items-center gap-1.5">
+                  <span
+                    className="h-[10px] w-[18px] rounded-[4px] border border-black/[0.08]"
+                    style={{ backgroundColor: hourHeatColor(value, maxHeatHour) }}
+                  />
+                  <span className="text-[10px] text-black/58">{fmtNum(value)}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-xl border border-black/10 bg-white/86 px-3 py-2">
+              <p className="text-[10px] tracking-[0.06em] text-black/52 uppercase">{pickLang(lang, "峰值时段", "Peak Slot")}</p>
+              <p className="mt-1 text-[13px] font-medium text-black/82">
+                {bestHourSlot
+                  ? `${bestHourSlot.label} ${String(bestHourSlot.hour).padStart(2, "0")}:00`
+                  : pickLang(lang, "暂无数据", "No data")}
+              </p>
+              <p className="text-[11px] text-black/56">
+                {bestHourSlot
+                  ? `${fmtNum(bestHourSlot.value)} ${pickLang(lang, "次提交", "commits")}`
+                  : "0"}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-black/10 bg-white/86 px-3 py-2">
+              <p className="text-[10px] tracking-[0.06em] text-black/52 uppercase">{pickLang(lang, "活跃小时槽", "Active Slots")}</p>
+              <p className="mt-1 text-[13px] font-medium text-black/82">{fmtNum(activeHourSlots)} / 168</p>
+              <p className="text-[11px] text-black/56">{ratioLabel(activeHourSlots, 168)}</p>
+            </div>
+
+            <div className="rounded-xl border border-black/10 bg-white/86 px-3 py-2">
+              <p className="text-[10px] tracking-[0.06em] text-black/52 uppercase">{pickLang(lang, "每小时平均提交", "Avg / Hour Slot")}</p>
+              <p className="mt-1 text-[13px] font-medium text-black/82">
+                {new Intl.NumberFormat(lang === "zh" ? "zh-CN" : "en-US", { maximumFractionDigits: 2 }).format(
+                  computed.totals.commits / 168,
+                )}
+              </p>
+              <p className="text-[11px] text-black/56">{pickLang(lang, "总提交 / 168", "total commits / 168")}</p>
+            </div>
+
+            <div className="rounded-xl border border-black/10 bg-white/86 px-3 py-2">
+              <p className="text-[10px] tracking-[0.06em] text-black/52 uppercase">{pickLang(lang, "热点清单", "Top Hotspots")}</p>
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                {hourHotspots.slice(0, 2).map((slot) => (
+                  <span key={`${slot.label}-${slot.hour}`} className="rounded-full bg-black/[0.05] px-2 py-0.5 text-[10px] text-black/66">
+                    {slot.label} {String(slot.hour).padStart(2, "0")}:00 · {fmtNum(slot.value)}
+                  </span>
+                ))}
+                {hourHotspots.length === 0 ? (
+                  <span className="text-[11px] text-black/56">{pickLang(lang, "暂无热点", "No hotspots yet")}</span>
+                ) : null}
               </div>
             </div>
-          ))}
+          </div>
+        </div>
+      </PanelShell>
+    ),
+
+    heatWeek: (
+      <PanelShell
+        lang={lang}
+        panelId="heatWeek"
+        dragging={draggingId === "heatWeek"}
+        over={overId === "heatWeek"}
+        onDragStart={onPanelDragStart("heatWeek")}
+        onDragEnd={onPanelDragEnd}
+        onDragOver={onPanelDragOver("heatWeek")}
+        onDrop={onPanelDrop("heatWeek")}
+      >
+        <div className="space-y-4">
+          <div className="overflow-x-auto">
+            <div className="min-w-[760px]">
+              <div className="ml-[44px] grid gap-[5px] text-[10px] text-black/48" style={weekColumns}>
+                {weekCalendar.weeks.map((week, index) => (
+                  <span key={`week-month-${index}`} className="h-4 leading-4">
+                    {week.monthLabel ?? (index % 4 === 0 ? `W${index + 1}` : "")}
+                  </span>
+                ))}
+              </div>
+
+              <div className="mt-1 space-y-[6px]">
+                {WEEKDAY_INDEX.map((actualDay, rowIndex) => (
+                  <div key={`week-row-${actualDay}`} className="flex items-center gap-3">
+                    <span className="w-9 text-right text-[11px] tracking-[0.04em] text-black/52">
+                      {weekdayLabels[rowIndex]}
+                    </span>
+                    <div className="grid flex-1 gap-[5px]" style={weekColumns}>
+                      {weekCalendar.weeks.map((week, colIndex) => {
+                        const cell = week.cells[rowIndex];
+                        const value = cell?.value ?? 0;
+                        const inRange = cell?.inRange ?? false;
+                        const dayKey = cell?.dayKey ?? "";
+                        return (
+                          <div
+                            key={`week-cell-${rowIndex}-${colIndex}`}
+                            className={`h-[13px] rounded-[4px] border ${inRange ? "border-black/[0.07]" : "border-black/[0.03]"}`}
+                            title={
+                              inRange
+                                ? `${formatDayLabel(dayKey, lang)} · ${fmtNum(value)} ${pickLang(lang, "次提交", "commits")}`
+                                : pickLang(lang, "超出当前统计区间", "Outside selected range")
+                            }
+                            style={{
+                              backgroundColor: weekHeatColor(value, weekCalendar.maxValue, inRange),
+                              opacity: inRange ? 1 : 0.45,
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-[11px] text-black/56">{pickLang(lang, "日强度", "Daily intensity")}</span>
+            <div className="flex flex-wrap items-center gap-2">
+              {weekLegendStops.map((value) => (
+                <span key={`week-legend-${value}`} className="inline-flex items-center gap-1.5">
+                  <span
+                    className="h-[10px] w-[18px] rounded-[4px] border border-black/[0.08]"
+                    style={{ backgroundColor: weekHeatColor(value, weekCalendar.maxValue, true) }}
+                  />
+                  <span className="text-[10px] text-black/58">{fmtNum(value)}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-3">
+            <div className="rounded-xl border border-black/10 bg-white/86 px-3 py-2">
+              <p className="text-[10px] tracking-[0.06em] text-black/52 uppercase">{pickLang(lang, "时间范围", "Range")}</p>
+              <p className="mt-1 text-[12px] font-medium text-black/82">
+                {formatDayLabel(weekCalendar.rangeStartKey, lang)} ~ {formatDayLabel(weekCalendar.rangeEndKey, lang)}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-black/10 bg-white/86 px-3 py-2">
+              <p className="text-[10px] tracking-[0.06em] text-black/52 uppercase">{pickLang(lang, "活跃日期", "Active Days")}</p>
+              <p className="mt-1 text-[12px] font-medium text-black/82">
+                {fmtNum(weekCalendar.activeDays)} / {fmtNum(weekCalendar.totalRangeDays)}
+              </p>
+              <p className="text-[11px] text-black/56">{ratioLabel(weekCalendar.activeDays, weekCalendar.totalRangeDays)}</p>
+            </div>
+
+            <div className="rounded-xl border border-black/10 bg-white/86 px-3 py-2">
+              <p className="text-[10px] tracking-[0.06em] text-black/52 uppercase">{pickLang(lang, "单日峰值", "Peak Day")}</p>
+              <p className="mt-1 text-[12px] font-medium text-black/82">{fmtNum(weekCalendar.maxValue)}</p>
+              <p className="text-[11px] text-black/56">{pickLang(lang, "该日提交次数", "commits on that day")}</p>
+            </div>
+          </div>
         </div>
       </PanelShell>
     ),
