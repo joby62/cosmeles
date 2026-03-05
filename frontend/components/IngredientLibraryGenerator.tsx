@@ -40,6 +40,8 @@ export default function IngredientLibraryGenerator({
   const [preflightResult, setPreflightResult] = useState<IngredientLibraryPreflightResponse | null>(null);
   const [normalizationPackages, setNormalizationPackages] = useState<IngredientLibraryNormalizationPackage[]>([]);
   const [selectedNormalizationPackages, setSelectedNormalizationPackages] = useState<string[]>([]);
+  const bootstrapLoadedRef = useRef(false);
+  const preflightBootstrapLoadedRef = useRef(false);
 
   const [searchKeyword, setSearchKeyword] = useState("");
   const [searchCategory, setSearchCategory] = useState("");
@@ -145,9 +147,8 @@ export default function IngredientLibraryGenerator({
       });
       setPreflightResult(resp);
       setNormalizationPackages(resp.available_packages || []);
-      if (resp.selected_packages?.length) {
-        setSelectedNormalizationPackages(resp.selected_packages);
-      }
+      const selectedFromServer = normalizePackageIds(resp.selected_packages || []);
+      setSelectedNormalizationPackages((prev) => (sameStringArray(prev, selectedFromServer) ? prev : selectedFromServer));
     } catch (err) {
       setPreflightError(formatErrorDetail(err));
     } finally {
@@ -156,15 +157,22 @@ export default function IngredientLibraryGenerator({
   }, [selectedNormalizationPackages]);
 
   useEffect(() => {
+    if (bootstrapLoadedRef.current) return;
+    bootstrapLoadedRef.current = true;
     void loadJobs();
     void loadIngredientItems();
-    void runPreflight();
     const raw = window.localStorage.getItem(ACTIVE_JOB_STORAGE_KEY);
     if (raw) {
       const normalized = raw.trim();
       if (normalized) setActiveJobId(normalized);
     }
-  }, [loadJobs, loadIngredientItems, runPreflight]);
+  }, [loadJobs, loadIngredientItems]);
+
+  useEffect(() => {
+    if (preflightBootstrapLoadedRef.current) return;
+    preflightBootstrapLoadedRef.current = true;
+    void runPreflight();
+  }, [runPreflight]);
 
   useEffect(() => {
     if (!activeJobId) {
@@ -602,6 +610,26 @@ function buildSummary(result: IngredientLibraryBuildResponse): string {
     }
   }
   return lines.join("\n");
+}
+
+function normalizePackageIds(value: string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of value) {
+    const id = String(raw || "").trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
+function sameStringArray(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
 }
 
 function formatErrorDetail(err: unknown): string {

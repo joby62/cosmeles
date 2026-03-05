@@ -110,6 +110,8 @@ router = APIRouter(prefix="/api", tags=["products"])
 INGREDIENT_SOURCE_SCHEMA_VERSION = "v2026-03-05.1"
 INGREDIENT_SOURCE_COOCCURRENCE_TOP_N = 15
 INGREDIENT_BUILD_JOB_HEARTBEAT_SECONDS = 2
+INGREDIENT_BUILD_JOB_STALE_SECONDS = max(60 * 30, INGREDIENT_BUILD_JOB_HEARTBEAT_SECONDS * 300)
+INGREDIENT_BUILD_JOB_PROCESS_STARTED_AT = datetime.now(timezone.utc)
 INGREDIENT_NORMALIZATION_PACKAGE_VERSION = "v2026-03-06.1"
 INGREDIENT_NORMALIZATION_PACKAGES: tuple[dict[str, Any], ...] = (
     {
@@ -503,7 +505,14 @@ def list_ingredient_library_build_jobs(
     rows = db.execute(
         stmt.order_by(IngredientLibraryBuildJob.updated_at.desc()).offset(offset).limit(limit)
     ).scalars().all()
-    return [_to_ingredient_build_job_view(row) for row in rows]
+    now_utc = datetime.now(timezone.utc)
+    views: list[IngredientLibraryBuildJobView] = []
+    for row in rows:
+        _reconcile_ingredient_build_job_state(db=db, rec=row, now_utc=now_utc)
+        if normalized_status and str(row.status or "").strip().lower() != normalized_status:
+            continue
+        views.append(_to_ingredient_build_job_view(row))
+    return views
 
 
 @router.get("/products/ingredients/library/jobs/{job_id}", response_model=IngredientLibraryBuildJobView)
@@ -512,6 +521,7 @@ def get_ingredient_library_build_job(job_id: str, db: Session = Depends(get_db))
     rec = db.get(IngredientLibraryBuildJob, job_id)
     if rec is None:
         raise HTTPException(status_code=404, detail=f"Ingredient build job '{job_id}' not found.")
+    _reconcile_ingredient_build_job_state(db=db, rec=rec, now_utc=datetime.now(timezone.utc))
     return _to_ingredient_build_job_view(rec)
 
 
@@ -1745,6 +1755,92 @@ def _run_ingredient_library_build_job(
             http_status=500,
             bind=db.get_bind(),
         )
+
+
+def _reconcile_ingredient_build_job_state(
+    *,
+    db: Session,
+    rec: IngredientLibraryBuildJob,
+    now_utc: datetime,
+) -> None:
+    status = str(rec.status or "").strip().lower()
+    if status not in {"queued", "running", "cancelling"}:
+        return
+
+    reason = _ingredient_build_job_orphan_reason(rec=rec, now_utc=now_utc)
+    if reason is None:
+        return
+
+    last_updated = str(rec.updated_at or "").strip() or "-"
+    active_stage = str(rec.stage or status or "unknown").strip() or "unknown"
+    now = now_iso()
+    if status == "cancelling" or bool(rec.cancel_requested):
+        rec.status = "cancelled"
+        rec.stage = "cancelled"
+        rec.stage_label = _ingredient_build_stage_label("cancelled")
+        rec.message = (
+            "任务已取消：检测到后台执行线程不存在，"
+            f"reason={reason}，stage={active_stage}，last_update={last_updated}。"
+        )
+        rec.error_json = None
+    else:
+        detail = (
+            "任务执行中断：检测到后台执行线程不存在，"
+            f"reason={reason}，stage={active_stage}，last_update={last_updated}。"
+        )
+        rec.status = "failed"
+        rec.stage = "failed"
+        rec.stage_label = _ingredient_build_stage_label("failed")
+        rec.message = detail
+        rec.error_json = json.dumps(
+            {
+                "code": "ingredient_build_orphaned",
+                "detail": detail,
+                "http_status": 500,
+            },
+            ensure_ascii=False,
+        )
+    rec.finished_at = now
+    rec.updated_at = now
+    db.add(rec)
+    db.commit()
+    db.refresh(rec)
+
+
+def _ingredient_build_job_orphan_reason(
+    *,
+    rec: IngredientLibraryBuildJob,
+    now_utc: datetime,
+) -> str | None:
+    status = str(rec.status or "").strip().lower()
+    updated_at = _parse_utc_datetime(str(rec.updated_at or "").strip())
+    created_at = _parse_utc_datetime(str(rec.created_at or "").strip())
+    started_at = _parse_utc_datetime(str(rec.started_at or "").strip())
+    last_update = updated_at or created_at
+    if last_update is None:
+        return None
+    process_anchor = created_at if status == "queued" else (started_at or created_at)
+    if process_anchor and process_anchor < INGREDIENT_BUILD_JOB_PROCESS_STARTED_AT:
+        return "service_restarted"
+    stale_seconds = max(0, int((now_utc - last_update).total_seconds()))
+    if stale_seconds >= INGREDIENT_BUILD_JOB_STALE_SECONDS:
+        return f"heartbeat_timeout_{stale_seconds}s"
+    return None
+
+
+def _parse_utc_datetime(value: str) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        if text.endswith("Z"):
+            text = f"{text[:-1]}+00:00"
+        parsed = datetime.fromisoformat(text)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except ValueError:
+        return None
 
 
 def _apply_ingredient_build_job_progress(

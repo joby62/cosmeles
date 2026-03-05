@@ -1,6 +1,7 @@
 import json
 import time
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -126,6 +127,87 @@ def test_ingredient_library_background_job_can_cancel(test_client, monkeypatch: 
     final = _wait_for_job_status(client, job_id=job_id, expected={"cancelled"})
     assert final["status"] == "cancelled"
     assert final["cancel_requested"] is True
+
+
+def test_ingredient_library_orphan_running_job_is_failed_with_context(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, _ = test_client
+
+    def fake_run_job(*, job_id, payload, db):
+        rec = db.get(products_routes.IngredientLibraryBuildJob, job_id)
+        assert rec is not None
+        now = products_routes.now_iso()
+        rec.status = "running"
+        rec.stage = "ingredient_start"
+        rec.stage_label = products_routes._ingredient_build_stage_label("ingredient_start")
+        rec.message = "fake running"
+        rec.percent = 36
+        rec.started_at = now
+        rec.updated_at = now
+        db.add(rec)
+        db.commit()
+
+    monkeypatch.setattr(products_routes, "_run_ingredient_library_build_job", fake_run_job)
+
+    created = client.post("/api/products/ingredients/library/jobs", json={})
+    assert created.status_code == 200
+    job_id = created.json()["job_id"]
+    _wait_for_job_status(client, job_id=job_id, expected={"running"})
+
+    monkeypatch.setattr(
+        products_routes,
+        "INGREDIENT_BUILD_JOB_PROCESS_STARTED_AT",
+        datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+
+    rec = client.get(f"/api/products/ingredients/library/jobs/{job_id}")
+    assert rec.status_code == 200
+    body = rec.json()
+    assert body["status"] == "failed"
+    assert body["error"] is not None
+    assert body["error"]["code"] == "ingredient_build_orphaned"
+    assert "reason=service_restarted" in str(body["message"])
+    assert "stage=ingredient_start" in str(body["message"])
+
+
+def test_ingredient_library_orphan_cancelling_job_is_auto_cancelled(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, _ = test_client
+
+    def fake_run_job(*, job_id, payload, db):
+        rec = db.get(products_routes.IngredientLibraryBuildJob, job_id)
+        assert rec is not None
+        now = products_routes.now_iso()
+        rec.status = "running"
+        rec.stage = "ingredient_start"
+        rec.stage_label = products_routes._ingredient_build_stage_label("ingredient_start")
+        rec.message = "fake running"
+        rec.percent = 64
+        rec.started_at = now
+        rec.updated_at = now
+        db.add(rec)
+        db.commit()
+
+    monkeypatch.setattr(products_routes, "_run_ingredient_library_build_job", fake_run_job)
+
+    created = client.post("/api/products/ingredients/library/jobs", json={})
+    assert created.status_code == 200
+    job_id = created.json()["job_id"]
+    _wait_for_job_status(client, job_id=job_id, expected={"running"})
+
+    cancelled = client.post(f"/api/products/ingredients/library/jobs/{job_id}/cancel")
+    assert cancelled.status_code == 200
+    assert cancelled.json()["job"]["status"] == "cancelling"
+
+    monkeypatch.setattr(
+        products_routes,
+        "INGREDIENT_BUILD_JOB_PROCESS_STARTED_AT",
+        datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+
+    listed = client.get("/api/products/ingredients/library/jobs")
+    assert listed.status_code == 200
+    row = next(item for item in listed.json() if item["job_id"] == job_id)
+    assert row["status"] == "cancelled"
+    assert "reason=service_restarted" in str(row["message"])
 
 
 def test_ingredient_library_batch_delete_can_remove_profile_without_index(test_client):
