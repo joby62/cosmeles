@@ -24,6 +24,8 @@ def now_iso():
 def ensure_dirs():
     os.makedirs(settings.storage_dir, exist_ok=True)
     os.makedirs(os.path.join(settings.storage_dir, "images"), exist_ok=True)
+    os.makedirs(os.path.join(settings.storage_dir, "images", "webp"), exist_ok=True)
+    os.makedirs(os.path.join(settings.storage_dir, "images", "jpg"), exist_ok=True)
     os.makedirs(os.path.join(settings.storage_dir, "products"), exist_ok=True)
     os.makedirs(os.path.join(settings.storage_dir, "doubao_runs"), exist_ok=True)
     os.makedirs(os.path.join(settings.storage_dir, "ingredients"), exist_ok=True)
@@ -56,37 +58,52 @@ def save_image(
             raise ValueError(
                 f"Unsupported image extension '{ext or '(empty)'}' and content_type '{content_type or '(empty)'}'."
             )
-    target_ext, payload = _normalize_image_for_storage(ext=ext, content=content)
-    rel_dir = "images"
-    if subdir:
-        clean_subdir = "/".join(
-            part.strip() for part in str(subdir).strip().strip("/").split("/") if part.strip()
-        )
-        if clean_subdir:
-            rel_dir = f"images/{clean_subdir}"
-    rel = f"{rel_dir}/{product_id}{target_ext}"
-    abs_path = _resolve_rel_path(rel)
-    abs_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(abs_path, "wb") as f:
-        f.write(payload)
-    return rel
+    variants = _normalize_image_variants_for_storage(ext=ext, content=content)
+    rel_suffix = _normalize_image_rel_suffix(subdir)
+    webp_rel = f"images/webp{rel_suffix}/{product_id}.webp"
+    jpg_rel = f"images/jpg{rel_suffix}/{product_id}.jpg"
+
+    for rel_path, payload in [
+        (webp_rel, variants["webp"]),
+        (jpg_rel, variants["jpg"]),
+    ]:
+        abs_path = _resolve_rel_path(rel_path)
+        abs_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(abs_path, "wb") as f:
+            f.write(payload)
+
+    # 默认主链路返回 webp，用于前端优先加载；jpg 作为并存回退资源。
+    return webp_rel
 
 
-def _normalize_image_for_storage(ext: str, content: bytes) -> tuple[str, bytes]:
-    """
-    存储侧规范：
-    - JPEG/JPG: 保持原样（仅统一后缀为 .jpg）
-    - HEIC/HEIF/PNG/WEBP/GIF: 转为 .jpg，避免浏览器兼容性问题
-    """
+def _normalize_image_rel_suffix(subdir: str | None) -> str:
+    if not subdir:
+        return ""
+    clean_subdir = "/".join(
+        part.strip() for part in str(subdir).strip().strip("/").split("/") if part.strip()
+    )
+    if not clean_subdir:
+        return ""
+    return f"/{clean_subdir}"
+
+
+def _normalize_image_variants_for_storage(ext: str, content: bytes) -> dict[str, bytes]:
     source_ext = str(ext or "").lower().strip()
-    if source_ext in {".jpg", ".jpeg"}:
-        return ".jpg", content
-    if source_ext in {".heic", ".heif", ".png", ".webp", ".gif"}:
-        return ".jpg", _convert_image_to_jpeg(content=content, source_ext=source_ext)
-    raise ValueError(f"Unsupported image extension for storage normalization: '{source_ext}'.")
+    if source_ext not in ALLOWED_IMAGE_EXTS:
+        raise ValueError(f"Unsupported image extension for storage normalization: '{source_ext}'.")
+
+    normalized = _decode_image_for_storage(content=content, source_ext=source_ext)
+    try:
+        jpg_out = io.BytesIO()
+        normalized.save(jpg_out, format="JPEG", quality=88, optimize=True)
+        webp_out = io.BytesIO()
+        normalized.save(webp_out, format="WEBP", quality=82, method=6)
+        return {"jpg": jpg_out.getvalue(), "webp": webp_out.getvalue()}
+    except Exception as e:
+        raise ValueError(f"Failed to encode storage image variants from {source_ext}: {e}") from e
 
 
-def _convert_image_to_jpeg(content: bytes, source_ext: str) -> bytes:
+def _decode_image_for_storage(content: bytes, source_ext: str):
     try:
         from PIL import Image, ImageOps, ImageSequence
     except Exception as e:  # pragma: no cover
@@ -119,12 +136,9 @@ def _convert_image_to_jpeg(content: bytes, source_ext: str) -> bytes:
             img = bg
         elif img.mode != "RGB":
             img = img.convert("RGB")
-
-        out = io.BytesIO()
-        img.save(out, format="JPEG", quality=90, optimize=True)
-        return out.getvalue()
+        return img
     except Exception as e:
-        raise ValueError(f"Failed to convert source image ({source_ext}) to JPEG: {e}") from e
+        raise ValueError(f"Failed to normalize source image ({source_ext}) for storage: {e}") from e
 
 def save_product_json(product_id: str, doc: dict, category: str | None = None) -> str:
     ensure_dirs()
@@ -224,6 +238,45 @@ def remove_rel_path(rel_path: str | None) -> bool:
         return True
     return False
 
+
+def image_variant_rel_paths(image_rel: str | None) -> list[str]:
+    rel = str(image_rel or "").strip().lstrip("/")
+    if not rel:
+        return []
+
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def append(path_value: str) -> None:
+        value = str(path_value or "").strip().lstrip("/")
+        if not value or value in seen:
+            return
+        seen.add(value)
+        out.append(value)
+
+    append(rel)
+    if not rel.startswith("images/"):
+        return out
+
+    suffix = Path(rel).suffix.lower()
+    if suffix not in {".jpg", ".jpeg", ".webp"}:
+        return out
+
+    rel_sub = rel[len("images/") :]
+    if rel_sub.startswith("webp/"):
+        rel_sub = rel_sub[len("webp/") :]
+    elif rel_sub.startswith("jpg/"):
+        rel_sub = rel_sub[len("jpg/") :]
+
+    stem_rel = str(Path(rel_sub).with_suffix("")).replace("\\", "/").strip("/")
+    if not stem_rel:
+        return out
+
+    append(f"images/webp/{stem_rel}.webp")
+    append(f"images/jpg/{stem_rel}.jpg")
+    return out
+
+
 def remove_product_images(product_id: str, image_path: str | None = None) -> tuple[int, list[str]]:
     """
     删除产品主图 + 同 trace_id 的图片变体（例如 .jpg/.png/.webp）。
@@ -265,27 +318,44 @@ def move_image_to_category(
     if not image_rel:
         return image_rel
 
-    try:
-        source_abs = _resolve_rel_path(image_rel)
-    except ValueError:
-        return image_rel
-    if not source_abs.exists() or not source_abs.is_file():
-        return image_rel
-
-    source_ext = source_abs.suffix.lower().strip() or ".jpg"
     safe_category = _safe_storage_segment(category, fallback="unknown")
     safe_image_id = _safe_storage_segment(image_id, fallback=new_id())
-    target_rel = f"images/{safe_category}/{safe_image_id}{source_ext}"
-    target_abs = _resolve_rel_path(target_rel)
-    target_abs.parent.mkdir(parents=True, exist_ok=True)
+    candidates = image_variant_rel_paths(image_rel)
+    if not candidates:
+        return image_rel
 
-    if source_abs.resolve() == target_abs.resolve():
-        return target_rel
+    primary_target_rel = f"images/webp/{safe_category}/{safe_image_id}.webp"
+    fallback_target_rel = f"images/jpg/{safe_category}/{safe_image_id}.jpg"
 
-    if target_abs.exists() and target_abs.is_file():
-        target_abs.unlink()
-    shutil.move(str(source_abs), str(target_abs))
-    return target_rel
+    for candidate in candidates:
+        try:
+            source_abs = _resolve_rel_path(candidate)
+        except ValueError:
+            continue
+        if not source_abs.exists() or not source_abs.is_file():
+            continue
+
+        source_ext = source_abs.suffix.lower().strip()
+        if source_ext == ".webp":
+            target_rel = primary_target_rel
+        elif source_ext in {".jpg", ".jpeg"}:
+            target_rel = fallback_target_rel
+        else:
+            continue
+
+        target_abs = _resolve_rel_path(target_rel)
+        target_abs.parent.mkdir(parents=True, exist_ok=True)
+        if source_abs.resolve() == target_abs.resolve():
+            continue
+        if target_abs.exists() and target_abs.is_file():
+            target_abs.unlink()
+        shutil.move(str(source_abs), str(target_abs))
+
+    if exists_rel_path(primary_target_rel):
+        return primary_target_rel
+    if exists_rel_path(fallback_target_rel):
+        return fallback_target_rel
+    return image_rel
 
 def remove_rel_dir(rel_path: str | None) -> tuple[int, int]:
     if not rel_path:

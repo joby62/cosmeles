@@ -34,6 +34,7 @@ from app.services.storage import (
     remove_rel_path,
     remove_rel_dir,
     remove_product_images,
+    image_variant_rel_paths,
     cleanup_orphan_storage,
     save_product_route_mapping,
     product_route_mapping_rel_path,
@@ -649,9 +650,8 @@ def cleanup_orphan_storage_assets(payload: OrphanStorageCleanupRequest, db: Sess
         if not pid_text:
             continue
         keep_product_ids.add(pid_text)
-        image_rel = str(image_path or "").strip().lstrip("/")
-        if image_rel:
-            keep_image_paths.add(image_rel)
+        for rel_path in image_variant_rel_paths(str(image_path or "").strip()):
+            keep_image_paths.add(rel_path)
 
     result = cleanup_orphan_storage(
         keep_product_ids=keep_product_ids,
@@ -678,19 +678,24 @@ def download_all_product_images(db: Session = Depends(get_db)):
 
     with zipfile.ZipFile(zip_buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
         for product_id, image_path in rows:
-            rel_path = str(image_path or "").strip().lstrip("/")
-            if not rel_path:
+            primary_rel = str(image_path or "").strip().lstrip("/")
+            if not primary_rel:
                 continue
-            if rel_path in seen_paths:
-                continue
-            seen_paths.add(rel_path)
-            try:
-                image_bytes = read_rel_bytes(rel_path)
-            except Exception as exc:
-                missing_paths.append(f"{product_id}:{rel_path}:{exc}")
-                continue
-            zf.writestr(rel_path, image_bytes)
-            added_count += 1
+            for rel_path in image_variant_rel_paths(primary_rel):
+                if rel_path in seen_paths:
+                    continue
+                seen_paths.add(rel_path)
+                is_primary = rel_path == primary_rel
+                if not is_primary and not exists_rel_path(rel_path):
+                    continue
+                try:
+                    image_bytes = read_rel_bytes(rel_path)
+                except Exception as exc:
+                    if is_primary:
+                        missing_paths.append(f"{product_id}:{rel_path}:{exc}")
+                    continue
+                zf.writestr(rel_path, image_bytes)
+                added_count += 1
 
     if missing_paths:
         preview = "; ".join(missing_paths[:20])
