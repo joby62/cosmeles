@@ -1026,7 +1026,7 @@ export default function GitDashboardClient({
 
           <div className="rounded-xl border border-black/10 bg-white/86 px-3 py-2">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-[10px] tracking-[0.06em] text-black/52 uppercase">{pickLang(lang, "触碰反馈", "Touch Feedback")}</p>
+              <p className="text-[10px] tracking-[0.06em] text-black/52 uppercase">{pickLang(lang, "时段详情", "Slot Detail")}</p>
               {activeHeatCell ? (
                 <button
                   type="button"
