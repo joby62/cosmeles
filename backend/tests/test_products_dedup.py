@@ -4,9 +4,11 @@ import pytest
 
 from app.routes import ingest as ingest_routes
 from app.routes import products as products_routes
+from backend.tests.support_images import VALID_TEST_IMAGE_BYTES, install_fake_save_image
 
 
 def _install_fake_ingest_pipeline(monkeypatch: pytest.MonkeyPatch, plans: list[dict]) -> None:
+    install_fake_save_image(monkeypatch, ingest_routes)
     by_trace: dict[str, dict] = {}
 
     def fake_stage1(_image_rel: str, trace_id: str, event_callback=None):
@@ -50,12 +52,15 @@ def _install_fake_ingest_pipeline(monkeypatch: pytest.MonkeyPatch, plans: list[d
                 "ingredients": [
                     {
                         "name": ingredient,
+                        "rank": idx + 1,
+                        "abundance_level": "major" if idx == 0 else "trace",
+                        "order_confidence": 92 if idx == 0 else 76,
                         "type": "活性成分",
                         "functions": ["清洁"],
                         "risk": "low",
                         "notes": "",
                     }
-                    for ingredient in plan["ingredients"]
+                    for idx, ingredient in enumerate(plan["ingredients"])
                 ],
                 "evidence": {"doubao_raw": ""},
             },
@@ -71,7 +76,7 @@ def _install_fake_ingest_pipeline(monkeypatch: pytest.MonkeyPatch, plans: list[d
 def _ingest_one(client, image_name: str = "sample.jpg") -> str:
     stage1 = client.post(
         "/api/upload/stage1",
-        files={"image": (image_name, b"fake-jpeg-bytes", "image/jpeg")},
+        files={"image": (image_name, VALID_TEST_IMAGE_BYTES, "image/png")},
     )
     assert stage1.status_code == 200
     trace_id = stage1.json()["trace_id"]

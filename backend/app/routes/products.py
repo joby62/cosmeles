@@ -42,6 +42,7 @@ from app.services.storage import (
     remove_rel_dir,
     remove_product_images,
     image_variant_rel_paths,
+    preferred_image_rel_path,
     cleanup_orphan_storage,
     save_product_route_mapping,
     product_route_mapping_rel_path,
@@ -174,7 +175,13 @@ def get_product(product_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Not found")
     if not exists_rel_path(rec.json_path):
         raise HTTPException(status_code=404, detail="Product json file is missing.")
-    return load_json(rec.json_path)
+    doc = load_json(rec.json_path)
+    preferred_image_rel = preferred_image_rel_path(str(rec.image_path or "").strip())
+    if preferred_image_rel and isinstance(doc, dict):
+        evidence = doc.setdefault("evidence", {})
+        if isinstance(evidence, dict):
+            evidence["image_path"] = preferred_image_rel
+    return doc
 
 @router.patch("/products/{product_id}", response_model=ProductCard)
 def update_product(product_id: str, payload: ProductUpdateRequest, db: Session = Depends(get_db)):
@@ -3831,6 +3838,7 @@ def _row_to_card(r: ProductIndex) -> ProductCard:
     except json.JSONDecodeError:
         tags = []
 
+    preferred_image_rel = preferred_image_rel_path(str(r.image_path or "").strip())
     return ProductCard(
         id=r.id,
         category=r.category,
@@ -3838,6 +3846,6 @@ def _row_to_card(r: ProductIndex) -> ProductCard:
         name=r.name,
         one_sentence=r.one_sentence,
         tags=tags,
-        image_url=f"/{r.image_path}" if r.image_path else None,
+        image_url=f"/{preferred_image_rel}" if preferred_image_rel else None,
         created_at=r.created_at,
     )

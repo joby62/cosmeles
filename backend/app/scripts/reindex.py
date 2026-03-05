@@ -39,12 +39,32 @@ def _as_storage_rel(path: str | Path) -> str:
 
 
 def _guess_image_path(json_file: Path) -> Optional[str]:
-    # Try same stem under storage/images
+    # Prefer webp first, fallback to jpg for legacy paths.
     images_dir = Path(settings.storage_dir) / "images"
-    for ext in [".jpg", ".jpeg", ".png", ".webp"]:
-        cand = images_dir / (json_file.stem + ext)
+    direct_candidates = [
+        images_dir / "webp" / f"{json_file.stem}.webp",
+        images_dir / "jpg" / f"{json_file.stem}.jpg",
+        images_dir / f"{json_file.stem}.webp",
+        images_dir / f"{json_file.stem}.jpg",
+        images_dir / f"{json_file.stem}.jpeg",
+        images_dir / f"{json_file.stem}.png",
+    ]
+    for cand in direct_candidates:
         if cand.exists():
-            return f"images/{cand.name}"
+            return cand.resolve().relative_to(Path(settings.storage_dir).resolve()).as_posix()
+
+    for cand in images_dir.rglob(f"{json_file.stem}.webp"):
+        if cand.exists():
+            return cand.resolve().relative_to(Path(settings.storage_dir).resolve()).as_posix()
+    for cand in images_dir.rglob(f"{json_file.stem}.jpg"):
+        if cand.exists():
+            return cand.resolve().relative_to(Path(settings.storage_dir).resolve()).as_posix()
+    for cand in images_dir.rglob(f"{json_file.stem}.jpeg"):
+        if cand.exists():
+            return cand.resolve().relative_to(Path(settings.storage_dir).resolve()).as_posix()
+    for cand in images_dir.rglob(f"{json_file.stem}.png"):
+        if cand.exists():
+            return cand.resolve().relative_to(Path(settings.storage_dir).resolve()).as_posix()
     return None
 
 

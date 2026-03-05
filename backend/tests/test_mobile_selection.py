@@ -1,33 +1,13 @@
-import base64
-from pathlib import Path
-
 import pytest
 from fastapi.testclient import TestClient
 
 from app.routes import ingest as ingest_routes
 from app.routes import products as products_routes
-from app.settings import settings
-
-_VALID_TEST_IMAGE_BYTES = base64.b64decode(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+b5WQAAAAASUVORK5CYII="
-)
+from backend.tests.support_images import VALID_TEST_IMAGE_BYTES, install_fake_save_image
 
 
 def _install_fake_ingest_pipeline(monkeypatch: pytest.MonkeyPatch, plan: dict) -> None:
-    def fake_save_image(product_id: str, filename: str, content: bytes, content_type: str | None = None, subdir: str | None = None):
-        _ = content_type
-        raw_suffix = Path(filename or "").suffix.lower()
-        suffix = raw_suffix if raw_suffix in {".jpg", ".jpeg", ".png", ".webp"} else ".jpg"
-        rel_dir = "images"
-        if subdir:
-            clean = "/".join(part.strip() for part in str(subdir).split("/") if part.strip())
-            if clean:
-                rel_dir = f"{rel_dir}/{clean}"
-        rel_path = f"{rel_dir}/{product_id}{suffix}"
-        abs_path = Path(settings.storage_dir) / rel_path
-        abs_path.parent.mkdir(parents=True, exist_ok=True)
-        abs_path.write_bytes(content if content else b"test-image")
-        return rel_path
+    install_fake_save_image(monkeypatch, ingest_routes)
 
     def fake_stage1(_image_rel: str, trace_id: str, event_callback=None):
         if event_callback:
@@ -79,7 +59,6 @@ def _install_fake_ingest_pipeline(monkeypatch: pytest.MonkeyPatch, plan: dict) -
             "artifact": f"doubao_runs/{trace_id}/stage2_struct.json",
         }
 
-    monkeypatch.setattr(ingest_routes, "save_image", fake_save_image)
     monkeypatch.setattr(ingest_routes, "_analyze_with_doubao_stage1", fake_stage1)
     monkeypatch.setattr(ingest_routes, "_analyze_with_doubao_stage2", fake_stage2)
 
@@ -87,7 +66,7 @@ def _install_fake_ingest_pipeline(monkeypatch: pytest.MonkeyPatch, plan: dict) -
 def _ingest_one(client, image_name: str = "sample.jpg") -> str:
     stage1 = client.post(
         "/api/upload/stage1",
-        files={"image": (image_name, _VALID_TEST_IMAGE_BYTES, "image/png")},
+        files={"image": (image_name, VALID_TEST_IMAGE_BYTES, "image/png")},
     )
     assert stage1.status_code == 200
     trace_id = stage1.json()["trace_id"]

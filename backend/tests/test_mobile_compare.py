@@ -5,9 +5,12 @@ import pytest
 
 from app.routes import ingest as ingest_routes
 from app.routes import mobile as mobile_routes
+from backend.tests.support_images import VALID_TEST_IMAGE_BYTES, install_fake_save_image
 
 
 def _install_fake_ingest_pipeline(monkeypatch: pytest.MonkeyPatch, plan: dict) -> None:
+    install_fake_save_image(monkeypatch, ingest_routes, mobile_routes)
+
     def fake_stage1(_image_rel: str, trace_id: str, event_callback=None):
         if event_callback:
             event_callback({"type": "step", "stage": "stage1_vision", "message": "mock"})
@@ -42,6 +45,9 @@ def _install_fake_ingest_pipeline(monkeypatch: pytest.MonkeyPatch, plan: dict) -
                 "ingredients": [
                     {
                         "name": "甘油",
+                        "rank": 1,
+                        "abundance_level": "major",
+                        "order_confidence": 95,
                         "type": "保湿剂",
                         "functions": ["保湿"],
                         "risk": "low",
@@ -49,6 +55,9 @@ def _install_fake_ingest_pipeline(monkeypatch: pytest.MonkeyPatch, plan: dict) -
                     },
                     {
                         "name": "椰油酰胺丙基甜菜碱",
+                        "rank": 2,
+                        "abundance_level": "trace",
+                        "order_confidence": 82,
                         "type": "表活",
                         "functions": ["清洁"],
                         "risk": "mid",
@@ -69,7 +78,7 @@ def _install_fake_ingest_pipeline(monkeypatch: pytest.MonkeyPatch, plan: dict) -
 def _ingest_one(client, image_name: str = "sample.jpg") -> str:
     stage1 = client.post(
         "/api/upload/stage1",
-        files={"image": (image_name, b"fake-jpeg-bytes", "image/jpeg")},
+        files={"image": (image_name, VALID_TEST_IMAGE_BYTES, "image/png")},
     )
     assert stage1.status_code == 200
     trace_id = stage1.json()["trace_id"]
@@ -160,7 +169,7 @@ def test_mobile_compare_stream_success_and_fetch_result(test_client, monkeypatch
     upload = client.post(
         "/api/mobile/compare/current-product/upload",
         data={"category": "shampoo", "brand": "CurrentBrand", "name": "CurrentName"},
-        files={"image": ("current.jpg", b"fake-current-jpeg", "image/jpeg")},
+        files={"image": ("current.png", VALID_TEST_IMAGE_BYTES, "image/png")},
     )
     assert upload.status_code == 200
     upload_id = upload.json()["upload_id"]
@@ -299,7 +308,7 @@ def test_mobile_compare_session_detail_fallback_to_result_when_session_file_miss
     upload = client.post(
         "/api/mobile/compare/current-product/upload",
         data={"category": "shampoo", "brand": "FallbackBrand", "name": "FallbackUse"},
-        files={"image": ("fallback-current.jpg", b"fake-current-jpeg", "image/jpeg")},
+        files={"image": ("fallback-current.png", VALID_TEST_IMAGE_BYTES, "image/png")},
     )
     assert upload.status_code == 200
     upload_id = upload.json()["upload_id"]
@@ -498,7 +507,7 @@ def test_mobile_compare_bootstrap_product_library_marks_recommendation_and_most_
     upload = client.post(
         "/api/mobile/compare/current-product/upload",
         data={"category": "shampoo", "brand": usage_brand, "name": usage_name},
-        files={"image": ("usage.jpg", b"fake-current-jpeg", "image/jpeg")},
+        files={"image": ("usage.png", VALID_TEST_IMAGE_BYTES, "image/png")},
     )
     assert upload.status_code == 200
     upload_id = upload.json()["upload_id"]
@@ -559,7 +568,7 @@ def test_mobile_compare_stream_three_targets_runs_three_pairwise_ai_calls(test_c
     upload = client.post(
         "/api/mobile/compare/current-product/upload",
         data={"category": "shampoo", "brand": "UploadBrand", "name": "UploadName"},
-        files={"image": ("upload.jpg", b"fake-current-jpeg", "image/jpeg")},
+        files={"image": ("upload.png", VALID_TEST_IMAGE_BYTES, "image/png")},
     )
     assert upload.status_code == 200
     upload_id = upload.json()["upload_id"]

@@ -84,6 +84,7 @@ from app.services.storage import (
     load_json,
     new_id,
     now_iso,
+    preferred_image_rel_path,
     remove_rel_dir,
     save_doubao_artifact,
     save_image,
@@ -747,9 +748,10 @@ def get_mobile_wiki_product_detail(
 
     try:
         raw_doc = load_json(json_path)
+        preferred_image_rel = preferred_image_rel_path(str(row.image_path or "").strip())
         normalized_doc = normalize_doc(
             raw_doc,
-            image_rel_path=str(row.image_path or "").strip() or None,
+            image_rel_path=preferred_image_rel,
             doubao_raw=str(raw_doc.get("evidence", {}).get("doubao_raw") or ""),
         )
         doc = ProductDoc.model_validate(normalized_doc)
@@ -3658,7 +3660,8 @@ def _pick_product_row(db: Session, category: str) -> ProductIndex | None:
 
 
 def _row_to_product_card(row: ProductIndex) -> ProductCard:
-    image_url = f"/{row.image_path.lstrip('/')}" if row.image_path else None
+    preferred_image_rel = preferred_image_rel_path(str(row.image_path or "").strip())
+    image_url = f"/{preferred_image_rel.lstrip('/')}" if preferred_image_rel else None
     tags: list[str] = []
     raw_tags = str(row.tags_json or "").strip()
     if raw_tags:

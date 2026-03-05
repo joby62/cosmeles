@@ -1,6 +1,7 @@
 from app.schemas import ProductDoc
 
-def normalize_doc(doc: dict, image_rel_path: str, doubao_raw: str | None = None) -> dict:
+
+def normalize_doc(doc: dict, image_rel_path: str | None, doubao_raw: str | None = None) -> dict:
     # 1) 补充 evidence
     doc.setdefault("evidence", {})
     doc["evidence"]["image_path"] = image_rel_path

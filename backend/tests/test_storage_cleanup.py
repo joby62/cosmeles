@@ -5,9 +5,12 @@ from pathlib import Path
 import pytest
 
 from app.routes import ingest as ingest_routes
+from backend.tests.support_images import VALID_TEST_IMAGE_BYTES, install_fake_save_image
 
 
 def _install_fake_ingest_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
+    install_fake_save_image(monkeypatch, ingest_routes)
+
     def fake_stage1(_image_rel: str, trace_id: str, event_callback=None):
         if event_callback:
             event_callback({"type": "step", "stage": "stage1_vision", "message": "mock"})
@@ -37,6 +40,9 @@ def _install_fake_ingest_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
                 "ingredients": [
                     {
                         "name": "甘氨酸",
+                        "rank": 1,
+                        "abundance_level": "major",
+                        "order_confidence": 94,
                         "type": "活性成分",
                         "functions": ["清洁"],
                         "risk": "low",
@@ -57,7 +63,7 @@ def _install_fake_ingest_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
 def _ingest_one(client, image_name: str = "sample.jpg") -> str:
     stage1 = client.post(
         "/api/upload/stage1",
-        files={"image": (image_name, b"fake-jpeg-bytes", "image/jpeg")},
+        files={"image": (image_name, VALID_TEST_IMAGE_BYTES, "image/png")},
     )
     assert stage1.status_code == 200
     trace_id = stage1.json()["trace_id"]

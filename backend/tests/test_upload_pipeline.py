@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from app.routes import ingest as ingest_routes
-from app.services import storage as storage_service
+from backend.tests.support_images import VALID_TEST_IMAGE_BYTES, install_fake_save_image
 
 
 def _read_json(path: Path) -> dict:
@@ -13,6 +13,7 @@ def _read_json(path: Path) -> dict:
 
 def test_stage1_saves_context_artifact(test_client, monkeypatch: pytest.MonkeyPatch):
     client, storage_dir = test_client
+    install_fake_save_image(monkeypatch, ingest_routes)
 
     def fake_stage1(image_rel: str, trace_id: str):
         assert image_rel.startswith("images/")
@@ -26,7 +27,7 @@ def test_stage1_saves_context_artifact(test_client, monkeypatch: pytest.MonkeyPa
 
     resp = client.post(
         "/api/upload/stage1",
-        files={"image": ("sample.jpg", b"fake-jpeg-bytes", "image/jpeg")},
+        files={"image": ("sample.png", VALID_TEST_IMAGE_BYTES, "image/png")},
     )
     assert resp.status_code == 200
     body = resp.json()
@@ -44,9 +45,10 @@ def test_stage1_saves_context_artifact(test_client, monkeypatch: pytest.MonkeyPa
 
 def test_stage1_keeps_heic_extension_in_storage(test_client, monkeypatch: pytest.MonkeyPatch):
     client, storage_dir = test_client
+    install_fake_save_image(monkeypatch, ingest_routes)
 
     def fake_stage1(image_rel: str, trace_id: str):
-        assert image_rel.endswith(".jpg")
+        assert image_rel.endswith(".webp")
         return {
             "vision_text": "【品牌】测试品牌\n【产品名】测试产品\n【成分表原文】水、甘油",
             "model": "doubao-stage1-mini",
@@ -54,24 +56,25 @@ def test_stage1_keeps_heic_extension_in_storage(test_client, monkeypatch: pytest
         }
 
     monkeypatch.setattr(ingest_routes, "_analyze_with_doubao_stage1", fake_stage1)
-    monkeypatch.setattr(storage_service, "_convert_image_to_jpeg", lambda content, source_ext: b"jpeg-converted")
 
     resp = client.post(
         "/api/upload/stage1",
-        files={"image": ("IMG_4396.HEIC", b"fake-heic-bytes", "image/heic")},
+        files={"image": ("IMG_4396.HEIC", VALID_TEST_IMAGE_BYTES, "image/heic")},
     )
     assert resp.status_code == 200
     trace_id = resp.json()["trace_id"]
-    image_path = storage_dir / "images" / f"{trace_id}.jpg"
-    assert image_path.exists()
-    assert image_path.read_bytes() == b"jpeg-converted"
+    webp_path = storage_dir / "images" / "webp" / f"{trace_id}.webp"
+    jpg_path = storage_dir / "images" / "jpg" / f"{trace_id}.jpg"
+    assert webp_path.exists()
+    assert jpg_path.exists()
 
 
 def test_stage1_converts_png_to_jpg_in_storage(test_client, monkeypatch: pytest.MonkeyPatch):
     client, storage_dir = test_client
+    install_fake_save_image(monkeypatch, ingest_routes)
 
     def fake_stage1(image_rel: str, trace_id: str):
-        assert image_rel.endswith(".jpg")
+        assert image_rel.endswith(".webp")
         return {
             "vision_text": "【品牌】测试品牌\n【产品名】测试产品\n【成分表原文】水、甘油",
             "model": "doubao-stage1-mini",
@@ -79,17 +82,17 @@ def test_stage1_converts_png_to_jpg_in_storage(test_client, monkeypatch: pytest.
         }
 
     monkeypatch.setattr(ingest_routes, "_analyze_with_doubao_stage1", fake_stage1)
-    monkeypatch.setattr(storage_service, "_convert_image_to_jpeg", lambda content, source_ext: b"png-to-jpeg")
 
     resp = client.post(
         "/api/upload/stage1",
-        files={"image": ("sample.png", b"fake-png-bytes", "image/png")},
+        files={"image": ("sample.png", VALID_TEST_IMAGE_BYTES, "image/png")},
     )
     assert resp.status_code == 200
     trace_id = resp.json()["trace_id"]
-    image_path = storage_dir / "images" / f"{trace_id}.jpg"
-    assert image_path.exists()
-    assert image_path.read_bytes() == b"png-to-jpeg"
+    webp_path = storage_dir / "images" / "webp" / f"{trace_id}.webp"
+    jpg_path = storage_dir / "images" / "jpg" / f"{trace_id}.jpg"
+    assert webp_path.exists()
+    assert jpg_path.exists()
 
 
 def test_stage1_rejects_unsupported_extension_with_unknown_content_type(test_client):
@@ -104,6 +107,7 @@ def test_stage1_rejects_unsupported_extension_with_unknown_content_type(test_cli
 
 def test_stage2_creates_product_and_exposes_in_products_api(test_client, monkeypatch: pytest.MonkeyPatch):
     client, _ = test_client
+    install_fake_save_image(monkeypatch, ingest_routes)
 
     def fake_stage1(image_rel: str, trace_id: str):
         return {
@@ -126,6 +130,9 @@ def test_stage2_creates_product_and_exposes_in_products_api(test_client, monkeyp
                 "ingredients": [
                     {
                         "name": "椰油酰胺丙基甜菜碱",
+                        "rank": 1,
+                        "abundance_level": "major",
+                        "order_confidence": 95,
                         "type": "表活",
                         "functions": "清洁",
                         "risk": "low",
@@ -144,7 +151,7 @@ def test_stage2_creates_product_and_exposes_in_products_api(test_client, monkeyp
 
     stage1 = client.post(
         "/api/upload/stage1",
-        files={"image": ("sample.jpg", b"fake-jpeg-bytes", "image/jpeg")},
+        files={"image": ("sample.png", VALID_TEST_IMAGE_BYTES, "image/png")},
     )
     assert stage1.status_code == 200
     trace_id = stage1.json()["trace_id"]
@@ -182,6 +189,7 @@ def test_stage2_returns_404_when_context_missing(test_client):
 
 def test_stage1_requires_supplement_then_reruns_with_two_images(test_client, monkeypatch: pytest.MonkeyPatch):
     client, _ = test_client
+    install_fake_save_image(monkeypatch, ingest_routes)
     calls: list[dict[str, object]] = []
 
     def fake_stage1(image_rel: str, trace_id: str, image_paths=None):
@@ -213,6 +221,9 @@ def test_stage1_requires_supplement_then_reruns_with_two_images(test_client, mon
                 "ingredients": [
                     {
                         "name": "甘油",
+                        "rank": 1,
+                        "abundance_level": "major",
+                        "order_confidence": 92,
                         "type": "保湿",
                         "functions": ["保湿"],
                         "risk": "low",
@@ -231,7 +242,7 @@ def test_stage1_requires_supplement_then_reruns_with_two_images(test_client, mon
 
     stage1 = client.post(
         "/api/upload/stage1",
-        files={"image": ("sample-a.jpg", b"fake-jpeg-bytes-a", "image/jpeg")},
+        files={"image": ("sample-a.png", VALID_TEST_IMAGE_BYTES, "image/png")},
     )
     assert stage1.status_code == 200
     stage1_body = stage1.json()
@@ -246,7 +257,7 @@ def test_stage1_requires_supplement_then_reruns_with_two_images(test_client, mon
     supplement = client.post(
         "/api/upload/stage1/supplement",
         data={"trace_id": trace_id},
-        files={"image": ("sample-b.jpg", b"fake-jpeg-bytes-b", "image/jpeg")},
+        files={"image": ("sample-b.png", VALID_TEST_IMAGE_BYTES, "image/png")},
     )
     assert supplement.status_code == 200
     supplement_body = supplement.json()
@@ -266,6 +277,7 @@ def test_stage1_requires_supplement_then_reruns_with_two_images(test_client, mon
 
 def test_stage1_and_stage2_stream_endpoints(test_client, monkeypatch: pytest.MonkeyPatch):
     client, _ = test_client
+    install_fake_save_image(monkeypatch, ingest_routes)
 
     def fake_stage1(image_rel: str, trace_id: str, event_callback=None):
         if event_callback:
@@ -291,7 +303,18 @@ def test_stage1_and_stage2_stream_endpoints(test_client, monkeypatch: pytest.Mon
                     "who_for": ["油性头皮"],
                     "who_not_for": [],
                 },
-                "ingredients": [],
+                "ingredients": [
+                    {
+                        "name": "甘油",
+                        "rank": 1,
+                        "abundance_level": "major",
+                        "order_confidence": 90,
+                        "type": "保湿剂",
+                        "functions": ["保湿"],
+                        "risk": "low",
+                        "notes": "",
+                    }
+                ],
                 "evidence": {"doubao_raw": ""},
             },
             "struct_text": "{\"ok\":true}",
@@ -304,7 +327,7 @@ def test_stage1_and_stage2_stream_endpoints(test_client, monkeypatch: pytest.Mon
 
     s1 = client.post(
         "/api/upload/stage1/stream",
-        files={"image": ("sample.jpg", b"fake-jpeg-bytes", "image/jpeg")},
+        files={"image": ("sample.png", VALID_TEST_IMAGE_BYTES, "image/png")},
     )
     assert s1.status_code == 200
     assert "event: progress" in s1.text

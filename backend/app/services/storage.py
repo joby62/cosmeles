@@ -277,6 +277,28 @@ def image_variant_rel_paths(image_rel: str | None) -> list[str]:
     return out
 
 
+def preferred_image_rel_path(image_rel: str | None) -> str | None:
+    rel = str(image_rel or "").strip().lstrip("/")
+    if not rel:
+        return None
+
+    variants = image_variant_rel_paths(rel)
+    webp_rel = next((item for item in variants if item.endswith(".webp")), None)
+    jpg_rel = next((item for item in variants if item.endswith(".jpg")), None)
+
+    if webp_rel and exists_rel_path(webp_rel):
+        return webp_rel
+    if jpg_rel and exists_rel_path(jpg_rel):
+        return jpg_rel
+    if exists_rel_path(rel):
+        return rel
+    if webp_rel:
+        return webp_rel
+    if jpg_rel:
+        return jpg_rel
+    return rel
+
+
 def remove_product_images(product_id: str, image_path: str | None = None) -> tuple[int, list[str]]:
     """
     删除产品主图 + 同 trace_id 的图片变体（例如 .jpg/.png/.webp）。

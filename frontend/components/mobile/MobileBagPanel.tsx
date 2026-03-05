@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { deleteMobileBagItem, fetchMobileBagItems, type MobileBagItem } from "@/lib/api";
+import { deleteMobileBagItem, fetchMobileBagItems, resolveImageUrl, type MobileBagItem } from "@/lib/api";
 
 function formatTime(iso: string): string {
   const date = new Date(iso);
@@ -85,7 +85,7 @@ export default function MobileBagPanel() {
                       href={`/m/wiki/product/${encodeURIComponent(p.id)}`}
                       className="relative h-[84px] w-[84px] shrink-0 overflow-hidden rounded-xl bg-[#f4f5f9]"
                     >
-                      <Image src={p.image_url || `/images/${p.id}.png`} alt={p.name || p.id} fill sizes="84px" className="object-cover" />
+                      <Image src={p.image_url ? resolveImageUrl(p) : `/images/${p.id}.png`} alt={p.name || p.id} fill sizes="84px" className="object-cover" />
                     </Link>
 
                     <div className="min-w-0 flex-1">
