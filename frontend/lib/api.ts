@@ -136,6 +136,7 @@ export type IngredientLibraryDetailItem = {
   source_count: number;
   source_trace_ids: string[];
   source_samples: IngredientLibrarySourceSample[];
+  source_json: Record<string, unknown>;
   generated_at?: string | null;
   generator: Record<string, unknown>;
   profile: IngredientLibraryProfile;

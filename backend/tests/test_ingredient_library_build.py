@@ -55,8 +55,11 @@ def _install_fake_ingest_pipeline(monkeypatch: pytest.MonkeyPatch, plans: list[d
                         "functions": ["清洁"],
                         "risk": "low",
                         "notes": "",
+                        "rank": idx + 1,
+                        "abundance_level": "major" if idx == 0 else "trace",
+                        "order_confidence": 90 if idx == 0 else 78,
                     }
-                    for ingredient in plan["ingredients"]
+                    for idx, ingredient in enumerate(plan["ingredients"])
                 ],
                 "evidence": {"doubao_raw": ""},
             },
@@ -116,6 +119,12 @@ def test_build_ingredient_library_splits_same_name_by_category(test_client, monk
     def fake_run_capability_now(capability: str, input_payload: dict, trace_id: str | None = None, event_callback=None):
         assert capability == "doubao.ingredient_category_profile"
         assert input_payload.get("category") in {"bodywash", "shampoo"}
+        source_json = input_payload.get("source_json")
+        assert isinstance(source_json, dict)
+        assert isinstance(source_json.get("stats"), dict)
+        assert int(source_json["stats"].get("product_count") or 0) >= 1
+        assert int(source_json["stats"].get("mention_count") or 0) >= 1
+        assert isinstance(source_json.get("samples"), list)
         if event_callback:
             event_callback({"type": "delta", "stage": "ingredient_category_profile", "delta": "mock-delta"})
         en_map = {
@@ -325,6 +334,8 @@ def test_get_ingredient_library_item_returns_profile_detail(test_client, monkeyp
     assert item["profile"]["confidence"] == 95
     assert item["source_count"] == 1
     assert item["source_samples"]
+    assert isinstance(item["source_json"], dict)
+    assert int(item["source_json"]["stats"]["product_count"]) == 1
 
 
 def test_build_ingredient_library_second_scan_skips_without_model_call(test_client, monkeypatch: pytest.MonkeyPatch):
@@ -384,7 +395,71 @@ def test_build_ingredient_library_second_scan_skips_without_model_call(test_clie
     assert second_body["skipped"] == 1
 
 
-def test_build_ingredient_library_backfills_history_and_skips_model(test_client, monkeypatch: pytest.MonkeyPatch):
+def test_build_ingredient_library_regenerates_when_source_signature_changes(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, _ = test_client
+    plans = [
+        {
+            "category": "bodywash",
+            "brand": "Dove",
+            "name": "Body Wash Signature A",
+            "one_sentence": "A",
+            "ingredients": ["甘油", "烟酰胺"],
+        },
+        {
+            "category": "bodywash",
+            "brand": "Dove",
+            "name": "Body Wash Signature B",
+            "one_sentence": "B",
+            "ingredients": ["甘油"],
+        },
+    ]
+    _install_fake_ingest_pipeline(monkeypatch, plans)
+    _ingest_one(client, "sig-a.jpg")
+
+    call_count = {"value": 0}
+
+    def fake_run_capability_now(capability: str, input_payload: dict, trace_id: str | None = None, event_callback=None):
+        assert capability == "doubao.ingredient_category_profile"
+        call_count["value"] += 1
+        return {
+            "ingredient_name": input_payload["ingredient"],
+            "category": input_payload["category"],
+            "summary": "ok",
+            "benefits": [],
+            "risks": [],
+            "usage_tips": [],
+            "suitable_for": [],
+            "avoid_for": [],
+            "confidence": 90,
+            "reason": "ok",
+            "analysis_text": "{}",
+            "model": "doubao-seed-2-0-pro-260215",
+        }
+
+    monkeypatch.setattr(products_routes, "run_capability_now", fake_run_capability_now)
+
+    first = client.post("/api/products/ingredients/library/build", json={"category": "bodywash"})
+    assert first.status_code == 200
+    first_body = first.json()
+    assert first_body["submitted_to_model"] == 2
+    assert first_body["created"] == 2
+    assert call_count["value"] == 2
+
+    _ingest_one(client, "sig-b.jpg")
+
+    second = client.post("/api/products/ingredients/library/build", json={"category": "bodywash"})
+    assert second.status_code == 200
+    second_body = second.json()
+    assert second_body["submitted_to_model"] == 1
+    assert second_body["updated"] == 1
+    assert second_body["skipped"] >= 1
+    assert call_count["value"] == 3
+
+    glycerin_item = next(item for item in second_body["items"] if item["ingredient_name"] == "甘油")
+    assert glycerin_item["source_count"] == 2
+
+
+def test_build_ingredient_library_backfills_history_without_signature_and_regenerates(test_client, monkeypatch: pytest.MonkeyPatch):
     client, storage_dir = test_client
     plans = [
         {
@@ -439,17 +514,35 @@ def test_build_ingredient_library_backfills_history_and_skips_model(test_client,
         encoding="utf-8",
     )
 
-    def should_not_call(*args, **kwargs):
-        raise AssertionError("model should not be called for history backfilled profile")
+    call_count = {"value": 0}
 
-    monkeypatch.setattr(products_routes, "run_capability_now", should_not_call)
+    def fake_run_capability_now(capability: str, input_payload: dict, trace_id: str | None = None, event_callback=None):
+        assert capability == "doubao.ingredient_category_profile"
+        call_count["value"] += 1
+        return {
+            "ingredient_name": input_payload["ingredient"],
+            "category": input_payload["category"],
+            "summary": "历史条目重算",
+            "benefits": [],
+            "risks": [],
+            "usage_tips": [],
+            "suitable_for": [],
+            "avoid_for": [],
+            "confidence": 90,
+            "reason": "signature missing",
+            "analysis_text": "{}",
+            "model": "doubao-seed-2-0-pro-260215",
+        }
+
+    monkeypatch.setattr(products_routes, "run_capability_now", fake_run_capability_now)
 
     resp = client.post("/api/products/ingredients/library/build", json={"category": "bodywash"})
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "ok"
     assert body["backfilled_from_storage"] >= 1
-    assert body["submitted_to_model"] == 0
-    assert body["skipped"] == 1
+    assert body["submitted_to_model"] == 1
+    assert body["skipped"] == 0
     assert body["created"] == 0
-    assert body["updated"] == 0
+    assert body["updated"] == 1
+    assert call_count["value"] == 1

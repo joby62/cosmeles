@@ -235,6 +235,7 @@ class IngredientLibraryDetailItem(BaseModel):
     source_count: int = 0
     source_trace_ids: List[str] = []
     source_samples: List[IngredientLibrarySourceSample] = []
+    source_json: dict[str, Any] = Field(default_factory=dict)
     generated_at: Optional[str] = None
     generator: dict[str, Any] = Field(default_factory=dict)
     profile: IngredientLibraryProfile = Field(default_factory=IngredientLibraryProfile)

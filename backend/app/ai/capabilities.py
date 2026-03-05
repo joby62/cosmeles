@@ -351,10 +351,33 @@ def _cap_ingredient_category_profile(
 ) -> CapabilityExecutionResult:
     ingredient = _required_nonempty_str(input_payload, "ingredient")
     category = _required_nonempty_str(input_payload, "category").lower()
-    source_samples = input_payload.get("source_samples") or []
-    if not isinstance(source_samples, list):
-        raise AIServiceError(code="invalid_input", message="source_samples must be a list.", http_status=400)
-    source_samples = [item for item in source_samples if isinstance(item, dict)][:30]
+    source_json = input_payload.get("source_json")
+    if not isinstance(source_json, dict):
+        raise AIServiceError(code="invalid_input", message="source_json must be an object.", http_status=400)
+    stats = source_json.get("stats")
+    samples = source_json.get("samples")
+    if not isinstance(stats, dict):
+        raise AIServiceError(code="invalid_input", message="source_json.stats must be an object.", http_status=400)
+    if not isinstance(samples, list):
+        raise AIServiceError(code="invalid_input", message="source_json.samples must be a list.", http_status=400)
+    source_samples = [item for item in samples if isinstance(item, dict)][:30]
+    if not source_samples:
+        raise AIServiceError(code="invalid_input", message="source_json.samples should contain at least one item.", http_status=400)
+    try:
+        product_count = int(stats.get("product_count"))
+        mention_count = int(stats.get("mention_count"))
+    except Exception:
+        raise AIServiceError(
+            code="invalid_input",
+            message="source_json.stats.product_count and mention_count should be integers.",
+            http_status=400,
+        )
+    if product_count <= 0 or mention_count <= 0:
+        raise AIServiceError(
+            code="invalid_input",
+            message="source_json.stats.product_count and mention_count should be > 0.",
+            http_status=400,
+        )
 
     prompt = load_prompt("doubao.ingredient_category_profile")
     rendered_prompt = render_prompt(
@@ -362,6 +385,7 @@ def _cap_ingredient_category_profile(
         {
             "ingredient": ingredient,
             "category": category,
+            "source_json_json": json.dumps(source_json, ensure_ascii=False),
             "source_samples_json": json.dumps(source_samples, ensure_ascii=False),
         },
     )

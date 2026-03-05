@@ -78,6 +78,9 @@ from app.schemas import (
 
 router = APIRouter(prefix="/api", tags=["products"])
 
+INGREDIENT_SOURCE_SCHEMA_VERSION = "v2026-03-05.1"
+INGREDIENT_SOURCE_COOCCURRENCE_TOP_N = 15
+
 @router.get("/products", response_model=list[ProductCard])
 def list_products(
     category: str | None = Query(None),
@@ -773,7 +776,10 @@ def _build_ingredient_library_impl(
         ingredient_name = item["ingredient_name"]
         category_name = item["category"]
         source_trace_ids = sorted(item["source_trace_ids"])
-        source_count = len(source_trace_ids)
+        source_json = item["source_json"]
+        source_signature = str(item["source_signature"])
+        source_schema_version = str(item["source_schema_version"])
+        source_count = _source_product_count_from_source_json(source_json=source_json, fallback=len(source_trace_ids))
 
         storage_rel = ingredient_profile_rel_path(category_name, ingredient_id)
         index_rec = _upsert_ingredient_index_from_scan(
@@ -793,7 +799,17 @@ def _build_ingredient_library_impl(
         if not ready_storage_path:
             ready_storage_path = storage_rel
         is_ready = str(index_rec.status or "").strip().lower() == "ready"
-        if is_ready and exists_rel_path(ready_storage_path) and not force_regenerate:
+        existing_source_signature = ""
+        if is_ready and exists_rel_path(ready_storage_path):
+            existing_source_signature = _load_profile_source_signature(ready_storage_path)
+
+        if (
+            is_ready
+            and exists_rel_path(ready_storage_path)
+            and not force_regenerate
+            and existing_source_signature
+            and existing_source_signature == source_signature
+        ):
             index_rec.storage_path = ready_storage_path
             skipped += 1
             build_item = IngredientLibraryBuildItem(
@@ -817,7 +833,7 @@ def _build_ingredient_library_impl(
                     "category": category_name,
                     "index": idx,
                     "total": total,
-                    "text": f"[{idx}/{total}] 跳过已存在成分：{category_name} / {ingredient_name}",
+                    "text": f"[{idx}/{total}] 跳过（统计签名未变化）：{category_name} / {ingredient_name}",
                 },
             )
             continue
@@ -840,6 +856,7 @@ def _build_ingredient_library_impl(
                 input_payload={
                     "ingredient": ingredient_name,
                     "category": category_name,
+                    "source_json": source_json,
                     "source_samples": item["source_samples"],
                 },
                 trace_id=ingredient_id,
@@ -861,11 +878,14 @@ def _build_ingredient_library_impl(
                 "source_count": source_count,
                 "source_trace_ids": source_trace_ids,
                 "source_samples": item["source_samples"],
+                "source_json": source_json,
                 "generated_at": now_iso(),
                 "generator": {
                     "capability": "doubao.ingredient_category_profile",
                     "model": str(ai_result.get("model") or ""),
                     "prompt_key": "doubao.ingredient_category_profile",
+                    "source_signature": source_signature,
+                    "source_schema_version": source_schema_version,
                 },
                 "profile": {
                     "summary": str(ai_result.get("summary") or "").strip(),
@@ -2342,12 +2362,26 @@ def _collect_category_ingredients(
     max_sources = max(1, min(30, int(max_sources_per_ingredient)))
 
     for row in rows:
-        if not exists_rel_path(row.json_path):
-            continue
+        product_id = str(getattr(row, "id", "") or "").strip()
+        json_path = str(getattr(row, "json_path", "") or "").strip()
+        if not json_path or not exists_rel_path(json_path):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"[stage=ingredient_stats_aggregate] product_id={product_id} "
+                    f"json_missing path={json_path or '-'}"
+                ),
+            )
         try:
-            doc = load_json(row.json_path)
-        except Exception:
-            continue
+            doc = load_json(json_path)
+        except Exception as e:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"[stage=ingredient_stats_aggregate] product_id={product_id} "
+                    f"json_load_failed path={json_path} error={e}"
+                ),
+            ) from e
 
         row_category = str(getattr(row, "category", "") or "").strip().lower()
         doc_category = ""
@@ -2356,21 +2390,72 @@ def _collect_category_ingredients(
         category = row_category or doc_category or "unknown"
 
         ingredients = doc.get("ingredients")
-        if not isinstance(ingredients, list):
-            continue
+        if not isinstance(ingredients, list) or not ingredients:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"[stage=ingredient_stats_aggregate] category={category} product_id={product_id} "
+                    "ingredients should be a non-empty list."
+                ),
+            )
 
-        for raw in ingredients:
-            if isinstance(raw, dict):
-                ingredient_name = str(raw.get("name") or "").strip()
-            else:
-                ingredient_name = str(raw or "").strip()
-            if not ingredient_name:
+        product_items: list[dict[str, Any]] = []
+        issues: list[str] = []
+        for idx, raw in enumerate(ingredients, start=1):
+            if not isinstance(raw, dict):
+                issues.append(f"ingredients[{idx}] should be an object.")
                 continue
 
+            ingredient_name = str(raw.get("name") or "").strip()
             ingredient_key = _normalize_ingredient_key(ingredient_name)
+            rank = _parse_positive_int(raw.get("rank"))
+            abundance_level = _normalize_ingredient_abundance_level(
+                raw.get("abundance_level") or raw.get("abundance") or raw.get("major_minor")
+            )
+            order_confidence = _parse_ingredient_order_confidence(raw.get("order_confidence"))
+
+            item_issues: list[str] = []
+            if not ingredient_name:
+                item_issues.append(f"ingredients[{idx}].name is required.")
             if not ingredient_key:
+                item_issues.append(f"ingredients[{idx}].name should be non-empty after normalization.")
+            if rank is None:
+                item_issues.append(f"ingredients[{idx}].rank should be a positive integer.")
+            if abundance_level is None:
+                item_issues.append(f"ingredients[{idx}].abundance_level should be major|trace.")
+            if order_confidence is None:
+                item_issues.append(f"ingredients[{idx}].order_confidence should be an integer in [0,100].")
+            if item_issues:
+                issues.extend(item_issues)
                 continue
 
+            product_items.append(
+                {
+                    "ingredient_name": ingredient_name,
+                    "ingredient_key": ingredient_key,
+                    "rank": int(rank),
+                    "abundance_level": str(abundance_level),
+                    "order_confidence": int(order_confidence),
+                    "raw": raw,
+                }
+            )
+
+        if issues:
+            issue_preview = "; ".join(issues[:12])
+            if len(issues) > 12:
+                issue_preview += f"; ...(+{len(issues) - 12} more)"
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"[stage=ingredient_stats_aggregate] category={category} product_id={product_id} "
+                    f"invalid_stage2_ingredient_fields: {issue_preview}"
+                ),
+            )
+
+        product_key_to_name: dict[str, str] = {}
+        for parsed in product_items:
+            ingredient_name = str(parsed["ingredient_name"])
+            ingredient_key = str(parsed["ingredient_key"])
             ingredient_id = _build_ingredient_id(category=category, ingredient_key=ingredient_key)
             group_key = f"{category}::{ingredient_key}"
             item = grouped.get(group_key)
@@ -2382,22 +2467,255 @@ def _collect_category_ingredients(
                     "category": category,
                     "source_trace_ids": set(),
                     "source_samples": [],
+                    "_mention_count": 0,
+                    "_rank_values": [],
+                    "_major_count": 0,
+                    "_trace_count": 0,
+                    "_order_confidence_values": [],
+                    "_cooccurrence_counts": {},
+                    "_cooccurrence_names": {},
                 }
                 grouped[group_key] = item
 
-            item["source_trace_ids"].add(str(row.id))
+            item["source_trace_ids"].add(product_id)
+            item["_mention_count"] = int(item["_mention_count"]) + 1
+            item["_rank_values"].append(int(parsed["rank"]))
+            item["_order_confidence_values"].append(int(parsed["order_confidence"]))
+            if parsed["abundance_level"] == "major":
+                item["_major_count"] = int(item["_major_count"]) + 1
+            else:
+                item["_trace_count"] = int(item["_trace_count"]) + 1
             if len(item["source_samples"]) < max_sources:
                 item["source_samples"].append(
                     {
-                        "trace_id": str(row.id),
+                        "trace_id": product_id,
                         "brand": str(row.brand or "").strip(),
                         "name": str(row.name or "").strip(),
                         "one_sentence": str(row.one_sentence or "").strip(),
-                        "ingredient": raw if isinstance(raw, dict) else {"name": ingredient_name},
+                        "rank": int(parsed["rank"]),
+                        "abundance_level": str(parsed["abundance_level"]),
+                        "order_confidence": int(parsed["order_confidence"]),
+                        "ingredient": parsed["raw"],
                     }
                 )
+            if ingredient_key not in product_key_to_name:
+                product_key_to_name[ingredient_key] = ingredient_name
+
+        product_keys = sorted(product_key_to_name.keys())
+        for ingredient_key in product_keys:
+            group_key = f"{category}::{ingredient_key}"
+            item = grouped[group_key]
+            co_counts = item["_cooccurrence_counts"]
+            co_names = item["_cooccurrence_names"]
+            for other_key in product_keys:
+                if other_key == ingredient_key:
+                    continue
+                prev = int(co_counts.get(other_key) or 0)
+                co_counts[other_key] = prev + 1
+                if other_key not in co_names:
+                    co_names[other_key] = str(product_key_to_name.get(other_key) or other_key)
+
+    for item in grouped.values():
+        source_trace_ids = sorted(item["source_trace_ids"])
+        mention_count = int(item.pop("_mention_count", 0))
+        rank_values = sorted(int(v) for v in item.pop("_rank_values", []))
+        major_count = int(item.pop("_major_count", 0))
+        trace_count = int(item.pop("_trace_count", 0))
+        order_confidence_values = sorted(int(v) for v in item.pop("_order_confidence_values", []))
+        cooccurrence_counts = item.pop("_cooccurrence_counts", {})
+        cooccurrence_names = item.pop("_cooccurrence_names", {})
+
+        if mention_count <= 0 or not source_trace_ids:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"[stage=ingredient_stats_aggregate] category={item.get('category')} "
+                    f"ingredient_key={item.get('ingredient_key')} has empty aggregated stats."
+                ),
+            )
+        if len(rank_values) != mention_count or len(order_confidence_values) != mention_count:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"[stage=ingredient_stats_aggregate] category={item.get('category')} "
+                    f"ingredient_key={item.get('ingredient_key')} stats_count_mismatch "
+                    f"mention_count={mention_count} rank_values={len(rank_values)} "
+                    f"order_confidence_values={len(order_confidence_values)}"
+                ),
+            )
+
+        product_count = len(source_trace_ids)
+        source_json = {
+            "stats": {
+                "product_count": product_count,
+                "mention_count": mention_count,
+                "rank": _build_rank_stats(rank_values),
+                "abundance": _build_abundance_stats(major_count=major_count, trace_count=trace_count),
+                "order_confidence": _build_order_confidence_stats(order_confidence_values),
+                "cooccurrence_top": _build_cooccurrence_top(
+                    counts=cooccurrence_counts,
+                    names=cooccurrence_names,
+                    limit=INGREDIENT_SOURCE_COOCCURRENCE_TOP_N,
+                ),
+                "data_quality": {
+                    "missing_rank": 0,
+                    "missing_abundance": 0,
+                    "missing_order_confidence": 0,
+                    "invalid_items": 0,
+                },
+            },
+            "samples": item["source_samples"],
+        }
+        category = str(item["category"])
+        ingredient_key = str(item["ingredient_key"])
+        item["source_json"] = source_json
+        item["source_schema_version"] = INGREDIENT_SOURCE_SCHEMA_VERSION
+        item["source_signature"] = _build_ingredient_source_signature(
+            category=category,
+            ingredient_key=ingredient_key,
+            source_json=source_json,
+        )
 
     return grouped
+
+
+def _build_rank_stats(values: list[int]) -> dict[str, float | int]:
+    sorted_values = sorted(int(v) for v in values)
+    return {
+        "min": int(sorted_values[0]),
+        "max": int(sorted_values[-1]),
+        "mean": _round_stat(sum(sorted_values) / len(sorted_values)),
+        "median": _round_stat(_percentile(sorted_values, 50)),
+        "p25": _round_stat(_percentile(sorted_values, 25)),
+        "p75": _round_stat(_percentile(sorted_values, 75)),
+    }
+
+
+def _build_abundance_stats(*, major_count: int, trace_count: int) -> dict[str, float | int]:
+    total = max(0, int(major_count) + int(trace_count))
+    if total <= 0:
+        raise HTTPException(
+            status_code=422,
+            detail="[stage=ingredient_stats_aggregate] abundance stats total is zero.",
+        )
+    return {
+        "major_count": int(major_count),
+        "trace_count": int(trace_count),
+        "major_ratio": _round_stat(int(major_count) / total),
+        "trace_ratio": _round_stat(int(trace_count) / total),
+    }
+
+
+def _build_order_confidence_stats(values: list[int]) -> dict[str, float]:
+    sorted_values = sorted(int(v) for v in values)
+    return {
+        "mean": _round_stat(sum(sorted_values) / len(sorted_values)),
+        "p25": _round_stat(_percentile(sorted_values, 25)),
+        "p50": _round_stat(_percentile(sorted_values, 50)),
+        "p75": _round_stat(_percentile(sorted_values, 75)),
+    }
+
+
+def _build_cooccurrence_top(
+    *,
+    counts: dict[str, Any],
+    names: dict[str, Any],
+    limit: int,
+) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for key, count_raw in counts.items():
+        try:
+            count = int(count_raw)
+        except Exception:
+            continue
+        if count <= 0:
+            continue
+        ingredient_name = str(names.get(key) or key).strip() or str(key)
+        items.append({"ingredient": ingredient_name, "count": count})
+    items.sort(key=lambda x: (-int(x["count"]), str(x["ingredient"])))
+    return items[: max(1, int(limit))]
+
+
+def _build_ingredient_source_signature(
+    *,
+    category: str,
+    ingredient_key: str,
+    source_json: dict[str, Any],
+) -> str:
+    canonical = {
+        "schema_version": INGREDIENT_SOURCE_SCHEMA_VERSION,
+        "category": str(category or "").strip().lower(),
+        "ingredient_key": str(ingredient_key or "").strip().lower(),
+        "source_json": source_json,
+    }
+    raw = json.dumps(canonical, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+
+
+def _load_profile_source_signature(rel_path: str) -> str:
+    if not rel_path or not exists_rel_path(rel_path):
+        return ""
+    try:
+        doc = load_json(rel_path)
+    except Exception:
+        return ""
+    if not isinstance(doc, dict):
+        return ""
+    generator = doc.get("generator")
+    if not isinstance(generator, dict):
+        return ""
+    return str(generator.get("source_signature") or "").strip()
+
+
+def _source_product_count_from_source_json(*, source_json: dict[str, Any], fallback: int) -> int:
+    if not isinstance(source_json, dict):
+        return max(0, int(fallback))
+    stats = source_json.get("stats")
+    if not isinstance(stats, dict):
+        return max(0, int(fallback))
+    try:
+        value = int(stats.get("product_count"))
+    except Exception:
+        value = int(fallback)
+    return max(0, value)
+
+
+def _normalize_ingredient_abundance_level(value: Any) -> str | None:
+    text = str(value or "").strip().lower()
+    if text in {"major", "main", "primary", "主要", "主成分"}:
+        return "major"
+    if text in {"trace", "minor", "secondary", "微量", "少量"}:
+        return "trace"
+    return None
+
+
+def _parse_ingredient_order_confidence(value: Any) -> int | None:
+    try:
+        parsed = int(value)
+    except Exception:
+        return None
+    if parsed < 0 or parsed > 100:
+        return None
+    return parsed
+
+
+def _round_stat(value: float) -> float:
+    return round(float(value), 4)
+
+
+def _percentile(sorted_values: list[int], percentile: float) -> float:
+    if not sorted_values:
+        raise ValueError("sorted_values is empty.")
+    if len(sorted_values) == 1:
+        return float(sorted_values[0])
+    p = max(0.0, min(100.0, float(percentile)))
+    index = (len(sorted_values) - 1) * (p / 100.0)
+    lower = int(index)
+    upper = min(lower + 1, len(sorted_values) - 1)
+    weight = index - lower
+    lower_value = float(sorted_values[lower])
+    upper_value = float(sorted_values[upper])
+    return lower_value + (upper_value - lower_value) * weight
 
 
 def _normalize_ingredient_key(name: str) -> str:
@@ -2514,6 +2832,20 @@ def _strict_non_negative_int(value: Any, field_name: str, fallback: int | None =
     return parsed
 
 
+def _parse_optional_source_json(value: Any, field_name: str) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError(f"{field_name} should be an object.")
+    stats = value.get("stats")
+    samples = value.get("samples")
+    if not isinstance(stats, dict):
+        raise ValueError(f"{field_name}.stats should be an object.")
+    if not isinstance(samples, list):
+        raise ValueError(f"{field_name}.samples should be a list.")
+    return value
+
+
 def _to_ingredient_library_list_item(doc: dict[str, Any], rel_path: str) -> IngredientLibraryListItem:
     ingredient_id = _required_text_field(doc, "id")
     category = _required_text_field(doc, "category").lower()
@@ -2522,11 +2854,15 @@ def _to_ingredient_library_list_item(doc: dict[str, Any], rel_path: str) -> Ingr
     ingredient_name = _required_text_field(doc, "ingredient_name")
     ingredient_name_en = str(doc.get("ingredient_name_en") or "").strip() or None
     source_trace_ids = _strict_str_list(doc.get("source_trace_ids"), field_name="source_trace_ids")
-    source_count = _strict_non_negative_int(
-        doc.get("source_count"),
-        field_name="source_count",
-        fallback=len(source_trace_ids),
-    )
+    source_json = _parse_optional_source_json(doc.get("source_json"), field_name="source_json")
+    if source_json is not None:
+        source_count = _source_product_count_from_source_json(source_json=source_json, fallback=len(source_trace_ids))
+    else:
+        source_count = _strict_non_negative_int(
+            doc.get("source_count"),
+            field_name="source_count",
+            fallback=len(source_trace_ids),
+        )
 
     profile_raw = doc.get("profile")
     if not isinstance(profile_raw, dict):
@@ -2550,6 +2886,7 @@ def _to_ingredient_library_list_item(doc: dict[str, Any], rel_path: str) -> Ingr
 def _to_ingredient_library_detail_item(doc: dict[str, Any], rel_path: str) -> IngredientLibraryDetailItem:
     base = _to_ingredient_library_list_item(doc=doc, rel_path=rel_path)
     ingredient_key = str(doc.get("ingredient_key") or "").strip() or None
+    source_json = _parse_optional_source_json(doc.get("source_json"), field_name="source_json") or {}
 
     generator = doc.get("generator")
     if generator is None:
@@ -2605,6 +2942,7 @@ def _to_ingredient_library_detail_item(doc: dict[str, Any], rel_path: str) -> In
         source_count=base.source_count,
         source_trace_ids=base.source_trace_ids,
         source_samples=source_samples,
+        source_json=source_json,
         generated_at=base.generated_at,
         generator=generator,
         profile=profile,
