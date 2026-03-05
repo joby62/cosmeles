@@ -277,8 +277,50 @@ function parseCsvRows(csvText: string): MatrixCsvTestRow[] {
   return rows;
 }
 
+function parseNumericTestIdValue(raw: string): number | null {
+  const value = raw.trim();
+  if (!/^-?\d+$/.test(value)) return null;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+const testIdCollator = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
+
+export function compareMatrixTestId(a: string, b: string): number {
+  const left = a.trim();
+  const right = b.trim();
+
+  if (!left && !right) return 0;
+  if (!left) return 1;
+  if (!right) return -1;
+
+  const leftNum = parseNumericTestIdValue(left);
+  const rightNum = parseNumericTestIdValue(right);
+  if (leftNum !== null && rightNum !== null && leftNum !== rightNum) return leftNum - rightNum;
+  if (leftNum !== null && rightNum === null) return -1;
+  if (leftNum === null && rightNum !== null) return 1;
+  return testIdCollator.compare(left, right);
+}
+
+function dedupeAndSortRows(rows: MatrixCsvTestRow[]): MatrixCsvTestRow[] {
+  const dedupedById = new Map<string, MatrixCsvTestRow>();
+  const rowsWithoutId: MatrixCsvTestRow[] = [];
+
+  for (const row of rows) {
+    const testId = row.testId.trim();
+    if (!testId) {
+      rowsWithoutId.push(row);
+      continue;
+    }
+    // 相同 test_id 以最后一条为准，便于直接覆盖修正。
+    dedupedById.set(testId, { ...row, testId });
+  }
+
+  return [...dedupedById.values(), ...rowsWithoutId].sort((a, b) => compareMatrixTestId(a.testId, b.testId));
+}
+
 export function runMatrixCsvTests(csvText = MATRIX_CSV_DATA): MatrixCsvRunSummary {
-  const rows = parseCsvRows(csvText);
+  const rows = dedupeAndSortRows(parseCsvRows(csvText));
   const results: MatrixCsvTestResult[] = rows.map((row) => {
     const shampooAnswers: AnswerMap = { q1: row.q1, q2: row.q2, q3: row.q3 };
     const conditionerAnswers: AnswerMap = { c_q1: row.cQ1, c_q2: row.cQ2, c_q3: row.cQ3 };

@@ -644,9 +644,11 @@ function getBaseForFetch(): string {
     return "";
   }
 
-  // 在 Next Server/SSR 里：Node fetch 需要绝对 URL
-  // 走 nginx 容器名（docker compose 内部 DNS）
-  return process.env.INTERNAL_API_BASE || "http://nginx";
+  // 在 Next Server/SSR 里：Node fetch 需要绝对 URL。
+  // docker / prod 请显式配置 INTERNAL_API_BASE；本机开发默认直连本地后端。
+  const internalBase = process.env.INTERNAL_API_BASE?.trim();
+  if (internalBase) return internalBase.replace(/\/$/, "");
+  return "http://127.0.0.1:8000";
 }
 
 async function getForwardedServerHeaders(): Promise<Record<string, string>> {

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import {
   calculateBestMatch,
+  compareMatrixTestId,
   CONDITIONER_CONFIG,
   CONDITIONER_QUESTIONS,
   runMatrixCsvTests,
@@ -56,6 +57,14 @@ export default function DesktopMatrixTestPage() {
   const conditionerResult = useMemo(
     () => calculateBestMatch(conditionerAnswers, CONDITIONER_CONFIG),
     [conditionerAnswers],
+  );
+  const prioritizedResults = useMemo(
+    () =>
+      [...batchSummary.results].sort((a, b) => {
+        if (a.pass !== b.pass) return a.pass ? 1 : -1;
+        return compareMatrixTestId(a.row.testId, b.row.testId);
+      }),
+    [batchSummary.results],
   );
 
   return (
@@ -139,8 +148,8 @@ export default function DesktopMatrixTestPage() {
               </tr>
             </thead>
             <tbody>
-              {batchSummary.results.map((item) => (
-                <tr key={item.row.testId} className="bg-white">
+              {prioritizedResults.map((item, index) => (
+                <tr key={`${item.row.testId}-${index}`} className="bg-white">
                   <td className="border-b border-black/[0.06] px-2 py-2 text-[12px] text-black/74">{item.row.testId}</td>
                   <td className="border-b border-black/[0.06] px-2 py-2 text-[12px] text-black/80">{item.row.desc}</td>
                   <td className="border-b border-black/[0.06] px-2 py-2 text-[12px] text-black/74">
