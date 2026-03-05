@@ -1,6 +1,6 @@
 "use client";
 
-import type { CSSProperties, DragEvent, ReactNode } from "react";
+import type { DragEvent, ReactNode } from "react";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -8,7 +8,7 @@ import { getInitialLang, pickLang, subscribeLang, type Lang } from "@/lib/i18n";
 
 type RangeKey = "3" | "5" | "7" | "30" | "all";
 type ModuleFilter = "all" | GitModuleBucket;
-type PanelId = "overview" | "trend" | "modules" | "impact" | "heatHour" | "recent" | "top";
+type PanelId = "overview" | "trend" | "modules" | "heatHour" | "recent" | "top";
 
 type GitModuleBucket = "mobile" | "backend" | "infra" | "mixed";
 
@@ -128,7 +128,6 @@ const PANEL_LAYOUT: Record<PanelId, string> = {
   overview: "xl:col-span-12",
   trend: "xl:col-span-8",
   modules: "xl:col-span-4",
-  impact: "xl:col-span-6",
   heatHour: "xl:col-span-12",
   recent: "xl:col-span-12",
   top: "xl:col-span-12",
@@ -138,7 +137,6 @@ const PANEL_TITLE: Record<PanelId, CopyToken> = {
   overview: { zh: "代码流快照", en: "Codeflow Snapshot" },
   trend: { zh: "每日新增/删除趋势", en: "Daily Add/Delete Flow" },
   modules: { zh: "模块贡献", en: "Module Contribution" },
-  impact: { zh: "提交波动条带", en: "Commit-by-Commit Strip" },
   heatHour: { zh: "周内小时热力图", en: "Weekday-Hour Heatmap" },
   recent: { zh: "最近提交与 Diff", en: "Recent Commits & Diffs" },
   top: { zh: "高影响提交", en: "Highest Impact Commits" },
@@ -148,7 +146,6 @@ const PANEL_SUBTITLE: Record<PanelId, CopyToken> = {
   overview: { zh: "来自 git numstat 的核心指标", en: "core metrics from git numstat" },
   trend: { zh: "上半区是新增，下半区是删除", en: "upper area = add, lower area = delete" },
   modules: { zh: "拖拽卡片可调整板块顺序", en: "drag cards to reorder this board" },
-  impact: { zh: "从左到右为时间从旧到新", en: "left to right = old to new" },
   heatHour: { zh: "横轴=小时，纵轴=周几；含“当前时刻”定位与日期标注", en: "x=hour, y=weekday; includes now-position and date labels" },
   recent: { zh: "按文件点击展开 patch", en: "click file rows to expand patches" },
   top: { zh: "按新增 + 删除行数排序", en: "sorted by insertions + deletions" },
@@ -181,7 +178,6 @@ const DEFAULT_PANEL_ORDER: PanelId[] = [
   "overview",
   "trend",
   "modules",
-  "impact",
   "heatHour",
   "recent",
   "top",
@@ -615,11 +611,9 @@ export default function GitDashboardClient({
   const topCommits = [...computed.commits]
     .sort((a, b) => churn(b.insertions, b.deletions) - churn(a.insertions, a.deletions))
     .slice(0, 14);
-  const stripCommits = computed.commits.slice(0, 120).reverse();
 
   const maxDaily = Math.max(1, ...dailyForTrend.map((row) => Math.max(row.insertions, row.deletions)));
   const maxModuleChurn = Math.max(1, ...moduleRows.map((row) => row.churn));
-  const maxCommitChurn = Math.max(1, ...stripCommits.map((row) => churn(row.insertions, row.deletions)));
   const maxHeatHour = Math.max(1, ...computed.heatmap.flat());
   const hourLegendStops = buildLegendStops(maxHeatHour);
   const hourHotspots = WEEKDAY_INDEX.flatMap((actualDay, rowIndex) =>
@@ -652,7 +646,6 @@ export default function GitDashboardClient({
     range === "all"
       ? computed.daily[computed.daily.length - 1]?.day ?? dayKeyFromDate(startOfDay(nowTick))
       : dayKeyFromDate(startOfDay(nowTick));
-  const nowWeekdayLabel = weekdayLabels[currentRowIndex] ?? pickLang(lang, "未知", "Unknown");
 
   const chartHeight = 292;
   const chartWidth = Math.max(760, dailyForTrend.length * 16);
@@ -676,9 +669,6 @@ export default function GitDashboardClient({
   const plusLine = linePath(plusPoints);
   const minusLine = linePath(minusPoints);
   const labelStep = Math.max(1, Math.ceil(dailyForTrend.length / 9));
-  const stripColumns: CSSProperties = {
-    gridTemplateColumns: `repeat(${Math.max(stripCommits.length, 1)}, minmax(8px, 1fr))`,
-  };
 
   const onPanelDragStart = (panelId: PanelId) => (event: DragEvent<HTMLElement>) => {
     setDraggingId(panelId);
@@ -920,44 +910,6 @@ export default function GitDashboardClient({
       </PanelShell>
     ),
 
-    impact: (
-      <PanelShell
-        lang={lang}
-        panelId="impact"
-        dragging={draggingId === "impact"}
-        over={overId === "impact"}
-        onDragStart={onPanelDragStart("impact")}
-        onDragEnd={onPanelDragEnd}
-        onDragOver={onPanelDragOver("impact")}
-        onDrop={onPanelDrop("impact")}
-      >
-        <div className="overflow-x-auto">
-          <div className="min-w-[740px]">
-            <div className="grid h-[220px] gap-[3px] rounded-2xl border border-black/8 bg-black/[0.02] px-3 py-3" style={stripColumns}>
-              {stripCommits.map((commit) => (
-                <div key={commit.hash} className="flex flex-col">
-                  <div className="flex h-1/2 items-end justify-center">
-                    <div
-                      className="w-full rounded-t-[3px] bg-emerald-500/82"
-                      style={{ height: `${clamp(4, (commit.insertions / maxCommitChurn) * 100, 100)}%` }}
-                      title={`${commit.hash.slice(0, 7)} +${fmtNum(commit.insertions)}`}
-                    />
-                  </div>
-                  <div className="flex h-1/2 items-start justify-center">
-                    <div
-                      className="w-full rounded-b-[3px] bg-rose-500/82"
-                      style={{ height: `${clamp(4, (commit.deletions / maxCommitChurn) * 100, 100)}%` }}
-                      title={`${commit.hash.slice(0, 7)} -${fmtNum(commit.deletions)}`}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </PanelShell>
-    ),
-
     heatHour: (
       <PanelShell
         lang={lang}
@@ -970,19 +922,12 @@ export default function GitDashboardClient({
         onDrop={onPanelDrop("heatHour")}
       >
         <div className="space-y-4">
-          <div className="grid gap-2 md:grid-cols-3">
+          <div className="grid gap-2 md:grid-cols-2">
             <div className="rounded-xl border border-black/10 bg-white/86 px-3 py-2">
               <p className="text-[10px] tracking-[0.06em] text-black/52 uppercase">{pickLang(lang, "当前时间", "Now")}</p>
               <p className="mt-1 text-[13px] font-medium text-black/82">{formatDateTime(nowTick, lang)}</p>
-              <p className="text-[11px] text-black/56">{timezoneLabel}</p>
-            </div>
-            <div className="rounded-xl border border-black/10 bg-white/86 px-3 py-2">
-              <p className="text-[10px] tracking-[0.06em] text-black/52 uppercase">{pickLang(lang, "当前位置", "Current Slot")}</p>
-              <p className="mt-1 text-[13px] font-medium text-black/82">
-                {nowWeekdayLabel} ({weekdayDateLabels[currentRowIndex]}) · {formatHourSlot(currentHour)}
-              </p>
               <p className="text-[11px] text-black/56">
-                {fmtNum(currentCellCommits)} {pickLang(lang, "次提交", "commits")}
+                {timezoneLabel} · {pickLang(lang, "当前小时提交", "current-hour commits")} {fmtNum(currentCellCommits)}
               </p>
             </div>
             <div className="rounded-xl border border-black/10 bg-white/86 px-3 py-2">
@@ -1000,8 +945,12 @@ export default function GitDashboardClient({
               {HOURS.map((hour) => (
                 <span
                   key={`hour-label-${hour}`}
-                  className={`text-center text-[10px] ${hour === currentHour ? "font-semibold text-sky-700" : "text-black/48"} ${
-                    hour % 2 === 0 ? "opacity-100" : "opacity-0"
+                  className={`text-center text-[10px] ${
+                    hour === currentHour
+                      ? "font-semibold text-orange-700 opacity-100"
+                      : hour % 2 === 0
+                        ? "text-black/48 opacity-100"
+                        : "text-black/48 opacity-0"
                   }`}
                 >
                   {`${String(hour).padStart(2, "0")}:00`}
@@ -1014,7 +963,7 @@ export default function GitDashboardClient({
             {WEEKDAY_INDEX.map((actualDay, rowIndex) => (
               <div key={`hour-row-${actualDay}`} className="flex items-center gap-3">
                 <div className="w-[73px] text-right">
-                  <p className={`text-[11px] tracking-[0.04em] ${rowIndex === currentRowIndex ? "font-semibold text-sky-700" : "text-black/52"}`}>
+                  <p className={`text-[11px] tracking-[0.04em] ${rowIndex === currentRowIndex ? "font-semibold text-orange-700" : "text-black/52"}`}>
                     {weekdayLabels[rowIndex]}
                   </p>
                   <p className="text-[10px] text-black/44">{weekdayDateLabels[rowIndex]}</p>
@@ -1027,12 +976,22 @@ export default function GitDashboardClient({
                       <div
                         key={`${actualDay}-${hour}`}
                         className={`relative h-[15px] rounded-[5px] border ${
-                          isCurrentSlot ? "border-sky-500 ring-1 ring-sky-500/42" : isCurrentHour ? "border-sky-300/72" : "border-black/[0.07]"
+                          isCurrentSlot
+                            ? "border-orange-500 ring-2 ring-orange-500/58 shadow-[0_0_0_1px_rgba(251,146,60,0.32)]"
+                            : isCurrentHour
+                              ? "border-orange-300/92"
+                              : "border-black/[0.07]"
                         }`}
                         title={`${weekdayLabels[rowIndex]} ${weekdayDateLabels[rowIndex]} ${formatHourSlot(hour)} · ${fmtNum(value)} ${pickLang(lang, "次提交", "commits")}${isCurrentSlot ? ` · ${pickLang(lang, "当前时刻", "current time")}` : ""}`}
                         style={{ backgroundColor: hourHeatColor(value, maxHeatHour) }}
                       >
-                        {isCurrentSlot ? <span className="absolute inset-0 rounded-[4px] bg-sky-500/18" /> : null}
+                        {isCurrentHour ? <span className="pointer-events-none absolute inset-0 rounded-[4px] bg-orange-400/12" /> : null}
+                        {isCurrentSlot ? (
+                          <>
+                            <span className="pointer-events-none absolute inset-0 rounded-[4px] bg-orange-500/22" />
+                            <span className="pointer-events-none absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-orange-700" />
+                          </>
+                        ) : null}
                       </div>
                     );
                   })}
@@ -1252,23 +1211,20 @@ export default function GitDashboardClient({
           <div className="mt-5 space-y-3">
             <div>
               <p className="text-[11px] tracking-[0.08em] text-black/52 uppercase">{pickLang(lang, "分支", "Branch")}</p>
-              <div className="mt-2 overflow-x-auto pb-1">
-                <div className="inline-flex min-w-max rounded-full border border-black/12 bg-white/74 p-1">
+              <div className="mt-2 w-full max-w-[340px]">
+                <select
+                  value={selectedRef}
+                  onChange={(event) => switchBranch(event.target.value)}
+                  disabled={isBranchPending}
+                  className="h-9 w-full rounded-xl border border-black/14 bg-white/88 px-3 text-[12px] text-black/76 outline-none transition focus:border-black/30 focus:ring-2 focus:ring-black/10"
+                  title={pickLang(lang, "选择分支", "Select branch")}
+                >
                   {branchRefs.map((item) => (
-                    <button
-                      key={item.ref}
-                      type="button"
-                      onClick={() => switchBranch(item.ref)}
-                      disabled={isBranchPending}
-                      title={item.ref}
-                      className={`rounded-full px-3 py-1 text-[12px] font-medium transition ${
-                        selectedRef === item.ref ? "bg-black text-white" : "text-black/68 hover:bg-black/[0.05]"
-                      }`}
-                    >
+                    <option key={item.ref} value={item.ref}>
                       {item.label}
-                    </button>
+                    </option>
                   ))}
-                </div>
+                </select>
               </div>
             </div>
 
