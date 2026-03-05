@@ -3280,11 +3280,12 @@ def _extract_ingredient_rows(doc: ProductDoc) -> list[dict[str, Any]]:
             continue
         seen.add(key)
         functions = [str(fn or "").strip() for fn in item.functions if str(fn or "").strip()]
+        rank_value = int(item.rank) if isinstance(item.rank, int) and item.rank > 0 else idx
         out.append(
             {
                 "key": key,
                 "name": name,
-                "rank": idx,
+                "rank": rank_value,
                 "functions": functions,
             }
         )

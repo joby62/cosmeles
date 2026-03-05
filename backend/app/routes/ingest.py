@@ -117,6 +117,8 @@ async def ingest(
         brand=_normalize_optional_text(brand),
         name=_normalize_optional_text(name),
     )
+    if ingest_mode in {"doubao", "manual_image_bootstrap"}:
+        _validate_stage2_ingredient_order_fields(doc)
 
     # 3) normalize + validate
     normalized = _normalize_with_error_reporting(doc, image_rel=image_rel)
@@ -716,6 +718,7 @@ def _finalize_stage2(
 
     _apply_product_overrides(doc, resolved_category, resolved_brand, resolved_name)
     _attach_stage_evidence(doc, context, stage2)
+    _validate_stage2_ingredient_order_fields(doc)
     _emit_progress(event_callback, {"step": "stage2_normalize", "message": "Normalizing structured document."})
 
     normalized = _normalize_with_error_reporting(doc, image_rel=image_rel)
@@ -964,12 +967,19 @@ def _to_product_doc_shape(doc: dict[str, Any]) -> dict[str, Any]:
     ingredients_raw = doc.get("ingredients")
     ingredients = []
     if isinstance(ingredients_raw, list):
-        for item in ingredients_raw:
+        for idx, item in enumerate(ingredients_raw, start=1):
             if not isinstance(item, dict):
                 continue
             risk = str(item.get("risk") or "low").lower()
             if risk not in {"low", "mid", "high"}:
                 risk = "low"
+            rank_value = _parse_positive_int(item.get("rank"))
+            abundance_level = _normalize_abundance_level(
+                item.get("abundance_level")
+                or item.get("abundance")
+                or item.get("major_minor")
+            )
+            order_confidence = _parse_order_confidence(item.get("order_confidence"))
             ingredients.append(
                 {
                     "name": str(item.get("name") or "").strip(),
@@ -977,6 +987,9 @@ def _to_product_doc_shape(doc: dict[str, Any]) -> dict[str, Any]:
                     "functions": _to_str_list(item.get("functions")),
                     "risk": risk,
                     "notes": str(item.get("notes") or ""),
+                    "rank": rank_value or idx,
+                    "abundance_level": abundance_level,
+                    "order_confidence": order_confidence,
                 }
             )
 
@@ -996,6 +1009,112 @@ def _to_product_doc_shape(doc: dict[str, Any]) -> dict[str, Any]:
         "ingredients": ingredients,
         "evidence": evidence,
     }
+
+
+def _validate_stage2_ingredient_order_fields(doc: dict[str, Any]) -> None:
+    ingredients = doc.get("ingredients")
+    if not isinstance(ingredients, list) or not ingredients:
+        raise HTTPException(
+            status_code=422,
+            detail="Structured result missing required field: ingredients (non-empty list).",
+        )
+
+    issues: list[str] = []
+    ranks: list[int] = []
+    for idx, item in enumerate(ingredients, start=1):
+        if not isinstance(item, dict):
+            issues.append(f"ingredients[{idx}] should be an object.")
+            continue
+
+        name = str(item.get("name") or "").strip()
+        if not name:
+            issues.append(f"ingredients[{idx}].name is required.")
+
+        rank = _parse_positive_int(item.get("rank"))
+        if rank is None:
+            issues.append(f"ingredients[{idx}].rank is required and should be a positive integer.")
+        else:
+            ranks.append(rank)
+
+        abundance = _normalize_abundance_level(
+            item.get("abundance_level")
+            or item.get("abundance")
+            or item.get("major_minor")
+        )
+        if abundance is None:
+            issues.append(f"ingredients[{idx}].abundance_level is required and should be major|trace.")
+
+        confidence = _parse_order_confidence(item.get("order_confidence"))
+        if confidence is None:
+            issues.append(f"ingredients[{idx}].order_confidence is required and should be an integer in [0,100].")
+
+    if len(ranks) != len(set(ranks)):
+        issues.append("ingredients rank should be unique.")
+    if ranks:
+        expected = list(range(1, len(ranks) + 1))
+        if sorted(ranks) != expected:
+            issues.append("ingredients rank should be continuous from 1.")
+        if ranks != expected:
+            issues.append("ingredients rank should match the current list order.")
+
+    if issues:
+        detail = "; ".join(issues[:10])
+        if len(issues) > 10:
+            detail += f"; ...(+{len(issues) - 10} more)"
+        raise HTTPException(
+            status_code=422,
+            detail=f"Stage2 ingredient order fields invalid: {detail}",
+        )
+
+
+def _parse_positive_int(value: Any) -> int | None:
+    try:
+        parsed = int(value)
+    except Exception:
+        return None
+    if parsed <= 0:
+        return None
+    return parsed
+
+
+def _parse_order_confidence(value: Any) -> int | None:
+    try:
+        parsed = int(value)
+    except Exception:
+        return None
+    if parsed < 0 or parsed > 100:
+        return None
+    return parsed
+
+
+def _normalize_abundance_level(value: Any) -> str | None:
+    text = str(value or "").strip().lower()
+    if not text:
+        return None
+    major_alias = {
+        "major",
+        "main",
+        "primary",
+        "secondary",
+        "主要",
+        "主成分",
+        "核心",
+    }
+    trace_alias = {
+        "trace",
+        "minor",
+        "micro",
+        "微量",
+        "末端",
+        "痕量",
+        "辅料",
+    }
+    if text in major_alias:
+        return "major"
+    if text in trace_alias:
+        return "trace"
+    return None
+
 
 def _to_str_list(v: Any) -> list[str]:
     if v is None:

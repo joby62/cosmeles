@@ -2,6 +2,7 @@ from typing import Any, List, Optional, Literal
 from pydantic import BaseModel, Field
 
 RiskLevel = Literal["low", "mid", "high"]
+IngredientAbundanceLevel = Literal["major", "trace"]
 
 class ProductInfo(BaseModel):
     category: str = Field(..., examples=["shampoo", "bodywash"])
@@ -21,6 +22,9 @@ class Ingredient(BaseModel):
     functions: List[str] = []
     risk: RiskLevel = "low"
     notes: str = ""
+    rank: Optional[int] = Field(default=None, ge=1)
+    abundance_level: Optional[IngredientAbundanceLevel] = None
+    order_confidence: Optional[int] = Field(default=None, ge=0, le=100)
 
 class Evidence(BaseModel):
     image_path: Optional[str] = None

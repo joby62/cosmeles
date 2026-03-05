@@ -944,7 +944,32 @@ def _to_data_url(image_rel_path: str) -> str:
 
 def _sample_product_doc() -> dict[str, Any]:
     sample = Path(__file__).resolve().parents[2] / "sample_data" / "product_sample.json"
-    return json.loads(sample.read_text(encoding="utf-8"))
+    doc = json.loads(sample.read_text(encoding="utf-8"))
+    return _inject_sample_stage2_ingredient_order_fields(doc)
+
+
+def _inject_sample_stage2_ingredient_order_fields(doc: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(doc, dict):
+        return doc
+    ingredients = doc.get("ingredients")
+    if not isinstance(ingredients, list):
+        return doc
+
+    major_cutoff = max(1, len(ingredients) // 2)
+    for idx, item in enumerate(ingredients, start=1):
+        if not isinstance(item, dict):
+            continue
+        item["rank"] = idx
+        abundance = str(item.get("abundance_level") or "").strip().lower()
+        if abundance not in {"major", "trace"}:
+            item["abundance_level"] = "major" if idx <= major_cutoff else "trace"
+        try:
+            confidence = int(item.get("order_confidence"))
+        except Exception:
+            confidence = -1
+        if confidence < 0 or confidence > 100:
+            item["order_confidence"] = 70
+    return doc
 
 
 def _maybe_save_artifact(trace_id: str | None, stage: str, payload: dict[str, Any]) -> str | None:

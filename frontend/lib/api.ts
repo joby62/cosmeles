@@ -316,7 +316,10 @@ export type ProductDoc = {
     who_not_for: string[];
   };
   ingredients: Array<{
+    rank?: number | null;
     name: string;
+    abundance_level?: "major" | "trace" | null;
+    order_confidence?: number | null;
     type: string;
     functions: string[];
     risk: "low" | "mid" | "high";

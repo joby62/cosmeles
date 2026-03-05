@@ -1538,22 +1538,30 @@ def _build_route_mapping_product_context(*, row: ProductIndex, doc: dict[str, An
             functions = _safe_str_list(raw.get("functions"))
             risk = str(raw.get("risk") or "").strip()
             notes = str(raw.get("notes") or "").strip()
+            rank_value = _parse_positive_int(raw.get("rank")) or rank
+            abundance_level = _normalize_abundance_level(raw.get("abundance_level"))
+            order_confidence = _parse_confidence_0_100(raw.get("order_confidence"))
         else:
             name_raw = str(raw or "").strip()
             type_value = ""
             functions = []
             risk = ""
             notes = ""
+            rank_value = rank
+            abundance_level = None
+            order_confidence = None
         if not name_raw:
             continue
 
         ingredient_name_cn, ingredient_name_en = _split_ingredient_names(name_raw)
         ingredients.append(
             {
-                "rank": rank,
+                "rank": rank_value,
                 "ingredient_name_cn": ingredient_name_cn,
                 "ingredient_name_en": ingredient_name_en,
                 "ingredient_name_raw": name_raw,
+                "abundance_level": abundance_level,
+                "order_confidence": order_confidence,
                 "type": type_value,
                 "functions": functions,
                 "risk": risk,
@@ -1603,6 +1611,8 @@ def _build_route_mapping_fingerprint(product_context: dict[str, Any]) -> str:
                     "ingredient_name_cn": str(item.get("ingredient_name_cn") or "").strip(),
                     "ingredient_name_en": str(item.get("ingredient_name_en") or "").strip(),
                     "ingredient_name_raw": str(item.get("ingredient_name_raw") or "").strip(),
+                    "abundance_level": str(item.get("abundance_level") or "").strip().lower(),
+                    "order_confidence": _parse_confidence_0_100(item.get("order_confidence")) or 0,
                     "type": str(item.get("type") or "").strip(),
                     "functions": _safe_str_list(item.get("functions")),
                     "risk": str(item.get("risk") or "").strip(),
@@ -2541,6 +2551,37 @@ def _to_ingredient_library_detail_item(doc: dict[str, Any], rel_path: str) -> In
         profile=profile,
         storage_path=base.storage_path,
     )
+
+
+def _parse_positive_int(value: Any) -> int | None:
+    try:
+        parsed = int(value)
+    except Exception:
+        return None
+    if parsed <= 0:
+        return None
+    return parsed
+
+
+def _parse_confidence_0_100(value: Any) -> int | None:
+    try:
+        parsed = int(value)
+    except Exception:
+        return None
+    if parsed < 0 or parsed > 100:
+        return None
+    return parsed
+
+
+def _normalize_abundance_level(value: Any) -> str | None:
+    text = str(value or "").strip().lower()
+    if not text:
+        return None
+    if text in {"major", "main", "primary", "secondary", "主要", "主成分", "核心"}:
+        return "major"
+    if text in {"trace", "minor", "micro", "微量", "末端", "痕量", "辅料"}:
+        return "trace"
+    return None
 
 
 def _safe_str_list(value: Any) -> list[str]:
