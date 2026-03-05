@@ -115,6 +115,49 @@ class IngredientLibraryBuildJob(Base):
     finished_at: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
 
 
+class UploadIngestJob(Base):
+    __tablename__ = "upload_ingest_jobs"
+    __table_args__ = (
+        Index("ix_upload_ingest_jobs_scope", "status", "updated_at"),
+    )
+
+    job_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    status: Mapped[str] = mapped_column(String(32), index=True, default="queued")
+    stage: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    stage_label: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    percent: Mapped[int] = mapped_column(Integer, default=0)
+
+    file_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    source_content_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    temp_upload_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    supplement_temp_upload_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    image_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    image_paths_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    category_override: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    brand_override: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    name_override: Mapped[str | None] = mapped_column(String(256), nullable=True)
+
+    stage1_model_tier: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    stage2_model_tier: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    stage1_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    stage2_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    missing_fields_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    required_view: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    models_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    artifacts_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[str] = mapped_column(String(32), index=True)
+    updated_at: Mapped[str] = mapped_column(String(32), index=True)
+    started_at: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    finished_at: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+
+
 class AIJob(Base):
     __tablename__ = "ai_jobs"
 

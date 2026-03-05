@@ -295,6 +295,48 @@ class IngredientLibraryBuildJobCancelResponse(BaseModel):
     job: IngredientLibraryBuildJobView
 
 
+class UploadIngestJobError(BaseModel):
+    code: str = ""
+    detail: str = ""
+    http_status: int = 500
+
+
+class UploadIngestJobView(BaseModel):
+    status: Literal["queued", "running", "waiting_more", "cancelling", "cancelled", "done", "failed"] = "queued"
+    job_id: str
+    file_name: Optional[str] = None
+    source_content_type: Optional[str] = None
+    stage: Optional[str] = None
+    stage_label: Optional[str] = None
+    message: Optional[str] = None
+    percent: int = Field(default=0, ge=0, le=100)
+    image_path: Optional[str] = None
+    image_paths: List[str] = []
+    category_override: Optional[str] = None
+    brand_override: Optional[str] = None
+    name_override: Optional[str] = None
+    stage1_model_tier: Optional[Literal["mini", "lite", "pro"]] = None
+    stage2_model_tier: Optional[Literal["mini", "lite", "pro"]] = None
+    stage1_text: Optional[str] = None
+    stage2_text: Optional[str] = None
+    missing_fields: List[str] = []
+    required_view: Optional[str] = None
+    models: Optional[dict[str, Any]] = None
+    artifacts: Optional[dict[str, Any]] = None
+    result: Optional[dict[str, Any]] = None
+    error: Optional[UploadIngestJobError] = None
+    cancel_requested: bool = False
+    created_at: str
+    updated_at: str
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+
+
+class UploadIngestJobCancelResponse(BaseModel):
+    status: str
+    job: UploadIngestJobView
+
+
 class IngredientLibraryDeleteFailureItem(BaseModel):
     ingredient_id: str
     error: str

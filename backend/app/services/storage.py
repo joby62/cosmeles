@@ -28,6 +28,7 @@ def ensure_dirs():
     os.makedirs(os.path.join(settings.storage_dir, "images", "jpg"), exist_ok=True)
     os.makedirs(os.path.join(settings.storage_dir, "products"), exist_ok=True)
     os.makedirs(os.path.join(settings.storage_dir, "doubao_runs"), exist_ok=True)
+    os.makedirs(os.path.join(settings.storage_dir, "tmp_uploads"), exist_ok=True)
     os.makedirs(os.path.join(settings.storage_dir, "ingredients"), exist_ok=True)
     os.makedirs(os.path.join(settings.storage_dir, "route_mappings"), exist_ok=True)
 
@@ -76,6 +77,75 @@ def save_image(
     return webp_rel
 
 
+def save_temp_upload_image(
+    upload_id: str,
+    filename: str,
+    content: bytes,
+    *,
+    content_type: str | None = None,
+    suffix: str | None = None,
+) -> str:
+    ensure_dirs()
+    safe_id = _safe_storage_segment(upload_id, fallback=new_id())
+    safe_suffix = _safe_storage_segment(suffix or "", fallback="")
+    ext = os.path.splitext(filename or "")[1].lower().strip()
+    if not ext:
+        ext = CONTENT_TYPE_TO_EXT.get(str(content_type or "").lower().strip(), ".img")
+    ext = ext if ext.startswith(".") else f".{ext}"
+    rel_name = f"{safe_id}{('-' + safe_suffix) if safe_suffix else ''}{ext}"
+    rel_path = f"tmp_uploads/{rel_name}"
+    abs_path = _resolve_rel_path(rel_path)
+    abs_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(abs_path, "wb") as f:
+        f.write(content)
+    return rel_path
+
+
+def convert_temp_upload_to_storage_image(
+    temp_rel_path: str,
+    *,
+    image_id: str,
+    subdir: str | None = None,
+) -> str:
+    ensure_dirs()
+    temp_abs = _resolve_rel_path(temp_rel_path)
+    if not temp_abs.exists() or not temp_abs.is_file():
+        raise ValueError(f"Temp upload image not found: {temp_rel_path}")
+
+    safe_image_id = _safe_storage_segment(image_id, fallback=new_id())
+    rel_suffix = _normalize_image_rel_suffix(subdir)
+    webp_rel = f"images/webp{rel_suffix}/{safe_image_id}.webp"
+    jpg_rel = f"images/jpg{rel_suffix}/{safe_image_id}.jpg"
+    webp_abs = _resolve_rel_path(webp_rel)
+    jpg_abs = _resolve_rel_path(jpg_rel)
+    webp_abs.parent.mkdir(parents=True, exist_ok=True)
+    jpg_abs.parent.mkdir(parents=True, exist_ok=True)
+
+    source_ext = temp_abs.suffix.lower().strip()
+
+    if source_ext in {".jpg", ".jpeg"}:
+        if jpg_abs.exists():
+            jpg_abs.unlink()
+        shutil.move(str(temp_abs), str(jpg_abs))
+        source_bytes = jpg_abs.read_bytes()
+        normalized = _decode_image_any_for_storage(content=source_bytes, source_ext=".jpg")
+        webp_out = io.BytesIO()
+        normalized.save(webp_out, format="WEBP", quality=82, method=6)
+        webp_abs.write_bytes(webp_out.getvalue())
+        return webp_rel
+
+    source_bytes = temp_abs.read_bytes()
+    normalized = _decode_image_any_for_storage(content=source_bytes, source_ext=source_ext)
+    jpg_out = io.BytesIO()
+    normalized.save(jpg_out, format="JPEG", quality=88, optimize=True)
+    webp_out = io.BytesIO()
+    normalized.save(webp_out, format="WEBP", quality=82, method=6)
+    jpg_abs.write_bytes(jpg_out.getvalue())
+    webp_abs.write_bytes(webp_out.getvalue())
+    temp_abs.unlink(missing_ok=True)
+    return webp_rel
+
+
 def _normalize_image_rel_suffix(subdir: str | None) -> str:
     if not subdir:
         return ""
@@ -101,6 +171,44 @@ def _normalize_image_variants_for_storage(ext: str, content: bytes) -> dict[str,
         return {"jpg": jpg_out.getvalue(), "webp": webp_out.getvalue()}
     except Exception as e:
         raise ValueError(f"Failed to encode storage image variants from {source_ext}: {e}") from e
+
+
+def _decode_image_any_for_storage(content: bytes, source_ext: str):
+    try:
+        from PIL import Image, ImageOps, ImageSequence
+    except Exception as e:  # pragma: no cover
+        raise ValueError("Image conversion dependency missing: install Pillow.") from e
+
+    if source_ext in {".heic", ".heif"}:
+        try:
+            import pillow_heif  # type: ignore
+
+            pillow_heif.register_heif_opener()
+        except Exception as e:  # pragma: no cover
+            raise ValueError("HEIC/HEIF conversion requires pillow-heif.") from e
+
+    try:
+        with Image.open(io.BytesIO(content)) as img_in:
+            if getattr(img_in, "is_animated", False):
+                first = next(ImageSequence.Iterator(img_in))
+                img = first.copy()
+            else:
+                img = img_in.copy()
+    except Exception as e:
+        raise ValueError(f"Failed to decode source image ({source_ext or 'unknown'}): {e}") from e
+
+    try:
+        img = ImageOps.exif_transpose(img)
+        if img.mode in {"RGBA", "LA"} or (img.mode == "P" and "transparency" in img.info):
+            rgba = img.convert("RGBA")
+            bg = Image.new("RGB", rgba.size, (255, 255, 255))
+            bg.paste(rgba, mask=rgba.split()[-1])
+            img = bg
+        elif img.mode != "RGB":
+            img = img.convert("RGB")
+        return img
+    except Exception as e:
+        raise ValueError(f"Failed to normalize source image ({source_ext or 'unknown'}) for storage: {e}") from e
 
 
 def _decode_image_for_storage(content: bytes, source_ext: str):

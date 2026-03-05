@@ -3,19 +3,23 @@ import inspect
 import queue
 import threading
 import re
+from datetime import datetime, timezone
 from typing import Any
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy import select
 
 from app.ai.errors import AIServiceError
 from app.constants import VALID_CATEGORIES, VALID_SOURCES
 from app.db.session import get_db
-from app.db.models import ProductIndex
+from app.db.models import ProductIndex, UploadIngestJob
 from app.services.storage import (
     cleanup_doubao_artifacts,
+    convert_temp_upload_to_storage_image,
     exists_rel_path,
+    image_variant_rel_paths,
     load_json,
     move_image_to_category,
     new_id,
@@ -24,13 +28,21 @@ from app.services.storage import (
     save_image,
     save_product_json,
     remove_rel_path,
+    save_temp_upload_image,
 )
 from app.services.doubao_pipeline_service import DoubaoPipelineService
 from app.services.parser import normalize_doc
 from app.settings import settings
+from app.schemas import (
+    UploadIngestJobCancelResponse,
+    UploadIngestJobError,
+    UploadIngestJobView,
+)
 
 router = APIRouter(prefix="/api", tags=["ingest"])
 MODEL_TIER_OPTIONS = {"mini", "lite", "pro"}
+UPLOAD_INGEST_JOB_STALE_SECONDS = 60 * 30
+UPLOAD_INGEST_JOB_PROCESS_STARTED_AT = datetime.now(timezone.utc)
 
 @router.post("/ingest")
 @router.post("/upload")
@@ -559,6 +571,252 @@ def ingest_stage2_stream(
         },
     )
 
+
+@router.post("/upload/jobs", response_model=UploadIngestJobView)
+async def create_upload_ingest_job(
+    image: UploadFile | None = File(None),
+    file: UploadFile | None = File(None),
+    category: str | None = Form(None),
+    brand: str | None = Form(None),
+    name: str | None = Form(None),
+    stage1_model_tier: str | None = Form(None),
+    stage2_model_tier: str | None = Form(None),
+    db: Session = Depends(get_db),
+):
+    if image and file:
+        raise HTTPException(status_code=400, detail="Please provide only one file field: image or file.")
+    upload = image or file
+    if upload is None:
+        raise HTTPException(status_code=400, detail="upload jobs require image/file.")
+    if not upload.content_type or not upload.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Only image upload is supported.")
+
+    normalized_category = _normalize_optional_text(category, lower=True)
+    if normalized_category and normalized_category not in VALID_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Invalid category: {normalized_category}.")
+    normalized_stage1_model_tier = _normalize_model_tier(stage1_model_tier, field_name="stage1_model_tier")
+    normalized_stage2_model_tier = _normalize_model_tier(stage2_model_tier, field_name="stage2_model_tier")
+
+    content = await upload.read()
+    if len(content) > settings.max_upload_bytes:
+        raise HTTPException(status_code=413, detail=f"Image too large. Max {settings.max_upload_bytes} bytes.")
+
+    _ensure_upload_ingest_job_table(db)
+    job_id = new_id()
+    try:
+        temp_rel = save_temp_upload_image(
+            job_id,
+            upload.filename or "upload.img",
+            content,
+            content_type=upload.content_type,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Temp upload persistence failed: {e}") from e
+
+    now = now_iso()
+    rec = UploadIngestJob(
+        job_id=job_id,
+        status="running",
+        stage="uploading",
+        stage_label=_upload_ingest_job_stage_label("uploading"),
+        message="上传完成，准备转换图片。",
+        percent=8,
+        file_name=str(upload.filename or "").strip() or "upload.img",
+        source_content_type=str(upload.content_type or "").strip() or None,
+        temp_upload_path=temp_rel,
+        supplement_temp_upload_path=None,
+        image_path=None,
+        image_paths_json="[]",
+        category_override=normalized_category,
+        brand_override=_normalize_optional_text(brand),
+        name_override=_normalize_optional_text(name),
+        stage1_model_tier=normalized_stage1_model_tier,
+        stage2_model_tier=normalized_stage2_model_tier,
+        stage1_text=None,
+        stage2_text=None,
+        missing_fields_json="[]",
+        required_view=None,
+        models_json=None,
+        artifacts_json=None,
+        cancel_requested=False,
+        result_json=None,
+        error_json=None,
+        created_at=now,
+        updated_at=now,
+        started_at=now,
+        finished_at=None,
+    )
+    db.add(rec)
+    db.commit()
+    db.refresh(rec)
+
+    SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=db.get_bind())
+
+    def worker() -> None:
+        local_db = SessionMaker()
+        try:
+            _run_upload_ingest_job(job_id=job_id, db=local_db, resume=False)
+        finally:
+            local_db.close()
+
+    threading.Thread(target=worker, daemon=True).start()
+    return _to_upload_ingest_job_view(rec)
+
+
+@router.get("/upload/jobs", response_model=list[UploadIngestJobView])
+def list_upload_ingest_jobs(
+    status: str | None = Query(None),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(30, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    _ensure_upload_ingest_job_table(db)
+    normalized_status = str(status or "").strip().lower() or None
+    if normalized_status and normalized_status not in {"queued", "running", "waiting_more", "cancelling", "cancelled", "done", "failed"}:
+        raise HTTPException(status_code=400, detail=f"Invalid status: {normalized_status}.")
+
+    stmt = select(UploadIngestJob)
+    if normalized_status:
+        stmt = stmt.where(UploadIngestJob.status == normalized_status)
+    rows = db.execute(stmt.order_by(UploadIngestJob.updated_at.desc()).offset(offset).limit(limit)).scalars().all()
+    views: list[UploadIngestJobView] = []
+    now_utc = datetime.now(timezone.utc)
+    for row in rows:
+        _reconcile_upload_ingest_job_state(db=db, rec=row, now_utc=now_utc)
+        if normalized_status and str(row.status or "").strip().lower() != normalized_status:
+            continue
+        views.append(_to_upload_ingest_job_view(row))
+    return views
+
+
+@router.get("/upload/jobs/{job_id}", response_model=UploadIngestJobView)
+def get_upload_ingest_job(job_id: str, db: Session = Depends(get_db)):
+    _ensure_upload_ingest_job_table(db)
+    rec = db.get(UploadIngestJob, str(job_id or "").strip())
+    if rec is None:
+        raise HTTPException(status_code=404, detail=f"Upload ingest job '{job_id}' not found.")
+    _reconcile_upload_ingest_job_state(db=db, rec=rec, now_utc=datetime.now(timezone.utc))
+    return _to_upload_ingest_job_view(rec)
+
+
+@router.post("/upload/jobs/{job_id}/cancel", response_model=UploadIngestJobCancelResponse)
+def cancel_upload_ingest_job(job_id: str, db: Session = Depends(get_db)):
+    _ensure_upload_ingest_job_table(db)
+    rec = db.get(UploadIngestJob, str(job_id or "").strip())
+    if rec is None:
+        raise HTTPException(status_code=404, detail=f"Upload ingest job '{job_id}' not found.")
+
+    status = str(rec.status or "").strip().lower()
+    if status in {"done", "failed", "cancelled"}:
+        return UploadIngestJobCancelResponse(status="ok", job=_to_upload_ingest_job_view(rec))
+
+    now = now_iso()
+    rec.cancel_requested = True
+    rec.updated_at = now
+    if status in {"queued", "waiting_more"}:
+        rec.status = "cancelled"
+        rec.stage = "cancelled"
+        rec.stage_label = _upload_ingest_job_stage_label("cancelled")
+        rec.message = "任务已取消。"
+        rec.finished_at = now
+    else:
+        rec.status = "cancelling"
+        rec.stage = "cancelling"
+        rec.stage_label = _upload_ingest_job_stage_label("cancelling")
+        rec.message = "已收到取消请求，当前阶段结束后停止。"
+    db.add(rec)
+    db.commit()
+    db.refresh(rec)
+    return UploadIngestJobCancelResponse(status="ok", job=_to_upload_ingest_job_view(rec))
+
+
+@router.post("/upload/jobs/{job_id}/resume", response_model=UploadIngestJobView)
+async def resume_upload_ingest_job(
+    job_id: str,
+    image: UploadFile | None = File(None),
+    file: UploadFile | None = File(None),
+    category: str | None = Form(None),
+    brand: str | None = Form(None),
+    name: str | None = Form(None),
+    db: Session = Depends(get_db),
+):
+    _ensure_upload_ingest_job_table(db)
+    rec = db.get(UploadIngestJob, str(job_id or "").strip())
+    if rec is None:
+        raise HTTPException(status_code=404, detail=f"Upload ingest job '{job_id}' not found.")
+
+    status = str(rec.status or "").strip().lower()
+    if status != "waiting_more":
+        raise HTTPException(status_code=409, detail=f"Only waiting_more job can resume. current_status={status}.")
+
+    if image and file:
+        raise HTTPException(status_code=400, detail="Please provide only one file field: image or file.")
+    upload = image or file
+    has_image = upload is not None
+
+    normalized_category = _normalize_optional_text(category, lower=True)
+    if normalized_category and normalized_category not in VALID_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Invalid category: {normalized_category}.")
+    normalized_brand = _normalize_optional_text(brand)
+    normalized_name = _normalize_optional_text(name)
+
+    if not has_image and normalized_category is None and normalized_brand is None and normalized_name is None:
+        raise HTTPException(status_code=400, detail="resume requires supplement image or manual category/brand/name.")
+
+    supplement_temp_rel: str | None = None
+    if upload is not None:
+        if not upload.content_type or not upload.content_type.startswith("image/"):
+            raise HTTPException(status_code=400, detail="Only image upload is supported.")
+        content = await upload.read()
+        if len(content) > settings.max_upload_bytes:
+            raise HTTPException(status_code=413, detail=f"Image too large. Max {settings.max_upload_bytes} bytes.")
+        try:
+            supplement_temp_rel = save_temp_upload_image(
+                rec.job_id,
+                upload.filename or "supplement.img",
+                content,
+                content_type=upload.content_type,
+                suffix="supp1",
+            )
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Supplement image persistence failed: {e}") from e
+
+    now = now_iso()
+    if normalized_category is not None:
+        rec.category_override = normalized_category
+    if normalized_brand is not None:
+        rec.brand_override = normalized_brand
+    if normalized_name is not None:
+        rec.name_override = normalized_name
+    if supplement_temp_rel is not None:
+        rec.supplement_temp_upload_path = supplement_temp_rel
+
+    rec.status = "running"
+    rec.stage = "uploading"
+    rec.stage_label = _upload_ingest_job_stage_label("uploading")
+    rec.message = "继续任务：已接收补拍/补录信息。"
+    rec.percent = max(45, int(rec.percent or 0))
+    rec.cancel_requested = False
+    rec.error_json = None
+    rec.finished_at = None
+    rec.updated_at = now
+    db.add(rec)
+    db.commit()
+    db.refresh(rec)
+
+    SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=db.get_bind())
+
+    def worker() -> None:
+        local_db = SessionMaker()
+        try:
+            _run_upload_ingest_job(job_id=rec.job_id, db=local_db, resume=True)
+        finally:
+            local_db.close()
+
+    threading.Thread(target=worker, daemon=True).start()
+    return _to_upload_ingest_job_view(rec)
+
+
 @router.post("/maintenance/cleanup-doubao")
 def cleanup_doubao(days: int = Query(14, ge=1, le=3650)):
     result = cleanup_doubao_artifacts(days=days)
@@ -793,6 +1051,717 @@ def _emit_progress(event_callback, payload: dict[str, Any]) -> None:
         event_callback(payload)
     except Exception:
         return
+
+
+class UploadIngestJobCancelledError(RuntimeError):
+    pass
+
+
+def _ensure_upload_ingest_job_table(db: Session) -> None:
+    bind = db.get_bind()
+    UploadIngestJob.__table__.create(bind=bind, checkfirst=True)
+
+
+def _run_upload_ingest_job(*, job_id: str, db: Session, resume: bool) -> None:
+    _ensure_upload_ingest_job_table(db)
+    rec = db.get(UploadIngestJob, job_id)
+    if rec is None:
+        return
+
+    try:
+        if bool(rec.cancel_requested):
+            raise UploadIngestJobCancelledError("job cancelled before execution.")
+
+        if resume:
+            _resume_upload_ingest_job_flow(db=db, rec=rec)
+        else:
+            _start_upload_ingest_job_flow(db=db, rec=rec)
+    except UploadIngestJobCancelledError as e:
+        db.rollback()
+        _mark_upload_ingest_job_cancelled(job_id=job_id, bind=db.get_bind(), message=str(e))
+    except HTTPException as e:
+        db.rollback()
+        _mark_upload_ingest_job_failed(
+            job_id=job_id,
+            bind=db.get_bind(),
+            code="upload_ingest_http_error",
+            detail=str(e.detail),
+            http_status=e.status_code,
+        )
+    except Exception as e:  # pragma: no cover
+        db.rollback()
+        _mark_upload_ingest_job_failed(
+            job_id=job_id,
+            bind=db.get_bind(),
+            code="upload_ingest_internal_error",
+            detail=str(e),
+            http_status=500,
+        )
+
+
+def _start_upload_ingest_job_flow(*, db: Session, rec: UploadIngestJob) -> None:
+    job_id = str(rec.job_id)
+    _assert_upload_job_not_cancelled(db=db, rec=rec)
+
+    _update_upload_job_stage(
+        db=db,
+        rec=rec,
+        stage="converting",
+        message="图片转换中（生成 webp/jpg）。",
+        percent=max(15, int(rec.percent or 0)),
+    )
+    temp_upload = str(rec.temp_upload_path or "").strip()
+    if not temp_upload:
+        raise HTTPException(status_code=500, detail="[stage=upload_job_convert] temp_upload_path missing.")
+    try:
+        image_rel = convert_temp_upload_to_storage_image(temp_upload, image_id=job_id, subdir="tmp")
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"[stage=upload_job_convert] image conversion failed: {e}") from e
+
+    image_paths = image_variant_rel_paths(image_rel)
+    rec = db.get(UploadIngestJob, job_id)
+    if rec is None:
+        return
+    rec.temp_upload_path = None
+    rec.image_path = image_rel
+    rec.image_paths_json = json.dumps(image_paths, ensure_ascii=False)
+    rec.updated_at = now_iso()
+    db.add(rec)
+    db.commit()
+    db.refresh(rec)
+
+    _assert_upload_job_not_cancelled(db=db, rec=rec)
+    _update_upload_job_stage(
+        db=db,
+        rec=rec,
+        stage="stage1",
+        message="Stage1 识别中。",
+        percent=max(30, int(rec.percent or 0)),
+    )
+    stage1 = _invoke_stage1_analyzer(
+        image_rel=image_rel,
+        trace_id=job_id,
+        model_tier=rec.stage1_model_tier,
+        image_paths=None,
+        event_callback=lambda event: _append_upload_job_stage_event(bind=db.get_bind(), job_id=job_id, event=event),
+    )
+    _persist_stage1_context(
+        db=db,
+        rec=rec,
+        stage1=stage1,
+        image_paths=image_paths or [image_rel],
+    )
+
+    stage1_requirement = _build_upload_job_stage1_requirement(stage1.get("vision_text"))
+    pending_missing_fields = _remaining_missing_fields_after_manual_input(
+        missing_fields=stage1_requirement["missing_fields"],
+        rec=rec,
+    )
+    if pending_missing_fields:
+        _mark_upload_ingest_job_waiting_more(
+            job_id=job_id,
+            bind=db.get_bind(),
+            missing_fields=pending_missing_fields,
+            required_view=stage1_requirement["required_view"],
+            message=(
+                "Stage1 信息不完整："
+                + "、".join(_upload_missing_field_label(item) for item in pending_missing_fields)
+                + "。请补拍或补录后继续。"
+            ),
+        )
+        return
+
+    _finalize_upload_ingest_job_stage2(db=db, rec=rec)
+
+
+def _resume_upload_ingest_job_flow(*, db: Session, rec: UploadIngestJob) -> None:
+    job_id = str(rec.job_id)
+    _assert_upload_job_not_cancelled(db=db, rec=rec)
+    context_rel = f"doubao_runs/{job_id}/stage1_context.json"
+    if not exists_rel_path(context_rel):
+        raise HTTPException(status_code=404, detail="Stage1 context not found for resume.")
+    context = load_json(context_rel)
+    image_path = str(context.get("image_path") or "").strip()
+    if not image_path:
+        raise HTTPException(status_code=422, detail="Invalid stage1 context: missing image_path.")
+    if not exists_rel_path(image_path):
+        raise HTTPException(status_code=404, detail=f"Primary image missing: {image_path}")
+
+    stage1_requirement = _build_upload_job_stage1_requirement(context.get("vision_text"))
+
+    supplement_temp = str(rec.supplement_temp_upload_path or "").strip()
+    if supplement_temp:
+        _update_upload_job_stage(
+            db=db,
+            rec=rec,
+            stage="converting",
+            message="补拍图片转换中（生成 webp/jpg）。",
+            percent=max(50, int(rec.percent or 0)),
+        )
+        try:
+            supplement_image_rel = convert_temp_upload_to_storage_image(
+                supplement_temp,
+                image_id=f"{job_id}.supp1",
+                subdir="tmp",
+            )
+        except Exception as e:
+            raise HTTPException(status_code=422, detail=f"[stage=upload_job_resume_convert] image conversion failed: {e}") from e
+
+        rec = db.get(UploadIngestJob, job_id)
+        if rec is None:
+            return
+        rec.supplement_temp_upload_path = None
+        rec.updated_at = now_iso()
+        db.add(rec)
+        db.commit()
+        db.refresh(rec)
+
+        image_paths_raw = context.get("image_paths")
+        if isinstance(image_paths_raw, list):
+            combined_paths = [str(item or "").strip() for item in image_paths_raw if str(item or "").strip()]
+        else:
+            combined_paths = []
+        if not combined_paths:
+            combined_paths = [image_path]
+        if supplement_image_rel not in combined_paths:
+            combined_paths.append(supplement_image_rel)
+
+        _assert_upload_job_not_cancelled(db=db, rec=rec)
+        _update_upload_job_stage(
+            db=db,
+            rec=rec,
+            stage="stage1",
+            message="补拍后重新执行 Stage1 识别。",
+            percent=max(58, int(rec.percent or 0)),
+        )
+        stage1 = _invoke_stage1_analyzer(
+            image_rel=image_path,
+            trace_id=job_id,
+            model_tier=rec.stage1_model_tier,
+            image_paths=combined_paths[:2],
+            event_callback=lambda event: _append_upload_job_stage_event(bind=db.get_bind(), job_id=job_id, event=event),
+        )
+        _persist_stage1_context(
+            db=db,
+            rec=rec,
+            stage1=stage1,
+            image_paths=combined_paths[:2],
+            supplement_image_path=supplement_image_rel,
+        )
+        stage1_requirement = _build_upload_job_stage1_requirement(stage1.get("vision_text"))
+
+    pending_missing_fields = _remaining_missing_fields_after_manual_input(
+        missing_fields=stage1_requirement["missing_fields"],
+        rec=rec,
+    )
+    if pending_missing_fields:
+        _mark_upload_ingest_job_waiting_more(
+            job_id=job_id,
+            bind=db.get_bind(),
+            missing_fields=pending_missing_fields,
+            required_view=stage1_requirement["required_view"],
+            message=(
+                "信息仍不完整："
+                + "、".join(_upload_missing_field_label(item) for item in pending_missing_fields)
+                + "。请继续补拍或补录。"
+            ),
+        )
+        return
+
+    rec = db.get(UploadIngestJob, job_id)
+    if rec is None:
+        return
+    _finalize_upload_ingest_job_stage2(db=db, rec=rec)
+
+
+def _persist_stage1_context(
+    *,
+    db: Session,
+    rec: UploadIngestJob,
+    stage1: dict[str, Any],
+    image_paths: list[str],
+    supplement_image_path: str | None = None,
+) -> None:
+    job_id = str(rec.job_id)
+    image_path = str(rec.image_path or "").strip() or (image_paths[0] if image_paths else "")
+    context = {
+        "trace_id": job_id,
+        "image_path": image_path,
+        "image_paths": image_paths[:2],
+        "supplement_image_path": supplement_image_path,
+        "category": rec.category_override,
+        "brand": rec.brand_override,
+        "name": rec.name_override,
+        "vision_text": stage1.get("vision_text"),
+        "vision_model": stage1.get("model"),
+        "stage1_model_tier": rec.stage1_model_tier,
+        "vision_artifact": stage1.get("artifact"),
+        "created_at": str(rec.created_at or now_iso()),
+        "updated_at": now_iso(),
+    }
+    context_rel = save_doubao_artifact(job_id, "stage1_context", context)
+    rec = db.get(UploadIngestJob, job_id)
+    if rec is None:
+        return
+    models = _safe_json_dict(rec.models_json)
+    models["vision"] = stage1.get("model")
+    artifacts = _safe_json_dict(rec.artifacts_json)
+    artifacts["vision"] = stage1.get("artifact")
+    artifacts["context"] = context_rel
+    rec.models_json = json.dumps(models, ensure_ascii=False)
+    rec.artifacts_json = json.dumps(artifacts, ensure_ascii=False)
+    rec.stage1_text = str(stage1.get("vision_text") or rec.stage1_text or "")
+    rec.updated_at = now_iso()
+    db.add(rec)
+    db.commit()
+
+
+def _finalize_upload_ingest_job_stage2(*, db: Session, rec: UploadIngestJob) -> None:
+    job_id = str(rec.job_id)
+    _assert_upload_job_not_cancelled(db=db, rec=rec)
+    _update_upload_job_stage(
+        db=db,
+        rec=rec,
+        stage="stage2",
+        message="Stage2 结构化中。",
+        percent=max(75, int(rec.percent or 0)),
+    )
+    try:
+        result = _finalize_stage2(
+            trace_id=job_id,
+            category=rec.category_override,
+            brand=rec.brand_override,
+            name=rec.name_override,
+            model_tier=rec.stage2_model_tier,
+            db=db,
+            event_callback=lambda event: _append_upload_job_stage_event(bind=db.get_bind(), job_id=job_id, event=event),
+        )
+    except HTTPException as e:
+        missing_fields = _extract_waiting_more_fields_from_stage2_error(str(e.detail))
+        if e.status_code == 422 and missing_fields:
+            _mark_upload_ingest_job_waiting_more(
+                job_id=job_id,
+                bind=db.get_bind(),
+                missing_fields=missing_fields,
+                required_view="补录类别或补拍可见品类信息的图片",
+                message=f"Stage2 缺失关键信息：{str(e.detail)}",
+            )
+            return
+        raise
+
+    rec = db.get(UploadIngestJob, job_id)
+    if rec is None:
+        return
+    artifacts = _safe_json_dict(rec.artifacts_json)
+    doubao = result.get("doubao") if isinstance(result, dict) else {}
+    if isinstance(doubao, dict):
+        output_artifacts = doubao.get("artifacts")
+        if isinstance(output_artifacts, dict):
+            for key, value in output_artifacts.items():
+                artifacts[str(key)] = value
+        models = _safe_json_dict(rec.models_json)
+        output_models = doubao.get("models")
+        if isinstance(output_models, dict):
+            for key, value in output_models.items():
+                models[str(key)] = value
+        rec.models_json = json.dumps(models, ensure_ascii=False)
+        struct_text = str(doubao.get("struct_text") or "").strip()
+        if struct_text:
+            rec.stage2_text = struct_text
+
+    rec.artifacts_json = json.dumps(artifacts, ensure_ascii=False)
+    rec.result_json = json.dumps(result, ensure_ascii=False)
+    rec.status = "done"
+    rec.stage = "done"
+    rec.stage_label = _upload_ingest_job_stage_label("done")
+    rec.message = "上传分析完成，产品已入库。"
+    rec.percent = 100
+    now = now_iso()
+    rec.finished_at = now
+    rec.updated_at = now
+    db.add(rec)
+    db.commit()
+
+
+def _append_upload_job_stage_event(*, bind: Any, job_id: str, event: dict[str, Any]) -> None:
+    SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=bind)
+    progress_db = SessionMaker()
+    try:
+        rec = progress_db.get(UploadIngestJob, job_id)
+        if rec is None:
+            return
+        payload = event if isinstance(event, dict) else {}
+        stage = str(payload.get("stage") or "").strip().lower()
+        event_type = str(payload.get("type") or "").strip().lower()
+        text = str(payload.get("message") or payload.get("text") or "").strip()
+        delta = str(payload.get("delta") or "").strip()
+
+        if stage.startswith("stage1") and delta:
+            rec.stage1_text = f"{rec.stage1_text or ''}{delta}"
+        elif stage.startswith("stage2") and delta:
+            rec.stage2_text = f"{rec.stage2_text or ''}{delta}"
+        elif stage.startswith("stage1") and text and event_type == "step":
+            rec.stage1_text = f"{rec.stage1_text or ''}\n{text}".strip()
+        elif stage.startswith("stage2") and text and event_type == "step":
+            rec.stage2_text = f"{rec.stage2_text or ''}\n{text}".strip()
+
+        if text and event_type == "step":
+            rec.message = text
+        if stage.startswith("stage1"):
+            rec.stage = "stage1"
+            rec.stage_label = _upload_ingest_job_stage_label("stage1")
+            rec.percent = max(35, int(rec.percent or 0))
+        elif stage.startswith("stage2"):
+            rec.stage = "stage2"
+            rec.stage_label = _upload_ingest_job_stage_label("stage2")
+            rec.percent = max(78, int(rec.percent or 0))
+        rec.updated_at = now_iso()
+        progress_db.add(rec)
+        progress_db.commit()
+    finally:
+        progress_db.close()
+
+
+def _assert_upload_job_not_cancelled(*, db: Session, rec: UploadIngestJob) -> None:
+    current = db.get(UploadIngestJob, rec.job_id)
+    if current is None:
+        raise UploadIngestJobCancelledError("job disappeared.")
+    if bool(current.cancel_requested):
+        raise UploadIngestJobCancelledError("job cancelled by operator.")
+
+
+def _update_upload_job_stage(
+    *,
+    db: Session,
+    rec: UploadIngestJob,
+    stage: str,
+    message: str,
+    percent: int,
+) -> None:
+    rec = db.get(UploadIngestJob, rec.job_id)
+    if rec is None:
+        return
+    rec.stage = stage
+    rec.stage_label = _upload_ingest_job_stage_label(stage)
+    rec.message = message
+    rec.percent = max(0, min(100, int(percent)))
+    rec.updated_at = now_iso()
+    db.add(rec)
+    db.commit()
+    db.refresh(rec)
+
+
+def _mark_upload_ingest_job_waiting_more(
+    *,
+    job_id: str,
+    bind: Any,
+    missing_fields: list[str],
+    required_view: str | None,
+    message: str,
+) -> None:
+    SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=bind)
+    local_db = SessionMaker()
+    try:
+        rec = local_db.get(UploadIngestJob, job_id)
+        if rec is None:
+            return
+        now = now_iso()
+        rec.status = "waiting_more"
+        rec.stage = "waiting_more"
+        rec.stage_label = _upload_ingest_job_stage_label("waiting_more")
+        rec.message = message
+        rec.percent = max(70, min(95, int(rec.percent or 0)))
+        rec.missing_fields_json = json.dumps(missing_fields, ensure_ascii=False)
+        rec.required_view = str(required_view or "").strip() or _required_view_from_missing_fields(missing_fields)
+        rec.updated_at = now
+        rec.finished_at = None
+        local_db.add(rec)
+        local_db.commit()
+    finally:
+        local_db.close()
+
+
+def _mark_upload_ingest_job_cancelled(*, job_id: str, bind: Any, message: str) -> None:
+    SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=bind)
+    local_db = SessionMaker()
+    try:
+        rec = local_db.get(UploadIngestJob, job_id)
+        if rec is None:
+            return
+        now = now_iso()
+        rec.status = "cancelled"
+        rec.stage = "cancelled"
+        rec.stage_label = _upload_ingest_job_stage_label("cancelled")
+        rec.message = str(message or "任务已取消。")
+        rec.percent = max(0, min(99, int(rec.percent or 0)))
+        remove_rel_path(rec.temp_upload_path)
+        remove_rel_path(rec.supplement_temp_upload_path)
+        rec.temp_upload_path = None
+        rec.supplement_temp_upload_path = None
+        rec.finished_at = now
+        rec.updated_at = now
+        local_db.add(rec)
+        local_db.commit()
+    finally:
+        local_db.close()
+
+
+def _mark_upload_ingest_job_failed(
+    *,
+    job_id: str,
+    bind: Any,
+    code: str,
+    detail: str,
+    http_status: int,
+) -> None:
+    SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=bind)
+    local_db = SessionMaker()
+    try:
+        rec = local_db.get(UploadIngestJob, job_id)
+        if rec is None:
+            return
+        now = now_iso()
+        rec.status = "failed"
+        rec.stage = "failed"
+        rec.stage_label = _upload_ingest_job_stage_label("failed")
+        rec.message = str(detail or "upload ingest job failed.")
+        rec.error_json = json.dumps(
+            {
+                "code": str(code or "upload_ingest_failed"),
+                "detail": str(detail or "upload ingest failed."),
+                "http_status": int(http_status or 500),
+            },
+            ensure_ascii=False,
+        )
+        remove_rel_path(rec.temp_upload_path)
+        remove_rel_path(rec.supplement_temp_upload_path)
+        rec.temp_upload_path = None
+        rec.supplement_temp_upload_path = None
+        rec.finished_at = now
+        rec.updated_at = now
+        local_db.add(rec)
+        local_db.commit()
+    finally:
+        local_db.close()
+
+
+def _reconcile_upload_ingest_job_state(*, db: Session, rec: UploadIngestJob, now_utc: datetime) -> None:
+    status = str(rec.status or "").strip().lower()
+    if status not in {"queued", "running", "cancelling"}:
+        return
+    reason = _upload_ingest_job_orphan_reason(rec=rec, now_utc=now_utc)
+    if reason is None:
+        return
+    now = now_iso()
+    last_updated = str(rec.updated_at or "").strip() or "-"
+    active_stage = str(rec.stage or status or "unknown").strip() or "unknown"
+    if status == "cancelling" or bool(rec.cancel_requested):
+        rec.status = "cancelled"
+        rec.stage = "cancelled"
+        rec.stage_label = _upload_ingest_job_stage_label("cancelled")
+        rec.message = (
+            "任务已取消：检测到后台执行线程不存在，"
+            f"reason={reason}，stage={active_stage}，last_update={last_updated}。"
+        )
+        rec.error_json = None
+    else:
+        detail = (
+            "任务执行中断：检测到后台执行线程不存在，"
+            f"reason={reason}，stage={active_stage}，last_update={last_updated}。"
+        )
+        rec.status = "failed"
+        rec.stage = "failed"
+        rec.stage_label = _upload_ingest_job_stage_label("failed")
+        rec.message = detail
+        rec.error_json = json.dumps(
+            {
+                "code": "upload_job_orphaned",
+                "detail": detail,
+                "http_status": 500,
+            },
+            ensure_ascii=False,
+        )
+    rec.finished_at = now
+    rec.updated_at = now
+    db.add(rec)
+    db.commit()
+    db.refresh(rec)
+
+
+def _upload_ingest_job_orphan_reason(*, rec: UploadIngestJob, now_utc: datetime) -> str | None:
+    status = str(rec.status or "").strip().lower()
+    updated_at = _parse_utc_datetime(str(rec.updated_at or "").strip())
+    created_at = _parse_utc_datetime(str(rec.created_at or "").strip())
+    started_at = _parse_utc_datetime(str(rec.started_at or "").strip())
+    last_update = updated_at or created_at
+    if last_update is None:
+        return None
+    process_anchor = created_at if status == "queued" else (started_at or created_at)
+    if process_anchor and process_anchor < UPLOAD_INGEST_JOB_PROCESS_STARTED_AT:
+        return "service_restarted"
+    stale_seconds = max(0, int((now_utc - last_update).total_seconds()))
+    if stale_seconds >= UPLOAD_INGEST_JOB_STALE_SECONDS:
+        return f"heartbeat_timeout_{stale_seconds}s"
+    return None
+
+
+def _to_upload_ingest_job_view(rec: UploadIngestJob) -> UploadIngestJobView:
+    result = _safe_json_dict(rec.result_json) if str(rec.result_json or "").strip() else None
+    models = _safe_json_dict(rec.models_json) if str(rec.models_json or "").strip() else None
+    artifacts = _safe_json_dict(rec.artifacts_json) if str(rec.artifacts_json or "").strip() else None
+    error_raw = _safe_json_dict(rec.error_json) if str(rec.error_json or "").strip() else None
+    error_obj: UploadIngestJobError | None = None
+    if error_raw:
+        try:
+            error_obj = UploadIngestJobError.model_validate(error_raw)
+        except Exception:
+            error_obj = UploadIngestJobError(code="upload_ingest_error", detail=str(error_raw), http_status=500)
+
+    image_paths_raw = _safe_json_list(rec.image_paths_json)
+    missing_fields = [str(item or "").strip() for item in _safe_json_list(rec.missing_fields_json) if str(item or "").strip()]
+
+    return UploadIngestJobView(
+        status=str(rec.status or "queued").strip().lower() or "queued",
+        job_id=str(rec.job_id),
+        file_name=str(rec.file_name or "").strip() or None,
+        source_content_type=str(rec.source_content_type or "").strip() or None,
+        stage=str(rec.stage or "").strip() or None,
+        stage_label=str(rec.stage_label or "").strip() or None,
+        message=str(rec.message or "").strip() or None,
+        percent=max(0, min(100, int(rec.percent or 0))),
+        image_path=str(rec.image_path or "").strip() or None,
+        image_paths=[str(item or "").strip() for item in image_paths_raw if str(item or "").strip()],
+        category_override=str(rec.category_override or "").strip() or None,
+        brand_override=str(rec.brand_override or "").strip() or None,
+        name_override=str(rec.name_override or "").strip() or None,
+        stage1_model_tier=_normalize_model_tier_optional_for_view(rec.stage1_model_tier),
+        stage2_model_tier=_normalize_model_tier_optional_for_view(rec.stage2_model_tier),
+        stage1_text=str(rec.stage1_text or "").strip() or None,
+        stage2_text=str(rec.stage2_text or "").strip() or None,
+        missing_fields=missing_fields,
+        required_view=str(rec.required_view or "").strip() or None,
+        models=models or None,
+        artifacts=artifacts or None,
+        result=result or None,
+        error=error_obj,
+        cancel_requested=bool(rec.cancel_requested),
+        created_at=str(rec.created_at or ""),
+        updated_at=str(rec.updated_at or ""),
+        started_at=str(rec.started_at or "").strip() or None,
+        finished_at=str(rec.finished_at or "").strip() or None,
+    )
+
+
+def _safe_json_dict(raw: str | None) -> dict[str, Any]:
+    text = str(raw or "").strip()
+    if not text:
+        return {}
+    try:
+        parsed = json.loads(text)
+    except Exception:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _safe_json_list(raw: str | None) -> list[Any]:
+    text = str(raw or "").strip()
+    if not text:
+        return []
+    try:
+        parsed = json.loads(text)
+    except Exception:
+        return []
+    return parsed if isinstance(parsed, list) else []
+
+
+def _parse_utc_datetime(value: str) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        if text.endswith("Z"):
+            text = f"{text[:-1]}+00:00"
+        parsed = datetime.fromisoformat(text)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except ValueError:
+        return None
+
+
+def _upload_ingest_job_stage_label(stage: str) -> str:
+    mapping = {
+        "queued": "待执行",
+        "uploading": "上传中",
+        "converting": "转换中",
+        "stage1": "Stage1 识别",
+        "stage2": "Stage2 结构化",
+        "waiting_more": "待补拍/补录",
+        "cancelling": "取消中",
+        "cancelled": "已取消",
+        "done": "已完成",
+        "failed": "失败",
+    }
+    key = str(stage or "").strip().lower()
+    return mapping.get(key, key or "处理中")
+
+
+def _extract_waiting_more_fields_from_stage2_error(detail: str) -> list[str]:
+    text = str(detail or "").lower()
+    out: list[str] = []
+    if "product.category" in text:
+        out.append("category")
+    return out
+
+
+def _build_upload_job_stage1_requirement(vision_text: Any) -> dict[str, Any]:
+    base = _build_stage1_requirement(vision_text)
+    missing = [item for item in base["missing_fields"] if item in {"brand", "ingredients"}]
+    required_view = _required_view_from_missing_fields(missing) if missing else None
+    return {
+        "needs_more_images": bool(missing),
+        "missing_fields": missing,
+        "required_view": required_view,
+    }
+
+
+def _remaining_missing_fields_after_manual_input(*, missing_fields: list[str], rec: UploadIngestJob) -> list[str]:
+    resolved_manual: set[str] = set()
+    if str(rec.brand_override or "").strip():
+        resolved_manual.add("brand")
+    if str(rec.category_override or "").strip():
+        resolved_manual.add("category")
+    if str(rec.name_override or "").strip():
+        resolved_manual.add("name")
+    out: list[str] = []
+    for item in missing_fields:
+        key = str(item or "").strip().lower()
+        if not key:
+            continue
+        if key in resolved_manual:
+            continue
+        out.append(key)
+    return out
+
+
+def _upload_missing_field_label(field: str) -> str:
+    key = str(field or "").strip().lower()
+    if key == "brand":
+        return "品牌"
+    if key == "name":
+        return "产品名"
+    if key == "category":
+        return "产品类别"
+    if key == "ingredients":
+        return "成分表"
+    return key or "未知字段"
+
+
+def _normalize_model_tier_optional_for_view(value: str | None) -> str | None:
+    text = str(value or "").strip().lower()
+    if text in MODEL_TIER_OPTIONS:
+        return text
+    return None
 
 
 def _analyze_with_doubao(
@@ -1203,6 +2172,8 @@ def _required_view_from_missing_fields(missing_fields: list[str]) -> str:
         return "补拍另一面（品牌/品名 + 成分表）"
     if "ingredients" in fields:
         return "补拍背面成分表"
+    if "category" in fields:
+        return "补拍可见产品类别的一面，或手动补录产品类别"
     return "补拍正面品牌与品名"
 
 

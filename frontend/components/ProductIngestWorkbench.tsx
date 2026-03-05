@@ -1,13 +1,14 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  cancelUploadIngestJob,
+  createUploadIngestJob,
   ingestProduct,
-  ingestProductStage1Stream,
-  ingestProductStage1SupplementStream,
-  ingestProductStage2Stream,
-  SSEEvent,
+  listUploadIngestJobs,
+  resumeUploadIngestJob,
+  UploadIngestJob,
 } from "@/lib/api";
 
 const CATEGORIES = [
@@ -23,6 +24,38 @@ const MODEL_TIERS = [
   { value: "lite", label: "Lite" },
   { value: "pro", label: "Pro" },
 ] as const;
+
+type ModelTier = "mini" | "lite" | "pro";
+
+type ResumeDraft = {
+  image: File | null;
+  category: string;
+  brand: string;
+  name: string;
+};
+
+type IngestResultLike = {
+  id?: string;
+  status?: string;
+  mode?: string;
+  category?: string;
+  image_path?: string | null;
+  json_path?: string | null;
+  doubao?: {
+    pipeline_mode?: string | null;
+    models?: { vision?: string; struct?: string } | null;
+    vision_text?: string | null;
+    struct_text?: string | null;
+    artifacts?: { vision?: string | null; struct?: string | null; context?: string | null } | null;
+  } | null;
+};
+
+const EMPTY_DRAFT: ResumeDraft = {
+  image: null,
+  category: "",
+  brand: "",
+  name: "",
+};
 
 const SAMPLE_JSON = `{
   "category": "shampoo",
@@ -46,28 +79,6 @@ const SAMPLE_JSON = `{
   ]
 }`;
 
-type ModelTier = "mini" | "lite" | "pro";
-type BatchStatus = "queued" | "stage1" | "stage2" | "waiting_more" | "done" | "error";
-
-type BatchRunItem = {
-  index: number;
-  fileName: string;
-  traceId?: string;
-  status: BatchStatus;
-  error?: string;
-  resultId?: string;
-  category?: string;
-  imagePath?: string | null;
-  jsonPath?: string | null;
-  models?: { vision?: string; struct?: string } | null;
-  artifacts?: { vision?: string | null; struct?: string | null; context?: string | null } | null;
-  stage1Text?: string | null;
-  stage2Text?: string | null;
-  needsMoreImages?: boolean;
-  missingFields?: string[];
-  requiredView?: string | null;
-};
-
 export default function ProductIngestWorkbench() {
   const [useJsonOverride, setUseJsonOverride] = useState(false);
   const [category, setCategory] = useState("shampoo");
@@ -78,27 +89,16 @@ export default function ProductIngestWorkbench() {
   const [stage2ModelTier, setStage2ModelTier] = useState<ModelTier>("mini");
   const [jsonText, setJsonText] = useState("");
   const [images, setImages] = useState<File[]>([]);
+
   const [submitting, setSubmitting] = useState(false);
-  const [phase, setPhase] = useState<"idle" | "stage1" | "stage2" | "done">("idle");
+  const [jobsLoading, setJobsLoading] = useState(false);
+  const [resumingJobId, setResumingJobId] = useState<string | null>(null);
+  const [cancellingJobId, setCancellingJobId] = useState<string | null>(null);
+
   const [error, setError] = useState<string | null>(null);
-  const [batchRuns, setBatchRuns] = useState<BatchRunItem[]>([]);
-  const [supplementFiles, setSupplementFiles] = useState<Record<number, File | null>>({});
-  const [supplementingIndex, setSupplementingIndex] = useState<number | null>(null);
-  const [result, setResult] = useState<null | {
-    id: string;
-    status: string;
-    mode?: string;
-    category?: string;
-    image_path?: string | null;
-    json_path?: string | null;
-    doubao?: {
-      pipeline_mode?: string | null;
-      models?: { vision?: string; struct?: string } | null;
-      vision_text?: string | null;
-      struct_text?: string | null;
-      artifacts?: { vision?: string | null; struct?: string | null; context?: string | null } | null;
-    } | null;
-  }>(null);
+  const [result, setResult] = useState<IngestResultLike | null>(null);
+  const [uploadJobs, setUploadJobs] = useState<UploadIngestJob[]>([]);
+  const [resumeDrafts, setResumeDrafts] = useState<Record<string, ResumeDraft>>({});
 
   const canSubmit = useMemo(() => {
     if (submitting) return false;
@@ -107,39 +107,57 @@ export default function ProductIngestWorkbench() {
     return true;
   }, [images.length, jsonText, submitting, useJsonOverride]);
 
+  const sortedJobs = useMemo(
+    () => [...uploadJobs].sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || ""))),
+    [uploadJobs],
+  );
+
   const latestModels = useMemo(() => {
-    for (let i = batchRuns.length - 1; i >= 0; i -= 1) {
-      const item = batchRuns[i];
-      if (item.models?.vision || item.models?.struct) {
-        return {
-          stage1: item.models.vision || null,
-          stage2: item.models.struct || null,
-        };
+    for (const item of sortedJobs) {
+      const models = item.models || {};
+      const vision = typeof models.vision === "string" ? models.vision : null;
+      const struct = typeof models.struct === "string" ? models.struct : null;
+      if (vision || struct) {
+        return { stage1: vision, stage2: struct };
       }
     }
-    return {
-      stage1: result?.doubao?.models?.vision || null,
-      stage2: result?.doubao?.models?.struct || null,
-    };
-  }, [batchRuns, result]);
+    return { stage1: null as string | null, stage2: null as string | null };
+  }, [sortedJobs]);
 
-  function updateBatchRun(index: number, patch: Partial<BatchRunItem>) {
-    setBatchRuns((prev) => prev.map((item) => (item.index === index ? { ...item, ...patch } : item)));
-  }
+  const refreshJobs = useCallback(async () => {
+    setJobsLoading(true);
+    try {
+      const rows = await listUploadIngestJobs({ limit: 60, offset: 0 });
+      setUploadJobs(rows);
+      const latestDone = rows
+        .filter((item) => item.status === "done" && item.result && typeof item.result === "object")
+        .sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")))[0];
+      if (latestDone && latestDone.result && typeof latestDone.result === "object") {
+        setResult(latestDone.result as IngestResultLike);
+      }
+    } catch (err) {
+      setError(formatError(err));
+    } finally {
+      setJobsLoading(false);
+    }
+  }, []);
 
-  function pushProgress(index: number, event: SSEEvent) {
-    if (event.event !== "progress") return;
-    setBatchRuns((prev) =>
-      prev.map((item) =>
-        item.index === index
-          ? {
-              ...item,
-              stage1Text: appendDeltaText(item.stage1Text, event.data, "stage1_vision"),
-              stage2Text: appendDeltaText(item.stage2Text, event.data, "stage2_struct"),
-            }
-          : item,
-      ),
-    );
+  useEffect(() => {
+    void refreshJobs();
+    const timer = window.setInterval(() => {
+      void refreshJobs();
+    }, 2200);
+    return () => window.clearInterval(timer);
+  }, [refreshJobs]);
+
+  function updateResumeDraft(jobId: string, patch: Partial<ResumeDraft>) {
+    setResumeDrafts((prev) => ({
+      ...prev,
+      [jobId]: {
+        ...(prev[jobId] || EMPTY_DRAFT),
+        ...patch,
+      },
+    }));
   }
 
   async function onSubmit(e: FormEvent) {
@@ -147,205 +165,82 @@ export default function ProductIngestWorkbench() {
     if (!canSubmit) return;
 
     setSubmitting(true);
-    setPhase("idle");
     setError(null);
-    setResult(null);
-    setBatchRuns([]);
-    setSupplementFiles({});
-    setSupplementingIndex(null);
 
     try {
-      const finalBrand = useJsonOverride ? brand.trim() || undefined : undefined;
-      const finalName = useJsonOverride ? name.trim() || undefined : undefined;
-      const finalCategory = useJsonOverride ? category : undefined;
-      const finalJson = useJsonOverride ? jsonText.trim() || undefined : undefined;
-
-      if (source === "doubao" && !finalJson) {
-        const initial = images.map((file, i) => ({
-          index: i,
-          fileName: file.name,
-          status: "queued" as BatchStatus,
-        }));
-        setBatchRuns(initial);
-
-        let failed = 0;
-        let waitingMore = 0;
-        let succeeded = 0;
-        let lastResult: (typeof result) | null = null;
-
-        for (let i = 0; i < images.length; i += 1) {
-          const file = images[i];
-          setPhase("stage1");
-          updateBatchRun(i, { status: "stage1", error: undefined });
-
-          let stage1TraceId: string | null = null;
+      if (source === "doubao" && !useJsonOverride) {
+        let ok = 0;
+        let fail = 0;
+        for (const image of images) {
           try {
-            const stage1 = await ingestProductStage1Stream(
-              { image: file, modelTier: stage1ModelTier },
-              (event) => pushProgress(i, event),
-            );
-            stage1TraceId = stage1.trace_id;
-            const needsMoreImages = stage1.status === "needs_more_images" || !!stage1.needs_more_images;
-            if (needsMoreImages) {
-              waitingMore += 1;
-              updateBatchRun(i, {
-                status: "waiting_more",
-                traceId: stage1.trace_id,
-                models: stage1.doubao?.models || null,
-                artifacts: stage1.doubao?.artifacts || null,
-                stage1Text: stage1.doubao?.vision_text,
-                needsMoreImages: true,
-                missingFields: stage1.missing_fields || [],
-                requiredView: stage1.required_view || null,
-                error: undefined,
-              });
-              continue;
-            }
-            updateBatchRun(i, {
-              status: "stage2",
-              traceId: stage1.trace_id,
-              models: stage1.doubao?.models || null,
-              artifacts: stage1.doubao?.artifacts || null,
-              stage1Text: stage1.doubao?.vision_text,
-              needsMoreImages: false,
-              missingFields: [],
-              requiredView: null,
+            await createUploadIngestJob({
+              image,
+              stage1ModelTier,
+              stage2ModelTier,
             });
+            ok += 1;
           } catch (err) {
-            failed += 1;
-            updateBatchRun(i, { status: "error", error: formatError(err) });
-            continue;
-          }
-
-          setPhase("stage2");
-          if (!stage1TraceId) {
-            failed += 1;
-            updateBatchRun(i, { status: "error", error: "Stage1 未返回 trace_id。" });
-            continue;
-          }
-          try {
-            const ingestResult = await ingestProductStage2Stream(
-              { traceId: stage1TraceId, modelTier: stage2ModelTier },
-              (event) => pushProgress(i, event),
-            );
-            lastResult = ingestResult;
-            updateBatchRun(i, {
-              status: "done",
-              resultId: ingestResult.id,
-              category: ingestResult.category,
-              imagePath: ingestResult.image_path || null,
-              jsonPath: ingestResult.json_path || null,
-              models: ingestResult.doubao?.models || null,
-              artifacts: ingestResult.doubao?.artifacts || null,
-              stage1Text: ingestResult.doubao?.vision_text,
-              stage2Text: ingestResult.doubao?.struct_text,
-            });
-            succeeded += 1;
-          } catch (err) {
-            failed += 1;
-            updateBatchRun(i, { status: "error", error: formatError(err) });
+            fail += 1;
+            setError(formatError(err));
           }
         }
-
-        if (lastResult) setResult(lastResult);
-        if (failed > 0 || waitingMore > 0) {
-          setError(`批量完成：${succeeded}/${images.length} 成功，${failed} 失败，${waitingMore} 待补拍。`);
+        await refreshJobs();
+        if (fail > 0) {
+          setError(`任务创建完成：${ok}/${images.length} 成功，${fail} 失败。`);
         }
-      } else {
-        const firstImage = images[0];
-        const ingestResult = await ingestProduct({
-          image: firstImage || undefined,
-          category: finalCategory,
-          brand: finalBrand,
-          name: finalName,
-          source,
-          metaJson: finalJson,
-          stage1ModelTier,
-          stage2ModelTier,
-        });
-        setResult(ingestResult);
+        return;
       }
-      setPhase("done");
+
+      const ingestResult = await ingestProduct({
+        image: images[0] || undefined,
+        category: useJsonOverride ? category : undefined,
+        brand: useJsonOverride ? brand.trim() || undefined : undefined,
+        name: useJsonOverride ? name.trim() || undefined : undefined,
+        source,
+        metaJson: useJsonOverride ? jsonText.trim() || undefined : undefined,
+        stage1ModelTier,
+        stage2ModelTier,
+      });
+      setResult(ingestResult);
+      await refreshJobs();
     } catch (err) {
       setError(formatError(err));
-      setPhase("idle");
     } finally {
       setSubmitting(false);
     }
   }
 
-  async function runSupplementForItem(index: number) {
-    const target = batchRuns.find((item) => item.index === index);
-    const supplementFile = supplementFiles[index];
-    if (!target?.traceId || !supplementFile) return;
-
-    setSupplementingIndex(index);
+  async function cancelJob(jobId: string) {
+    setCancellingJobId(jobId);
     setError(null);
-    updateBatchRun(index, { status: "stage1", error: undefined });
-    setPhase("stage1");
     try {
-      const stage1 = await ingestProductStage1SupplementStream(
-        {
-          traceId: target.traceId,
-          image: supplementFile,
-          modelTier: stage1ModelTier,
-        },
-        (event) => pushProgress(index, event),
-      );
-
-      const needsMoreImages = stage1.status === "needs_more_images" || !!stage1.needs_more_images;
-      if (needsMoreImages) {
-        updateBatchRun(index, {
-          status: "waiting_more",
-          traceId: stage1.trace_id,
-          models: stage1.doubao?.models || null,
-          artifacts: stage1.doubao?.artifacts || null,
-          stage1Text: stage1.doubao?.vision_text,
-          needsMoreImages: true,
-          missingFields: stage1.missing_fields || [],
-          requiredView: stage1.required_view || null,
-          error: "双图 stage1 仍缺关键信息，请更换更清晰角度后重试。",
-        });
-        return;
-      }
-
-      updateBatchRun(index, {
-        status: "stage2",
-        traceId: stage1.trace_id,
-        models: stage1.doubao?.models || null,
-        artifacts: stage1.doubao?.artifacts || null,
-        stage1Text: stage1.doubao?.vision_text,
-        needsMoreImages: false,
-        missingFields: [],
-        requiredView: null,
-      });
-      setPhase("stage2");
-
-      const ingestResult = await ingestProductStage2Stream(
-        { traceId: stage1.trace_id, modelTier: stage2ModelTier },
-        (event) => pushProgress(index, event),
-      );
-      setResult(ingestResult);
-      updateBatchRun(index, {
-        status: "done",
-        resultId: ingestResult.id,
-        category: ingestResult.category,
-        imagePath: ingestResult.image_path || null,
-        jsonPath: ingestResult.json_path || null,
-        models: ingestResult.doubao?.models || null,
-        artifacts: ingestResult.doubao?.artifacts || null,
-        stage1Text: ingestResult.doubao?.vision_text,
-        stage2Text: ingestResult.doubao?.struct_text,
-        needsMoreImages: false,
-        missingFields: [],
-        requiredView: null,
-      });
-      setSupplementFiles((prev) => ({ ...prev, [index]: null }));
+      await cancelUploadIngestJob(jobId);
+      await refreshJobs();
     } catch (err) {
-      updateBatchRun(index, { status: "error", error: formatError(err) });
+      setError(formatError(err));
     } finally {
-      setSupplementingIndex(null);
-      setPhase("done");
+      setCancellingJobId(null);
+    }
+  }
+
+  async function resumeJob(job: UploadIngestJob) {
+    const draft = resumeDrafts[job.job_id] || EMPTY_DRAFT;
+    setResumingJobId(job.job_id);
+    setError(null);
+    try {
+      await resumeUploadIngestJob({
+        jobId: job.job_id,
+        image: draft.image,
+        category: draft.category.trim() || undefined,
+        brand: draft.brand.trim() || undefined,
+        name: draft.name.trim() || undefined,
+      });
+      setResumeDrafts((prev) => ({ ...prev, [job.job_id]: EMPTY_DRAFT }));
+      await refreshJobs();
+    } catch (err) {
+      setError(formatError(err));
+    } finally {
+      setResumingJobId(null);
     }
   }
 
@@ -356,7 +251,7 @@ export default function ProductIngestWorkbench() {
     >
       <div className="flex flex-wrap items-center gap-2">
         <span className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/62">
-          Stage A · 上传与成分解析（流式）
+          Stage A · 上传与成分解析（后台任务）
         </span>
         <span className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/62">
           Stage1 档位：{stage1ModelTier.toUpperCase()}
@@ -374,7 +269,7 @@ export default function ProductIngestWorkbench() {
 
       <h2 className="mt-3 text-[30px] font-semibold tracking-[-0.02em] text-black/90">产品上传台</h2>
       <p className="mt-2 text-[14px] leading-[1.6] text-black/65">
-        先完成图片解析并入库，输出 Stage1/Stage2 实时文本与最终结构化结果，作为后续去重与映射的输入基础。
+        上传先落盘到暂存区，再统一转换 webp/jpg，随后进入 Stage1/Stage2。支持终止任务、孤儿任务自动收敛、刷新后恢复进度。
       </p>
 
       <form onSubmit={onSubmit} className="mt-5 space-y-5 rounded-[24px] border border-black/10 bg-white p-5">
@@ -386,7 +281,7 @@ export default function ProductIngestWorkbench() {
               onChange={(e) => setSource(e.target.value as "manual" | "doubao" | "auto")}
               className="h-11 rounded-xl border border-black/12 bg-white px-3 text-[14px] text-black/86 outline-none focus:border-black/35"
             >
-              <option value="doubao">doubao（图片走豆包解析）</option>
+              <option value="doubao">doubao（后台任务）</option>
               <option value="manual">manual（手工 JSON 优先）</option>
               <option value="auto">auto（自动）</option>
             </select>
@@ -437,9 +332,7 @@ export default function ProductIngestWorkbench() {
               已选 {images.length} 张：{images.map((f) => f.name).join("、")}
             </div>
           ) : null}
-          {source === "doubao" && !useJsonOverride ? (
-            <div className="text-[12px] text-black/52">批量严格串行：逐张 stage1 → stage2。</div>
-          ) : null}
+          <div className="text-[12px] text-black/52">状态覆盖：上传中、转换中、Stage1、Stage2、待补拍/补录。</div>
         </label>
 
         <label className="flex items-center gap-3 rounded-xl border border-black/10 bg-black/[0.02] px-3 py-2.5 text-[13px] text-black/78">
@@ -503,163 +396,169 @@ export default function ProductIngestWorkbench() {
           </>
         ) : null}
 
-        <button
-          type="submit"
-          disabled={!canSubmit}
-          className="inline-flex h-11 items-center justify-center rounded-full bg-black px-6 text-[15px] font-semibold text-white disabled:cursor-not-allowed disabled:bg-black/25"
-        >
-          {submitting ? "上传中..." : "上传到后端"}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="submit"
+            disabled={!canSubmit}
+            className="inline-flex h-11 items-center justify-center rounded-full bg-black px-6 text-[15px] font-semibold text-white disabled:cursor-not-allowed disabled:bg-black/25"
+          >
+            {submitting ? "提交中..." : "上传到后端"}
+          </button>
+          <button
+            type="button"
+            onClick={() => void refreshJobs()}
+            disabled={jobsLoading}
+            className="inline-flex h-11 items-center justify-center rounded-full border border-black/12 bg-white px-5 text-[13px] font-semibold text-black/78 disabled:opacity-45"
+          >
+            {jobsLoading ? "刷新中..." : "刷新任务"}
+          </button>
+        </div>
 
         {error ? <p className="text-[13px] leading-[1.5] text-[#b42318]">{error}</p> : null}
 
-        {batchRuns.length > 0 ? (
-          <div className="rounded-2xl border border-[#8ea3ff]/30 bg-[#eef2ff] p-4">
-            <div className="flex items-center justify-between text-[13px]">
-              <span className="font-semibold text-black/82">批量分析进度</span>
-              <span className="text-black/58">
-                当前阶段：{phase === "stage1" ? "Stage1 识别" : phase === "stage2" ? "Stage2 结构化" : phase === "done" ? "完成" : "等待"}
-              </span>
-            </div>
-            <div className="mt-3 space-y-3">
-              {batchRuns.map((item) => (
-                <article key={`${item.fileName}-${item.index}`} className="rounded-xl border border-black/10 bg-white p-3">
+        <div className="rounded-2xl border border-[#8ea3ff]/30 bg-[#eef2ff] p-4">
+          <div className="flex items-center justify-between text-[13px]">
+            <span className="font-semibold text-black/82">后台任务进度</span>
+            <span className="text-black/58">共 {sortedJobs.length} 条</span>
+          </div>
+          <div className="mt-3 space-y-3">
+            {sortedJobs.map((job) => {
+              const resultObj = job.result && typeof job.result === "object" ? (job.result as IngestResultLike) : null;
+              const draft = resumeDrafts[job.job_id] || EMPTY_DRAFT;
+              const running = job.status === "running" || job.status === "cancelling";
+              return (
+                <article key={job.job_id} className="rounded-xl border border-black/10 bg-white p-3">
                   <div className="flex items-center justify-between gap-3">
-                    <div className="truncate text-[13px] font-medium text-black/82">
-                      #{item.index + 1} {item.fileName}
-                    </div>
-                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${statusClassName(item.status)}`}>
-                      {statusLabel(item.status)}
+                    <div className="truncate text-[13px] font-medium text-black/82">{job.file_name || "upload"}</div>
+                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${statusClassName(job)}`}>
+                      {statusLabel(job)}
                     </span>
                   </div>
 
                   <div className="mt-1 text-[12px] text-black/58">
-                    trace_id: {item.traceId || "-"} | 入库ID: {item.resultId || "-"} | 分类: {item.category || "-"}
+                    job_id: {job.job_id} | stage: {job.stage || "-"} | 入库ID: {resultObj?.id || "-"}
                   </div>
 
-                  {item.models ? (
-                    <div className="mt-1 text-[12px] text-black/58">
-                      模型: vision={item.models.vision || "-"} / struct={item.models.struct || "-"}
-                    </div>
-                  ) : null}
+                  <div className="mt-2 text-[12px] text-black/64">{job.stage_label || job.stage || "处理中"} · {job.message || "-"}</div>
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-black/10">
+                    <div className="h-full rounded-full bg-black transition-all" style={{ width: `${Math.max(0, Math.min(100, Number(job.percent || 0)))}%` }} />
+                  </div>
 
-                  {item.error ? <div className="mt-2 text-[12px] text-[#b42318]">{item.error}</div> : null}
+                  {job.error ? <div className="mt-2 text-[12px] text-[#b42318]">{job.error.detail}</div> : null}
 
-                  {item.status === "waiting_more" ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {running ? (
+                      <button
+                        type="button"
+                        onClick={() => void cancelJob(job.job_id)}
+                        disabled={job.status === "cancelling" || cancellingJobId === job.job_id}
+                        className="inline-flex h-8 items-center justify-center rounded-full border border-[#ef4444]/40 bg-[#fff5f5] px-3 text-[12px] font-semibold text-[#b42318] disabled:opacity-45"
+                      >
+                        {job.status === "cancelling" || cancellingJobId === job.job_id ? "取消中..." : "终止任务"}
+                      </button>
+                    ) : null}
+
+                    {resultObj?.id ? (
+                      <Link
+                        href={`/product/${resultObj.id}`}
+                        className="inline-flex h-8 items-center rounded-full border border-black/14 bg-white px-3 text-[12px] font-semibold text-black/78"
+                      >
+                        查看详情
+                      </Link>
+                    ) : null}
+                  </div>
+
+                  {job.status === "waiting_more" ? (
                     <div className="mt-2 rounded-xl border border-[#f3c178]/40 bg-[#fff8ef] p-2.5">
-                      <div className="text-[12px] font-semibold text-[#9b5a00]">该条需补拍，当前已跳过队列并继续后续任务。</div>
-                      <div className="mt-1 text-[12px] text-black/66">
-                        缺失字段：{(item.missingFields || []).map((field) => missingFieldLabel(field)).join("、") || "-"}
+                      <div className="text-[12px] font-semibold text-[#9b5a00]">待补拍/补录：{(job.missing_fields || []).map((field) => missingFieldLabel(field)).join("、") || "关键信息"}</div>
+                      <div className="mt-1 text-[12px] text-black/66">建议：{job.required_view || "补拍另一面"}</div>
+
+                      <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-3">
+                        <select
+                          value={draft.category}
+                          onChange={(e) => updateResumeDraft(job.job_id, { category: e.target.value })}
+                          className="h-9 rounded-lg border border-black/12 bg-white px-2.5 text-[12px]"
+                        >
+                          <option value="">补录类别（可选）</option>
+                          {CATEGORIES.map((item) => (
+                            <option key={`${job.job_id}-${item.value}`} value={item.value}>
+                              {item.label}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          value={draft.brand}
+                          onChange={(e) => updateResumeDraft(job.job_id, { brand: e.target.value })}
+                          placeholder="补录品牌（可选）"
+                          className="h-9 rounded-lg border border-black/12 bg-white px-2.5 text-[12px]"
+                        />
+                        <input
+                          value={draft.name}
+                          onChange={(e) => updateResumeDraft(job.job_id, { name: e.target.value })}
+                          placeholder="补录产品名（可选）"
+                          className="h-9 rounded-lg border border-black/12 bg-white px-2.5 text-[12px]"
+                        />
                       </div>
-                      <div className="mt-1 text-[12px] text-black/66">建议补拍：{item.requiredView || "补拍另一面"}</div>
+
                       <div className="mt-2 flex flex-wrap items-center gap-2">
                         <input
                           type="file"
                           accept="image/*"
-                          onChange={(event) =>
-                            setSupplementFiles((prev) => ({
-                              ...prev,
-                              [item.index]: event.target.files?.[0] || null,
-                            }))
-                          }
+                          onChange={(event) => updateResumeDraft(job.job_id, { image: event.target.files?.[0] || null })}
                           className="h-8 rounded-lg border border-black/12 bg-white px-2 text-[12px] text-black/76 file:mr-2 file:rounded file:border-0 file:bg-black/6 file:px-2 file:py-1 file:text-[11px]"
                         />
                         <button
                           type="button"
-                          disabled={supplementingIndex === item.index || !supplementFiles[item.index]}
-                          onClick={() => runSupplementForItem(item.index)}
+                          disabled={resumingJobId === job.job_id}
+                          onClick={() => void resumeJob(job)}
                           className="inline-flex h-8 items-center justify-center rounded-full bg-black px-3 text-[12px] font-semibold text-white disabled:bg-black/25"
                         >
-                          {supplementingIndex === item.index ? "补拍处理中..." : "上传补拍并继续"}
+                          {resumingJobId === job.job_id ? "继续处理中..." : "继续分析"}
                         </button>
                       </div>
                     </div>
                   ) : null}
 
-                  {item.stage1Text && (item.status === "stage1" || item.status === "stage2" || item.status === "waiting_more" || item.status === "done") ? (
-                    <div className="mt-2 rounded-xl border border-black/10 bg-[#fbfcff] p-2">
-                      <div className="text-[11px] font-semibold text-[#3151d8]">Stage1 实时文本</div>
-                      <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap text-[12px] leading-[1.5] text-black/72">
-                        {item.stage1Text}
-                      </pre>
-                    </div>
-                  ) : null}
-
-                  {item.stage2Text && (item.status === "stage2" || item.status === "done") ? (
-                    <div className="mt-2 rounded-xl border border-black/10 bg-[#f8fafc] p-2">
-                      <div className="text-[11px] font-semibold text-[#3151d8]">Stage2 实时文本</div>
-                      <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap text-[12px] leading-[1.5] text-black/72">
-                        {item.stage2Text}
-                      </pre>
-                    </div>
-                  ) : null}
-
-                  {item.stage1Text ? (
+                  {job.stage1_text ? (
                     <details className="mt-2">
-                      <summary className="cursor-pointer text-[12px] font-medium text-black/76">Stage1 识别文本（美化）</summary>
-                      <div className="mt-2 rounded-xl border border-black/8 bg-[#fbfcff] p-2.5">
-                        {toVisionSections(item.stage1Text).map((section, idx) => (
+                      <summary className="cursor-pointer text-[12px] font-medium text-black/76">Stage1 实时文本（美化）</summary>
+                      <div className="mt-2 rounded-xl border border-black/10 bg-[#fbfcff] p-2.5">
+                        {toVisionSections(job.stage1_text).map((section, idx) => (
                           <div key={`${section.title}-${idx}`} className="mb-2 last:mb-0">
                             <div className="text-[11px] font-semibold text-[#3151d8]">{section.title}</div>
-                            <pre className="mt-0.5 whitespace-pre-wrap text-[12px] leading-[1.55] text-black/74">
-                              {section.body || "未识别"}
-                            </pre>
+                            <pre className="mt-0.5 whitespace-pre-wrap text-[12px] leading-[1.55] text-black/74">{section.body || "未识别"}</pre>
                           </div>
                         ))}
                       </div>
                     </details>
                   ) : null}
 
-                  {item.stage2Text ? (
+                  {job.stage2_text ? (
                     <details className="mt-2">
-                      <summary className="cursor-pointer text-[12px] font-medium text-black/76">Stage2 结构化文本（格式化）</summary>
+                      <summary className="cursor-pointer text-[12px] font-medium text-black/76">Stage2 实时文本（格式化）</summary>
                       <pre className="mt-2 max-h-72 overflow-auto rounded-xl border border-black/10 bg-[#f8fafc] p-2.5 text-[12px] leading-[1.55] text-black/74 whitespace-pre-wrap">
-                        {toPrettyStructText(item.stage2Text)}
+                        {toPrettyStructText(job.stage2_text)}
                       </pre>
                     </details>
                   ) : null}
                 </article>
-              ))}
-            </div>
+              );
+            })}
+            {sortedJobs.length === 0 ? <div className="text-[12px] text-black/52">暂无上传任务。</div> : null}
           </div>
-        ) : null}
-
-        {phase === "done" && batchRuns.length > 0 ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <Link
-              href="/product"
-              className="inline-flex h-9 items-center rounded-full border border-black/14 bg-white px-4 text-[12px] font-semibold text-black/78 transition-colors hover:bg-black/[0.03]"
-            >
-              查看全部产品
-            </Link>
-            {batchRuns
-              .filter((item) => item.resultId)
-              .slice(0, 1)
-              .map((item) => (
-                <Link
-                  key={item.resultId}
-                  href={`/product/${item.resultId}`}
-                  className="inline-flex h-9 items-center rounded-full border border-black/14 bg-black px-4 text-[12px] font-semibold text-white transition-opacity hover:opacity-90"
-                >
-                  查看最新详情
-                </Link>
-              ))}
-          </div>
-        ) : null}
+        </div>
 
         {result ? (
           <div className="rounded-2xl border border-black/10 bg-black/[0.03] px-4 py-3.5 text-[13px] leading-[1.65] text-black/76">
-            <div>状态：{result.status}</div>
-            <div>入库 ID：{result.id}</div>
+            <div>状态：{result.status || "-"}</div>
+            <div>入库 ID：{result.id || "-"}</div>
             <div>模式：{result.mode || "-"}</div>
             <div>品类：{result.category || "-"}</div>
             <div>图片：{result.image_path || "-"}</div>
             <div>JSON：{result.json_path || "-"}</div>
             {result.doubao ? (
               <>
-                <div className="mt-2 border-t border-black/8 pt-2">
-                  Doubao 流程：{result.doubao.pipeline_mode || "-"}
-                </div>
+                <div className="mt-2 border-t border-black/8 pt-2">Doubao 流程：{result.doubao.pipeline_mode || "-"}</div>
                 <div>
                   模型：vision={result.doubao.models?.vision || "-"} / struct={result.doubao.models?.struct || "-"}
                 </div>
@@ -685,26 +584,36 @@ function formatError(err: unknown): string {
   }
 }
 
-function statusLabel(status: BatchStatus): string {
-  if (status === "queued") return "排队中";
-  if (status === "stage1") return "Stage1";
-  if (status === "stage2") return "Stage2";
-  if (status === "waiting_more") return "待补拍";
-  if (status === "done") return "成功";
-  return "失败";
+function statusLabel(job: UploadIngestJob): string {
+  if (job.status === "done") return "成功";
+  if (job.status === "failed") return "失败";
+  if (job.status === "cancelled") return "已取消";
+  if (job.status === "cancelling") return "取消中";
+  if (job.status === "waiting_more") return "待补拍";
+  const stage = String(job.stage || "").toLowerCase();
+  if (stage === "uploading") return "上传中";
+  if (stage === "converting") return "转换中";
+  if (stage === "stage1") return "Stage1";
+  if (stage === "stage2") return "Stage2";
+  return "进行中";
 }
 
-function statusClassName(status: BatchStatus): string {
-  if (status === "done") return "bg-[#e7f6ec] text-[#027a48]";
-  if (status === "error") return "bg-[#fdebec] text-[#b42318]";
-  if (status === "waiting_more") return "bg-[#fff4e6] text-[#9b5a00]";
-  if (status === "stage1" || status === "stage2") return "bg-[#eef2ff] text-[#3151d8]";
+function statusClassName(job: UploadIngestJob): string {
+  if (job.status === "done") return "bg-[#e7f6ec] text-[#027a48]";
+  if (job.status === "failed") return "bg-[#fdebec] text-[#b42318]";
+  if (job.status === "cancelled" || job.status === "cancelling") return "bg-[#ffeceb] text-[#b42318]";
+  if (job.status === "waiting_more") return "bg-[#fff4e6] text-[#9b5a00]";
+  const stage = String(job.stage || "").toLowerCase();
+  if (stage === "uploading" || stage === "converting" || stage === "stage1" || stage === "stage2") {
+    return "bg-[#eef2ff] text-[#3151d8]";
+  }
   return "bg-black/6 text-black/60";
 }
 
 function missingFieldLabel(field: string): string {
   if (field === "brand") return "品牌";
   if (field === "name") return "产品名";
+  if (field === "category") return "产品类别";
   if (field === "ingredients") return "成分表";
   return field;
 }
@@ -731,7 +640,7 @@ function toVisionSections(raw: string): Array<{ title: string; body: string }> {
     buffer.push(line);
   }
   if (buffer.length > 0) flush();
-  return sections.filter((s) => s.title || s.body);
+  return sections.filter((item) => item.title || item.body);
 }
 
 function toPrettyStructText(raw: string): string {
@@ -743,21 +652,4 @@ function toPrettyStructText(raw: string): string {
   } catch {
     return raw;
   }
-}
-
-function appendDeltaText(
-  current: string | null | undefined,
-  data: Record<string, unknown>,
-  expectedStage: "stage1_vision" | "stage2_struct",
-): string | null | undefined {
-  const stage = typeof data.stage === "string" ? data.stage : "";
-  const delta =
-    (typeof data.delta === "string" ? data.delta : "") ||
-    (typeof data.text === "string" ? data.text : "");
-  const stageMatch =
-    stage === expectedStage ||
-    (expectedStage === "stage1_vision" && stage.includes("stage1")) ||
-    (expectedStage === "stage2_struct" && stage.includes("stage2"));
-  if (!delta || !stageMatch) return current;
-  return `${current || ""}${delta}`;
 }

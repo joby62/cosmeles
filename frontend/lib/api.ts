@@ -1560,6 +1560,48 @@ export type IngestStage1Result = {
   next?: string;
 };
 
+export type UploadIngestJobError = {
+  code: string;
+  detail: string;
+  http_status: number;
+};
+
+export type UploadIngestJob = {
+  status: "queued" | "running" | "waiting_more" | "cancelling" | "cancelled" | "done" | "failed";
+  job_id: string;
+  file_name?: string | null;
+  source_content_type?: string | null;
+  stage?: string | null;
+  stage_label?: string | null;
+  message?: string | null;
+  percent: number;
+  image_path?: string | null;
+  image_paths: string[];
+  category_override?: string | null;
+  brand_override?: string | null;
+  name_override?: string | null;
+  stage1_model_tier?: "mini" | "lite" | "pro" | null;
+  stage2_model_tier?: "mini" | "lite" | "pro" | null;
+  stage1_text?: string | null;
+  stage2_text?: string | null;
+  missing_fields: string[];
+  required_view?: string | null;
+  models?: Record<string, unknown> | null;
+  artifacts?: Record<string, unknown> | null;
+  result?: IngestResult | Record<string, unknown> | null;
+  error?: UploadIngestJobError | null;
+  cancel_requested: boolean;
+  created_at: string;
+  updated_at: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+};
+
+export type UploadIngestJobCancelResponse = {
+  status: string;
+  job: UploadIngestJob;
+};
+
 // 上传入口（MVP）：支持 image + metaJson，后续直接对接豆包比对流
 export async function ingestProduct(input: IngestInput): Promise<IngestResult> {
   const base = getBaseForFetch();
@@ -1676,6 +1718,81 @@ export async function ingestProductStage2Stream(
   if (input.name) fd.append("name", input.name);
   if (input.modelTier) fd.append("model_tier", input.modelTier);
   return postSSE<IngestResult>("/api/upload/stage2/stream", { method: "POST", body: fd }, onEvent);
+}
+
+export async function createUploadIngestJob(input: {
+  image: File;
+  category?: string;
+  brand?: string;
+  name?: string;
+  stage1ModelTier?: "mini" | "lite" | "pro";
+  stage2ModelTier?: "mini" | "lite" | "pro";
+}): Promise<UploadIngestJob> {
+  const base = getBaseForFetch();
+  const url = base ? new URL("/api/upload/jobs", base).toString() : "/api/upload/jobs";
+  const fd = new FormData();
+  fd.append("image", input.image);
+  if (input.category) fd.append("category", input.category);
+  if (input.brand) fd.append("brand", input.brand);
+  if (input.name) fd.append("name", input.name);
+  if (input.stage1ModelTier) fd.append("stage1_model_tier", input.stage1ModelTier);
+  if (input.stage2ModelTier) fd.append("stage2_model_tier", input.stage2ModelTier);
+  const res = await fetch(url, { method: "POST", body: fd, credentials: "include", cache: "no-store" });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`UPLOAD_JOB_CREATE ${res.status}: ${text}`);
+  }
+  return (await res.json()) as UploadIngestJob;
+}
+
+export async function listUploadIngestJobs(params?: {
+  status?: UploadIngestJob["status"];
+  offset?: number;
+  limit?: number;
+}): Promise<UploadIngestJob[]> {
+  const search = new URLSearchParams();
+  if (params?.status) search.set("status", params.status);
+  if (typeof params?.offset === "number") search.set("offset", String(params.offset));
+  if (typeof params?.limit === "number") search.set("limit", String(params.limit));
+  const query = search.toString();
+  const path = query ? `/api/upload/jobs?${query}` : "/api/upload/jobs";
+  return apiFetch<UploadIngestJob[]>(path);
+}
+
+export async function fetchUploadIngestJob(jobId: string): Promise<UploadIngestJob> {
+  const value = jobId.trim();
+  if (!value) throw new Error("jobId is required.");
+  return apiFetch<UploadIngestJob>(`/api/upload/jobs/${encodeURIComponent(value)}`);
+}
+
+export async function cancelUploadIngestJob(jobId: string): Promise<UploadIngestJobCancelResponse> {
+  const value = jobId.trim();
+  if (!value) throw new Error("jobId is required.");
+  return apiFetch<UploadIngestJobCancelResponse>(`/api/upload/jobs/${encodeURIComponent(value)}/cancel`, { method: "POST" });
+}
+
+export async function resumeUploadIngestJob(input: {
+  jobId: string;
+  image?: File | null;
+  category?: string;
+  brand?: string;
+  name?: string;
+}): Promise<UploadIngestJob> {
+  const value = input.jobId.trim();
+  if (!value) throw new Error("jobId is required.");
+  const base = getBaseForFetch();
+  const url = base ? new URL(`/api/upload/jobs/${encodeURIComponent(value)}/resume`, base).toString() : `/api/upload/jobs/${encodeURIComponent(value)}/resume`;
+  const fd = new FormData();
+  if (input.image) fd.append("image", input.image);
+  if (input.category) fd.append("category", input.category);
+  if (input.brand) fd.append("brand", input.brand);
+  if (input.name) fd.append("name", input.name);
+  const res = await fetch(url, { method: "POST", body: fd, credentials: "include", cache: "no-store" });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`UPLOAD_JOB_RESUME ${res.status}: ${text}`);
+  }
+  return (await res.json()) as UploadIngestJob;
 }
 
 // 兼容旧调用
