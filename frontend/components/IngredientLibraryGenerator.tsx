@@ -1,28 +1,48 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Product,
+  IngredientLibraryBuildJob,
   IngredientLibraryBuildResponse,
-  SSEEvent,
-  buildIngredientLibraryStream,
+  IngredientLibraryListItem,
+  cancelIngredientLibraryBuildJob,
+  createIngredientLibraryBuildJob,
+  deleteIngredientLibraryBatch,
+  fetchIngredientLibrary,
+  fetchIngredientLibraryBuildJob,
+  listIngredientLibraryBuildJobs,
 } from "@/lib/api";
 import { CATEGORY_CONFIG } from "@/lib/catalog";
+
+const ACTIVE_JOB_STORAGE_KEY = "ingredient-library-active-job-id";
 
 export default function IngredientLibraryGenerator({
   initialProducts,
 }: {
   initialProducts: Product[];
 }) {
-  const [building, setBuilding] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [progressHint, setProgressHint] = useState("");
-  const [rawText, setRawText] = useState("");
-  const [prettyText, setPrettyText] = useState("");
-  const [result, setResult] = useState<IngredientLibraryBuildResponse | null>(null);
+  const router = useRouter();
+  const [jobError, setJobError] = useState<string | null>(null);
+  const [jobLoading, setJobLoading] = useState(false);
+  const [jobsLoading, setJobsLoading] = useState(false);
+  const [jobs, setJobs] = useState<IngredientLibraryBuildJob[]>([]);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [activeJob, setActiveJob] = useState<IngredientLibraryBuildJob | null>(null);
+  const [liveLogs, setLiveLogs] = useState<string[]>([]);
+  const lastLogRef = useRef("");
 
-  const queueRef = useRef<string[]>([]);
-  const timerRef = useRef<number | null>(null);
+  const [searchKeyword, setSearchKeyword] = useState("");
+  const [searchCategory, setSearchCategory] = useState("");
+  const [itemsLoading, setItemsLoading] = useState(false);
+  const [itemsError, setItemsError] = useState<string | null>(null);
+  const [ingredients, setIngredients] = useState<IngredientLibraryListItem[]>([]);
+  const [selectedIngredientIds, setSelectedIngredientIds] = useState<string[]>([]);
+  const [removeArtifacts, setRemoveArtifacts] = useState(true);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteSummary, setDeleteSummary] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const categoryStats = useMemo(() => {
     const map = new Map<string, number>();
@@ -33,98 +53,220 @@ export default function IngredientLibraryGenerator({
     return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
   }, [initialProducts]);
 
-  useEffect(() => {
-    return () => {
-      stopDrainer();
-      queueRef.current = [];
-    };
+  const activeRunning = activeJob?.status === "queued" || activeJob?.status === "running" || activeJob?.status === "cancelling";
+
+  const rememberActiveJob = useCallback((jobId: string) => {
+    const value = String(jobId || "").trim();
+    if (!value) return;
+    window.localStorage.setItem(ACTIVE_JOB_STORAGE_KEY, value);
+    setActiveJobId(value);
   }, []);
 
-  async function startBuild() {
-    setBuilding(true);
-    setError(null);
-    setResult(null);
-    setProgressHint("准备扫描全部产品成分并按品类生成成分库...");
-    setRawText("");
-    setPrettyText("");
-    queueRef.current = [];
-    stopDrainer();
+  const clearActiveJob = useCallback(() => {
+    window.localStorage.removeItem(ACTIVE_JOB_STORAGE_KEY);
+    setActiveJobId(null);
+  }, []);
 
+  const appendLiveLog = useCallback((line: string) => {
+    const text = String(line || "").trim();
+    if (!text || lastLogRef.current === text) return;
+    lastLogRef.current = text;
+    setLiveLogs((prev) => {
+      const next = [...prev, text];
+      if (next.length > 200) return next.slice(next.length - 200);
+      return next;
+    });
+  }, []);
+
+  const applyActiveJob = useCallback(
+    (job: IngredientLibraryBuildJob) => {
+      setActiveJob(job);
+      const stage = String(job.stage_label || job.stage || "处理中");
+      const message = String(job.message || "").trim();
+      if (message) appendLiveLog(`[${job.updated_at}] ${stage} | ${message}`);
+      if (job.status === "done" || job.status === "failed" || job.status === "cancelled") {
+        clearActiveJob();
+      }
+    },
+    [appendLiveLog, clearActiveJob],
+  );
+
+  const loadJobs = useCallback(async () => {
+    setJobsLoading(true);
     try {
-      const res = await buildIngredientLibraryStream({}, (event) => onStreamEvent(event));
-      setResult(res);
-      setPrettyText(buildSummary(res));
-      setProgressHint(`完成：created=${res.created} updated=${res.updated} skipped=${res.skipped} failed=${res.failed}`);
-      if (!rawText.trim()) {
-        const failLine = res.failures.slice(0, 20).join("\n");
-        if (failLine) enqueueText(`\n失败明细:\n${failLine}`);
+      const rows = await listIngredientLibraryBuildJobs({ limit: 30, offset: 0 });
+      setJobs(rows);
+      if (!activeJobId) {
+        const running = rows.find((item) => item.status === "queued" || item.status === "running" || item.status === "cancelling");
+        if (running) rememberActiveJob(running.job_id);
       }
     } catch (err) {
-      setError(formatErrorDetail(err));
+      setJobError(formatErrorDetail(err));
+      setJobs([]);
     } finally {
-      setBuilding(false);
+      setJobsLoading(false);
+    }
+  }, [activeJobId, rememberActiveJob]);
+
+  const loadIngredientItems = useCallback(async () => {
+    setItemsLoading(true);
+    setItemsError(null);
+    try {
+      const resp = await fetchIngredientLibrary({
+        category: searchCategory || undefined,
+        q: searchKeyword.trim() || undefined,
+        limit: 500,
+        offset: 0,
+      });
+      setIngredients(resp.items || []);
+    } catch (err) {
+      setItemsError(formatErrorDetail(err));
+      setIngredients([]);
+    } finally {
+      setItemsLoading(false);
+    }
+  }, [searchCategory, searchKeyword]);
+
+  useEffect(() => {
+    void loadJobs();
+    void loadIngredientItems();
+    const raw = window.localStorage.getItem(ACTIVE_JOB_STORAGE_KEY);
+    if (raw) {
+      const normalized = raw.trim();
+      if (normalized) setActiveJobId(normalized);
+    }
+  }, [loadJobs, loadIngredientItems]);
+
+  useEffect(() => {
+    if (!activeJobId) {
+      setActiveJob(null);
+      return;
+    }
+    let cancelled = false;
+    let timer: number | null = null;
+
+    const pull = async () => {
+      try {
+        const job = await fetchIngredientLibraryBuildJob(activeJobId);
+        if (cancelled) return;
+        applyActiveJob(job);
+        if (job.status === "done" || job.status === "failed" || job.status === "cancelled") {
+          void loadJobs();
+          void loadIngredientItems();
+          return;
+        }
+      } catch (err) {
+        if (cancelled) return;
+        setJobError(formatErrorDetail(err));
+      }
+      if (cancelled) return;
+      timer = window.setTimeout(() => {
+        void pull();
+      }, 2200);
+    };
+
+    void pull();
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [activeJobId, applyActiveJob, loadJobs, loadIngredientItems]);
+
+  async function startBuildJob() {
+    if (activeRunning) return;
+    setJobLoading(true);
+    setJobError(null);
+    try {
+      const job = await createIngredientLibraryBuildJob({});
+      applyActiveJob(job);
+      rememberActiveJob(job.job_id);
+      appendLiveLog(`[${job.created_at}] 任务已创建 | ${job.job_id}`);
+      await loadJobs();
+    } catch (err) {
+      setJobError(formatErrorDetail(err));
+    } finally {
+      setJobLoading(false);
     }
   }
 
-  function onStreamEvent(event: SSEEvent) {
-    if (event.event !== "progress") return;
-    const step = String(event.data.step || "");
-    const text = String(event.data.text || "");
-    const delta = String(event.data.delta || "");
-
-    if (step === "ingredient_model_delta" && delta) {
-      enqueueText(delta);
-    } else if (text) {
-      enqueueText(`${text}\n`);
+  async function cancelActiveJob() {
+    if (!activeJob) return;
+    setJobLoading(true);
+    setJobError(null);
+    try {
+      const resp = await cancelIngredientLibraryBuildJob(activeJob.job_id);
+      applyActiveJob(resp.job);
+      await loadJobs();
+    } catch (err) {
+      setJobError(formatErrorDetail(err));
+    } finally {
+      setJobLoading(false);
     }
-
-    setProgressHint(formatProgressHint(event.data));
   }
 
-  function enqueueText(value: string) {
-    const chunk = String(value || "");
-    if (!chunk) return;
-    queueRef.current.push(chunk);
-    if (timerRef.current != null) return;
+  function toggleIngredientSelection(ingredientId: string, checked: boolean) {
+    setSelectedIngredientIds((prev) => {
+      if (checked) return Array.from(new Set([...prev, ingredientId]));
+      return prev.filter((id) => id !== ingredientId);
+    });
+  }
 
-    timerRef.current = window.setInterval(() => {
-      const queue = queueRef.current;
-      if (queue.length === 0) {
-        stopDrainer();
-        return;
+  function selectAllCurrentIngredients() {
+    setSelectedIngredientIds(Array.from(new Set([...selectedIngredientIds, ...ingredients.map((item) => item.ingredient_id)])));
+  }
+
+  function clearIngredientSelection() {
+    setSelectedIngredientIds([]);
+  }
+
+  async function deleteSelectedIngredients() {
+    if (selectedIngredientIds.length === 0) {
+      setDeleteSummary("当前没有勾选成分。");
+      return;
+    }
+    setDeleting(true);
+    setDeleteSummary(null);
+    setDeleteError(null);
+    try {
+      const result = await deleteIngredientLibraryBatch({
+        ingredient_ids: selectedIngredientIds,
+        remove_doubao_artifacts: removeArtifacts,
+      });
+      setDeleteSummary(
+        `清理完成：删除 ${result.deleted_ids.length} 条，缺失 ${result.missing_ids.length} 条，失败 ${result.failed_items.length} 条。`,
+      );
+      if (result.failed_items.length > 0) {
+        setDeleteError(result.failed_items.slice(0, 8).map((item) => `${item.ingredient_id}: ${item.error}`).join("\n"));
       }
-      const head = queue[0];
-      if (!head) {
-        queue.shift();
-        return;
-      }
-      const nextChar = head[0];
-      queue[0] = head.slice(1);
-      if (!queue[0]) queue.shift();
-      setRawText((prev) => prev + nextChar);
-    }, 16);
+      setSelectedIngredientIds([]);
+      await loadIngredientItems();
+      router.refresh();
+    } catch (err) {
+      setDeleteError(formatErrorDetail(err));
+    } finally {
+      setDeleting(false);
+    }
   }
 
-  function stopDrainer() {
-    if (timerRef.current == null) return;
-    window.clearInterval(timerRef.current);
-    timerRef.current = null;
-  }
+  const progressValue = Math.max(0, Math.min(100, Number(activeJob?.percent || 0)));
+  const buildResult = activeJob?.result || null;
+  const prettySummary = buildResult ? buildSummary(buildResult) : "";
+  const sortedJobs = [...jobs].sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")));
 
   return (
     <section className="mt-8 rounded-[30px] border border-black/10 bg-gradient-to-br from-[#f8fbff] via-white to-[#f2f8f1] p-6">
       <div className="flex flex-wrap items-center gap-2">
         <span className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/62">
-          Stage C · 成分分析与成分库生成（流式）
+          Stage C · 成分分析与成分库生成
         </span>
         <span className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/62">
-          成分分析模型固定：Doubao Pro
+          后台任务模式（刷新可恢复）
         </span>
       </div>
 
       <h2 className="mt-3 text-[30px] font-semibold tracking-[-0.02em] text-black/90">成分分析台（生成成分库）</h2>
       <p className="mt-2 text-[14px] leading-[1.6] text-black/65">
-        去重后统一扫描产品成分，按“品类+成分名”生成独立成分条目；这一步先把成分语义跑完整，再给后续类型映射使用。
+        去重后统一扫描产品成分，按“品类+成分名”生成独立成分条目；任务在后台运行，支持刷新恢复、进度追踪与中途关停。
       </p>
 
       <div className="mt-4 flex flex-wrap items-center gap-2.5">
@@ -141,39 +283,203 @@ export default function IngredientLibraryGenerator({
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <button
           type="button"
-          onClick={startBuild}
-          disabled={building || initialProducts.length === 0}
+          onClick={startBuildJob}
+          disabled={jobLoading || activeRunning}
           className="inline-flex h-10 items-center justify-center rounded-full bg-black px-5 text-[13px] font-semibold text-white disabled:bg-black/25"
         >
-          {building ? "豆包生成中..." : "一键生成成分库（全量）"}
+          {jobLoading ? "提交中..." : "一键生成成分库（后台）"}
+        </button>
+        <button
+          type="button"
+          onClick={cancelActiveJob}
+          disabled={jobLoading || !activeRunning || !activeJob}
+          className="inline-flex h-10 items-center justify-center rounded-full border border-[#ef4444]/40 bg-[#fff5f5] px-5 text-[13px] font-semibold text-[#b42318] disabled:opacity-45"
+        >
+          中止当前任务
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            void loadJobs();
+            void loadIngredientItems();
+          }}
+          disabled={jobsLoading || itemsLoading}
+          className="inline-flex h-10 items-center justify-center rounded-full border border-black/14 bg-white px-5 text-[13px] font-semibold text-black/78 disabled:opacity-45"
+        >
+          {jobsLoading || itemsLoading ? "刷新中..." : "刷新任务与成分"}
         </button>
       </div>
 
-      {progressHint ? <div className="mt-3 text-[12px] text-black/64">{progressHint}</div> : null}
-      {error ? <div className="mt-2 text-[13px] text-[#b42318]">{error}</div> : null}
+      {jobError ? <div className="mt-3 text-[13px] text-[#b42318]">{jobError}</div> : null}
 
-      {(rawText || prettyText || building) && (
+      <div className="mt-4 rounded-2xl border border-black/10 bg-white p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="text-[13px] font-semibold text-black/82">当前任务</div>
+          <div className="text-[12px] text-black/58">
+            {activeJob ? `${activeJob.job_id} · ${activeJob.status}` : "暂无运行任务"}
+          </div>
+        </div>
+        <div className="mt-2 text-[12px] text-black/64">
+          {activeJob?.stage_label || activeJob?.stage || "待命"} · {activeJob?.message || "等待创建任务"}
+        </div>
+        <div className="mt-3 h-2 overflow-hidden rounded-full bg-black/10">
+          <div className="h-full rounded-full bg-black transition-all" style={{ width: `${Math.max(0, Math.min(100, progressValue))}%` }} />
+        </div>
+        <div className="mt-2 text-[12px] text-black/58">
+          进度 {progressValue}% · {activeJob?.current_index || 0}/{activeJob?.current_total || 0}
+        </div>
+        {activeJob ? (
+          <div className="mt-2 text-[12px] text-black/58">
+            scanned {activeJob.counters.scanned_products} · unique {activeJob.counters.unique_ingredients} · submitted {activeJob.counters.submitted_to_model} ·
+            created {activeJob.counters.created} · updated {activeJob.counters.updated} · skipped {activeJob.counters.skipped} · failed {activeJob.counters.failed}
+          </div>
+        ) : null}
+      </div>
+
+      {(liveLogs.length > 0 || prettySummary) && (
         <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
           <div className="rounded-xl border border-black/10 bg-[#fbfcff] p-2.5">
-            <div className="text-[11px] font-semibold text-[#3151d8]">实时文本</div>
+            <div className="text-[11px] font-semibold text-[#3151d8]">实时任务日志</div>
             <pre className="mt-1 max-h-56 overflow-auto whitespace-pre-wrap text-[12px] leading-[1.55] text-black/74">
-              {rawText || (building ? "等待模型输出..." : "-")}
+              {liveLogs.length > 0 ? liveLogs.join("\n") : "-"}
             </pre>
           </div>
           <div className="rounded-xl border border-black/10 bg-white p-2.5">
-            <div className="text-[11px] font-semibold text-[#3151d8]">最终美化文本</div>
+            <div className="text-[11px] font-semibold text-[#3151d8]">最终结果摘要</div>
             <pre className="mt-1 max-h-56 overflow-auto whitespace-pre-wrap text-[12px] leading-[1.55] text-black/74">
-              {prettyText || (building ? "分析中..." : "-")}
+              {prettySummary || "-"}
             </pre>
           </div>
         </div>
       )}
 
-      {result ? (
-        <div className="mt-4 rounded-2xl border border-black/10 bg-white px-4 py-3 text-[13px] text-black/70">
-          状态：{result.status}；扫描产品 {result.scanned_products} 条；唯一成分 {result.unique_ingredients} 条。
+      <div className="mt-4 rounded-2xl border border-black/10 bg-[#f8fafc] p-4">
+        <div className="text-[13px] font-semibold text-black/82">最近任务</div>
+        <div className="mt-3 max-h-[220px] space-y-2 overflow-auto pr-1">
+          {sortedJobs.map((job) => (
+            <button
+              key={job.job_id}
+              type="button"
+              onClick={() => {
+                setActiveJob(job);
+                if (job.status === "running" || job.status === "queued" || job.status === "cancelling") {
+                  rememberActiveJob(job.job_id);
+                }
+              }}
+              className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-left"
+            >
+              <div className="truncate text-[12px] font-semibold text-black/78">
+                {job.job_id} · {job.status} · {job.percent}%
+              </div>
+              <div className="mt-0.5 truncate text-[12px] text-black/58">{job.stage_label || job.stage || "-"} · {job.message || "-"}</div>
+              <div className="mt-0.5 text-[11px] text-black/48">updated_at: {job.updated_at}</div>
+            </button>
+          ))}
+          {sortedJobs.length === 0 ? <div className="text-[12px] text-black/52">暂无历史任务。</div> : null}
         </div>
-      ) : null}
+      </div>
+
+      <div className="mt-6 rounded-2xl border border-black/10 bg-white p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-[20px] font-semibold tracking-[-0.02em] text-black/88">成分清理控制台</h3>
+          <span className="text-[12px] text-black/56">可批量清理成分条目与可选 doubao 产物</span>
+        </div>
+
+        <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
+          <input
+            value={searchKeyword}
+            onChange={(e) => setSearchKeyword(e.target.value)}
+            placeholder="按成分名/摘要检索"
+            className="h-10 rounded-xl border border-black/12 bg-white px-3 text-[13px] outline-none focus:border-black/35"
+          />
+          <select
+            value={searchCategory}
+            onChange={(e) => setSearchCategory(e.target.value)}
+            className="h-10 rounded-xl border border-black/12 bg-white px-3 text-[13px] outline-none focus:border-black/35"
+          >
+            <option value="">全部品类</option>
+            {categoryStats.map(([category]) => (
+              <option key={category} value={category}>
+                {categoryLabel(category)}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => void loadIngredientItems()}
+            className="inline-flex h-10 items-center justify-center rounded-xl border border-black/12 bg-white px-4 text-[13px] font-semibold text-black/78"
+          >
+            查询成分
+          </button>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={selectAllCurrentIngredients}
+            className="inline-flex h-9 items-center justify-center rounded-full border border-black/12 bg-white px-4 text-[12px] font-semibold text-black/75"
+          >
+            勾选当前列表
+          </button>
+          <button
+            type="button"
+            onClick={clearIngredientSelection}
+            className="inline-flex h-9 items-center justify-center rounded-full border border-black/12 bg-white px-4 text-[12px] font-semibold text-black/75"
+          >
+            清空勾选
+          </button>
+          <label className="inline-flex items-center gap-2 rounded-full border border-black/12 bg-white px-3 py-1.5 text-[12px] text-black/72">
+            <input
+              type="checkbox"
+              checked={removeArtifacts}
+              onChange={(e) => setRemoveArtifacts(e.target.checked)}
+              className="h-4 w-4"
+            />
+            删除关联 doubao_runs
+          </label>
+          <button
+            type="button"
+            onClick={deleteSelectedIngredients}
+            disabled={deleting || selectedIngredientIds.length === 0}
+            className="inline-flex h-9 items-center justify-center rounded-full border border-[#ef4444]/40 bg-[#fff5f5] px-4 text-[12px] font-semibold text-[#b42318] disabled:opacity-50"
+          >
+            {deleting ? "清理中..." : `删除勾选 (${selectedIngredientIds.length})`}
+          </button>
+          <span className="text-[12px] text-black/58">当前列表 {ingredients.length} 条</span>
+        </div>
+
+        {deleteSummary ? <div className="mt-2 text-[13px] text-[#116a3f]">{deleteSummary}</div> : null}
+        {deleteError ? <pre className="mt-2 whitespace-pre-wrap text-[12px] text-[#b42318]">{deleteError}</pre> : null}
+        {itemsError ? <div className="mt-2 text-[13px] text-[#b42318]">{itemsError}</div> : null}
+
+        <div className="mt-3 max-h-[360px] space-y-2 overflow-auto pr-1">
+          {ingredients.map((item) => {
+            const checked = selectedIngredientIds.includes(item.ingredient_id);
+            return (
+              <label key={item.ingredient_id} className="flex items-start gap-2 rounded-lg border border-black/10 bg-[#fbfcff] p-2.5">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={(e) => toggleIngredientSelection(item.ingredient_id, e.target.checked)}
+                  className="mt-1 h-4 w-4"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[13px] font-semibold text-black/84">
+                    {item.ingredient_name}
+                    {item.ingredient_name_en ? ` / ${item.ingredient_name_en}` : ""}
+                  </div>
+                  <div className="truncate text-[12px] text-black/62">
+                    {categoryLabel(item.category)} · source {item.source_count} · id: {item.ingredient_id}
+                  </div>
+                  <div className="truncate text-[12px] text-black/56">{item.summary || "-"}</div>
+                </div>
+              </label>
+            );
+          })}
+          {!itemsLoading && ingredients.length === 0 ? <div className="text-[12px] text-black/52">当前筛选无成分数据。</div> : null}
+          {itemsLoading ? <div className="text-[12px] text-black/52">加载中...</div> : null}
+        </div>
+      </div>
     </section>
   );
 }
@@ -184,53 +490,15 @@ function categoryLabel(category?: string | null): string {
   return CATEGORY_CONFIG[key]?.zh || category;
 }
 
-function formatProgressHint(data: Record<string, unknown>): string {
-  const step = String(data.step || "");
-  if (step === "ingredient_build_start") {
-    return `已启动：产品 ${Number(data.scanned_products || 0)} 条，唯一成分 ${Number(data.unique_ingredients || 0)} 条。`;
-  }
-  if (step === "ingredient_start") {
-    return `生成中：${String(data.category || "-")} / ${String(data.ingredient_id || "-")} (${Number(data.index || 0)}/${Number(data.total || 0)})`;
-  }
-  if (step === "ingredient_done") {
-    return `完成：${String(data.ingredient_id || "-")}（${String(data.status || "created")}）`;
-  }
-  if (step === "ingredient_skip") {
-    return String(data.text || "已跳过已有成分条目。");
-  }
-  if (step === "ingredient_error") {
-    return "部分成分生成失败，已继续后续任务。";
-  }
-  if (step === "ingredient_model_step") {
-    return "模型执行中...";
-  }
-  if (step === "ingredient_build_done") {
-    return String(data.text || "成分库生成完成。");
-  }
-  return "豆包生成中...";
-}
-
 function buildSummary(result: IngredientLibraryBuildResponse): string {
   const lines: string[] = [];
   lines.push(`状态: ${result.status}`);
   lines.push(`扫描产品: ${result.scanned_products}`);
   lines.push(`唯一成分: ${result.unique_ingredients}`);
   lines.push(`created=${result.created}, updated=${result.updated}, skipped=${result.skipped}, failed=${result.failed}`);
-
-  const createdOrUpdated = result.items.filter((item) => item.status === "created" || item.status === "updated");
-  if (createdOrUpdated.length > 0) {
-    lines.push("");
-    lines.push("本次写入:");
-    for (const item of createdOrUpdated.slice(0, 30)) {
-      lines.push(
-        `- ${item.category} / ${item.ingredient_name} (${item.ingredient_id}) -> ${item.storage_path || "-"}`,
-      );
-    }
-  }
-
   if (result.failures.length > 0) {
     lines.push("");
-    lines.push(`失败: ${result.failures.length}`);
+    lines.push(`失败明细: ${result.failures.length}`);
     for (const failure of result.failures.slice(0, 10)) {
       lines.push(`- ${failure}`);
     }

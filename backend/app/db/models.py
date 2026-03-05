@@ -43,6 +43,46 @@ class IngredientLibraryIndex(Base):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class IngredientLibraryBuildJob(Base):
+    __tablename__ = "ingredient_library_build_jobs"
+    __table_args__ = (
+        Index("ix_ing_lib_build_jobs_scope", "status", "category", "updated_at"),
+    )
+
+    job_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    status: Mapped[str] = mapped_column(String(32), index=True, default="queued")
+    category: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    force_regenerate: Mapped[bool] = mapped_column(Boolean, default=False)
+    max_sources_per_ingredient: Mapped[int] = mapped_column(Integer, default=8)
+
+    stage: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    stage_label: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    percent: Mapped[int] = mapped_column(Integer, default=0)
+    current_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    current_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    current_ingredient_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    current_ingredient_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+
+    scanned_products: Mapped[int] = mapped_column(Integer, default=0)
+    unique_ingredients: Mapped[int] = mapped_column(Integer, default=0)
+    backfilled_from_storage: Mapped[int] = mapped_column(Integer, default=0)
+    submitted_to_model: Mapped[int] = mapped_column(Integer, default=0)
+    created_count: Mapped[int] = mapped_column(Integer, default=0)
+    updated_count: Mapped[int] = mapped_column(Integer, default=0)
+    skipped_count: Mapped[int] = mapped_column(Integer, default=0)
+    failed_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[str] = mapped_column(String(32), index=True)
+    updated_at: Mapped[str] = mapped_column(String(32), index=True)
+    started_at: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    finished_at: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+
+
 class AIJob(Base):
     __tablename__ = "ai_jobs"
 

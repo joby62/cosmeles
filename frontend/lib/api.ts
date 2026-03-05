@@ -85,6 +85,77 @@ export type IngredientLibraryBuildResponse = {
   failures: string[];
 };
 
+export type IngredientLibraryBuildJobCreateRequest = {
+  category?: string;
+  force_regenerate?: boolean;
+  max_sources_per_ingredient?: number;
+};
+
+export type IngredientLibraryBuildJobError = {
+  code: string;
+  detail: string;
+  http_status: number;
+};
+
+export type IngredientLibraryBuildJobCounters = {
+  scanned_products: number;
+  unique_ingredients: number;
+  backfilled_from_storage: number;
+  submitted_to_model: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+};
+
+export type IngredientLibraryBuildJob = {
+  status: "queued" | "running" | "cancelling" | "cancelled" | "done" | "failed";
+  job_id: string;
+  category?: string | null;
+  force_regenerate: boolean;
+  max_sources_per_ingredient: number;
+  stage?: string | null;
+  stage_label?: string | null;
+  message?: string | null;
+  percent: number;
+  current_index?: number | null;
+  current_total?: number | null;
+  current_ingredient_id?: string | null;
+  current_ingredient_name?: string | null;
+  counters: IngredientLibraryBuildJobCounters;
+  result?: IngredientLibraryBuildResponse | null;
+  error?: IngredientLibraryBuildJobError | null;
+  cancel_requested: boolean;
+  created_at: string;
+  updated_at: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+};
+
+export type IngredientLibraryBuildJobCancelResponse = {
+  status: string;
+  job: IngredientLibraryBuildJob;
+};
+
+export type IngredientLibraryBatchDeleteRequest = {
+  ingredient_ids: string[];
+  remove_doubao_artifacts?: boolean;
+};
+
+export type IngredientLibraryDeleteFailureItem = {
+  ingredient_id: string;
+  error: string;
+};
+
+export type IngredientLibraryBatchDeleteResponse = {
+  status: string;
+  deleted_ids: string[];
+  missing_ids: string[];
+  failed_items: IngredientLibraryDeleteFailureItem[];
+  removed_files: number;
+  removed_dirs: number;
+};
+
 export type IngredientLibraryListItem = {
   ingredient_id: string;
   category: string;
@@ -911,6 +982,55 @@ export async function buildIngredientLibraryStream(
     },
     onEvent,
   );
+}
+
+export async function createIngredientLibraryBuildJob(
+  payload: IngredientLibraryBuildJobCreateRequest,
+): Promise<IngredientLibraryBuildJob> {
+  return apiFetch<IngredientLibraryBuildJob>("/api/products/ingredients/library/jobs", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchIngredientLibraryBuildJob(jobId: string): Promise<IngredientLibraryBuildJob> {
+  const value = jobId.trim();
+  if (!value) throw new Error("jobId is required.");
+  return apiFetch<IngredientLibraryBuildJob>(`/api/products/ingredients/library/jobs/${encodeURIComponent(value)}`);
+}
+
+export async function listIngredientLibraryBuildJobs(params?: {
+  status?: "queued" | "running" | "cancelling" | "cancelled" | "done" | "failed";
+  category?: string;
+  offset?: number;
+  limit?: number;
+}): Promise<IngredientLibraryBuildJob[]> {
+  const search = new URLSearchParams();
+  if (params?.status) search.set("status", params.status);
+  if (params?.category) search.set("category", params.category);
+  if (typeof params?.offset === "number") search.set("offset", String(params.offset));
+  if (typeof params?.limit === "number") search.set("limit", String(params.limit));
+  const query = search.toString();
+  const path = query ? `/api/products/ingredients/library/jobs?${query}` : "/api/products/ingredients/library/jobs";
+  return apiFetch<IngredientLibraryBuildJob[]>(path);
+}
+
+export async function cancelIngredientLibraryBuildJob(jobId: string): Promise<IngredientLibraryBuildJobCancelResponse> {
+  const value = jobId.trim();
+  if (!value) throw new Error("jobId is required.");
+  return apiFetch<IngredientLibraryBuildJobCancelResponse>(
+    `/api/products/ingredients/library/jobs/${encodeURIComponent(value)}/cancel`,
+    { method: "POST" },
+  );
+}
+
+export async function deleteIngredientLibraryBatch(
+  payload: IngredientLibraryBatchDeleteRequest,
+): Promise<IngredientLibraryBatchDeleteResponse> {
+  return apiFetch<IngredientLibraryBatchDeleteResponse>("/api/products/ingredients/library/batch-delete", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function buildProductRouteMappingStream(

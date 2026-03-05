@@ -184,6 +184,77 @@ class IngredientLibraryBuildResponse(BaseModel):
     failures: List[str] = []
 
 
+class IngredientLibraryBuildJobCreateRequest(BaseModel):
+    category: Optional[str] = None
+    force_regenerate: bool = False
+    max_sources_per_ingredient: int = Field(default=8, ge=1, le=30)
+
+
+class IngredientLibraryBuildJobError(BaseModel):
+    code: str = ""
+    detail: str = ""
+    http_status: int = 500
+
+
+class IngredientLibraryBuildJobCounters(BaseModel):
+    scanned_products: int = 0
+    unique_ingredients: int = 0
+    backfilled_from_storage: int = 0
+    submitted_to_model: int = 0
+    created: int = 0
+    updated: int = 0
+    skipped: int = 0
+    failed: int = 0
+
+
+class IngredientLibraryBuildJobView(BaseModel):
+    status: Literal["queued", "running", "cancelling", "cancelled", "done", "failed"] = "queued"
+    job_id: str
+    category: Optional[str] = None
+    force_regenerate: bool = False
+    max_sources_per_ingredient: int = 8
+    stage: Optional[str] = None
+    stage_label: Optional[str] = None
+    message: Optional[str] = None
+    percent: int = Field(default=0, ge=0, le=100)
+    current_index: Optional[int] = None
+    current_total: Optional[int] = None
+    current_ingredient_id: Optional[str] = None
+    current_ingredient_name: Optional[str] = None
+    counters: IngredientLibraryBuildJobCounters = Field(default_factory=IngredientLibraryBuildJobCounters)
+    result: Optional[IngredientLibraryBuildResponse] = None
+    error: Optional[IngredientLibraryBuildJobError] = None
+    cancel_requested: bool = False
+    created_at: str
+    updated_at: str
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+
+
+class IngredientLibraryBuildJobCancelResponse(BaseModel):
+    status: str
+    job: IngredientLibraryBuildJobView
+
+
+class IngredientLibraryDeleteFailureItem(BaseModel):
+    ingredient_id: str
+    error: str
+
+
+class IngredientLibraryBatchDeleteRequest(BaseModel):
+    ingredient_ids: List[str] = []
+    remove_doubao_artifacts: bool = True
+
+
+class IngredientLibraryBatchDeleteResponse(BaseModel):
+    status: str
+    deleted_ids: List[str] = []
+    missing_ids: List[str] = []
+    failed_items: List[IngredientLibraryDeleteFailureItem] = []
+    removed_files: int = 0
+    removed_dirs: int = 0
+
+
 class IngredientLibraryListItem(BaseModel):
     ingredient_id: str
     category: str

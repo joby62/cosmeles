@@ -21,13 +21,20 @@ from app.ai.orchestrator import run_capability_now
 from app.ai.prompts import load_prompt
 from app.constants import VALID_CATEGORIES, MOBILE_RULES_VERSION, ROUTE_MAPPING_SUPPORTED_CATEGORIES
 from app.db.session import get_db
-from app.db.models import ProductIndex, IngredientLibraryIndex, ProductRouteMappingIndex, ProductFeaturedSlot
+from app.db.models import (
+    ProductIndex,
+    IngredientLibraryIndex,
+    IngredientLibraryBuildJob,
+    ProductRouteMappingIndex,
+    ProductFeaturedSlot,
+)
 from app.settings import settings
 from app.services.storage import (
     load_json,
     read_rel_bytes,
     save_json_at,
     now_iso,
+    new_id,
     save_ingredient_profile,
     ingredient_profile_rel_path,
     exists_rel_path,
@@ -62,6 +69,14 @@ from app.schemas import (
     IngredientLibraryBuildRequest,
     IngredientLibraryBuildResponse,
     IngredientLibraryBuildItem,
+    IngredientLibraryBuildJobCreateRequest,
+    IngredientLibraryBuildJobView,
+    IngredientLibraryBuildJobCounters,
+    IngredientLibraryBuildJobError,
+    IngredientLibraryBuildJobCancelResponse,
+    IngredientLibraryBatchDeleteRequest,
+    IngredientLibraryBatchDeleteResponse,
+    IngredientLibraryDeleteFailureItem,
     IngredientLibraryListResponse,
     IngredientLibraryListItem,
     IngredientLibrarySourceSample,
@@ -80,6 +95,11 @@ router = APIRouter(prefix="/api", tags=["products"])
 
 INGREDIENT_SOURCE_SCHEMA_VERSION = "v2026-03-05.1"
 INGREDIENT_SOURCE_COOCCURRENCE_TOP_N = 15
+INGREDIENT_BUILD_JOB_HEARTBEAT_SECONDS = 2
+
+
+class IngredientLibraryBuildCancelledError(RuntimeError):
+    pass
 
 @router.get("/products", response_model=list[ProductCard])
 def list_products(
@@ -313,6 +333,193 @@ def build_ingredient_library_stream(payload: IngredientLibraryBuildRequest, db: 
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
         },
+    )
+
+
+@router.post("/products/ingredients/library/jobs", response_model=IngredientLibraryBuildJobView)
+def create_ingredient_library_build_job(
+    payload: IngredientLibraryBuildJobCreateRequest,
+    db: Session = Depends(get_db),
+):
+    normalized_category = _normalize_optional_category(payload.category)
+    _ensure_ingredient_build_job_table(db)
+
+    now = now_iso()
+    rec = IngredientLibraryBuildJob(
+        job_id=new_id(),
+        status="queued",
+        category=normalized_category,
+        force_regenerate=bool(payload.force_regenerate),
+        max_sources_per_ingredient=int(payload.max_sources_per_ingredient),
+        stage="queued",
+        stage_label=_ingredient_build_stage_label("queued"),
+        message="任务已创建，等待执行。",
+        percent=0,
+        current_index=None,
+        current_total=None,
+        current_ingredient_id=None,
+        current_ingredient_name=None,
+        scanned_products=0,
+        unique_ingredients=0,
+        backfilled_from_storage=0,
+        submitted_to_model=0,
+        created_count=0,
+        updated_count=0,
+        skipped_count=0,
+        failed_count=0,
+        cancel_requested=False,
+        result_json=None,
+        error_json=None,
+        created_at=now,
+        updated_at=now,
+        started_at=None,
+        finished_at=None,
+    )
+    db.add(rec)
+    db.commit()
+    db.refresh(rec)
+
+    SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=db.get_bind())
+
+    def worker() -> None:
+        local_db = SessionMaker()
+        try:
+            build_payload = IngredientLibraryBuildRequest(
+                category=normalized_category,
+                force_regenerate=bool(payload.force_regenerate),
+                max_sources_per_ingredient=int(payload.max_sources_per_ingredient),
+            )
+            _run_ingredient_library_build_job(job_id=rec.job_id, payload=build_payload, db=local_db)
+        finally:
+            local_db.close()
+
+    threading.Thread(target=worker, daemon=True).start()
+    return _to_ingredient_build_job_view(rec)
+
+
+@router.get("/products/ingredients/library/jobs", response_model=list[IngredientLibraryBuildJobView])
+def list_ingredient_library_build_jobs(
+    status: str | None = Query(None),
+    category: str | None = Query(None),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(30, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    _ensure_ingredient_build_job_table(db)
+    normalized_category = _normalize_optional_category(category)
+    normalized_status = str(status or "").strip().lower() or None
+    if normalized_status and normalized_status not in {"queued", "running", "cancelling", "cancelled", "done", "failed"}:
+        raise HTTPException(status_code=400, detail=f"Invalid status: {normalized_status}.")
+
+    stmt = select(IngredientLibraryBuildJob)
+    if normalized_status:
+        stmt = stmt.where(IngredientLibraryBuildJob.status == normalized_status)
+    if normalized_category:
+        stmt = stmt.where(IngredientLibraryBuildJob.category == normalized_category)
+    rows = db.execute(
+        stmt.order_by(IngredientLibraryBuildJob.updated_at.desc()).offset(offset).limit(limit)
+    ).scalars().all()
+    return [_to_ingredient_build_job_view(row) for row in rows]
+
+
+@router.get("/products/ingredients/library/jobs/{job_id}", response_model=IngredientLibraryBuildJobView)
+def get_ingredient_library_build_job(job_id: str, db: Session = Depends(get_db)):
+    _ensure_ingredient_build_job_table(db)
+    rec = db.get(IngredientLibraryBuildJob, job_id)
+    if rec is None:
+        raise HTTPException(status_code=404, detail=f"Ingredient build job '{job_id}' not found.")
+    return _to_ingredient_build_job_view(rec)
+
+
+@router.post("/products/ingredients/library/jobs/{job_id}/cancel", response_model=IngredientLibraryBuildJobCancelResponse)
+def cancel_ingredient_library_build_job(job_id: str, db: Session = Depends(get_db)):
+    _ensure_ingredient_build_job_table(db)
+    rec = db.get(IngredientLibraryBuildJob, job_id)
+    if rec is None:
+        raise HTTPException(status_code=404, detail=f"Ingredient build job '{job_id}' not found.")
+
+    status = str(rec.status or "").strip().lower()
+    if status in {"done", "failed", "cancelled"}:
+        return IngredientLibraryBuildJobCancelResponse(status="ok", job=_to_ingredient_build_job_view(rec))
+
+    rec.cancel_requested = True
+    rec.updated_at = now_iso()
+    if status == "queued":
+        rec.status = "cancelled"
+        rec.stage = "cancelled"
+        rec.stage_label = _ingredient_build_stage_label("cancelled")
+        rec.message = "任务在启动前已取消。"
+        rec.percent = 0
+        rec.finished_at = rec.updated_at
+    else:
+        rec.status = "cancelling"
+        rec.stage = "cancelling"
+        rec.stage_label = _ingredient_build_stage_label("cancelling")
+        rec.message = "已收到取消请求，当前成分处理结束后停止。"
+    db.add(rec)
+    db.commit()
+    db.refresh(rec)
+    return IngredientLibraryBuildJobCancelResponse(status="ok", job=_to_ingredient_build_job_view(rec))
+
+
+@router.post("/products/ingredients/library/batch-delete", response_model=IngredientLibraryBatchDeleteResponse)
+def batch_delete_ingredient_library(
+    payload: IngredientLibraryBatchDeleteRequest,
+    db: Session = Depends(get_db),
+):
+    _ensure_ingredient_index_table(db)
+    ingredient_ids = _normalize_ingredient_id_list(payload.ingredient_ids)
+    if not ingredient_ids:
+        raise HTTPException(status_code=400, detail="ingredient_ids cannot be empty.")
+
+    rows = db.execute(
+        select(IngredientLibraryIndex).where(IngredientLibraryIndex.ingredient_id.in_(ingredient_ids))
+    ).scalars().all()
+    by_id = {str(row.ingredient_id): row for row in rows}
+
+    deleted_ids: list[str] = []
+    missing_ids: list[str] = []
+    failed_items: list[IngredientLibraryDeleteFailureItem] = []
+    removed_files = 0
+    removed_dirs = 0
+    dirty = False
+
+    for ingredient_id in ingredient_ids:
+        rec = by_id.get(ingredient_id)
+        try:
+            profile_path = _resolve_ingredient_profile_path_for_delete(rec=rec, ingredient_id=ingredient_id)
+            profile_deleted = False
+            if profile_path and exists_rel_path(profile_path):
+                if remove_rel_path(profile_path):
+                    profile_deleted = True
+                    removed_files += 1
+
+            if rec is not None:
+                db.delete(rec)
+                dirty = True
+
+            if bool(payload.remove_doubao_artifacts):
+                run_files, run_dirs = remove_rel_dir(f"doubao_runs/{ingredient_id}")
+                removed_files += run_files
+                removed_dirs += run_dirs
+
+            if rec is None and not profile_deleted:
+                missing_ids.append(ingredient_id)
+                continue
+            deleted_ids.append(ingredient_id)
+        except Exception as e:
+            failed_items.append(IngredientLibraryDeleteFailureItem(ingredient_id=ingredient_id, error=str(e)))
+
+    if dirty:
+        db.commit()
+
+    return IngredientLibraryBatchDeleteResponse(
+        status="ok",
+        deleted_ids=deleted_ids,
+        missing_ids=missing_ids,
+        failed_items=failed_items,
+        removed_files=removed_files,
+        removed_dirs=removed_dirs,
     )
 
 
@@ -725,6 +932,7 @@ def _build_ingredient_library_impl(
     payload: IngredientLibraryBuildRequest,
     db: Session,
     event_callback: Callable[[dict[str, Any]], None] | None,
+    stop_checker: Callable[[], bool] | None = None,
 ) -> IngredientLibraryBuildResponse:
     category = (payload.category or "").strip().lower()
     if category and category not in VALID_CATEGORIES:
@@ -772,6 +980,18 @@ def _build_ingredient_library_impl(
 
     total = len(grouped_items)
     for idx, item in enumerate(grouped_items, start=1):
+        if stop_checker is not None and stop_checker():
+            _emit_progress(
+                event_callback,
+                {
+                    "step": "ingredient_build_cancelled",
+                    "index": idx,
+                    "total": total,
+                    "text": f"任务取消：已处理到 {idx - 1}/{total}。",
+                },
+            )
+            raise IngredientLibraryBuildCancelledError("ingredient build cancelled by operator.")
+
         ingredient_id = item["ingredient_id"]
         ingredient_name = item["ingredient_name"]
         category_name = item["category"]
@@ -1008,6 +1228,360 @@ def _build_ingredient_library_impl(
         items=items,
         failures=failures[:200],
     )
+
+
+def _run_ingredient_library_build_job(
+    *,
+    job_id: str,
+    payload: IngredientLibraryBuildRequest,
+    db: Session,
+) -> None:
+    _ensure_ingredient_build_job_table(db)
+    rec = db.get(IngredientLibraryBuildJob, job_id)
+    if rec is None:
+        return
+
+    now = now_iso()
+    if bool(rec.cancel_requested):
+        rec.status = "cancelled"
+        rec.stage = "cancelled"
+        rec.stage_label = _ingredient_build_stage_label("cancelled")
+        rec.message = "任务在启动前已取消。"
+        rec.finished_at = now
+        rec.updated_at = now
+        db.add(rec)
+        db.commit()
+        return
+
+    rec.status = "running"
+    rec.stage = "prepare"
+    rec.stage_label = _ingredient_build_stage_label("prepare")
+    rec.message = "任务启动，准备扫描成分。"
+    rec.percent = max(1, int(rec.percent or 0))
+    rec.started_at = now
+    rec.finished_at = None
+    rec.updated_at = now
+    rec.error_json = None
+    rec.result_json = None
+    db.add(rec)
+    db.commit()
+
+    ProgressSessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=db.get_bind())
+    CancelSessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=db.get_bind())
+
+    def on_progress(event: dict[str, Any]) -> None:
+        progress_db = ProgressSessionMaker()
+        try:
+            _apply_ingredient_build_job_progress(db=progress_db, job_id=job_id, payload=event)
+        finally:
+            progress_db.close()
+
+    def stop_checker() -> bool:
+        cancel_db = CancelSessionMaker()
+        try:
+            row = cancel_db.get(IngredientLibraryBuildJob, job_id)
+            return bool(row and row.cancel_requested)
+        finally:
+            cancel_db.close()
+
+    try:
+        result = _build_ingredient_library_impl(
+            payload=payload,
+            db=db,
+            event_callback=on_progress,
+            stop_checker=stop_checker,
+        )
+        _mark_ingredient_build_job_done(job_id=job_id, result=result, bind=db.get_bind())
+    except IngredientLibraryBuildCancelledError as e:
+        db.rollback()
+        _mark_ingredient_build_job_cancelled(job_id=job_id, message=str(e), bind=db.get_bind())
+    except HTTPException as e:
+        db.rollback()
+        _mark_ingredient_build_job_failed(
+            job_id=job_id,
+            code="ingredient_build_http_error",
+            detail=str(e.detail),
+            http_status=e.status_code,
+            bind=db.get_bind(),
+        )
+    except Exception as e:  # pragma: no cover
+        db.rollback()
+        _mark_ingredient_build_job_failed(
+            job_id=job_id,
+            code="ingredient_build_internal_error",
+            detail=str(e),
+            http_status=500,
+            bind=db.get_bind(),
+        )
+
+
+def _apply_ingredient_build_job_progress(
+    *,
+    db: Session,
+    job_id: str,
+    payload: dict[str, Any],
+) -> None:
+    rec = db.get(IngredientLibraryBuildJob, job_id)
+    if rec is None:
+        return
+
+    step = str(payload.get("step") or "").strip().lower()
+    now = now_iso()
+    text = str(payload.get("text") or "").strip()
+    if text:
+        rec.message = text
+
+    if step:
+        rec.stage = step
+        rec.stage_label = _ingredient_build_stage_label(step)
+
+    if step == "ingredient_build_start":
+        rec.scanned_products = _safe_positive_int(payload.get("scanned_products"), fallback=rec.scanned_products)
+        rec.unique_ingredients = _safe_positive_int(payload.get("unique_ingredients"), fallback=rec.unique_ingredients)
+        rec.backfilled_from_storage = _safe_positive_int(
+            payload.get("backfilled_from_storage"),
+            fallback=rec.backfilled_from_storage,
+        )
+    if step == "ingredient_build_done":
+        rec.submitted_to_model = _safe_positive_int(payload.get("submitted_to_model"), fallback=rec.submitted_to_model)
+        rec.created_count = _safe_positive_int(payload.get("created"), fallback=rec.created_count)
+        rec.updated_count = _safe_positive_int(payload.get("updated"), fallback=rec.updated_count)
+        rec.skipped_count = _safe_positive_int(payload.get("skipped"), fallback=rec.skipped_count)
+        rec.failed_count = _safe_positive_int(payload.get("failed"), fallback=rec.failed_count)
+
+    rec.current_ingredient_id = str(payload.get("ingredient_id") or rec.current_ingredient_id or "").strip() or rec.current_ingredient_id
+    rec.current_ingredient_name = str(payload.get("ingredient_name") or rec.current_ingredient_name or "").strip() or rec.current_ingredient_name
+
+    index_value = _safe_positive_int(payload.get("index"), fallback=rec.current_index or 0)
+    total_value = _safe_positive_int(payload.get("total"), fallback=rec.current_total or 0)
+    rec.current_index = index_value if index_value > 0 else None
+    rec.current_total = total_value if total_value > 0 else None
+    rec.percent = _ingredient_build_progress_percent(
+        current=int(rec.percent or 0),
+        step=step,
+        index=rec.current_index,
+        total=rec.current_total,
+    )
+    rec.updated_at = now
+    db.add(rec)
+    db.commit()
+
+
+def _mark_ingredient_build_job_done(
+    *,
+    job_id: str,
+    result: IngredientLibraryBuildResponse,
+    bind: Any,
+) -> None:
+    SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=bind)
+    db = SessionMaker()
+    try:
+        rec = db.get(IngredientLibraryBuildJob, job_id)
+        if rec is None:
+            return
+        now = now_iso()
+        rec.status = "done"
+        rec.stage = "done"
+        rec.stage_label = _ingredient_build_stage_label("done")
+        rec.message = (
+            "成分库生成完成："
+            f"created={result.created}, updated={result.updated}, skipped={result.skipped}, failed={result.failed}"
+        )
+        rec.percent = 100
+        rec.scanned_products = int(result.scanned_products)
+        rec.unique_ingredients = int(result.unique_ingredients)
+        rec.backfilled_from_storage = int(result.backfilled_from_storage)
+        rec.submitted_to_model = int(result.submitted_to_model)
+        rec.created_count = int(result.created)
+        rec.updated_count = int(result.updated)
+        rec.skipped_count = int(result.skipped)
+        rec.failed_count = int(result.failed)
+        rec.result_json = json.dumps(result.model_dump(), ensure_ascii=False)
+        rec.error_json = None
+        rec.finished_at = now
+        rec.updated_at = now
+        db.add(rec)
+        db.commit()
+    finally:
+        db.close()
+
+
+def _mark_ingredient_build_job_cancelled(
+    *,
+    job_id: str,
+    message: str,
+    bind: Any,
+) -> None:
+    SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=bind)
+    db = SessionMaker()
+    try:
+        rec = db.get(IngredientLibraryBuildJob, job_id)
+        if rec is None:
+            return
+        now = now_iso()
+        rec.status = "cancelled"
+        rec.stage = "cancelled"
+        rec.stage_label = _ingredient_build_stage_label("cancelled")
+        rec.message = message.strip() or "任务已取消。"
+        rec.percent = max(0, min(99, int(rec.percent or 0)))
+        rec.finished_at = now
+        rec.updated_at = now
+        db.add(rec)
+        db.commit()
+    finally:
+        db.close()
+
+
+def _mark_ingredient_build_job_failed(
+    *,
+    job_id: str,
+    code: str,
+    detail: str,
+    http_status: int,
+    bind: Any,
+) -> None:
+    SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=bind)
+    db = SessionMaker()
+    try:
+        rec = db.get(IngredientLibraryBuildJob, job_id)
+        if rec is None:
+            return
+        now = now_iso()
+        rec.status = "failed"
+        rec.stage = "failed"
+        rec.stage_label = _ingredient_build_stage_label("failed")
+        rec.message = detail
+        rec.error_json = json.dumps(
+            {
+                "code": str(code or "ingredient_build_failed"),
+                "detail": str(detail or "ingredient build failed."),
+                "http_status": int(http_status or 500),
+            },
+            ensure_ascii=False,
+        )
+        rec.finished_at = now
+        rec.updated_at = now
+        db.add(rec)
+        db.commit()
+    finally:
+        db.close()
+
+
+def _ingredient_build_progress_percent(
+    *,
+    current: int,
+    step: str,
+    index: int | None,
+    total: int | None,
+) -> int:
+    value = max(0, min(100, int(current)))
+    if step in {"queued", "prepare"}:
+        return max(value, 1)
+    if step == "ingredient_build_start":
+        return max(value, 5)
+    if step in {"ingredient_start", "ingredient_done", "ingredient_skip", "ingredient_error", "ingredient_model_step", "ingredient_model_delta"}:
+        if index is not None and total is not None and total > 0:
+            computed = 15 + int((max(0, min(total, index)) / total) * 80)
+            return max(value, min(95, computed))
+        return max(value, 15)
+    if step in {"ingredient_build_cancelled", "cancelling"}:
+        return max(value, 10)
+    if step in {"ingredient_build_done", "done"}:
+        return 100
+    if step in {"failed", "cancelled"}:
+        return max(value, 0)
+    return value
+
+
+def _ingredient_build_stage_label(stage: str) -> str:
+    mapping = {
+        "queued": "待执行",
+        "prepare": "准备中",
+        "ingredient_build_start": "扫描成分",
+        "ingredient_start": "生成成分画像",
+        "ingredient_model_step": "模型执行",
+        "ingredient_model_delta": "模型输出",
+        "ingredient_done": "单项完成",
+        "ingredient_skip": "跳过未变化项",
+        "ingredient_error": "单项失败",
+        "ingredient_build_done": "任务完成",
+        "ingredient_build_cancelled": "任务取消",
+        "cancelling": "取消中",
+        "cancelled": "已取消",
+        "done": "已完成",
+        "failed": "失败",
+    }
+    key = str(stage or "").strip().lower()
+    return mapping.get(key, key or "处理中")
+
+
+def _to_ingredient_build_job_view(rec: IngredientLibraryBuildJob) -> IngredientLibraryBuildJobView:
+    result_obj: IngredientLibraryBuildResponse | None = None
+    error_obj: IngredientLibraryBuildJobError | None = None
+
+    result_raw = _safe_load_json_object(rec.result_json)
+    if result_raw is not None:
+        try:
+            result_obj = IngredientLibraryBuildResponse.model_validate(result_raw)
+        except Exception:
+            result_obj = None
+
+    error_raw = _safe_load_json_object(rec.error_json)
+    if error_raw is not None:
+        try:
+            error_obj = IngredientLibraryBuildJobError.model_validate(error_raw)
+        except Exception:
+            error_obj = IngredientLibraryBuildJobError(
+                code="ingredient_build_error",
+                detail=str(error_raw),
+                http_status=500,
+            )
+
+    return IngredientLibraryBuildJobView(
+        status=str(rec.status or "queued").strip().lower() or "queued",
+        job_id=str(rec.job_id),
+        category=str(rec.category or "").strip() or None,
+        force_regenerate=bool(rec.force_regenerate),
+        max_sources_per_ingredient=int(rec.max_sources_per_ingredient or 8),
+        stage=str(rec.stage or "").strip() or None,
+        stage_label=str(rec.stage_label or "").strip() or None,
+        message=str(rec.message or "").strip() or None,
+        percent=max(0, min(100, int(rec.percent or 0))),
+        current_index=int(rec.current_index) if rec.current_index is not None else None,
+        current_total=int(rec.current_total) if rec.current_total is not None else None,
+        current_ingredient_id=str(rec.current_ingredient_id or "").strip() or None,
+        current_ingredient_name=str(rec.current_ingredient_name or "").strip() or None,
+        counters=IngredientLibraryBuildJobCounters(
+            scanned_products=int(rec.scanned_products or 0),
+            unique_ingredients=int(rec.unique_ingredients or 0),
+            backfilled_from_storage=int(rec.backfilled_from_storage or 0),
+            submitted_to_model=int(rec.submitted_to_model or 0),
+            created=int(rec.created_count or 0),
+            updated=int(rec.updated_count or 0),
+            skipped=int(rec.skipped_count or 0),
+            failed=int(rec.failed_count or 0),
+        ),
+        result=result_obj,
+        error=error_obj,
+        cancel_requested=bool(rec.cancel_requested),
+        created_at=str(rec.created_at or ""),
+        updated_at=str(rec.updated_at or ""),
+        started_at=str(rec.started_at or "").strip() or None,
+        finished_at=str(rec.finished_at or "").strip() or None,
+    )
+
+
+def _safe_load_json_object(raw: str | None) -> dict[str, Any] | None:
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = json.loads(text)
+    except Exception:
+        return {"detail": text}
+    if not isinstance(parsed, dict):
+        return {"value": parsed}
+    return parsed
 
 
 def _build_product_route_mapping_impl(
@@ -2757,6 +3331,22 @@ def _normalize_target_type_key(raw: str) -> str:
     return value
 
 
+def _normalize_ingredient_id_list(values: list[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in values:
+        value = str(raw or "").strip().lower()
+        if not value:
+            continue
+        if len(value) > 64:
+            raise HTTPException(status_code=400, detail=f"ingredient_id is too long: {value[:32]}...")
+        if value in seen:
+            continue
+        seen.add(value)
+        out.append(value)
+    return out
+
+
 def _featured_slot_schema_http_error(exc: Exception) -> HTTPException:
     return HTTPException(
         status_code=500,
@@ -2790,6 +3380,38 @@ def _iter_ingredient_profile_rel_paths(category: str | None) -> list[str]:
             continue
         rel_paths.append(path.resolve().relative_to(base).as_posix())
     return rel_paths
+
+
+def _resolve_ingredient_profile_path_for_delete(
+    *,
+    rec: IngredientLibraryIndex | None,
+    ingredient_id: str,
+) -> str:
+    candidates: list[str] = []
+    if rec is not None:
+        storage_path = str(rec.storage_path or "").strip()
+        if storage_path:
+            candidates.append(storage_path)
+        category = str(rec.category or "").strip().lower()
+        if category:
+            candidates.append(ingredient_profile_rel_path(category, ingredient_id))
+
+    for rel in candidates:
+        if rel and exists_rel_path(rel):
+            return rel
+
+    base = Path(settings.storage_dir).resolve()
+    root = (base / "ingredients").resolve()
+    if not str(root).startswith(str(base)) or not root.exists():
+        return ""
+    for path in root.rglob(f"{ingredient_id}.json"):
+        if not path.is_file():
+            continue
+        resolved = path.resolve()
+        if not str(resolved).startswith(str(root)):
+            continue
+        return resolved.relative_to(base).as_posix()
+    return ""
 
 
 def _load_ingredient_profile_doc(rel_path: str) -> dict[str, Any]:
@@ -2960,6 +3582,13 @@ def _parse_positive_int(value: Any) -> int | None:
     return parsed
 
 
+def _safe_positive_int(value: Any, fallback: int = 0) -> int:
+    parsed = _parse_positive_int(value)
+    if parsed is None:
+        return max(0, int(fallback))
+    return int(parsed)
+
+
 def _parse_confidence_0_100(value: Any) -> int | None:
     try:
         parsed = int(value)
@@ -2998,6 +3627,11 @@ def _safe_str_list(value: Any) -> list[str]:
 def _ensure_ingredient_index_table(db: Session) -> None:
     bind = db.get_bind()
     IngredientLibraryIndex.__table__.create(bind=bind, checkfirst=True)
+
+
+def _ensure_ingredient_build_job_table(db: Session) -> None:
+    bind = db.get_bind()
+    IngredientLibraryBuildJob.__table__.create(bind=bind, checkfirst=True)
 
 
 def _ensure_product_route_mapping_index_table(db: Session) -> None:
