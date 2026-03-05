@@ -548,3 +548,112 @@ def test_build_ingredient_library_backfills_history_without_signature_and_regene
     assert body["created"] == 0
     assert body["updated"] == 1
     assert call_count["value"] == 1
+
+
+def test_ingredient_library_preflight_reports_new_merges_for_en_exact(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, _ = test_client
+    plans = [
+        {
+            "category": "bodywash",
+            "brand": "BrandA",
+            "name": "BodyWash A",
+            "one_sentence": "A",
+            "ingredients": ["甘油 (Glycerin)"],
+        },
+        {
+            "category": "bodywash",
+            "brand": "BrandB",
+            "name": "BodyWash B",
+            "one_sentence": "B",
+            "ingredients": ["丙三醇 (Glycerin)"],
+        },
+    ]
+    _install_fake_ingest_pipeline(monkeypatch, plans)
+    _ingest_one(client, "pf-a.jpg")
+    _ingest_one(client, "pf-b.jpg")
+
+    resp = client.post(
+        "/api/products/ingredients/library/preflight",
+        json={
+            "category": "bodywash",
+            "normalization_packages": ["unicode_nfkc", "punctuation_fold", "whitespace_fold", "extract_en_parenthesis", "en_exact"],
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["summary"]["raw_unique_ingredients"] == 2
+    assert body["summary"]["unique_ingredients_after"] == 1
+    assert body["summary"]["merged_delta"] == 1
+    assert body["new_merges"]
+    assert any("en_exact" in (item.get("triggered_by") or []) for item in body["new_merges"])
+
+
+def test_ingredient_library_old_id_can_redirect_to_new_id_after_alias_merge(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, _ = test_client
+    plans = [
+        {
+            "category": "bodywash",
+            "brand": "BrandA",
+            "name": "BodyWash Old",
+            "one_sentence": "Old",
+            "ingredients": ["甘油 (Glycerin)"],
+        },
+        {
+            "category": "bodywash",
+            "brand": "BrandB",
+            "name": "BodyWash New",
+            "one_sentence": "New",
+            "ingredients": ["丙三醇 (Glycerin)"],
+        },
+    ]
+    _install_fake_ingest_pipeline(monkeypatch, plans)
+    _ingest_one(client, "old-a.jpg")
+
+    def fake_run_capability_now(capability: str, input_payload: dict, trace_id: str | None = None, event_callback=None):
+        assert capability == "doubao.ingredient_category_profile"
+        return {
+            "ingredient_name": input_payload["ingredient"],
+            "ingredient_name_en": "Glycerin",
+            "category": input_payload["category"],
+            "summary": "ok",
+            "benefits": [],
+            "risks": [],
+            "usage_tips": [],
+            "suitable_for": [],
+            "avoid_for": [],
+            "confidence": 90,
+            "reason": "ok",
+            "analysis_text": "{}",
+            "model": "doubao-seed-2-0-pro-260215",
+        }
+
+    monkeypatch.setattr(products_routes, "run_capability_now", fake_run_capability_now)
+
+    first = client.post(
+        "/api/products/ingredients/library/build",
+        json={
+            "category": "bodywash",
+            "normalization_packages": ["unicode_nfkc", "punctuation_fold", "whitespace_fold"],
+        },
+    )
+    assert first.status_code == 200
+    old_id = first.json()["items"][0]["ingredient_id"]
+
+    _ingest_one(client, "old-b.jpg")
+    second = client.post(
+        "/api/products/ingredients/library/build",
+        json={
+            "category": "bodywash",
+            "normalization_packages": ["unicode_nfkc", "punctuation_fold", "whitespace_fold", "extract_en_parenthesis", "en_exact"],
+        },
+    )
+    assert second.status_code == 200
+    second_body = second.json()
+    assert second_body["unique_ingredients"] == 1
+    new_id = second_body["items"][0]["ingredient_id"]
+    assert new_id != old_id
+
+    redirected = client.get(f"/api/products/ingredients/library/bodywash/{old_id}")
+    assert redirected.status_code == 200
+    assert redirected.json()["item"]["ingredient_id"] == new_id

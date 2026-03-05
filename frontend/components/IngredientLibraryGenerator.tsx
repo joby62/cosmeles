@@ -6,12 +6,15 @@ import {
   Product,
   IngredientLibraryBuildJob,
   IngredientLibraryBuildResponse,
+  IngredientLibraryNormalizationPackage,
+  IngredientLibraryPreflightResponse,
   IngredientLibraryListItem,
   cancelIngredientLibraryBuildJob,
   createIngredientLibraryBuildJob,
   deleteIngredientLibraryBatch,
   fetchIngredientLibrary,
   fetchIngredientLibraryBuildJob,
+  fetchIngredientLibraryPreflight,
   listIngredientLibraryBuildJobs,
 } from "@/lib/api";
 import { CATEGORY_CONFIG } from "@/lib/catalog";
@@ -32,6 +35,11 @@ export default function IngredientLibraryGenerator({
   const [activeJob, setActiveJob] = useState<IngredientLibraryBuildJob | null>(null);
   const [liveLogs, setLiveLogs] = useState<string[]>([]);
   const lastLogRef = useRef("");
+  const [preflightLoading, setPreflightLoading] = useState(false);
+  const [preflightError, setPreflightError] = useState<string | null>(null);
+  const [preflightResult, setPreflightResult] = useState<IngredientLibraryPreflightResponse | null>(null);
+  const [normalizationPackages, setNormalizationPackages] = useState<IngredientLibraryNormalizationPackage[]>([]);
+  const [selectedNormalizationPackages, setSelectedNormalizationPackages] = useState<string[]>([]);
 
   const [searchKeyword, setSearchKeyword] = useState("");
   const [searchCategory, setSearchCategory] = useState("");
@@ -127,15 +135,36 @@ export default function IngredientLibraryGenerator({
     }
   }, [searchCategory, searchKeyword]);
 
+  const runPreflight = useCallback(async () => {
+    setPreflightLoading(true);
+    setPreflightError(null);
+    try {
+      const resp = await fetchIngredientLibraryPreflight({
+        normalization_packages: selectedNormalizationPackages,
+        max_merge_preview: 180,
+      });
+      setPreflightResult(resp);
+      setNormalizationPackages(resp.available_packages || []);
+      if (resp.selected_packages?.length) {
+        setSelectedNormalizationPackages(resp.selected_packages);
+      }
+    } catch (err) {
+      setPreflightError(formatErrorDetail(err));
+    } finally {
+      setPreflightLoading(false);
+    }
+  }, [selectedNormalizationPackages]);
+
   useEffect(() => {
     void loadJobs();
     void loadIngredientItems();
+    void runPreflight();
     const raw = window.localStorage.getItem(ACTIVE_JOB_STORAGE_KEY);
     if (raw) {
       const normalized = raw.trim();
       if (normalized) setActiveJobId(normalized);
     }
-  }, [loadJobs, loadIngredientItems]);
+  }, [loadJobs, loadIngredientItems, runPreflight]);
 
   useEffect(() => {
     if (!activeJobId) {
@@ -177,7 +206,9 @@ export default function IngredientLibraryGenerator({
     setJobLoading(true);
     setJobError(null);
     try {
-      const job = await createIngredientLibraryBuildJob({});
+      const job = await createIngredientLibraryBuildJob({
+        normalization_packages: selectedNormalizationPackages,
+      });
       applyActiveJob(job);
       rememberActiveJob(job.job_id);
       appendLiveLog(`[${job.created_at}] 任务已创建 | ${job.job_id}`);
@@ -208,6 +239,13 @@ export default function IngredientLibraryGenerator({
     setSelectedIngredientIds((prev) => {
       if (checked) return Array.from(new Set([...prev, ingredientId]));
       return prev.filter((id) => id !== ingredientId);
+    });
+  }
+
+  function toggleNormalizationPackage(packageId: string, checked: boolean) {
+    setSelectedNormalizationPackages((prev) => {
+      if (checked) return Array.from(new Set([...prev, packageId]));
+      return prev.filter((id) => id !== packageId);
     });
   }
 
@@ -280,6 +318,65 @@ export default function IngredientLibraryGenerator({
         ))}
       </div>
 
+      <div className="mt-4 rounded-2xl border border-black/10 bg-white p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <div className="text-[13px] font-semibold text-black/82">归一预审（dry-run）</div>
+            <div className="mt-1 text-[12px] text-black/58">勾选工具包后执行预审，先看新增兼并是否合理，再启动后台任务。</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => void runPreflight()}
+            disabled={preflightLoading}
+            className="inline-flex h-9 items-center justify-center rounded-full border border-black/12 bg-white px-4 text-[12px] font-semibold text-black/78 disabled:opacity-45"
+          >
+            {preflightLoading ? "预审中..." : "执行预审"}
+          </button>
+        </div>
+
+        <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-2">
+          {normalizationPackages.map((pkg) => (
+            <label key={pkg.id} className="flex items-start gap-2 rounded-xl border border-black/10 bg-[#fbfcff] px-3 py-2.5">
+              <input
+                type="checkbox"
+                checked={selectedNormalizationPackages.includes(pkg.id)}
+                onChange={(e) => toggleNormalizationPackage(pkg.id, e.target.checked)}
+                className="mt-0.5 h-4 w-4"
+              />
+              <div>
+                <div className="text-[12px] font-semibold text-black/82">{pkg.label}</div>
+                <div className="mt-0.5 text-[11px] text-black/58">{pkg.description}</div>
+              </div>
+            </label>
+          ))}
+        </div>
+
+        {preflightError ? <div className="mt-2 text-[13px] text-[#b42318]">{preflightError}</div> : null}
+
+        {preflightResult ? (
+          <div className="mt-3 space-y-2">
+            <div className="text-[12px] text-black/64">
+              scanned {preflightResult.summary.scanned_products} · mentions {preflightResult.summary.total_mentions} · raw unique{" "}
+              {preflightResult.summary.raw_unique_ingredients} · unique after {preflightResult.summary.unique_ingredients_after} · merged{" "}
+              {preflightResult.summary.merged_delta}
+            </div>
+            <div className="max-h-48 space-y-1 overflow-auto rounded-xl border border-black/8 bg-[#fafafa] p-2">
+              {preflightResult.new_merges.slice(0, 80).map((item, idx) => (
+                <div key={`${item.category}-${item.canonical_key}-${idx}`} className="rounded-lg border border-black/8 bg-white px-2 py-1.5">
+                  <div className="text-[12px] font-semibold text-black/82">
+                    {categoryLabel(item.category)} · {item.canonical_name} · {item.mention_count} 次
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-black/58">
+                    兼并：{item.merged_names.join(" / ") || "-"} · trigger: {(item.triggered_by || []).join(", ") || "-"}
+                  </div>
+                </div>
+              ))}
+              {preflightResult.new_merges.length === 0 ? <div className="text-[12px] text-black/52">当前工具包组合未产生新增兼并。</div> : null}
+            </div>
+          </div>
+        ) : null}
+      </div>
+
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <button
           type="button"
@@ -302,6 +399,7 @@ export default function IngredientLibraryGenerator({
           onClick={() => {
             void loadJobs();
             void loadIngredientItems();
+            void runPreflight();
           }}
           disabled={jobsLoading || itemsLoading}
           className="inline-flex h-10 items-center justify-center rounded-full border border-black/14 bg-white px-5 text-[13px] font-semibold text-black/78 disabled:opacity-45"

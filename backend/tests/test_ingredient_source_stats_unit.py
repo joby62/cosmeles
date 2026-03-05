@@ -45,7 +45,7 @@ def test_collect_category_ingredients_builds_source_json_and_signature(monkeypat
         ),
     ]
 
-    grouped = products_routes._collect_category_ingredients(rows=rows, max_sources_per_ingredient=8)
+    grouped, meta = products_routes._collect_category_ingredients(rows=rows, max_sources_per_ingredient=8)
     key = "bodywash::甘油"
     assert key in grouped
 
@@ -60,6 +60,8 @@ def test_collect_category_ingredients_builds_source_json_and_signature(monkeypat
     assert int(stats["abundance"]["trace_count"]) == 1
     assert source_json["samples"]
     assert isinstance(item["source_signature"], str) and len(item["source_signature"]) == 40
+    assert int(meta["raw_unique_ingredients"]) == 2
+    assert int(meta["unique_ingredients"]) == 2
 
 
 def test_collect_category_ingredients_raises_on_missing_rank(monkeypatch: pytest.MonkeyPatch):
@@ -114,3 +116,52 @@ def test_source_signature_changes_when_stats_change():
         source_json=source_json_b,
     )
     assert sig_a != sig_b
+
+
+def test_collect_category_ingredients_merges_same_en_name_when_en_exact_enabled(monkeypatch: pytest.MonkeyPatch):
+    docs = {
+        "products/p-1.json": {
+            "product": {"category": "bodywash"},
+            "ingredients": [
+                {"name": "甘油 (Glycerin)", "rank": 1, "abundance_level": "major", "order_confidence": 95},
+            ],
+        },
+        "products/p-2.json": {
+            "product": {"category": "bodywash"},
+            "ingredients": [
+                {"name": "丙三醇 (Glycerin)", "rank": 2, "abundance_level": "major", "order_confidence": 93},
+            ],
+        },
+    }
+    monkeypatch.setattr(products_routes, "exists_rel_path", lambda rel: rel in docs)
+    monkeypatch.setattr(products_routes, "load_json", lambda rel: docs[rel])
+
+    rows = [
+        SimpleNamespace(
+            id="p-1",
+            json_path="products/p-1.json",
+            category="bodywash",
+            brand="A",
+            name="X",
+            one_sentence="x",
+        ),
+        SimpleNamespace(
+            id="p-2",
+            json_path="products/p-2.json",
+            category="bodywash",
+            brand="B",
+            name="Y",
+            one_sentence="y",
+        ),
+    ]
+
+    grouped, meta = products_routes._collect_category_ingredients(
+        rows=rows,
+        max_sources_per_ingredient=8,
+        normalization_packages=["unicode_nfkc", "punctuation_fold", "whitespace_fold", "extract_en_parenthesis", "en_exact"],
+    )
+
+    assert int(meta["raw_unique_ingredients"]) == 2
+    assert int(meta["unique_ingredients"]) == 1
+    key = next(iter(grouped.keys()))
+    assert key.startswith("bodywash::en::glycerin")

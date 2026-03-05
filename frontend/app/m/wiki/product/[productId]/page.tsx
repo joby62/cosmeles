@@ -63,6 +63,7 @@ export default async function MobileWikiProductDetailPage({
 
   const item = data.item;
   const product = item.product;
+  const ingredientRefByIndex = new Map((item.ingredient_refs || []).map((ref) => [ref.index, ref]));
 
   return (
     <section className="pb-28">
@@ -144,7 +145,33 @@ export default async function MobileWikiProductDetailPage({
           <ul className="mt-3 space-y-2">
             {item.doc.ingredients.map((ing, idx) => (
               <li key={`${ing.name}-${idx}`} className="rounded-xl border border-black/8 bg-[#fafafa] px-3 py-2">
-                <div className="text-[13px] font-semibold text-black/84">{ing.name || "未命名成分"}</div>
+                {(() => {
+                  const ref = ingredientRefByIndex.get(idx + 1);
+                  const resolved = ref?.status === "resolved" && ref?.ingredient_id;
+                  if (resolved) {
+                    return (
+                      <Link
+                        href={`/m/wiki/${encodeURIComponent(product.category || item.product.category || "shampoo")}/${encodeURIComponent(String(ref.ingredient_id))}`}
+                        className="inline-flex items-center gap-2 text-[13px] font-semibold text-[#0f4aa8] underline underline-offset-2"
+                      >
+                        {ing.name || "未命名成分"}
+                        <span className="rounded-full border border-[#b6ccff] bg-[#eef4ff] px-2 py-0.5 text-[10px] text-[#2d4f92]">
+                          查看成分百科
+                        </span>
+                      </Link>
+                    );
+                  }
+                  return (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="text-[13px] font-semibold text-black/84">{ing.name || "未命名成分"}</div>
+                      {ref?.status === "conflict" ? (
+                        <span className="rounded-full border border-[#f9c97a] bg-[#fff8eb] px-2 py-0.5 text-[10px] text-[#8c5a00]">映射冲突</span>
+                      ) : (
+                        <span className="rounded-full border border-black/12 bg-white px-2 py-0.5 text-[10px] text-black/56">未映射</span>
+                      )}
+                    </div>
+                  );
+                })()}
                 <div className="mt-1 text-[12px] text-black/56">
                   类型：{ing.type || "-"} · 风险：{ing.risk || "-"}
                 </div>

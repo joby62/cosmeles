@@ -43,6 +43,38 @@ class IngredientLibraryIndex(Base):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class IngredientLibraryAlias(Base):
+    __tablename__ = "ingredient_library_alias_index"
+    __table_args__ = (
+        Index("ix_ing_alias_lookup", "category", "alias_key"),
+        Index("ix_ing_alias_target", "ingredient_id"),
+    )
+
+    alias_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    category: Mapped[str] = mapped_column(String(32), index=True)
+    alias_key: Mapped[str] = mapped_column(String(256), index=True)
+    alias_name: Mapped[str] = mapped_column(String(256))
+    ingredient_id: Mapped[str] = mapped_column(String(64), index=True)
+    confidence: Mapped[int] = mapped_column(Integer, default=100)
+    resolver: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[str] = mapped_column(String(32), index=True)
+    updated_at: Mapped[str] = mapped_column(String(32), index=True)
+
+
+class IngredientLibraryRedirect(Base):
+    __tablename__ = "ingredient_library_redirects"
+    __table_args__ = (
+        Index("ix_ing_redirect_scope", "category", "new_ingredient_id"),
+    )
+
+    old_ingredient_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    category: Mapped[str] = mapped_column(String(32), index=True)
+    new_ingredient_id: Mapped[str] = mapped_column(String(64), index=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[str] = mapped_column(String(32), index=True)
+    updated_at: Mapped[str] = mapped_column(String(32), index=True)
+
+
 class IngredientLibraryBuildJob(Base):
     __tablename__ = "ingredient_library_build_jobs"
     __table_args__ = (

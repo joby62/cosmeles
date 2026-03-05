@@ -5,6 +5,7 @@ import hashlib
 import re
 import io
 import zipfile
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 from collections import defaultdict
@@ -24,6 +25,8 @@ from app.db.session import get_db
 from app.db.models import (
     ProductIndex,
     IngredientLibraryIndex,
+    IngredientLibraryAlias,
+    IngredientLibraryRedirect,
     IngredientLibraryBuildJob,
     ProductRouteMappingIndex,
     ProductFeaturedSlot,
@@ -75,6 +78,11 @@ from app.schemas import (
     IngredientLibraryBuildRequest,
     IngredientLibraryBuildResponse,
     IngredientLibraryBuildItem,
+    IngredientLibraryPreflightRequest,
+    IngredientLibraryPreflightResponse,
+    IngredientLibraryNormalizationPackage,
+    IngredientLibraryPreflightSummary,
+    IngredientLibraryMergeCandidate,
     IngredientLibraryBuildJobCreateRequest,
     IngredientLibraryBuildJobView,
     IngredientLibraryBuildJobCounters,
@@ -102,6 +110,63 @@ router = APIRouter(prefix="/api", tags=["products"])
 INGREDIENT_SOURCE_SCHEMA_VERSION = "v2026-03-05.1"
 INGREDIENT_SOURCE_COOCCURRENCE_TOP_N = 15
 INGREDIENT_BUILD_JOB_HEARTBEAT_SECONDS = 2
+INGREDIENT_NORMALIZATION_PACKAGE_VERSION = "v2026-03-06.1"
+INGREDIENT_NORMALIZATION_PACKAGES: tuple[dict[str, Any], ...] = (
+    {
+        "id": "unicode_nfkc",
+        "label": "Unicode 规范化",
+        "description": "统一全半角和兼容字符（NFKC），降低同字形差异。",
+        "default_enabled": True,
+        "mode": "auto_merge",
+    },
+    {
+        "id": "whitespace_fold",
+        "label": "空白折叠",
+        "description": "连续空白折叠为一个空格，去除首尾空白。",
+        "default_enabled": True,
+        "mode": "auto_merge",
+    },
+    {
+        "id": "punctuation_fold",
+        "label": "标点归一",
+        "description": "统一中英文括号/连接符/分隔符写法。",
+        "default_enabled": True,
+        "mode": "auto_merge",
+    },
+    {
+        "id": "extract_en_parenthesis",
+        "label": "括号英文提取",
+        "description": "从“中文(English)”中提取英文别名用于映射。",
+        "default_enabled": True,
+        "mode": "auto_merge",
+    },
+    {
+        "id": "en_exact",
+        "label": "英文名精确归一",
+        "description": "英文/INCI 完全一致时归并为同一 ingredient_key。",
+        "default_enabled": True,
+        "mode": "auto_merge",
+    },
+)
+INGREDIENT_PUNCTUATION_FOLD_TABLE = str.maketrans(
+    {
+        "（": "(",
+        "）": ")",
+        "【": "[",
+        "】": "]",
+        "，": ",",
+        "、": ",",
+        "。": ".",
+        "；": ";",
+        "：": ":",
+        "／": "/",
+        "－": "-",
+        "—": "-",
+        "–": "-",
+        "·": " ",
+        "・": " ",
+    }
+)
 
 
 class IngredientLibraryBuildCancelledError(RuntimeError):
@@ -348,12 +413,18 @@ def build_ingredient_library_stream(payload: IngredientLibraryBuildRequest, db: 
     )
 
 
+@router.post("/products/ingredients/library/preflight", response_model=IngredientLibraryPreflightResponse)
+def preview_ingredient_library_preflight(payload: IngredientLibraryPreflightRequest, db: Session = Depends(get_db)):
+    return _ingredient_library_preflight(payload=payload, db=db)
+
+
 @router.post("/products/ingredients/library/jobs", response_model=IngredientLibraryBuildJobView)
 def create_ingredient_library_build_job(
     payload: IngredientLibraryBuildJobCreateRequest,
     db: Session = Depends(get_db),
 ):
     normalized_category = _normalize_optional_category(payload.category)
+    normalized_packages = _normalize_ingredient_normalization_packages(payload.normalization_packages)
     _ensure_ingredient_build_job_table(db)
 
     now = now_iso()
@@ -400,6 +471,7 @@ def create_ingredient_library_build_job(
                 category=normalized_category,
                 force_regenerate=bool(payload.force_regenerate),
                 max_sources_per_ingredient=int(payload.max_sources_per_ingredient),
+                normalization_packages=normalized_packages,
             )
             _run_ingredient_library_build_job(job_id=rec.job_id, payload=build_payload, db=local_db)
         finally:
@@ -480,6 +552,7 @@ def batch_delete_ingredient_library(
     db: Session = Depends(get_db),
 ):
     _ensure_ingredient_index_table(db)
+    _ensure_ingredient_alias_tables(db)
     ingredient_ids = _normalize_ingredient_id_list(payload.ingredient_ids)
     if not ingredient_ids:
         raise HTTPException(status_code=400, detail="ingredient_ids cannot be empty.")
@@ -507,6 +580,21 @@ def batch_delete_ingredient_library(
                     removed_files += 1
 
             if rec is not None:
+                alias_rows = db.execute(
+                    select(IngredientLibraryAlias)
+                    .where(IngredientLibraryAlias.category == str(rec.category or "").strip().lower())
+                    .where(IngredientLibraryAlias.ingredient_id == ingredient_id)
+                ).scalars().all()
+                for alias_row in alias_rows:
+                    db.delete(alias_row)
+                redirect_rows = db.execute(
+                    select(IngredientLibraryRedirect).where(
+                        (IngredientLibraryRedirect.old_ingredient_id == ingredient_id)
+                        | (IngredientLibraryRedirect.new_ingredient_id == ingredient_id)
+                    )
+                ).scalars().all()
+                for redirect_row in redirect_rows:
+                    db.delete(redirect_row)
                 db.delete(rec)
                 dirty = True
 
@@ -574,15 +662,31 @@ def list_ingredient_library(
 
 
 @router.get("/products/ingredients/library/{category}/{ingredient_id}", response_model=IngredientLibraryDetailResponse)
-def get_ingredient_library_item(category: str, ingredient_id: str):
+def get_ingredient_library_item(category: str, ingredient_id: str, db: Session = Depends(get_db)):
     normalized_category = _normalize_required_category(category)
     normalized_ingredient_id = str(ingredient_id or "").strip().lower()
     if not normalized_ingredient_id:
         raise HTTPException(status_code=400, detail="ingredient_id is required.")
+    _ensure_ingredient_alias_tables(db)
+    resolved_ingredient_id = _resolve_ingredient_id_redirect(
+        db=db,
+        category=normalized_category,
+        ingredient_id=normalized_ingredient_id,
+    )
 
-    rel_path = ingredient_profile_rel_path(normalized_category, normalized_ingredient_id)
+    rel_path = ingredient_profile_rel_path(normalized_category, resolved_ingredient_id)
     if not exists_rel_path(rel_path):
-        raise HTTPException(status_code=404, detail=f"Ingredient profile not found: {normalized_category}/{normalized_ingredient_id}.")
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Ingredient profile not found: {normalized_category}/{normalized_ingredient_id}."
+                if resolved_ingredient_id == normalized_ingredient_id
+                else (
+                    f"Ingredient profile not found after redirect: {normalized_category}/{normalized_ingredient_id} "
+                    f"-> {resolved_ingredient_id}."
+                )
+            ),
+        )
 
     try:
         doc = _load_ingredient_profile_doc(rel_path=rel_path)
@@ -1097,8 +1201,10 @@ def _build_ingredient_library_impl(
     category = (payload.category or "").strip().lower()
     if category and category not in VALID_CATEGORIES:
         raise HTTPException(status_code=400, detail=f"Invalid category: {category}.")
+    normalization_packages = _normalize_ingredient_normalization_packages(payload.normalization_packages)
 
     _ensure_ingredient_index_table(db)
+    _ensure_ingredient_alias_tables(db)
     backfilled_from_storage = _backfill_ingredient_index_from_storage(db=db, category=category)
 
     stmt = select(ProductIndex).order_by(ProductIndex.created_at.desc())
@@ -1106,11 +1212,14 @@ def _build_ingredient_library_impl(
         stmt = stmt.where(ProductIndex.category == category)
 
     rows = db.execute(stmt).scalars().all()
-    grouped = _collect_category_ingredients(
+    grouped, aggregate_meta = _collect_category_ingredients(
         rows=rows,
         max_sources_per_ingredient=int(payload.max_sources_per_ingredient),
+        normalization_packages=normalization_packages,
     )
     grouped_items = sorted(grouped.values(), key=lambda item: (item["category"], item["ingredient_name"]))
+    raw_unique = int(aggregate_meta.get("raw_unique_ingredients") or len(grouped_items))
+    merged_delta = max(0, raw_unique - len(grouped_items))
 
     _emit_progress(
         event_callback,
@@ -1118,10 +1227,13 @@ def _build_ingredient_library_impl(
             "step": "ingredient_build_start",
             "scanned_products": len(rows),
             "unique_ingredients": len(grouped_items),
+            "raw_unique_ingredients": raw_unique,
+            "merged_delta": merged_delta,
+            "normalization_packages": normalization_packages,
             "backfilled_from_storage": backfilled_from_storage,
             "text": (
                 f"开始生成成分库：产品 {len(rows)} 条，唯一成分 {len(grouped_items)} 条，"
-                f"历史回填 {backfilled_from_storage} 条。"
+                f"原始唯一 {raw_unique}（归并 {merged_delta}），历史回填 {backfilled_from_storage} 条。"
             ),
         },
     )
@@ -1154,11 +1266,13 @@ def _build_ingredient_library_impl(
 
         ingredient_id = item["ingredient_id"]
         ingredient_name = item["ingredient_name"]
+        ingredient_name_en = str(item.get("ingredient_name_en") or "").strip() or None
         category_name = item["category"]
         source_trace_ids = sorted(item["source_trace_ids"])
         source_json = item["source_json"]
         source_signature = str(item["source_signature"])
         source_schema_version = str(item["source_schema_version"])
+        alias_names = _collect_item_alias_names(item=item)
         source_count = _source_product_count_from_source_json(source_json=source_json, fallback=len(source_trace_ids))
 
         storage_rel = ingredient_profile_rel_path(category_name, ingredient_id)
@@ -1192,11 +1306,18 @@ def _build_ingredient_library_impl(
         ):
             index_rec.storage_path = ready_storage_path
             skipped += 1
+            _upsert_ingredient_aliases(
+                db=db,
+                category=category_name,
+                ingredient_id=ingredient_id,
+                alias_names=alias_names,
+                resolver="ingredient_build",
+            )
             build_item = IngredientLibraryBuildItem(
                 ingredient_id=ingredient_id,
                 category=category_name,
                 ingredient_name=ingredient_name,
-                ingredient_name_en=None,
+                ingredient_name_en=ingredient_name_en,
                 source_count=source_count,
                 source_trace_ids=source_trace_ids,
                 storage_path=ready_storage_path,
@@ -1210,9 +1331,11 @@ def _build_ingredient_library_impl(
                 {
                     "step": "ingredient_skip",
                     "ingredient_id": ingredient_id,
+                    "ingredient_name": ingredient_name,
                     "category": category_name,
                     "index": idx,
                     "total": total,
+                    "skipped": skipped,
                     "text": f"[{idx}/{total}] 跳过（统计签名未变化）：{category_name} / {ingredient_name}",
                 },
             )
@@ -1224,9 +1347,11 @@ def _build_ingredient_library_impl(
             {
                 "step": "ingredient_start",
                 "ingredient_id": ingredient_id,
+                "ingredient_name": ingredient_name,
                 "category": category_name,
                 "index": idx,
                 "total": total,
+                "submitted_to_model": submitted_to_model,
                 "text": f"[{idx}/{total}] 生成成分：{category_name} / {ingredient_name}",
             },
         )
@@ -1249,6 +1374,13 @@ def _build_ingredient_library_impl(
             )
             normalized_ingredient_name = str(ai_result.get("ingredient_name") or ingredient_name).strip() or ingredient_name
             normalized_ingredient_name_en = str(ai_result.get("ingredient_name_en") or "").strip() or None
+            _upsert_ingredient_aliases(
+                db=db,
+                category=category_name,
+                ingredient_id=ingredient_id,
+                alias_names=[normalized_ingredient_name, normalized_ingredient_name_en, *alias_names],
+                resolver="ingredient_model",
+            )
             profile_doc = {
                 "id": ingredient_id,
                 "category": category_name,
@@ -1314,10 +1446,13 @@ def _build_ingredient_library_impl(
                 {
                     "step": "ingredient_done",
                     "ingredient_id": ingredient_id,
+                    "ingredient_name": normalized_ingredient_name,
                     "category": category_name,
                     "index": idx,
                     "total": total,
                     "status": status,
+                    "created": created,
+                    "updated": updated,
                     "text": f"[{idx}/{total}] 完成：{category_name} / {ingredient_name}（{status}）",
                 },
             )
@@ -1347,9 +1482,11 @@ def _build_ingredient_library_impl(
                 {
                     "step": "ingredient_error",
                     "ingredient_id": ingredient_id,
+                    "ingredient_name": ingredient_name,
                     "category": category_name,
                     "index": idx,
                     "total": total,
+                    "failed": failed,
                     "text": f"[{idx}/{total}] 失败：{category_name} / {ingredient_name} | {e}",
                 },
             )
@@ -1388,6 +1525,141 @@ def _build_ingredient_library_impl(
         items=items,
         failures=failures[:200],
     )
+
+
+def _ingredient_library_preflight(
+    *,
+    payload: IngredientLibraryPreflightRequest,
+    db: Session,
+) -> IngredientLibraryPreflightResponse:
+    category = (payload.category or "").strip().lower()
+    if category and category not in VALID_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Invalid category: {category}.")
+    selected_packages = _normalize_ingredient_normalization_packages(payload.normalization_packages)
+    baseline_packages = [pkg for pkg in selected_packages if pkg != "en_exact"]
+    if not baseline_packages:
+        baseline_packages = ["unicode_nfkc", "punctuation_fold", "whitespace_fold"]
+
+    stmt = select(ProductIndex).order_by(ProductIndex.created_at.desc())
+    if category:
+        stmt = stmt.where(ProductIndex.category == category)
+    rows = db.execute(stmt).scalars().all()
+    records = _collect_category_ingredient_records(rows=rows)
+
+    _, meta = _aggregate_category_ingredients(
+        records=records,
+        max_sources_per_ingredient=int(payload.max_sources_per_ingredient),
+        normalization_packages=selected_packages,
+    )
+    merge_candidates = _build_ingredient_preflight_merge_candidates(
+        records=records,
+        selected_packages=selected_packages,
+        baseline_packages=baseline_packages,
+        limit=int(payload.max_merge_preview),
+    )
+
+    raw_unique = int(meta.get("raw_unique_ingredients") or 0)
+    unique_after = int(meta.get("unique_ingredients") or 0)
+    merged_delta = max(0, raw_unique - unique_after)
+    summary = IngredientLibraryPreflightSummary(
+        scanned_products=int(meta.get("scanned_products") or len(rows)),
+        total_mentions=int(meta.get("total_mentions") or 0),
+        raw_unique_ingredients=raw_unique,
+        unique_ingredients_after=unique_after,
+        merged_delta=merged_delta,
+        merged_groups=len(merge_candidates),
+        unresolved_conflicts=0,
+    )
+    return IngredientLibraryPreflightResponse(
+        status="ok",
+        category=category or None,
+        available_packages=[
+            IngredientLibraryNormalizationPackage(
+                id=str(pkg["id"]),
+                label=str(pkg["label"]),
+                description=str(pkg["description"]),
+                default_enabled=bool(pkg.get("default_enabled")),
+                mode=str(pkg.get("mode") or "auto_merge"),
+            )
+            for pkg in INGREDIENT_NORMALIZATION_PACKAGES
+        ],
+        selected_packages=selected_packages,
+        summary=summary,
+        new_merges=merge_candidates,
+        warnings=[],
+    )
+
+
+def _build_ingredient_preflight_merge_candidates(
+    *,
+    records: list[dict[str, Any]],
+    selected_packages: list[str],
+    baseline_packages: list[str],
+    limit: int,
+) -> list[IngredientLibraryMergeCandidate]:
+    merged: dict[str, dict[str, Any]] = {}
+    for record in records:
+        category = str(record.get("category") or "").strip().lower()
+        product_id = str(record.get("product_id") or "").strip()
+        for parsed in record.get("items") or []:
+            selected_key = _resolve_ingredient_key(
+                ingredient_key_base=str(parsed.get("ingredient_key_base") or ""),
+                ingredient_name_en_key_field=str(parsed.get("ingredient_name_en_key_field") or ""),
+                ingredient_name_en_key_paren=str(parsed.get("ingredient_name_en_key_paren") or ""),
+                normalization_packages=selected_packages,
+            )
+            baseline_key = _resolve_ingredient_key(
+                ingredient_key_base=str(parsed.get("ingredient_key_base") or ""),
+                ingredient_name_en_key_field=str(parsed.get("ingredient_name_en_key_field") or ""),
+                ingredient_name_en_key_paren=str(parsed.get("ingredient_name_en_key_paren") or ""),
+                normalization_packages=baseline_packages,
+            )
+            scope_key = f"{category}::{selected_key}"
+            bucket = merged.get(scope_key)
+            if bucket is None:
+                bucket = {
+                    "category": category,
+                    "canonical_key": selected_key,
+                    "base_keys": set(),
+                    "names": defaultdict(int),
+                    "product_ids": set(),
+                    "mention_count": 0,
+                    "triggered_by": set(),
+                }
+                merged[scope_key] = bucket
+            bucket["base_keys"].add(baseline_key)
+            bucket["mention_count"] = int(bucket["mention_count"]) + 1
+            bucket["product_ids"].add(product_id)
+            name = str(parsed.get("ingredient_name") or "").strip()
+            if name:
+                bucket["names"][name] += 1
+            if selected_key != baseline_key and selected_key.startswith("en::"):
+                bucket["triggered_by"].add("en_exact")
+
+    out: list[IngredientLibraryMergeCandidate] = []
+    for bucket in merged.values():
+        if len(bucket["base_keys"]) <= 1:
+            continue
+        names_counter: dict[str, int] = dict(bucket["names"])
+        names_sorted = sorted(names_counter.items(), key=lambda item: (-int(item[1]), len(str(item[0])), str(item[0])))
+        merged_names = [str(item[0]) for item in names_sorted[:8]]
+        canonical_name = merged_names[0] if merged_names else str(bucket["canonical_key"])
+        confidence = 95 if "en_exact" in bucket["triggered_by"] else 80
+        out.append(
+            IngredientLibraryMergeCandidate(
+                category=str(bucket["category"]),
+                canonical_key=str(bucket["canonical_key"]),
+                canonical_name=canonical_name,
+                merged_names=merged_names,
+                source_product_count=len(bucket["product_ids"]),
+                mention_count=int(bucket["mention_count"]),
+                confidence=confidence,
+                triggered_by=sorted(str(x) for x in bucket["triggered_by"]),
+            )
+        )
+
+    out.sort(key=lambda item: (-int(item.mention_count), item.category, item.canonical_name))
+    return out[: max(10, min(1000, int(limit)))]
 
 
 def _run_ingredient_library_build_job(
@@ -1502,6 +1774,18 @@ def _apply_ingredient_build_job_progress(
             payload.get("backfilled_from_storage"),
             fallback=rec.backfilled_from_storage,
         )
+    if step == "ingredient_start":
+        rec.submitted_to_model = _safe_positive_int(
+            payload.get("submitted_to_model"),
+            fallback=rec.submitted_to_model,
+        )
+    if step == "ingredient_skip":
+        rec.skipped_count = _safe_positive_int(payload.get("skipped"), fallback=rec.skipped_count)
+    if step == "ingredient_done":
+        rec.created_count = _safe_positive_int(payload.get("created"), fallback=rec.created_count)
+        rec.updated_count = _safe_positive_int(payload.get("updated"), fallback=rec.updated_count)
+    if step == "ingredient_error":
+        rec.failed_count = _safe_positive_int(payload.get("failed"), fallback=rec.failed_count)
     if step == "ingredient_build_done":
         rec.submitted_to_model = _safe_positive_int(payload.get("submitted_to_model"), fallback=rec.submitted_to_model)
         rec.created_count = _safe_positive_int(payload.get("created"), fallback=rec.created_count)
@@ -3091,10 +3375,21 @@ def _collect_category_ingredients(
     *,
     rows: list[ProductIndex],
     max_sources_per_ingredient: int,
-) -> dict[str, dict[str, Any]]:
-    grouped: dict[str, dict[str, Any]] = {}
-    max_sources = max(1, min(30, int(max_sources_per_ingredient)))
+    normalization_packages: list[str] | None = None,
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    records = _collect_category_ingredient_records(rows=rows)
+    return _aggregate_category_ingredients(
+        records=records,
+        max_sources_per_ingredient=max_sources_per_ingredient,
+        normalization_packages=normalization_packages,
+    )
 
+
+def _collect_category_ingredient_records(
+    *,
+    rows: list[ProductIndex],
+) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
     for row in rows:
         product_id = str(getattr(row, "id", "") or "").strip()
         json_path = str(getattr(row, "json_path", "") or "").strip()
@@ -3141,7 +3436,12 @@ def _collect_category_ingredients(
                 continue
 
             ingredient_name = str(raw.get("name") or "").strip()
-            ingredient_key = _normalize_ingredient_key(ingredient_name)
+            ingredient_key_base = _normalize_ingredient_key(ingredient_name)
+            ingredient_name_en_field = _extract_ingredient_name_en_from_fields(raw=raw)
+            ingredient_name_en_paren = _extract_ingredient_name_en_from_parenthesis(ingredient_name=ingredient_name)
+            ingredient_name_en = ingredient_name_en_field or ingredient_name_en_paren
+            ingredient_name_en_key_field = _normalize_ingredient_en_key(ingredient_name_en_field)
+            ingredient_name_en_key_paren = _normalize_ingredient_en_key(ingredient_name_en_paren)
             rank = _parse_positive_int(raw.get("rank"))
             abundance_level = _normalize_ingredient_abundance_level(
                 raw.get("abundance_level") or raw.get("abundance") or raw.get("major_minor")
@@ -3151,7 +3451,7 @@ def _collect_category_ingredients(
             item_issues: list[str] = []
             if not ingredient_name:
                 item_issues.append(f"ingredients[{idx}].name is required.")
-            if not ingredient_key:
+            if not ingredient_key_base:
                 item_issues.append(f"ingredients[{idx}].name should be non-empty after normalization.")
             if rank is None:
                 item_issues.append(f"ingredients[{idx}].rank should be a positive integer.")
@@ -3166,7 +3466,10 @@ def _collect_category_ingredients(
             product_items.append(
                 {
                     "ingredient_name": ingredient_name,
-                    "ingredient_key": ingredient_key,
+                    "ingredient_name_en": ingredient_name_en,
+                    "ingredient_name_en_key_field": ingredient_name_en_key_field,
+                    "ingredient_name_en_key_paren": ingredient_name_en_key_paren,
+                    "ingredient_key_base": ingredient_key_base,
                     "rank": int(rank),
                     "abundance_level": str(abundance_level),
                     "order_confidence": int(order_confidence),
@@ -3186,10 +3489,50 @@ def _collect_category_ingredients(
                 ),
             )
 
+        records.append(
+            {
+                "product_id": product_id,
+                "category": category,
+                "brand": str(row.brand or "").strip(),
+                "name": str(row.name or "").strip(),
+                "one_sentence": str(row.one_sentence or "").strip(),
+                "items": product_items,
+            }
+        )
+    return records
+
+
+def _aggregate_category_ingredients(
+    *,
+    records: list[dict[str, Any]],
+    max_sources_per_ingredient: int,
+    normalization_packages: list[str] | None = None,
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    grouped: dict[str, dict[str, Any]] = {}
+    max_sources = max(1, min(30, int(max_sources_per_ingredient)))
+    selected_packages = _normalize_ingredient_normalization_packages(normalization_packages)
+    raw_group_keys: set[str] = set()
+    total_mentions = 0
+
+    for record in records:
+        category = str(record["category"])
+        product_id = str(record["product_id"])
         product_key_to_name: dict[str, str] = {}
-        for parsed in product_items:
+        items = record["items"]
+
+        for parsed in items:
             ingredient_name = str(parsed["ingredient_name"])
-            ingredient_key = str(parsed["ingredient_key"])
+            ingredient_name_en = str(parsed.get("ingredient_name_en") or "").strip() or None
+            ingredient_key_base = str(parsed["ingredient_key_base"])
+            ingredient_key = _resolve_ingredient_key(
+                ingredient_key_base=ingredient_key_base,
+                ingredient_name_en_key_field=str(parsed.get("ingredient_name_en_key_field") or ""),
+                ingredient_name_en_key_paren=str(parsed.get("ingredient_name_en_key_paren") or ""),
+                normalization_packages=selected_packages,
+            )
+            raw_group_keys.add(f"{category}::{ingredient_key_base}")
+            total_mentions += 1
+
             ingredient_id = _build_ingredient_id(category=category, ingredient_key=ingredient_key)
             group_key = f"{category}::{ingredient_key}"
             item = grouped.get(group_key)
@@ -3197,6 +3540,7 @@ def _collect_category_ingredients(
                 item = {
                     "ingredient_id": ingredient_id,
                     "ingredient_name": ingredient_name,
+                    "ingredient_name_en": ingredient_name_en,
                     "ingredient_key": ingredient_key,
                     "category": category,
                     "source_trace_ids": set(),
@@ -3208,6 +3552,9 @@ def _collect_category_ingredients(
                     "_order_confidence_values": [],
                     "_cooccurrence_counts": {},
                     "_cooccurrence_names": {},
+                    "_name_counts": defaultdict(int),
+                    "_name_en_counts": defaultdict(int),
+                    "_alias_names": set(),
                 }
                 grouped[group_key] = item
 
@@ -3219,13 +3566,18 @@ def _collect_category_ingredients(
                 item["_major_count"] = int(item["_major_count"]) + 1
             else:
                 item["_trace_count"] = int(item["_trace_count"]) + 1
+            item["_name_counts"][ingredient_name] += 1
+            if ingredient_name_en:
+                item["_name_en_counts"][ingredient_name_en] += 1
+            for alias_name in _collect_alias_names_from_parsed_item(parsed):
+                item["_alias_names"].add(alias_name)
             if len(item["source_samples"]) < max_sources:
                 item["source_samples"].append(
                     {
                         "trace_id": product_id,
-                        "brand": str(row.brand or "").strip(),
-                        "name": str(row.name or "").strip(),
-                        "one_sentence": str(row.one_sentence or "").strip(),
+                        "brand": str(record["brand"]),
+                        "name": str(record["name"]),
+                        "one_sentence": str(record["one_sentence"]),
                         "rank": int(parsed["rank"]),
                         "abundance_level": str(parsed["abundance_level"]),
                         "order_confidence": int(parsed["order_confidence"]),
@@ -3258,6 +3610,9 @@ def _collect_category_ingredients(
         order_confidence_values = sorted(int(v) for v in item.pop("_order_confidence_values", []))
         cooccurrence_counts = item.pop("_cooccurrence_counts", {})
         cooccurrence_names = item.pop("_cooccurrence_names", {})
+        name_counts = dict(item.pop("_name_counts", {}))
+        name_en_counts = dict(item.pop("_name_en_counts", {}))
+        alias_names = sorted(str(x) for x in item.pop("_alias_names", set()) if str(x).strip())
 
         if mention_count <= 0 or not source_trace_ids:
             raise HTTPException(
@@ -3277,6 +3632,10 @@ def _collect_category_ingredients(
                     f"order_confidence_values={len(order_confidence_values)}"
                 ),
             )
+
+        item["ingredient_name"] = _pick_preferred_name(name_counts) or str(item["ingredient_name"])
+        item["ingredient_name_en"] = _pick_preferred_name(name_en_counts) or item.get("ingredient_name_en")
+        item["alias_names"] = alias_names
 
         product_count = len(source_trace_ids)
         source_json = {
@@ -3310,7 +3669,196 @@ def _collect_category_ingredients(
             source_json=source_json,
         )
 
-    return grouped
+    meta = {
+        "scanned_products": len(records),
+        "total_mentions": total_mentions,
+        "raw_unique_ingredients": len(raw_group_keys),
+        "unique_ingredients": len(grouped),
+        "normalization_packages": selected_packages,
+    }
+    return grouped, meta
+
+
+def _ingredient_normalization_package_map() -> dict[str, dict[str, Any]]:
+    return {str(item["id"]): item for item in INGREDIENT_NORMALIZATION_PACKAGES}
+
+
+def _default_ingredient_normalization_packages() -> list[str]:
+    out: list[str] = []
+    for item in INGREDIENT_NORMALIZATION_PACKAGES:
+        if bool(item.get("default_enabled")):
+            out.append(str(item.get("id")))
+    return out
+
+
+def _normalize_ingredient_normalization_packages(package_ids: list[str] | None) -> list[str]:
+    pkg_map = _ingredient_normalization_package_map()
+    requested: list[str] = []
+    if package_ids:
+        for raw in package_ids:
+            value = str(raw or "").strip()
+            if not value:
+                continue
+            if value not in pkg_map:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "[stage=ingredient_preflight_config] "
+                        f"unknown normalization package: {value}"
+                    ),
+                )
+            if value not in requested:
+                requested.append(value)
+    if not requested:
+        requested = _default_ingredient_normalization_packages()
+    return requested
+
+
+def _normalize_ingredient_text(name: str, *, normalization_packages: list[str] | None = None) -> str:
+    selected = set(normalization_packages or _default_ingredient_normalization_packages())
+    value = str(name or "")
+    if "unicode_nfkc" in selected:
+        value = unicodedata.normalize("NFKC", value)
+    if "punctuation_fold" in selected:
+        value = value.translate(INGREDIENT_PUNCTUATION_FOLD_TABLE)
+    if "whitespace_fold" in selected:
+        value = " ".join(value.split())
+    value = value.strip().lower()
+    return value
+
+
+def _normalize_ingredient_key(name: str) -> str:
+    value = _normalize_ingredient_text(name, normalization_packages=["unicode_nfkc", "punctuation_fold", "whitespace_fold"])
+    if not value:
+        return ""
+    return value[:120]
+
+
+def _normalize_ingredient_en_key(value: str | None) -> str:
+    raw = _normalize_ingredient_text(str(value or ""), normalization_packages=["unicode_nfkc", "punctuation_fold", "whitespace_fold"])
+    if not raw:
+        return ""
+    compact = re.sub(r"[^a-z0-9]+", "", raw)
+    return compact[:120]
+
+
+def _extract_ingredient_name_en_from_fields(raw: dict[str, Any]) -> str | None:
+    if not isinstance(raw, dict):
+        return None
+    candidates = (
+        "name_en",
+        "inci",
+        "inci_name",
+        "english_name",
+        "en_name",
+        "inciName",
+        "nameEn",
+    )
+    for key in candidates:
+        value = str(raw.get(key) or "").strip()
+        if not value:
+            continue
+        if re.search(r"[A-Za-z]", value):
+            return value
+    return None
+
+
+def _extract_ingredient_name_en_from_parenthesis(ingredient_name: str) -> str | None:
+    text = str(ingredient_name or "").strip()
+    if not text:
+        return None
+    matches = re.findall(r"\(([^()]+)\)", text)
+    for part in matches:
+        value = str(part or "").strip()
+        if not value:
+            continue
+        if re.search(r"[A-Za-z]", value):
+            return value
+    return None
+
+
+def _resolve_ingredient_key(
+    *,
+    ingredient_key_base: str,
+    ingredient_name_en_key_field: str,
+    ingredient_name_en_key_paren: str,
+    normalization_packages: list[str],
+) -> str:
+    selected = set(normalization_packages)
+    base = str(ingredient_key_base or "").strip().lower()
+    if not base:
+        raise HTTPException(
+            status_code=422,
+            detail="[stage=ingredient_stats_aggregate] ingredient base key is empty.",
+        )
+    if "en_exact" not in selected:
+        return base
+
+    field_key = str(ingredient_name_en_key_field or "").strip().lower()
+    if field_key:
+        return f"en::{field_key}"[:120]
+
+    if "extract_en_parenthesis" in selected:
+        paren_key = str(ingredient_name_en_key_paren or "").strip().lower()
+        if paren_key:
+            return f"en::{paren_key}"[:120]
+    return base
+
+
+def _collect_alias_names_from_parsed_item(parsed: dict[str, Any]) -> list[str]:
+    out: list[str] = []
+    name = str(parsed.get("ingredient_name") or "").strip()
+    if name:
+        out.append(name)
+    name_en = str(parsed.get("ingredient_name_en") or "").strip()
+    if name_en:
+        out.append(name_en)
+    if name:
+        parenthesis = _extract_ingredient_name_en_from_parenthesis(ingredient_name=name)
+        if parenthesis:
+            out.append(parenthesis)
+    dedup: list[str] = []
+    seen: set[str] = set()
+    for raw in out:
+        value = str(raw or "").strip()
+        if not value:
+            continue
+        key = value.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        dedup.append(value)
+    return dedup
+
+
+def _pick_preferred_name(counter: dict[str, int]) -> str:
+    if not counter:
+        return ""
+    rows = sorted(counter.items(), key=lambda item: (-int(item[1]), len(str(item[0])), str(item[0])))
+    return str(rows[0][0]).strip()
+
+
+def _collect_item_alias_names(*, item: dict[str, Any]) -> list[str]:
+    out: list[str] = []
+    ingredient_name = str(item.get("ingredient_name") or "").strip()
+    if ingredient_name:
+        out.append(ingredient_name)
+    ingredient_name_en = str(item.get("ingredient_name_en") or "").strip()
+    if ingredient_name_en:
+        out.append(ingredient_name_en)
+    for raw in item.get("alias_names") or []:
+        value = str(raw or "").strip()
+        if value:
+            out.append(value)
+    dedup: list[str] = []
+    seen: set[str] = set()
+    for raw in out:
+        lowered = raw.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        dedup.append(raw)
+    return dedup
 
 
 def _build_rank_stats(values: list[int]) -> dict[str, float | int]:
@@ -3450,15 +3998,6 @@ def _percentile(sorted_values: list[int], percentile: float) -> float:
     lower_value = float(sorted_values[lower])
     upper_value = float(sorted_values[upper])
     return lower_value + (upper_value - lower_value) * weight
-
-
-def _normalize_ingredient_key(name: str) -> str:
-    value = str(name or "").strip().lower()
-    if not value:
-        return ""
-    compact = " ".join(value.split())
-    return compact[:120]
-
 
 def _build_ingredient_id(category: str, ingredient_key: str) -> str:
     base = f"{category}::{ingredient_key}"
@@ -3784,9 +4323,168 @@ def _safe_str_list(value: Any) -> list[str]:
     return out
 
 
+def _build_ingredient_alias_id(*, category: str, alias_key: str) -> str:
+    raw = f"{category}::{alias_key}"
+    digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:24]
+    return f"inga-{digest}"
+
+
+def _build_ingredient_alias_keys(alias_name: str) -> list[str]:
+    value = str(alias_name or "").strip()
+    if not value:
+        return []
+    keys: list[str] = []
+    base_key = _normalize_ingredient_key(value)
+    if base_key:
+        keys.append(f"cn::{base_key}")
+    en_key = _normalize_ingredient_en_key(value)
+    if en_key:
+        keys.append(f"en::{en_key}")
+    out: list[str] = []
+    seen: set[str] = set()
+    for key in keys:
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(key[:240])
+    return out
+
+
+def _upsert_ingredient_redirect(
+    *,
+    db: Session,
+    category: str,
+    old_ingredient_id: str,
+    new_ingredient_id: str,
+    reason: str,
+) -> None:
+    old_id = str(old_ingredient_id or "").strip().lower()
+    new_id = str(new_ingredient_id or "").strip().lower()
+    if not old_id or not new_id or old_id == new_id:
+        return
+    rec = db.get(IngredientLibraryRedirect, old_id)
+    now = now_iso()
+    if rec is None:
+        rec = IngredientLibraryRedirect(
+            old_ingredient_id=old_id,
+            category=str(category or "").strip().lower(),
+            new_ingredient_id=new_id,
+            reason=str(reason or "").strip() or "alias remap",
+            created_at=now,
+            updated_at=now,
+        )
+    else:
+        rec.category = str(category or "").strip().lower()
+        rec.new_ingredient_id = new_id
+        rec.reason = str(reason or "").strip() or rec.reason
+        rec.updated_at = now
+    db.add(rec)
+
+
+def _upsert_ingredient_aliases(
+    *,
+    db: Session,
+    category: str,
+    ingredient_id: str,
+    alias_names: list[str],
+    resolver: str,
+) -> None:
+    normalized_category = str(category or "").strip().lower()
+    target_id = str(ingredient_id or "").strip().lower()
+    if not normalized_category or not target_id:
+        return
+    _ensure_ingredient_alias_tables(db)
+
+    key_to_alias_name: dict[str, str] = {}
+    for raw in alias_names:
+        alias_name = str(raw or "").strip()
+        if not alias_name:
+            continue
+        for alias_key in _build_ingredient_alias_keys(alias_name):
+            if alias_key not in key_to_alias_name:
+                key_to_alias_name[alias_key] = alias_name
+    if not key_to_alias_name:
+        return
+
+    existing_rows = db.execute(
+        select(IngredientLibraryAlias)
+        .where(IngredientLibraryAlias.category == normalized_category)
+        .where(IngredientLibraryAlias.alias_key.in_(list(key_to_alias_name.keys())))
+    ).scalars().all()
+    existing_map = {str(row.alias_key): row for row in existing_rows}
+    now = now_iso()
+    redirected_old_ids: set[str] = set()
+
+    for alias_key, alias_name in key_to_alias_name.items():
+        row = existing_map.get(alias_key)
+        existing_target_id = str(row.ingredient_id or "").strip().lower() if row is not None else ""
+        if row is not None and existing_target_id != target_id and existing_target_id not in redirected_old_ids:
+            _upsert_ingredient_redirect(
+                db=db,
+                category=normalized_category,
+                old_ingredient_id=existing_target_id,
+                new_ingredient_id=target_id,
+                reason=f"alias_key={alias_key}",
+            )
+            redirected_old_ids.add(existing_target_id)
+
+        if row is None:
+            row = IngredientLibraryAlias(
+                alias_id=_build_ingredient_alias_id(category=normalized_category, alias_key=alias_key),
+                category=normalized_category,
+                alias_key=alias_key,
+                alias_name=alias_name,
+                ingredient_id=target_id,
+                confidence=100,
+                resolver=str(resolver or "").strip() or None,
+                created_at=now,
+                updated_at=now,
+            )
+        else:
+            row.alias_name = alias_name
+            row.ingredient_id = target_id
+            row.confidence = 100
+            row.resolver = str(resolver or "").strip() or row.resolver
+            row.updated_at = now
+        db.add(row)
+
+
+def _resolve_ingredient_id_redirect(
+    *,
+    db: Session,
+    category: str,
+    ingredient_id: str,
+) -> str:
+    current = str(ingredient_id or "").strip().lower()
+    if not current:
+        return current
+    normalized_category = str(category or "").strip().lower()
+    seen: set[str] = set()
+    for _ in range(4):
+        if current in seen:
+            break
+        seen.add(current)
+        row = db.get(IngredientLibraryRedirect, current)
+        if row is None:
+            break
+        if str(row.category or "").strip().lower() != normalized_category:
+            break
+        target = str(row.new_ingredient_id or "").strip().lower()
+        if not target or target == current:
+            break
+        current = target
+    return current
+
+
 def _ensure_ingredient_index_table(db: Session) -> None:
     bind = db.get_bind()
     IngredientLibraryIndex.__table__.create(bind=bind, checkfirst=True)
+
+
+def _ensure_ingredient_alias_tables(db: Session) -> None:
+    bind = db.get_bind()
+    IngredientLibraryAlias.__table__.create(bind=bind, checkfirst=True)
+    IngredientLibraryRedirect.__table__.create(bind=bind, checkfirst=True)
 
 
 def _ensure_ingredient_build_job_table(db: Session) -> None:
@@ -3864,6 +4562,7 @@ def _backfill_ingredient_index_from_storage(db: Session, category: str | None) -
     if not rel_paths:
         return 0
 
+    _ensure_ingredient_alias_tables(db)
     docs: list[tuple[str, dict[str, Any]]] = []
     ingredient_ids: list[str] = []
     for rel_path in rel_paths:
@@ -3910,6 +4609,28 @@ def _backfill_ingredient_index_from_storage(db: Session, category: str | None) -
             rec.first_seen_at = generated_at
         db.add(rec)
         index_map[ingredient_id] = rec
+        alias_names = [ingredient_name]
+        ingredient_name_en = str(doc.get("ingredient_name_en") or "").strip()
+        if ingredient_name_en:
+            alias_names.append(ingredient_name_en)
+        for sample in doc.get("source_samples") or []:
+            if not isinstance(sample, dict):
+                continue
+            sample_ing = sample.get("ingredient")
+            if isinstance(sample_ing, dict):
+                sample_name = str(sample_ing.get("name") or "").strip()
+                if sample_name:
+                    alias_names.append(sample_name)
+                sample_name_en = str(sample_ing.get("name_en") or sample_ing.get("inci") or "").strip()
+                if sample_name_en:
+                    alias_names.append(sample_name_en)
+        _upsert_ingredient_aliases(
+            db=db,
+            category=category_name,
+            ingredient_id=ingredient_id,
+            alias_names=alias_names,
+            resolver="storage_backfill",
+        )
         touched += 1
 
     if touched:

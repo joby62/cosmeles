@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from app.routes import ingest as ingest_routes
+from app.routes import products as products_routes
 from app.services.storage import preferred_image_rel_path
 from backend.tests.support_images import VALID_TEST_IMAGE_BYTES, install_fake_save_image
 
@@ -123,3 +124,50 @@ def test_products_and_mobile_wiki_use_webp_then_jpg_fallback(test_client, monkey
     assert wiki_detail_fallback.status_code == 200
     assert str(wiki_detail_fallback.json()["item"]["product"]["image_url"]).endswith(".jpg")
     assert str(wiki_detail_fallback.json()["item"]["doc"]["evidence"]["image_path"]).endswith(".jpg")
+
+
+def test_mobile_wiki_product_detail_contains_resolved_ingredient_refs(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, _ = test_client
+    install_fake_save_image(monkeypatch, ingest_routes)
+
+    created = _ingest_manual_with_image(client, category="bodywash")
+    product_id = created["id"]
+
+    def fake_run_capability_now(capability: str, input_payload: dict, trace_id: str | None = None, event_callback=None):
+        assert capability == "doubao.ingredient_category_profile"
+        return {
+            "ingredient_name": input_payload["ingredient"],
+            "ingredient_name_en": "Glycerin",
+            "category": input_payload["category"],
+            "summary": "ok",
+            "benefits": [],
+            "risks": [],
+            "usage_tips": [],
+            "suitable_for": [],
+            "avoid_for": [],
+            "confidence": 90,
+            "reason": "ok",
+            "analysis_text": "{}",
+            "model": "doubao-seed-2-0-pro-260215",
+        }
+
+    monkeypatch.setattr(products_routes, "run_capability_now", fake_run_capability_now)
+
+    build = client.post(
+        "/api/products/ingredients/library/build",
+        json={
+            "category": "bodywash",
+            "normalization_packages": ["unicode_nfkc", "punctuation_fold", "whitespace_fold", "extract_en_parenthesis", "en_exact"],
+        },
+    )
+    assert build.status_code == 200
+    build_body = build.json()
+    assert build_body["items"]
+    target_id = build_body["items"][0]["ingredient_id"]
+
+    wiki_detail = client.get(f"/api/mobile/wiki/products/{product_id}")
+    assert wiki_detail.status_code == 200
+    refs = wiki_detail.json()["item"]["ingredient_refs"]
+    assert refs
+    assert refs[0]["status"] == "resolved"
+    assert refs[0]["ingredient_id"] == target_id

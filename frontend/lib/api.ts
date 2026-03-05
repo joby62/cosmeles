@@ -56,6 +56,53 @@ export type IngredientLibraryBuildRequest = {
   category?: string;
   force_regenerate?: boolean;
   max_sources_per_ingredient?: number;
+  normalization_packages?: string[];
+};
+
+export type IngredientLibraryNormalizationPackage = {
+  id: string;
+  label: string;
+  description: string;
+  default_enabled: boolean;
+  mode: "auto_merge" | "proposal";
+};
+
+export type IngredientLibraryMergeCandidate = {
+  category: string;
+  canonical_key: string;
+  canonical_name: string;
+  merged_names: string[];
+  source_product_count: number;
+  mention_count: number;
+  confidence: number;
+  triggered_by: string[];
+};
+
+export type IngredientLibraryPreflightSummary = {
+  scanned_products: number;
+  total_mentions: number;
+  raw_unique_ingredients: number;
+  unique_ingredients_after: number;
+  merged_delta: number;
+  merged_groups: number;
+  unresolved_conflicts: number;
+};
+
+export type IngredientLibraryPreflightRequest = {
+  category?: string;
+  normalization_packages?: string[];
+  max_merge_preview?: number;
+  max_sources_per_ingredient?: number;
+};
+
+export type IngredientLibraryPreflightResponse = {
+  status: string;
+  category?: string | null;
+  available_packages: IngredientLibraryNormalizationPackage[];
+  selected_packages: string[];
+  summary: IngredientLibraryPreflightSummary;
+  new_merges: IngredientLibraryMergeCandidate[];
+  warnings: string[];
 };
 
 export type IngredientLibraryBuildItem = {
@@ -89,6 +136,7 @@ export type IngredientLibraryBuildJobCreateRequest = {
   category?: string;
   force_regenerate?: boolean;
   max_sources_per_ingredient?: number;
+  normalization_packages?: string[];
 };
 
 export type IngredientLibraryBuildJobError = {
@@ -593,6 +641,14 @@ export type MobileWikiProductDetailResponse = {
   status: string;
   item: MobileWikiProductItem & {
     doc: ProductDoc;
+    ingredient_refs: Array<{
+      index: number;
+      name: string;
+      ingredient_id?: string | null;
+      status: "resolved" | "unresolved" | "conflict";
+      matched_alias?: string | null;
+      reason?: string | null;
+    }>;
   };
 };
 
@@ -990,6 +1046,15 @@ export async function fetchIngredientLibraryItem(
   }
   const path = `/api/products/ingredients/library/${encodeURIComponent(categoryValue)}/${encodeURIComponent(ingredientValue)}`;
   return apiFetch<IngredientLibraryDetailResponse>(path);
+}
+
+export async function fetchIngredientLibraryPreflight(
+  payload: IngredientLibraryPreflightRequest,
+): Promise<IngredientLibraryPreflightResponse> {
+  return apiFetch<IngredientLibraryPreflightResponse>("/api/products/ingredients/library/preflight", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function buildIngredientLibraryStream(

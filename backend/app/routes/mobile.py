@@ -2,6 +2,7 @@ import hashlib
 import json
 import queue
 import threading
+import re
 from collections import defaultdict
 from itertools import combinations
 from pathlib import Path
@@ -18,6 +19,9 @@ from app.ai.errors import AIServiceError
 from app.ai.orchestrator import run_capability_now
 from app.constants import VALID_CATEGORIES, MOBILE_RULES_VERSION, ROUTE_MAPPING_SUPPORTED_CATEGORIES
 from app.db.models import (
+    IngredientLibraryAlias,
+    IngredientLibraryIndex,
+    IngredientLibraryRedirect,
     MobileBagItem,
     MobileCompareSessionIndex,
     MobileCompareUsageStat,
@@ -69,6 +73,7 @@ from app.schemas import (
     MobileSelectionRoute,
     MobileSelectionRuleHit,
     MobileWikiCategoryFacet,
+    MobileWikiIngredientRef,
     MobileWikiProductDetailItem,
     MobileWikiProductDetailResponse,
     MobileWikiProductItem,
@@ -767,6 +772,11 @@ def get_mobile_wiki_product_detail(
         mapping=mapping,
         featured_by_slot=featured_by_slot,
     )
+    ingredient_refs = _resolve_mobile_wiki_ingredient_refs(
+        db=db,
+        category=str(row.category or "").strip().lower(),
+        ingredients=doc.ingredients,
+    )
     if owner_cookie_new:
         _set_owner_cookie(response, owner_id, request)
     return MobileWikiProductDetailResponse(
@@ -774,6 +784,7 @@ def get_mobile_wiki_product_detail(
         item=MobileWikiProductDetailItem(
             product=item.product,
             doc=doc,
+            ingredient_refs=ingredient_refs,
             category_label=item.category_label,
             target_type_key=item.target_type_key,
             target_type_title=item.target_type_title,
@@ -2895,6 +2906,214 @@ def _featured_slot_by_slot_key(
         if not category or not target_type_key:
             continue
         out[f"{category}::{target_type_key}"] = row
+    return out
+
+
+def _ensure_mobile_wiki_ingredient_tables(db: Session) -> None:
+    bind = db.get_bind()
+    IngredientLibraryAlias.__table__.create(bind=bind, checkfirst=True)
+    IngredientLibraryRedirect.__table__.create(bind=bind, checkfirst=True)
+    IngredientLibraryIndex.__table__.create(bind=bind, checkfirst=True)
+
+
+def _normalize_mobile_wiki_ingredient_text(value: str) -> str:
+    normalized = str(value or "").strip().lower()
+    normalized = normalized.translate(
+        str.maketrans(
+            {
+                "（": "(",
+                "）": ")",
+                "【": "[",
+                "】": "]",
+                "，": ",",
+                "、": ",",
+                "。": ".",
+                "；": ";",
+                "：": ":",
+                "／": "/",
+                "－": "-",
+                "—": "-",
+                "–": "-",
+                "·": " ",
+                "・": " ",
+            }
+        )
+    )
+    normalized = " ".join(normalized.split())
+    return normalized
+
+
+def _normalize_mobile_wiki_ingredient_key(value: str) -> str:
+    normalized = _normalize_mobile_wiki_ingredient_text(value)
+    return normalized[:120]
+
+
+def _normalize_mobile_wiki_ingredient_en_key(value: str) -> str:
+    normalized = _normalize_mobile_wiki_ingredient_text(value)
+    compact = re.sub(r"[^a-z0-9]+", "", normalized)
+    return compact[:120]
+
+
+def _extract_mobile_wiki_ingredient_en_from_parenthesis(value: str) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    matches = re.findall(r"\(([^()]+)\)", text)
+    for match in matches:
+        segment = str(match or "").strip()
+        if segment and re.search(r"[A-Za-z]", segment):
+            return segment
+    return None
+
+
+def _build_mobile_wiki_alias_keys(name: str) -> list[str]:
+    out: list[str] = []
+    base_key = _normalize_mobile_wiki_ingredient_key(name)
+    if base_key:
+        out.append(f"cn::{base_key}")
+    en_key = _normalize_mobile_wiki_ingredient_en_key(name)
+    if en_key:
+        out.append(f"en::{en_key}")
+    parenthesis = _extract_mobile_wiki_ingredient_en_from_parenthesis(name)
+    if parenthesis:
+        parenthesis_key = _normalize_mobile_wiki_ingredient_en_key(parenthesis)
+        if parenthesis_key:
+            out.append(f"en::{parenthesis_key}")
+    dedup: list[str] = []
+    seen: set[str] = set()
+    for key in out:
+        if key in seen:
+            continue
+        seen.add(key)
+        dedup.append(key)
+    return dedup
+
+
+def _resolve_mobile_wiki_redirect(
+    *,
+    db: Session,
+    category: str,
+    ingredient_id: str,
+) -> str:
+    current = str(ingredient_id or "").strip().lower()
+    normalized_category = str(category or "").strip().lower()
+    seen: set[str] = set()
+    for _ in range(4):
+        if not current or current in seen:
+            break
+        seen.add(current)
+        row = db.get(IngredientLibraryRedirect, current)
+        if row is None:
+            break
+        if str(row.category or "").strip().lower() != normalized_category:
+            break
+        target = str(row.new_ingredient_id or "").strip().lower()
+        if not target or target == current:
+            break
+        current = target
+    return current
+
+
+def _resolve_mobile_wiki_ingredient_refs(
+    *,
+    db: Session,
+    category: str,
+    ingredients: list[Any],
+) -> list[MobileWikiIngredientRef]:
+    normalized_category = str(category or "").strip().lower()
+    if not normalized_category:
+        return []
+    _ensure_mobile_wiki_ingredient_tables(db)
+
+    alias_keys_by_index: dict[int, list[str]] = {}
+    all_alias_keys: set[str] = set()
+    for idx, item in enumerate(ingredients, start=1):
+        name = str(getattr(item, "name", "") or "").strip()
+        keys = _build_mobile_wiki_alias_keys(name)
+        alias_keys_by_index[idx] = keys
+        all_alias_keys.update(keys)
+
+    alias_rows = db.execute(
+        select(IngredientLibraryAlias)
+        .where(IngredientLibraryAlias.category == normalized_category)
+        .where(IngredientLibraryAlias.alias_key.in_(sorted(all_alias_keys)))
+    ).scalars().all() if all_alias_keys else []
+    alias_by_key: dict[str, list[IngredientLibraryAlias]] = defaultdict(list)
+    for row in alias_rows:
+        alias_by_key[str(row.alias_key)].append(row)
+
+    candidate_ids = {
+        str(row.ingredient_id or "").strip().lower()
+        for row in alias_rows
+        if str(row.ingredient_id or "").strip()
+    }
+    ready_ids: set[str] = set()
+    if candidate_ids:
+        ready_rows = db.execute(
+            select(IngredientLibraryIndex)
+            .where(IngredientLibraryIndex.ingredient_id.in_(sorted(candidate_ids)))
+            .where(IngredientLibraryIndex.category == normalized_category)
+        ).scalars().all()
+        for row in ready_rows:
+            if str(row.status or "").strip().lower() == "ready":
+                ready_ids.add(str(row.ingredient_id).strip().lower())
+
+    out: list[MobileWikiIngredientRef] = []
+    for idx, item in enumerate(ingredients, start=1):
+        name = str(getattr(item, "name", "") or "").strip()
+        keys = alias_keys_by_index.get(idx) or []
+        matched_rows: list[IngredientLibraryAlias] = []
+        for key in keys:
+            matched_rows.extend(alias_by_key.get(key) or [])
+
+        candidate_map: dict[str, IngredientLibraryAlias] = {}
+        for row in matched_rows:
+            ingredient_id = str(row.ingredient_id or "").strip().lower()
+            if ingredient_id not in ready_ids:
+                continue
+            if ingredient_id not in candidate_map:
+                candidate_map[ingredient_id] = row
+
+        resolved_ids = sorted(candidate_map.keys())
+        if len(resolved_ids) == 1:
+            resolved_id = _resolve_mobile_wiki_redirect(
+                db=db,
+                category=normalized_category,
+                ingredient_id=resolved_ids[0],
+            )
+            out.append(
+                MobileWikiIngredientRef(
+                    index=idx,
+                    name=name,
+                    ingredient_id=resolved_id,
+                    status="resolved",
+                    matched_alias=str(candidate_map[resolved_ids[0]].alias_name or "").strip() or None,
+                    reason=None,
+                )
+            )
+            continue
+        if len(resolved_ids) > 1:
+            out.append(
+                MobileWikiIngredientRef(
+                    index=idx,
+                    name=name,
+                    ingredient_id=None,
+                    status="conflict",
+                    matched_alias=None,
+                    reason=f"matched_multiple_targets={','.join(resolved_ids[:5])}",
+                )
+            )
+            continue
+        out.append(
+            MobileWikiIngredientRef(
+                index=idx,
+                name=name,
+                ingredient_id=None,
+                status="unresolved",
+                matched_alias=None,
+                reason="alias_not_found",
+            )
+        )
     return out
 
 

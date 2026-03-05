@@ -155,6 +155,53 @@ class IngredientLibraryBuildRequest(BaseModel):
     category: Optional[str] = None
     force_regenerate: bool = False
     max_sources_per_ingredient: int = Field(default=8, ge=1, le=30)
+    normalization_packages: List[str] = []
+
+
+class IngredientLibraryNormalizationPackage(BaseModel):
+    id: str
+    label: str
+    description: str
+    default_enabled: bool = True
+    mode: Literal["auto_merge", "proposal"] = "auto_merge"
+
+
+class IngredientLibraryMergeCandidate(BaseModel):
+    category: str
+    canonical_key: str
+    canonical_name: str
+    merged_names: List[str] = []
+    source_product_count: int = 0
+    mention_count: int = 0
+    confidence: int = 0
+    triggered_by: List[str] = []
+
+
+class IngredientLibraryPreflightSummary(BaseModel):
+    scanned_products: int = 0
+    total_mentions: int = 0
+    raw_unique_ingredients: int = 0
+    unique_ingredients_after: int = 0
+    merged_delta: int = 0
+    merged_groups: int = 0
+    unresolved_conflicts: int = 0
+
+
+class IngredientLibraryPreflightRequest(BaseModel):
+    category: Optional[str] = None
+    normalization_packages: List[str] = []
+    max_merge_preview: int = Field(default=120, ge=10, le=1000)
+    max_sources_per_ingredient: int = Field(default=8, ge=1, le=30)
+
+
+class IngredientLibraryPreflightResponse(BaseModel):
+    status: str
+    category: Optional[str] = None
+    available_packages: List[IngredientLibraryNormalizationPackage] = []
+    selected_packages: List[str] = []
+    summary: IngredientLibraryPreflightSummary = Field(default_factory=IngredientLibraryPreflightSummary)
+    new_merges: List[IngredientLibraryMergeCandidate] = []
+    warnings: List[str] = []
 
 
 class IngredientLibraryBuildItem(BaseModel):
@@ -188,6 +235,7 @@ class IngredientLibraryBuildJobCreateRequest(BaseModel):
     category: Optional[str] = None
     force_regenerate: bool = False
     max_sources_per_ingredient: int = Field(default=8, ge=1, le=30)
+    normalization_packages: List[str] = []
 
 
 class IngredientLibraryBuildJobError(BaseModel):
@@ -629,9 +677,19 @@ class MobileWikiProductListResponse(BaseModel):
     items: List[MobileWikiProductItem] = Field(default_factory=list)
 
 
+class MobileWikiIngredientRef(BaseModel):
+    index: int
+    name: str
+    ingredient_id: Optional[str] = None
+    status: Literal["resolved", "unresolved", "conflict"] = "unresolved"
+    matched_alias: Optional[str] = None
+    reason: Optional[str] = None
+
+
 class MobileWikiProductDetailItem(BaseModel):
     product: ProductCard
     doc: ProductDoc
+    ingredient_refs: List[MobileWikiIngredientRef] = Field(default_factory=list)
     category_label: str
     target_type_key: Optional[str] = None
     target_type_title: Optional[str] = None
