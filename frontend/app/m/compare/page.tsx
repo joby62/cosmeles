@@ -1147,9 +1147,9 @@ function CompareHistorySheet({
   onRefresh: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-[72] flex items-end bg-black/42 px-4 pb-[calc(92px+env(safe-area-inset-bottom))] backdrop-blur-[2px]" onClick={onClose}>
+    <div className="fixed inset-0 z-[72] flex items-end bg-[rgba(5,9,16,0.48)] px-4 pb-[calc(92px+env(safe-area-inset-bottom))] backdrop-blur-[2px]" onClick={onClose}>
       <div
-        className="m-sheet-enter max-h-[70vh] w-full overflow-hidden rounded-[28px] border border-white/35 bg-white/92 shadow-[0_18px_44px_rgba(0,0,0,0.25)] dark:border-white/12 dark:bg-[rgba(17,24,38,0.94)] dark:shadow-[0_18px_48px_rgba(0,0,0,0.48)]"
+        className="m-sheet-enter max-h-[70vh] w-full overflow-hidden rounded-[28px] border border-[rgba(255,255,255,0.4)] bg-[rgba(255,255,255,0.94)] shadow-[0_18px_44px_rgba(0,0,0,0.25)] dark:border-[rgba(126,163,221,0.26)] dark:bg-[rgba(17,24,38,0.96)] dark:shadow-[0_20px_52px_rgba(0,0,0,0.52)]"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-black/8 px-4 py-3">
@@ -1161,14 +1161,14 @@ function CompareHistorySheet({
             <button
               type="button"
               onClick={onRefresh}
-              className="inline-flex h-8 items-center rounded-full border border-black/12 px-3 text-[12px] text-black/65 active:bg-black/[0.04]"
+              className="inline-flex h-8 items-center rounded-full border border-black/12 px-3 text-[12px] text-black/65 active:bg-[rgba(21,34,54,0.05)] dark:border-[rgba(120,157,216,0.34)] dark:text-[rgba(208,225,251,0.86)] dark:active:bg-[rgba(63,96,148,0.28)]"
             >
               刷新
             </button>
             <button
               type="button"
               onClick={onClose}
-              className="inline-flex h-8 items-center rounded-full border border-black/12 px-3 text-[12px] text-black/65 active:bg-black/[0.04]"
+              className="inline-flex h-8 items-center rounded-full border border-black/12 px-3 text-[12px] text-black/65 active:bg-[rgba(21,34,54,0.05)] dark:border-[rgba(120,157,216,0.34)] dark:text-[rgba(208,225,251,0.86)] dark:active:bg-[rgba(63,96,148,0.28)]"
             >
               关闭
             </button>
@@ -1177,13 +1177,13 @@ function CompareHistorySheet({
 
         <div className="max-h-[calc(70vh-64px)] overflow-y-auto p-3">
           {loading ? (
-            <div className="rounded-2xl border border-black/10 bg-white/70 px-4 py-4 text-[13px] text-black/58 dark:border-white/12 dark:bg-[rgba(27,38,58,0.74)] dark:text-[rgba(219,231,250,0.72)]">正在读取历史记录...</div>
+            <div className="rounded-2xl border border-black/10 bg-[rgba(255,255,255,0.84)] px-4 py-4 text-[13px] text-black/58 dark:border-[rgba(117,152,209,0.3)] dark:bg-[rgba(29,43,66,0.82)] dark:text-[rgba(219,231,250,0.8)]">正在读取历史记录...</div>
           ) : null}
           {!loading && error ? (
             <div className="rounded-2xl border border-[#ff8f8f]/45 bg-[#ff5f5f]/10 px-4 py-4 text-[13px] text-[#b53a3a] dark:border-[#ff8f8f]/35 dark:bg-[#5a1f26]/45 dark:text-[#ffd1d1]">{error}</div>
           ) : null}
           {!loading && !error && items.length === 0 ? (
-            <div className="rounded-2xl border border-black/10 bg-white/70 px-4 py-4 text-[13px] text-black/58 dark:border-white/12 dark:bg-[rgba(27,38,58,0.74)] dark:text-[rgba(219,231,250,0.72)]">还没有历史对比记录。</div>
+            <div className="rounded-2xl border border-black/10 bg-[rgba(255,255,255,0.84)] px-4 py-4 text-[13px] text-black/58 dark:border-[rgba(117,152,209,0.3)] dark:bg-[rgba(29,43,66,0.82)] dark:text-[rgba(219,231,250,0.8)]">还没有历史对比记录。</div>
           ) : null}
           {!loading && !error ? (
             <div className="space-y-2">
@@ -1196,7 +1196,7 @@ function CompareHistorySheet({
                       ? "border-[#ffb9b9] bg-[#ffecec] text-[#b23b3b] dark:border-[#ff9b9b]/45 dark:bg-[#5a2429]/55 dark:text-[#ffd0d0]"
                       : "border-[#ffd79e] bg-[#fff6e8] text-[#96631a] dark:border-[#f0bf70]/42 dark:bg-[#5b461f]/50 dark:text-[#ffdba5]";
                 return (
-                  <article key={item.compare_id} className="rounded-2xl border border-black/10 bg-white/78 px-3 py-3">
+                  <article key={item.compare_id} className="rounded-2xl border border-black/10 bg-[rgba(255,255,255,0.86)] px-3 py-3 dark:border-[rgba(112,147,205,0.28)] dark:bg-[rgba(30,44,67,0.84)]">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <div className="line-clamp-1 text-[14px] font-semibold text-black/86">

@@ -326,7 +326,7 @@ export default function MobileCompareHistoryPanel() {
             setSelectedIds([]);
           }}
           disabled={loading || entries.length === 0 || deleting}
-          className="inline-flex h-9 items-center rounded-full border border-black/15 bg-white/60 px-4 text-[13px] font-medium text-black/78 backdrop-blur disabled:opacity-40 active:bg-black/[0.04]"
+          className="inline-flex h-9 items-center rounded-full border border-black/15 bg-[rgba(255,255,255,0.62)] px-4 text-[13px] font-medium text-black/78 backdrop-blur disabled:opacity-40 active:bg-[rgba(24,36,58,0.05)] dark:border-[rgba(122,158,214,0.34)] dark:bg-[rgba(42,55,82,0.66)] dark:text-[rgba(220,233,252,0.9)] dark:active:bg-[rgba(70,102,153,0.34)]"
         >
           {selectionMode ? "完成" : "多选"}
         </button>
@@ -490,14 +490,14 @@ export default function MobileCompareHistoryPanel() {
 
       {confirmDelete ? (
         <div
-          className="fixed inset-0 z-[120] flex items-end bg-black/45 px-4 pb-5 backdrop-blur-[1.5px]"
+          className="fixed inset-0 z-[120] flex items-end bg-[rgba(6,10,18,0.52)] px-4 pb-5 backdrop-blur-[1.5px]"
           onClick={() => {
             if (deleting) return;
             setConfirmDelete(null);
           }}
         >
           <div
-            className="w-full rounded-[28px] border border-white/40 bg-white/92 p-4 shadow-[0_16px_42px_rgba(0,0,0,0.28)]"
+            className="w-full rounded-[28px] border border-[rgba(255,255,255,0.42)] bg-[rgba(255,255,255,0.94)] p-4 shadow-[0_16px_42px_rgba(0,0,0,0.28)] dark:border-[rgba(130,166,224,0.3)] dark:bg-[rgba(19,30,47,0.96)] dark:shadow-[0_20px_52px_rgba(0,0,0,0.54)]"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="px-2 text-center">
@@ -519,7 +519,7 @@ export default function MobileCompareHistoryPanel() {
                 type="button"
                 onClick={() => setConfirmDelete(null)}
                 disabled={deleting}
-                className="inline-flex h-12 w-full items-center justify-center rounded-2xl border border-black/12 bg-white text-[15px] font-medium text-black/78 disabled:opacity-55"
+                className="inline-flex h-12 w-full items-center justify-center rounded-2xl border border-[rgba(23,35,55,0.14)] bg-[rgba(255,255,255,0.94)] text-[15px] font-medium text-black/78 disabled:opacity-55 dark:border-[rgba(122,157,214,0.34)] dark:bg-[rgba(31,47,74,0.9)] dark:text-[rgba(216,230,252,0.92)]"
               >
                 取消
               </button>
