@@ -7,6 +7,7 @@ import {
   OrphanStorageCleanupResponse,
   cleanupOrphanStorage,
   deleteProductsBatch,
+  downloadAllProductImagesZip,
 } from "@/lib/api";
 import { CATEGORY_CONFIG } from "@/lib/catalog";
 
@@ -29,6 +30,10 @@ export default function ProductCleanupWorkbench({ initialProducts }: { initialPr
   const [cleanupError, setCleanupError] = useState<string | null>(null);
   const [lastCleanup, setLastCleanup] = useState<OrphanStorageCleanupResponse | null>(null);
   const cleanupRunningRef = useRef(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [downloadingImages, setDownloadingImages] = useState(false);
+  const [downloadSummary, setDownloadSummary] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   const categoryStats = useMemo(() => {
     const map = new Map<string, number>();
@@ -130,6 +135,28 @@ export default function ProductCleanupWorkbench({ initialProducts }: { initialPr
     }
   }
 
+  async function handleDownloadAllImages() {
+    setDownloadingImages(true);
+    setDownloadSummary(null);
+    setDownloadError(null);
+    try {
+      const { blob, filename, image_count } = await downloadAllProductImagesZip();
+      const href = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = href;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(href);
+      setDownloadSummary(`下载完成：${image_count} 张图片，文件 ${filename}`);
+    } catch (err) {
+      setDownloadError(formatErrorDetail(err));
+    } finally {
+      setDownloadingImages(false);
+    }
+  }
+
   return (
     <section className="mt-8 rounded-[30px] border border-black/10 bg-white p-6">
       <div className="flex flex-wrap items-center gap-2">
@@ -144,6 +171,13 @@ export default function ProductCleanupWorkbench({ initialProducts }: { initialPr
 
       <div className="mt-5 rounded-2xl border border-black/10 bg-[#f8fafc] p-4">
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setSettingsOpen((prev) => !prev)}
+            className="inline-flex h-9 items-center justify-center rounded-full border border-black/14 bg-white px-4 text-[13px] font-semibold text-black/78"
+          >
+            设置
+          </button>
           <button
             type="button"
             onClick={() => runOrphanCleanup(true)}
@@ -182,6 +216,24 @@ export default function ProductCleanupWorkbench({ initialProducts }: { initialPr
         {lastCleanup ? (
           <div className="mt-2 text-[12px] text-black/62">
             最近结果：images 扫描 {lastCleanup.images.scanned_images} / orphan {lastCleanup.images.orphan_images}；runs 扫描 {lastCleanup.runs.scanned_runs} / orphan {lastCleanup.runs.orphan_runs}
+          </div>
+        ) : null}
+        {settingsOpen ? (
+          <div className="mt-3 rounded-xl border border-black/10 bg-white p-3">
+            <div className="text-[12px] font-semibold text-black/78">维护设置</div>
+            <div className="mt-1 text-[12px] text-black/56">一键打包下载当前产品索引引用的全部图片。</div>
+            <div className="mt-2">
+              <button
+                type="button"
+                onClick={handleDownloadAllImages}
+                disabled={downloadingImages}
+                className="inline-flex h-9 items-center justify-center rounded-full border border-black/14 bg-white px-4 text-[12px] font-semibold text-black/78 disabled:opacity-50"
+              >
+                {downloadingImages ? "打包中..." : "一键下载全部图片"}
+              </button>
+            </div>
+            {downloadSummary ? <div className="mt-2 text-[12px] text-[#116a3f]">{downloadSummary}</div> : null}
+            {downloadError ? <div className="mt-2 text-[12px] text-[#b42318]">{downloadError}</div> : null}
           </div>
         ) : null}
       </div>

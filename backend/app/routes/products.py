@@ -3,6 +3,9 @@ import queue
 import threading
 import hashlib
 import re
+import io
+import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 from collections import defaultdict
 from typing import Any, Callable
@@ -22,6 +25,7 @@ from app.db.models import ProductIndex, IngredientLibraryIndex, ProductRouteMapp
 from app.settings import settings
 from app.services.storage import (
     load_json,
+    read_rel_bytes,
     save_json_at,
     now_iso,
     save_ingredient_profile,
@@ -657,6 +661,56 @@ def cleanup_orphan_storage_assets(payload: OrphanStorageCleanupRequest, db: Sess
         max_delete=payload.max_delete,
     )
     return OrphanStorageCleanupResponse.model_validate(result)
+
+
+@router.get("/maintenance/storage/images/download")
+def download_all_product_images(db: Session = Depends(get_db)):
+    rows = db.execute(
+        select(ProductIndex.id, ProductIndex.image_path).order_by(ProductIndex.created_at.desc())
+    ).all()
+    if not rows:
+        raise HTTPException(status_code=404, detail="No products found, image archive unavailable.")
+
+    zip_buffer = io.BytesIO()
+    seen_paths: set[str] = set()
+    missing_paths: list[str] = []
+    added_count = 0
+
+    with zipfile.ZipFile(zip_buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for product_id, image_path in rows:
+            rel_path = str(image_path or "").strip().lstrip("/")
+            if not rel_path:
+                continue
+            if rel_path in seen_paths:
+                continue
+            seen_paths.add(rel_path)
+            try:
+                image_bytes = read_rel_bytes(rel_path)
+            except Exception as exc:
+                missing_paths.append(f"{product_id}:{rel_path}:{exc}")
+                continue
+            zf.writestr(rel_path, image_bytes)
+            added_count += 1
+
+    if missing_paths:
+        preview = "; ".join(missing_paths[:20])
+        if len(missing_paths) > 20:
+            preview += f"; ...(+{len(missing_paths) - 20} more)"
+        raise HTTPException(
+            status_code=500,
+            detail=f"Image archive failed: missing/unreadable image files: {preview}",
+        )
+    if added_count <= 0:
+        raise HTTPException(status_code=404, detail="No product images found, image archive unavailable.")
+
+    zip_buffer.seek(0)
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    filename = f"cosmeles-product-images-{ts}.zip"
+    headers = {
+        "Content-Disposition": f'attachment; filename="{filename}"',
+        "X-Image-Count": str(added_count),
+    }
+    return StreamingResponse(zip_buffer, media_type="application/zip", headers=headers)
 
 
 def _build_ingredient_library_impl(

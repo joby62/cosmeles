@@ -751,6 +751,24 @@ function getBaseForFetch(): string {
   return process.env.INTERNAL_API_BASE || "http://nginx";
 }
 
+function parseFilenameFromDisposition(disposition: string | null): string | null {
+  const raw = String(disposition || "").trim();
+  if (!raw) return null;
+
+  const utf8Match = raw.match(/filename\*\s*=\s*UTF-8''([^;]+)/i);
+  if (utf8Match && utf8Match[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      return utf8Match[1];
+    }
+  }
+
+  const plainMatch = raw.match(/filename\s*=\s*\"?([^\";]+)\"?/i);
+  if (plainMatch && plainMatch[1]) return plainMatch[1];
+  return null;
+}
+
 async function getForwardedServerHeaders(): Promise<Record<string, string>> {
   if (typeof window !== "undefined") return {};
   try {
@@ -976,6 +994,32 @@ export async function cleanupOrphanStorage(payload: OrphanStorageCleanupRequest)
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+export async function downloadAllProductImagesZip(): Promise<{
+  blob: Blob;
+  filename: string;
+  image_count: number;
+}> {
+  const base = getBaseForFetch();
+  const path = "/api/maintenance/storage/images/download";
+  const url = base ? new URL(path, base).toString() : path;
+  const res = await fetch(url, {
+    method: "GET",
+    cache: "no-store",
+    credentials: "include",
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`API ${res.status}: ${text}`);
+  }
+
+  const blob = await res.blob();
+  const filename = parseFilenameFromDisposition(res.headers.get("content-disposition")) || "cosmeles-product-images.zip";
+  const countRaw = Number(res.headers.get("x-image-count") || "0");
+  const image_count = Number.isFinite(countRaw) ? Math.max(0, Math.floor(countRaw)) : 0;
+  return { blob, filename, image_count };
 }
 
 export async function createAIJob(payload: AIJobCreateRequest): Promise<AIJobView> {
