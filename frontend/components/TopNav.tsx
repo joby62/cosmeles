@@ -211,6 +211,12 @@ export default function TopNav() {
               <Link href="/product" className="nav-item" onPointerEnter={() => requestClose()}>
                 {lang === "zh" ? "产品管理" : "Product Mgmt"}
               </Link>
+              <Link href="/matrix-test" className="nav-item" onPointerEnter={() => requestClose()}>
+                {lang === "zh" ? "矩阵测试" : "Matrix Test"}
+              </Link>
+              <Link href="/git" className="nav-item" onPointerEnter={() => requestClose()}>
+                {lang === "zh" ? "工程脉冲" : "Git Pulse"}
+              </Link>
             </nav>
 
             {/* ✅ 右侧：必须与 nav-item 同一高度节奏（44px），垂直居中 */}
