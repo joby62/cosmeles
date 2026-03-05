@@ -111,6 +111,10 @@ export default function MobileComparePage() {
     () => orderProductLibraryItems(bootstrap?.product_library?.items || []),
     [bootstrap?.product_library?.items],
   );
+  const availableProductIdSet = useMemo(
+    () => new Set(orderedLibraryItems.map((item) => item.productId)),
+    [orderedLibraryItems],
+  );
   const selectedSet = useMemo(() => new Set(selectedProductIds), [selectedProductIds]);
 
   const selectedCount = selectedProductIds.length;
@@ -145,7 +149,9 @@ export default function MobileComparePage() {
     for (const item of orderedLibraryItems) {
       titleById.set(item.productId, item.title);
     }
-    const names = selectedProductIds.map((id) => titleById.get(id) || "未命名产品");
+    const names = selectedProductIds
+      .map((id) => titleById.get(id))
+      .filter((value): value is string => Boolean(value));
     if (hasUpload) return ["我在用的产品", ...names];
     return names;
   }, [hasUpload, orderedLibraryItems, selectedProductIds]);
@@ -279,10 +285,6 @@ export default function MobileComparePage() {
           setCategory(data.selected_category);
           return;
         }
-        const recommendationId = String(data.product_library?.recommendation_product_id || "").trim();
-        const mostUsedId = String(data.product_library?.most_used_product_id || "").trim();
-        const fallbackHistoryId = recommendationId || mostUsedId;
-        if (fallbackHistoryId) setSelectedProductIds([fallbackHistoryId]);
       })
       .catch((err) => {
         if (cancelled) return;
@@ -296,6 +298,13 @@ export default function MobileComparePage() {
       cancelled = true;
     };
   }, [category]);
+
+  useEffect(() => {
+    setSelectedProductIds((prev) => {
+      const filtered = prev.filter((id) => availableProductIdSet.has(id));
+      return filtered.length === prev.length ? prev : filtered;
+    });
+  }, [availableProductIdSet]);
 
   useEffect(() => {
     if (!activeCompareId) {
@@ -321,7 +330,7 @@ export default function MobileComparePage() {
         setRunning(false);
         if (session.status === "failed") {
           const detail = String(session.error?.detail || "").trim() || "对比任务失败，请重试。";
-          setRunError(detail);
+          setRunError(humanizeCompareError(detail));
         } else {
           setRunError(null);
         }
@@ -337,7 +346,7 @@ export default function MobileComparePage() {
           setRunning(false);
           return;
         }
-        setRunError(message);
+        setRunError(humanizeCompareError(message));
         setRunning(false);
       }
     };
@@ -574,7 +583,13 @@ export default function MobileComparePage() {
       router.push(`/m/compare/result/${encodeURIComponent(result.compare_id)}`);
     } catch (err) {
       const text = err instanceof Error ? err.message : String(err);
-      setRunError(text);
+      if (isMissingProductError(text)) {
+        setSelectedProductIds((prev) => prev.filter((id) => availableProductIdSet.has(id)));
+        setStep(3);
+        setRunError("检测到 1 款历史产品已失效，已自动移除。请重新确认后再开始。");
+      } else {
+        setRunError(humanizeCompareError(text));
+      }
       void safeTrack("compare_run_error", {
         category,
         error: text,
@@ -1515,7 +1530,10 @@ function orderProductLibraryItems(items: MobileCompareProductLibraryItem[]): Ord
     .map((item) => {
       const productId = String(item.product.id || "").trim();
       if (!productId) return null;
-      const title = [item.product.brand, item.product.name].filter(Boolean).join(" ").trim() || "未命名产品";
+      const title =
+        [item.product.brand, item.product.name].filter(Boolean).join(" ").trim() ||
+        String(item.product.one_sentence || "").trim() ||
+        "待补全名称产品";
       return { item, productId, title };
     })
     .filter((item): item is { item: MobileCompareProductLibraryItem; productId: string; title: string } => Boolean(item));
@@ -1578,4 +1596,16 @@ async function safeTrack(name: string, props: Record<string, unknown>) {
   } catch {
     // 埋点失败不阻塞主流程
   }
+}
+
+function isMissingProductError(message: string): boolean {
+  const text = String(message || "");
+  return /product\s+'[^']+'\s+not found/i.test(text);
+}
+
+function humanizeCompareError(message: string): string {
+  if (isMissingProductError(message)) {
+    return "检测到历史产品已失效，请重置后重新选择产品。";
+  }
+  return message;
 }
