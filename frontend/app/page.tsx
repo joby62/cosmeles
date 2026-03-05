@@ -104,7 +104,19 @@ export default function HomePage() {
               "transition-colors"
             )}
           >
-            产品管理
+              产品管理
+            </Link>
+          <Link
+            href="/matrix-test"
+            className={cx(
+              "px-4 py-2 rounded-full",
+              "text-[12px] font-medium tracking-[0.02em]",
+              "border border-black/[0.08]",
+              "bg-black text-white hover:bg-black/85",
+              "transition-colors"
+            )}
+          >
+            矩阵测试台
           </Link>
         </div>
 

@@ -221,14 +221,41 @@ export const MATRIX_CSV_DATA = `test_id,desc,q1,q2,q3,c_q1,c_q2,c_q3,exp_shampoo
 5,seasonal mild dandruff,B,A,C,C,C,C,anti-dandruff-itch,c-basic-hydrate
 6,recently dyed fresh color,B,D,A,B,C,A,moisture-balance,c-color-lock`;
 
+function splitCsvLine(line: string): string[] {
+  const fields: string[] = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i];
+    if (char === "\"") {
+      if (inQuotes && line[i + 1] === "\"") {
+        current += "\"";
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (char === "," && !inQuotes) {
+      fields.push(current.trim());
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  fields.push(current.trim());
+  return fields;
+}
+
 function parseCsvRows(csvText: string): MatrixCsvTestRow[] {
   const lines = csvText.trim().split(/\r?\n/).filter(Boolean);
   if (lines.length < 2) return [];
-  const headers = lines[0].split(",").map((item) => item.trim());
+  const headers = splitCsvLine(lines[0]);
   const rows: MatrixCsvTestRow[] = [];
 
   for (const line of lines.slice(1)) {
-    const values = line.split(",");
+    const values = splitCsvLine(line);
     const row: Record<string, string> = {};
     headers.forEach((header, index) => {
       row[header] = values[index]?.trim() ?? "";
