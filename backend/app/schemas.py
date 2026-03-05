@@ -187,6 +187,16 @@ class IngredientLibraryPreflightSummary(BaseModel):
     unresolved_conflicts: int = 0
 
 
+class IngredientLibraryPreflightUsageTopItem(BaseModel):
+    category: str
+    ingredient_id: str
+    ingredient_key: str
+    ingredient_name: str
+    ingredient_name_en: Optional[str] = None
+    mention_count: int = 0
+    source_product_count: int = 0
+
+
 class IngredientLibraryPreflightRequest(BaseModel):
     category: Optional[str] = None
     normalization_packages: List[str] = []
@@ -201,6 +211,7 @@ class IngredientLibraryPreflightResponse(BaseModel):
     selected_packages: List[str] = []
     summary: IngredientLibraryPreflightSummary = Field(default_factory=IngredientLibraryPreflightSummary)
     new_merges: List[IngredientLibraryMergeCandidate] = []
+    usage_top: List[IngredientLibraryPreflightUsageTopItem] = []
     warnings: List[str] = []
 
 

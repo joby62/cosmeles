@@ -587,6 +587,8 @@ def test_ingredient_library_preflight_reports_new_merges_for_en_exact(test_clien
     assert body["summary"]["merged_delta"] == 1
     assert body["new_merges"]
     assert any("en_exact" in (item.get("triggered_by") or []) for item in body["new_merges"])
+    assert body["usage_top"]
+    assert body["usage_top"][0]["mention_count"] >= 2
 
 
 def test_ingredient_library_old_id_can_redirect_to_new_id_after_alias_merge(test_client, monkeypatch: pytest.MonkeyPatch):

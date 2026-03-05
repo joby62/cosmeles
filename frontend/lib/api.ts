@@ -88,6 +88,16 @@ export type IngredientLibraryPreflightSummary = {
   unresolved_conflicts: number;
 };
 
+export type IngredientLibraryPreflightUsageTopItem = {
+  category: string;
+  ingredient_id: string;
+  ingredient_key: string;
+  ingredient_name: string;
+  ingredient_name_en?: string | null;
+  mention_count: number;
+  source_product_count: number;
+};
+
 export type IngredientLibraryPreflightRequest = {
   category?: string;
   normalization_packages?: string[];
@@ -102,6 +112,7 @@ export type IngredientLibraryPreflightResponse = {
   selected_packages: string[];
   summary: IngredientLibraryPreflightSummary;
   new_merges: IngredientLibraryMergeCandidate[];
+  usage_top: IngredientLibraryPreflightUsageTopItem[];
   warnings: string[];
 };
 

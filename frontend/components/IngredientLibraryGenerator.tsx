@@ -8,6 +8,7 @@ import {
   IngredientLibraryBuildResponse,
   IngredientLibraryNormalizationPackage,
   IngredientLibraryPreflightResponse,
+  IngredientLibraryPreflightUsageTopItem,
   IngredientLibraryListItem,
   cancelIngredientLibraryBuildJob,
   createIngredientLibraryBuildJob,
@@ -368,18 +369,56 @@ export default function IngredientLibraryGenerator({
               {preflightResult.summary.raw_unique_ingredients} · unique after {preflightResult.summary.unique_ingredients_after} · merged{" "}
               {preflightResult.summary.merged_delta}
             </div>
-            <div className="max-h-48 space-y-1 overflow-auto rounded-xl border border-black/8 bg-[#fafafa] p-2">
-              {preflightResult.new_merges.slice(0, 80).map((item, idx) => (
-                <div key={`${item.category}-${item.canonical_key}-${idx}`} className="rounded-lg border border-black/8 bg-white px-2 py-1.5">
-                  <div className="text-[12px] font-semibold text-black/82">
-                    {categoryLabel(item.category)} · {item.canonical_name} · {item.mention_count} 次
-                  </div>
-                  <div className="mt-0.5 text-[11px] text-black/58">
-                    兼并：{item.merged_names.join(" / ") || "-"} · trigger: {(item.triggered_by || []).join(", ") || "-"}
-                  </div>
+            <div className="grid grid-cols-1 gap-2 lg:grid-cols-3">
+              <div className="rounded-xl border border-black/8 bg-[#f7faff] px-3 py-2">
+                <div className="text-[11px] text-black/52">合并候选</div>
+                <div className="mt-0.5 text-[18px] font-semibold text-black/86">{preflightResult.new_merges.length}</div>
+              </div>
+              <div className="rounded-xl border border-black/8 bg-[#f9fff7] px-3 py-2">
+                <div className="text-[11px] text-black/52">合并最多（按提及）</div>
+                <div className="mt-0.5 truncate text-[13px] font-semibold text-black/86">
+                  {formatTopMerge(preflightResult.new_merges[0])}
                 </div>
-              ))}
-              {preflightResult.new_merges.length === 0 ? <div className="text-[12px] text-black/52">当前工具包组合未产生新增兼并。</div> : null}
+              </div>
+              <div className="rounded-xl border border-black/8 bg-[#fffaf4] px-3 py-2">
+                <div className="text-[11px] text-black/52">使用最多（全量）</div>
+                <div className="mt-0.5 truncate text-[13px] font-semibold text-black/86">
+                  {formatUsageTop(preflightResult.usage_top?.[0])}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
+              <div className="max-h-56 space-y-1 overflow-auto rounded-xl border border-black/8 bg-[#fafafa] p-2">
+                <div className="px-1 text-[11px] font-semibold text-[#3151d8]">合并排行（按提及次数）</div>
+                {preflightResult.new_merges.slice(0, 40).map((item, idx) => (
+                  <div key={`${item.category}-${item.canonical_key}-${idx}`} className="rounded-lg border border-black/8 bg-white px-2 py-1.5">
+                    <div className="truncate text-[12px] font-semibold text-black/82">
+                      #{idx + 1} · {categoryLabel(item.category)} · {item.canonical_name}
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-black/58">
+                      提及 {item.mention_count} · 涉及产品 {item.source_product_count} · 兼并名 {item.merged_names.length}
+                    </div>
+                  </div>
+                ))}
+                {preflightResult.new_merges.length === 0 ? <div className="text-[12px] text-black/52">当前工具包组合未产生新增兼并。</div> : null}
+              </div>
+
+              <div className="max-h-56 space-y-1 overflow-auto rounded-xl border border-black/8 bg-[#fafafa] p-2">
+                <div className="px-1 text-[11px] font-semibold text-[#3151d8]">使用频次 Top（全量）</div>
+                {(preflightResult.usage_top || []).slice(0, 40).map((item, idx) => (
+                  <div key={`${item.category}-${item.ingredient_id}-${idx}`} className="rounded-lg border border-black/8 bg-white px-2 py-1.5">
+                    <div className="truncate text-[12px] font-semibold text-black/82">
+                      #{idx + 1} · {categoryLabel(item.category)} · {item.ingredient_name}
+                      {item.ingredient_name_en ? ` / ${item.ingredient_name_en}` : ""}
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-black/58">
+                      提及 {item.mention_count} · 涉及产品 {item.source_product_count}
+                    </div>
+                  </div>
+                ))}
+                {(preflightResult.usage_top || []).length === 0 ? <div className="text-[12px] text-black/52">暂无可展示的成分使用统计。</div> : null}
+              </div>
             </div>
           </div>
         ) : null}
@@ -630,6 +669,17 @@ function sameStringArray(a: string[], b: string[]): boolean {
     if (a[i] !== b[i]) return false;
   }
   return true;
+}
+
+function formatTopMerge(item?: { canonical_name: string; mention_count: number } | null): string {
+  if (!item) return "-";
+  return `${item.canonical_name} · ${item.mention_count} 次`;
+}
+
+function formatUsageTop(item?: IngredientLibraryPreflightUsageTopItem | null): string {
+  if (!item) return "-";
+  const name = item.ingredient_name_en ? `${item.ingredient_name}/${item.ingredient_name_en}` : item.ingredient_name;
+  return `${name} · ${item.mention_count} 次`;
 }
 
 function formatErrorDetail(err: unknown): string {

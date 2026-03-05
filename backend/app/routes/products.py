@@ -83,6 +83,7 @@ from app.schemas import (
     IngredientLibraryNormalizationPackage,
     IngredientLibraryPreflightSummary,
     IngredientLibraryMergeCandidate,
+    IngredientLibraryPreflightUsageTopItem,
     IngredientLibraryBuildJobCreateRequest,
     IngredientLibraryBuildJobView,
     IngredientLibraryBuildJobCounters,
@@ -1556,7 +1557,7 @@ def _ingredient_library_preflight(
     rows = db.execute(stmt).scalars().all()
     records = _collect_category_ingredient_records(rows=rows)
 
-    _, meta = _aggregate_category_ingredients(
+    grouped_items, meta = _aggregate_category_ingredients(
         records=records,
         max_sources_per_ingredient=int(payload.max_sources_per_ingredient),
         normalization_packages=selected_packages,
@@ -1567,6 +1568,7 @@ def _ingredient_library_preflight(
         baseline_packages=baseline_packages,
         limit=int(payload.max_merge_preview),
     )
+    usage_top = _build_ingredient_preflight_usage_top(grouped_items=grouped_items, limit=20)
 
     raw_unique = int(meta.get("raw_unique_ingredients") or 0)
     unique_after = int(meta.get("unique_ingredients") or 0)
@@ -1596,6 +1598,7 @@ def _ingredient_library_preflight(
         selected_packages=selected_packages,
         summary=summary,
         new_merges=merge_candidates,
+        usage_top=usage_top,
         warnings=[],
     )
 
@@ -1670,6 +1673,39 @@ def _build_ingredient_preflight_merge_candidates(
 
     out.sort(key=lambda item: (-int(item.mention_count), item.category, item.canonical_name))
     return out[: max(10, min(1000, int(limit)))]
+
+
+def _build_ingredient_preflight_usage_top(
+    *,
+    grouped_items: dict[str, dict[str, Any]],
+    limit: int,
+) -> list[IngredientLibraryPreflightUsageTopItem]:
+    items: list[IngredientLibraryPreflightUsageTopItem] = []
+    for row in grouped_items.values():
+        source_json = row.get("source_json")
+        stats = source_json.get("stats") if isinstance(source_json, dict) else {}
+        mention_count = int((stats or {}).get("mention_count") or 0)
+        product_count = len(set(str(x) for x in row.get("source_trace_ids") or []))
+        items.append(
+            IngredientLibraryPreflightUsageTopItem(
+                category=str(row.get("category") or "").strip().lower(),
+                ingredient_id=str(row.get("ingredient_id") or ""),
+                ingredient_key=str(row.get("ingredient_key") or ""),
+                ingredient_name=str(row.get("ingredient_name") or ""),
+                ingredient_name_en=str(row.get("ingredient_name_en") or "").strip() or None,
+                mention_count=mention_count,
+                source_product_count=product_count,
+            )
+        )
+    items.sort(
+        key=lambda item: (
+            -int(item.mention_count),
+            -int(item.source_product_count),
+            item.category,
+            item.ingredient_name,
+        )
+    )
+    return items[: max(10, min(100, int(limit)))]
 
 
 def _run_ingredient_library_build_job(
