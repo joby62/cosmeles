@@ -89,6 +89,11 @@ type DiffDisplayLine = {
   newLine: number | null;
 };
 
+type HeatCell = {
+  rowIndex: number;
+  hour: number;
+};
+
 type CopyToken = {
   zh: string;
   en: string;
@@ -556,6 +561,7 @@ export default function GitDashboardClient({
   const [overId, setOverId] = useState<PanelId | null>(null);
   const [isBranchPending, startBranchTransition] = useTransition();
   const [nowTick, setNowTick] = useState<Date>(() => new Date());
+  const [activeHeatCell, setActiveHeatCell] = useState<HeatCell | null>(null);
 
   useEffect(() => {
     return subscribeLang(() => setLang(getInitialLang()));
@@ -646,6 +652,15 @@ export default function GitDashboardClient({
     range === "all"
       ? computed.daily[computed.daily.length - 1]?.day ?? dayKeyFromDate(startOfDay(nowTick))
       : dayKeyFromDate(startOfDay(nowTick));
+  const displayedHeatCell = activeHeatCell ?? { rowIndex: currentRowIndex, hour: currentHour };
+  const displayedActualDay = WEEKDAY_INDEX[displayedHeatCell.rowIndex] ?? currentJsWeekday;
+  const displayedCommits = computed.heatmap[displayedActualDay]?.[displayedHeatCell.hour] ?? 0;
+  const displayedWeekdayLabel = weekdayLabels[displayedHeatCell.rowIndex] ?? pickLang(lang, "未知", "Unknown");
+  const displayedDateLabel = weekdayDateLabels[displayedHeatCell.rowIndex] ?? "--/--";
+  const displayedSlotLabel = formatHourSlot(displayedHeatCell.hour);
+  const displayedIsCurrent =
+    displayedHeatCell.rowIndex === currentRowIndex && displayedHeatCell.hour === currentHour;
+  const displayedIntensityLabel = ratioLabel(displayedCommits, maxHeatHour);
 
   const chartHeight = 292;
   const chartWidth = Math.max(760, dailyForTrend.length * 16);
@@ -959,7 +974,10 @@ export default function GitDashboardClient({
             </div>
           </div>
 
-          <div className="space-y-[7px]">
+          <div
+            className="space-y-[7px]"
+            onMouseLeave={() => setActiveHeatCell(null)}
+          >
             {WEEKDAY_INDEX.map((actualDay, rowIndex) => (
               <div key={`hour-row-${actualDay}`} className="flex items-center gap-3">
                 <div className="w-[73px] text-right">
@@ -971,21 +989,31 @@ export default function GitDashboardClient({
                 <div className="grid flex-1 gap-[5px]" style={{ gridTemplateColumns: "repeat(24, minmax(0, 1fr))" }}>
                   {computed.heatmap[actualDay].map((value, hour) => {
                     const isCurrentSlot = rowIndex === currentRowIndex && hour === currentHour;
+                    const isActiveSlot = rowIndex === displayedHeatCell.rowIndex && hour === displayedHeatCell.hour;
                     return (
                       <div
                         key={`${actualDay}-${hour}`}
-                        className={`relative h-[15px] rounded-[5px] border ${
+                        className={`git-heat-cell relative h-[15px] rounded-[5px] border focus:outline-none ${
                           isCurrentSlot
                             ? "border-sky-500 ring-2 ring-sky-500/45 shadow-[0_0_0_1px_rgba(14,165,233,0.24)]"
                             : "border-black/[0.07]"
                         }`}
+                        data-active={isActiveSlot ? "true" : "false"}
+                        data-current={isCurrentSlot ? "true" : "false"}
+                        tabIndex={0}
+                        onMouseEnter={() => setActiveHeatCell({ rowIndex, hour })}
+                        onFocus={() => setActiveHeatCell({ rowIndex, hour })}
+                        onClick={() => setActiveHeatCell({ rowIndex, hour })}
+                        onTouchStart={() => setActiveHeatCell({ rowIndex, hour })}
                         title={`${weekdayLabels[rowIndex]} ${weekdayDateLabels[rowIndex]} ${formatHourSlot(hour)} · ${fmtNum(value)} ${pickLang(lang, "次提交", "commits")}${isCurrentSlot ? ` · ${pickLang(lang, "当前时刻", "current time")}` : ""}`}
                         style={{ backgroundColor: hourHeatColor(value, maxHeatHour) }}
                       >
-                        {isCurrentSlot ? (
+                        {isCurrentSlot || isActiveSlot ? (
                           <>
-                            <span className="pointer-events-none absolute inset-0 rounded-[4px] bg-sky-500/18" />
-                            <span className="pointer-events-none absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-sky-700" />
+                            <span className={`pointer-events-none absolute inset-0 rounded-[4px] ${isCurrentSlot ? "bg-sky-500/18" : "bg-sky-500/12"}`} />
+                            {isCurrentSlot ? (
+                              <span className="pointer-events-none absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-sky-700" />
+                            ) : null}
                           </>
                         ) : null}
                       </div>
@@ -994,6 +1022,30 @@ export default function GitDashboardClient({
                 </div>
               </div>
             ))}
+          </div>
+
+          <div className="rounded-xl border border-black/10 bg-white/86 px-3 py-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-[10px] tracking-[0.06em] text-black/52 uppercase">{pickLang(lang, "触碰反馈", "Touch Feedback")}</p>
+              {activeHeatCell ? (
+                <button
+                  type="button"
+                  onClick={() => setActiveHeatCell(null)}
+                  className="rounded-full border border-black/12 bg-black/[0.03] px-2 py-0.5 text-[10px] text-black/62 transition-colors hover:bg-black/[0.07]"
+                >
+                  {pickLang(lang, "回到当前时刻", "Back to now")}
+                </button>
+              ) : null}
+            </div>
+            <p className="mt-1 text-[13px] font-medium text-black/82">
+              {displayedWeekdayLabel} ({displayedDateLabel}) · {displayedSlotLabel}
+            </p>
+            <p className="text-[11px] text-black/56">
+              {fmtNum(displayedCommits)} {pickLang(lang, "次提交", "commits")} ·
+              {" "}
+              {pickLang(lang, "强度占峰值", "intensity vs peak")} {displayedIntensityLabel}
+              {displayedIsCurrent ? ` · ${pickLang(lang, "当前时刻", "current time")}` : ""}
+            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
@@ -1285,6 +1337,15 @@ export default function GitDashboardClient({
           }
         }
 
+        @keyframes gitHeatBreathe {
+          0%, 100% {
+            transform: translate3d(0, 0, 0) scale(1);
+          }
+          50% {
+            transform: translate3d(0, -1px, 0) scale(1.08);
+          }
+        }
+
         .git-panel-card {
           transition: transform 240ms cubic-bezier(0.22, 0.78, 0.2, 1), box-shadow 240ms cubic-bezier(0.22, 0.78, 0.2, 1), border-color 220ms ease;
           will-change: transform;
@@ -1313,6 +1374,26 @@ export default function GitDashboardClient({
 
         .git-panel-handle:active {
           cursor: grabbing;
+        }
+
+        .git-heat-cell {
+          transition: transform 180ms cubic-bezier(0.22, 0.78, 0.2, 1), box-shadow 180ms cubic-bezier(0.22, 0.78, 0.2, 1), border-color 180ms ease;
+          will-change: transform;
+        }
+
+        .git-heat-cell:hover,
+        .git-heat-cell:focus-visible {
+          transform: translate3d(0, -1px, 0) scale(1.05);
+          box-shadow: 0 6px 14px rgba(14, 165, 233, 0.18);
+        }
+
+        .git-heat-cell[data-active="true"] {
+          transform: translate3d(0, -1px, 0) scale(1.07);
+          box-shadow: 0 8px 18px rgba(14, 165, 233, 0.22);
+        }
+
+        .git-heat-cell[data-current="true"] {
+          animation: gitHeatBreathe 2.3s cubic-bezier(0.22, 0.78, 0.2, 1) infinite;
         }
       `}</style>
     </>
