@@ -6,11 +6,12 @@ import type { MobileCompareResult, MobileCompareResultSection } from "@/lib/api"
 
 type InsightSource = "feel" | "rhythm" | "care" | "consensus" | "ingredient" | "fallback";
 
-type InsightCard = {
+type ImmersiveCard = {
   key: string;
   source: InsightSource;
   title: string;
-  summary: string;
+  hero: string;
+  preview: string[];
   items: string[];
 };
 
@@ -29,66 +30,88 @@ export default function MobileCompareResultFlow({ result }: { result: MobileComp
 
   const finalDecision = overall?.decision || result.verdict.decision;
   const finalConfidence = Math.round((overall?.confidence ?? result.verdict.confidence) * 100);
-  const finalHeadline = sanitizeText(overall?.headline || result.verdict.headline || "你的本次对比结论已生成。", 42);
-  const leftAnchor = focusPair?.left_title || productDocTitle(result.current_product, "你现在在用");
-  const rightAnchor = focusPair?.right_title || productDocTitle(result.recommended_product, "这次更推荐");
-  const reasonSections = focusPair?.sections?.length ? focusPair.sections : result.sections;
 
+  const currentName = productDocTitle(result.current_product, focusPair?.left_title || "你现在在用的方案");
+  const recommendedName = productDocTitle(result.recommended_product, focusPair?.right_title || "推荐方案");
+
+  const primaryName = finalDecision === "switch" ? recommendedName : currentName;
+  const secondaryName = finalDecision === "switch" ? currentName : recommendedName;
+  const heroDecision = heroDecisionLine(finalDecision, primaryName, secondaryName);
+  const stanceLine = stanceLineByDecision(finalDecision);
+
+  const reasonSections = focusPair?.sections?.length ? focusPair.sections : result.sections;
   const benefits = getSectionItems(reasonSections, "keep_benefits");
   const watchouts = getSectionItems(reasonSections, "keep_watchouts");
   const profileAdvice = getSectionItems(reasonSections, "profile_fit_advice");
   const ingredientAdvice = getSectionItems(reasonSections, "ingredient_order_diff");
   const pairDigest = pairResults.map((pair) => `${pair.left_title} vs ${pair.right_title}：${pair.verdict.headline}`);
 
-  const insightCards = useMemo<InsightCard[]>(() => {
-    const candidates: InsightCard[] = [
+  const immersiveCards = useMemo<ImmersiveCard[]>(() => {
+    const rawCards: Array<{ key: string; source: InsightSource; title: string; items: string[]; fallback: string }> = [
       {
         key: "feel",
         source: "feel",
         title: "这套搭配带来的感受",
-        summary: summarizeLine(benefits[0] || "头皮状态会更稳，日常洗护更容易保持舒适感。", 50),
         items: benefits,
+        fallback: "头皮状态更稳，洗完更轻松。",
       },
       {
         key: "rhythm",
         source: "rhythm",
         title: "更贴合你的护理节奏",
-        summary: summarizeLine(profileAdvice[0] || "先按当前结论执行，再根据 7 天状态做细调。", 50),
         items: profileAdvice,
+        fallback: "先按当前节奏执行，再根据变化微调。",
       },
       {
         key: "care",
         source: "care",
         title: "使用时可以留意的点",
-        summary: summarizeLine(watchouts[0] || "留意清洁频次与头皮反馈，避免用力过猛。", 50),
         items: watchouts,
+        fallback: "留意频次和头皮反馈，避免过度清洁。",
       },
       {
         key: "consensus",
         source: "consensus",
         title: "多组对比的共识",
-        summary: summarizeLine(pairDigest[0] || "多组对比后，结论已收敛到当前建议。", 50),
         items: pairDigest,
+        fallback: "多组结果基本一致，建议已收敛。",
       },
       {
         key: "ingredient",
         source: "ingredient",
-        title: "成分差异重点",
-        summary: summarizeLine(ingredientAdvice[0] || "关键差异集中在成分排位和功效侧重。", 50),
+        title: "配方差异里最关键的一点",
         items: ingredientAdvice,
+        fallback: "差异主要体现在配方排序与侧重点。",
       },
     ];
 
-    const picked = candidates.filter((card) => card.items.length > 0).slice(0, 4);
-    if (picked.length > 0) return picked;
+    const selected = rawCards
+      .filter((card) => card.items.length > 0)
+      .slice(0, 3)
+      .map((card) => {
+        const items = takeUnique(card.items);
+        const hero = summarizeLine(items[0] || card.fallback, 34);
+        const preview = takePreview(items);
+        return {
+          key: card.key,
+          source: card.source,
+          title: card.title,
+          hero,
+          preview,
+          items,
+        };
+      });
+
+    if (selected.length > 0) return selected;
 
     return [
       {
         key: "fallback",
         source: "fallback",
         title: "本次结论摘要",
-        summary: "已经完成对比，先按结论执行，再按需看全部内容。",
-        items: ["已经完成对比，先按结论执行，再按需看全部内容。"],
+        hero: "已经完成对比，先按这次建议执行。",
+        preview: ["后续根据头皮状态变化再做微调。"],
+        items: ["已经完成对比，先按这次建议执行。", "后续根据头皮状态变化再做微调。"],
       },
     ];
   }, [benefits, ingredientAdvice, pairDigest, profileAdvice, watchouts]);
@@ -106,9 +129,9 @@ export default function MobileCompareResultFlow({ result }: { result: MobileComp
     watchouts.slice(0, 1).forEach(add);
 
     if (out.length === 0) {
-      add("先按本次结论执行 7 天，再根据头皮和发丝状态做下一轮对比。");
-      add("如果出现不适，先降低频次，再回看全部内容里的注意点。");
-      add("需要更细分场景时，再看多组对比的完整明细。");
+      add("先按本次建议执行 7 天，再观察头皮和发丝反馈。");
+      add("如出现不适，优先降低使用频次并暂停叠加强清洁产品。");
+      add("想看更细节时，点每张建议卡的“全部内容”。");
     }
 
     return out.slice(0, 3);
@@ -139,44 +162,44 @@ export default function MobileCompareResultFlow({ result }: { result: MobileComp
     };
   }, [activeSheet]);
 
-  const openSheet = (card: InsightCard) => {
-    const cleaned = takeUnique(card.items);
-    if (cleaned.length === 0) return;
-    setActiveSheet({ source: card.source, title: card.title, items: cleaned });
-  };
-
   return (
     <>
-      <section className="m-compare-result-page space-y-6 pb-12">
-        <article className="rounded-[30px] border border-[#bfd3f7] bg-[linear-gradient(180deg,#f5f9ff_0%,#edf5ff_56%,#ffffff_100%)] px-6 py-7 shadow-[0_18px_42px_rgba(35,77,152,0.12)] dark:border-[#4d6ea6]/56 dark:bg-[linear-gradient(180deg,#12213a_0%,#101f36_56%,#0d192b_100%)] dark:shadow-[0_20px_48px_rgba(0,0,0,0.5)]">
-          <p className="text-[12px] font-semibold tracking-[0.04em] text-[#3e62aa] dark:text-[#93bcff]">你的浴室答案</p>
-          <h1 className="mt-3 text-[34px] leading-[1.16] font-semibold tracking-[-0.03em] text-[#11192b] dark:text-[#edf3ff]">{finalHeadline}</h1>
+      <section className="m-compare-result-page space-y-8 pb-12">
+        <article className="rounded-[30px] border border-[#bfd3f7] bg-[linear-gradient(180deg,#f5f9ff_0%,#edf5ff_56%,#ffffff_100%)] px-6 py-7 shadow-[0_20px_48px_rgba(35,77,152,0.12)] dark:border-[#4d6ea6]/56 dark:bg-[linear-gradient(180deg,#11213a_0%,#101f36_56%,#0d192b_100%)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.52)]">
+          <p className="text-[12px] font-semibold tracking-[0.04em] text-[#3e62aa] dark:text-[#93bcff]">最终建议</p>
+          <h1 className="mt-3 text-[34px] leading-[1.14] font-semibold tracking-[-0.03em] text-[#101928] dark:text-[#edf3ff]">{heroDecision}</h1>
+          <p className="mt-3 text-[15px] leading-[1.65] text-[#44516b] dark:text-[#c4d8f7]">{stanceLine}</p>
 
-          <div className="mt-5 flex flex-wrap gap-2">
-            <span className={`inline-flex h-8 items-center rounded-full border px-3 text-[12px] font-semibold ${decisionTone(finalDecision)}`}>
-              {decisionLabel(finalDecision)}
-            </span>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <span className={`inline-flex h-8 items-center rounded-full border px-3 text-[12px] font-semibold ${decisionTone(finalDecision)}`}>{decisionLabel(finalDecision)}</span>
             <span className="inline-flex h-8 items-center rounded-full border border-[#1f2a3f]/12 bg-white/85 px-3 text-[12px] text-[#3f4a61] dark:border-[#7b94c0]/38 dark:bg-[rgba(39,55,84,0.72)] dark:text-[#d5e5ff]">
               置信度 {finalConfidence}%
             </span>
           </div>
 
-          <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <section className="mt-5 rounded-[24px] border-2 border-[#79b1ff] bg-[linear-gradient(180deg,#e9f3ff_0%,#dfeeff_100%)] px-4 py-4 shadow-[0_10px_26px_rgba(0,113,227,0.16)] dark:border-[#5f94df]/66 dark:bg-[linear-gradient(180deg,#23426d_0%,#1c3659_100%)]">
+            <p className="text-[12px] font-semibold tracking-[0.02em] text-[#3a67b2] dark:text-[#b8d6ff]">本次主推</p>
+            <p className="mt-2 text-[24px] leading-[1.34] font-semibold tracking-[-0.02em] text-[#123a75] dark:text-[#e3efff]">{primaryName}</p>
+          </section>
+
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <section className="rounded-2xl border border-[#1f2a3f]/10 bg-white/78 px-4 py-3.5 dark:border-[#6782ac]/34 dark:bg-[rgba(31,46,72,0.74)]">
               <p className="text-[11px] font-medium text-[#59657f] dark:text-[#acc6ef]">你现在在用</p>
-              <p className="mt-1 text-[14px] leading-[1.5] font-medium text-[#1c273e] dark:text-[#e6efff]">{sanitizeText(leftAnchor, 56)}</p>
+              <p className="mt-1 text-[14px] leading-[1.56] font-medium text-[#1c273e] dark:text-[#e6efff]">{currentName}</p>
             </section>
-            <section className="rounded-2xl border border-[#7fb2ff]/44 bg-[#edf5ff] px-4 py-3.5 dark:border-[#4e85d4]/50 dark:bg-[rgba(33,58,94,0.82)]">
-              <p className="text-[11px] font-medium text-[#3a67b2] dark:text-[#b9d6ff]">这次更推荐</p>
-              <p className="mt-1 text-[14px] leading-[1.5] font-medium text-[#1d3f7d] dark:text-[#d7e9ff]">{sanitizeText(rightAnchor, 56)}</p>
+            <section className="rounded-2xl border border-[#a9c9f8]/68 bg-[#f2f7ff] px-4 py-3.5 dark:border-[#567ead]/60 dark:bg-[rgba(35,55,83,0.74)]">
+              <p className="text-[11px] font-medium text-[#607092] dark:text-[#b7d0f5]">另一款可选</p>
+              <p className="mt-1 text-[14px] leading-[1.56] font-medium text-[#2a3c5d] dark:text-[#d6e6ff]">{secondaryName}</p>
             </section>
           </div>
 
-          <p className="mt-5 rounded-2xl border border-[#1f2a3f]/10 bg-white/72 px-4 py-3.5 text-[14px] leading-[1.62] text-[#3a4660] dark:border-[#6b84af]/32 dark:bg-[rgba(30,45,70,0.72)] dark:text-[#cfe0fd]">
-            {summarizeLine(focusPair?.verdict.headline || overall?.summary_items?.[0] || "先按这次结论执行，再看全部内容。", 78)}
-          </p>
-
-          <div className="mt-5 flex flex-wrap gap-2">
+          <div className="mt-6 flex flex-wrap gap-2">
+            <a
+              href="#reason-gallery"
+              className="m-pressable inline-flex h-11 items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-6 text-[15px] font-semibold text-white shadow-[0_12px_28px_rgba(0,113,227,0.3)] active:opacity-95"
+            >
+              看原因
+            </a>
             <Link
               href={`/m/compare?category=${encodeURIComponent(result.category)}`}
               className="m-pressable inline-flex h-11 items-center justify-center rounded-full border border-[#202737]/18 bg-white/74 px-5 text-[14px] font-medium text-[#2b3954] active:bg-black/[0.03] dark:border-[#6e85ad]/38 dark:bg-[rgba(31,47,72,0.75)] dark:text-[#d5e6ff]"
@@ -186,32 +209,43 @@ export default function MobileCompareResultFlow({ result }: { result: MobileComp
           </div>
         </article>
 
-        <section className="space-y-4">
+        <section id="reason-gallery" className="space-y-4">
           <header className="px-1">
-            <h2 className="text-[23px] font-semibold tracking-[-0.02em] text-[#152038] dark:text-[#e6efff]">沙龙建议卡</h2>
-            <p className="mt-1 text-[14px] leading-[1.6] text-[#596781] dark:text-[#aac4ec]">每张卡先给一句核心建议，点“全部内容”再展开细节。</p>
+            <h2 className="text-[24px] font-semibold tracking-[-0.02em] text-[#152038] dark:text-[#e6efff]">建议卡</h2>
+            <p className="mt-1 text-[14px] leading-[1.62] text-[#596781] dark:text-[#aac4ec]">每张卡只讲一件事，读完就知道为什么这样推荐。</p>
           </header>
 
           <div className="space-y-4">
-            {insightCards.map((card) => (
+            {immersiveCards.map((card) => (
               <article
                 key={card.key}
-                className="rounded-[22px] border border-[#1f2a3f]/10 bg-white/86 px-4 py-4 shadow-[0_10px_24px_rgba(17,34,64,0.06)] dark:border-[#6581ad]/34 dark:bg-[rgba(29,43,67,0.82)]"
+                className="min-h-[68dvh] rounded-[30px] border border-[#1f2a3f]/10 bg-white/90 px-5 py-6 shadow-[0_18px_42px_rgba(17,34,64,0.08)] dark:border-[#6581ad]/34 dark:bg-[rgba(29,43,67,0.86)]"
               >
-                <div className="flex items-start justify-between gap-3">
-                  <h3 className="text-[16px] font-semibold text-[#162138] dark:text-[#e4eeff]">{card.title}</h3>
+                <div>
+                  <p className="text-[14px] font-semibold text-[#3f5e91] dark:text-[#9dc2fb]">{card.title}</p>
+                  <h3 className="mt-4 text-[32px] leading-[1.2] font-semibold tracking-[-0.03em] text-[#141f34] dark:text-[#edf4ff]">{card.hero}</h3>
+                </div>
+
+                <div className="mt-8 space-y-2">
+                  {card.preview.map((line, idx) => (
+                    <p key={`${card.key}-${idx}`} className="rounded-2xl border border-[#1f2a3f]/10 bg-[#f8fafd] px-3.5 py-3 text-[14px] leading-[1.6] text-[#34415b] dark:border-[#6c87b2]/34 dark:bg-[rgba(32,47,74,0.78)] dark:text-[#d1e3ff]">
+                      • {line}
+                    </p>
+                  ))}
+                </div>
+
+                <div className="mt-6 flex items-center justify-between">
+                  <span className="text-[13px] text-[#667590] dark:text-[#abc4eb]">共 {card.items.length} 条</span>
                   <button
                     type="button"
                     onClick={() => {
-                      openSheet(card);
+                      setActiveSheet({ source: card.source, title: card.title, items: card.items });
                     }}
-                    className="m-pressable inline-flex h-8 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-3 text-[12px] font-semibold text-white shadow-[0_10px_20px_rgba(0,113,227,0.24)] active:opacity-95"
+                    className="m-pressable inline-flex h-10 items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-5 text-[14px] font-semibold text-white shadow-[0_12px_24px_rgba(0,113,227,0.28)] active:opacity-95"
                   >
                     全部内容
                   </button>
                 </div>
-                <p className="mt-2 text-[14px] leading-[1.62] text-[#3d4a64] dark:text-[#cddffc]">{card.summary}</p>
-                <p className="mt-2 text-[12px] text-[#6a7590] dark:text-[#a8c3eb]">共 {card.items.length} 条</p>
               </article>
             ))}
           </div>
@@ -306,6 +340,22 @@ export default function MobileCompareResultFlow({ result }: { result: MobileComp
   );
 }
 
+function heroDecisionLine(decision: "keep" | "switch" | "hybrid", primary: string, secondary: string): string {
+  if (decision === "keep") return `建议继续用：${primary}`;
+  if (decision === "switch") return `建议换成：${primary}`;
+  return `建议分场景搭配：${primary} + ${secondary}`;
+}
+
+function stanceLineByDecision(decision: "keep" | "switch" | "hybrid"): string {
+  if (decision === "keep") {
+    return "态度很明确：先把头皮状态稳住，再决定要不要增强清洁。";
+  }
+  if (decision === "switch") {
+    return "态度很明确：可以切换到更贴合你现阶段状态的方案，减少试错。";
+  }
+  return "态度很明确：按场景分工使用，两款各发挥优势会更稳。";
+}
+
 function decisionLabel(value: "keep" | "switch" | "hybrid"): string {
   if (value === "keep") return "先继续用";
   if (value === "switch") return "可试试新方案";
@@ -318,13 +368,16 @@ function decisionTone(value: "keep" | "switch" | "hybrid"): string {
   return "border-[#ffd79e] bg-[#fff6e8] text-[#96631a] dark:border-[#f0c174]/42 dark:bg-[#5d4822]/55 dark:text-[#ffdca8]";
 }
 
-function getSectionItems(
-  sections: MobileCompareResultSection[],
-  key: MobileCompareResultSection["key"],
-): string[] {
+function getSectionItems(sections: MobileCompareResultSection[], key: MobileCompareResultSection["key"]): string[] {
   const target = sections.find((section) => section.key === key);
   if (!target) return [];
   return takeUnique(target.items || []);
+}
+
+function takePreview(items: string[]): string[] {
+  const rest = items.slice(1, 3).map((line) => summarizeLine(line, 54));
+  if (rest.length > 0) return rest;
+  return ["点“全部内容”查看完整细节。"];
 }
 
 function productDocTitle(
@@ -356,18 +409,12 @@ function itemTagMeta(source: InsightSource, line: string): { label: string; clas
     const text = line.toLowerCase();
     if (/高风险|严重|避免|禁用|炎症|破损|刺激|过敏|加重/.test(text)) {
       return {
-        label: "高关注",
+        label: "重点留意",
         className: "border-[#ffc0b8] bg-[#fff1ef] text-[#b35144] dark:border-[#c98379]/45 dark:bg-[#5a3230]/64 dark:text-[#ffd2cb]",
       };
     }
-    if (/中风险|谨慎|注意|留意|可能|不适|干燥/.test(text)) {
-      return {
-        label: "中关注",
-        className: "border-[#ffd79f] bg-[#fff6e8] text-[#946218] dark:border-[#c49b58]/45 dark:bg-[#584723]/66 dark:text-[#ffdfab]",
-      };
-    }
     return {
-      label: "日常关注",
+      label: "使用提示",
       className: "border-[#ffd79f] bg-[#fff6e8] text-[#946218] dark:border-[#c49b58]/45 dark:bg-[#584723]/66 dark:text-[#ffdfab]",
     };
   }
