@@ -440,6 +440,29 @@ class OrphanStorageCleanupResponse(BaseModel):
     runs: OrphanRunsCleanupResult
 
 
+class MobileInvalidProductRefCleanupRequest(BaseModel):
+    dry_run: bool = True
+    sample_limit: int = Field(default=8, ge=1, le=50)
+
+
+class MobileInvalidProductRefScopeResult(BaseModel):
+    scanned: int = 0
+    invalid: int = 0
+    repaired: int = 0
+    sample_refs: List[str] = []
+
+
+class MobileInvalidProductRefCleanupResponse(BaseModel):
+    status: str
+    dry_run: bool
+    product_count: int = 0
+    total_invalid: int = 0
+    total_repaired: int = 0
+    selection_sessions: MobileInvalidProductRefScopeResult
+    bag_items: MobileInvalidProductRefScopeResult
+    compare_usage_stats: MobileInvalidProductRefScopeResult
+
+
 class AIJobCreateRequest(BaseModel):
     capability: str
     input: dict[str, Any] = Field(default_factory=dict)

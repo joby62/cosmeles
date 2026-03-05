@@ -27,6 +27,9 @@ from app.db.models import (
     IngredientLibraryBuildJob,
     ProductRouteMappingIndex,
     ProductFeaturedSlot,
+    MobileSelectionSession,
+    MobileBagItem,
+    MobileCompareUsageStat,
 )
 from app.settings import settings
 from app.services.storage import (
@@ -67,6 +70,8 @@ from app.schemas import (
     ProductBatchDeleteResponse,
     OrphanStorageCleanupRequest,
     OrphanStorageCleanupResponse,
+    MobileInvalidProductRefCleanupRequest,
+    MobileInvalidProductRefCleanupResponse,
     IngredientLibraryBuildRequest,
     IngredientLibraryBuildResponse,
     IngredientLibraryBuildItem,
@@ -846,6 +851,15 @@ def batch_delete_products(payload: ProductBatchDeleteRequest, db: Session = Depe
         db.delete(rec)
         deleted_ids.append(product_id)
 
+    if deleted_ids:
+        _cleanup_mobile_invalid_product_refs(
+            db=db,
+            dry_run=False,
+            sample_limit=3,
+            invalid_product_ids=set(deleted_ids),
+            selection_deleted_by="products:batch_delete",
+        )
+
     db.commit()
     return ProductBatchDeleteResponse(
         status="ok",
@@ -855,6 +869,145 @@ def batch_delete_products(payload: ProductBatchDeleteRequest, db: Session = Depe
         removed_files=removed_files,
         removed_dirs=removed_dirs,
     )
+
+
+def _cleanup_mobile_invalid_product_refs(
+    *,
+    db: Session,
+    dry_run: bool,
+    sample_limit: int,
+    invalid_product_ids: set[str] | None = None,
+    selection_deleted_by: str,
+) -> MobileInvalidProductRefCleanupResponse:
+    normalized_invalid_ids: set[str] | None = None
+    if invalid_product_ids is not None:
+        normalized_invalid_ids = {
+            str(item or "").strip()
+            for item in invalid_product_ids
+            if str(item or "").strip()
+        }
+
+    targeted_mode = normalized_invalid_ids is not None
+    valid_product_ids: set[str] = set()
+    if not targeted_mode:
+        valid_product_ids = {
+            str(item or "").strip()
+            for item in db.execute(select(ProductIndex.id)).scalars().all()
+            if str(item or "").strip()
+        }
+
+    def _empty_scope() -> dict[str, Any]:
+        return {
+            "scanned": 0,
+            "invalid": 0,
+            "repaired": 0,
+            "sample_refs": [],
+        }
+
+    def _mark_invalid(scope: dict[str, Any], sample_ref: str) -> None:
+        scope["invalid"] += 1
+        if len(scope["sample_refs"]) < sample_limit:
+            scope["sample_refs"].append(sample_ref)
+
+    result: dict[str, Any] = {
+        "status": "ok",
+        "dry_run": bool(dry_run),
+        "product_count": int(db.execute(select(func.count(ProductIndex.id))).scalar() or 0),
+        "selection_sessions": _empty_scope(),
+        "bag_items": _empty_scope(),
+        "compare_usage_stats": _empty_scope(),
+    }
+    if targeted_mode and not normalized_invalid_ids:
+        result["total_invalid"] = 0
+        result["total_repaired"] = 0
+        return MobileInvalidProductRefCleanupResponse.model_validate(result)
+
+    selection_stmt = select(MobileSelectionSession).where(MobileSelectionSession.deleted_at.is_(None))
+    if targeted_mode and normalized_invalid_ids:
+        selection_stmt = selection_stmt.where(MobileSelectionSession.product_id.in_(sorted(normalized_invalid_ids)))
+    selection_rows = db.execute(selection_stmt).scalars().all()
+    result["selection_sessions"]["scanned"] = len(selection_rows)
+    for row in selection_rows:
+        product_id = str(row.product_id or "").strip()
+        if not product_id:
+            continue
+        if (not targeted_mode) and product_id in valid_product_ids:
+            continue
+        _mark_invalid(result["selection_sessions"], f"{row.id}:{product_id}")
+        if dry_run:
+            continue
+        if not row.deleted_at:
+            row.deleted_at = now_iso()
+        row.deleted_by = row.deleted_by or selection_deleted_by
+        row.is_pinned = False
+        row.pinned_at = None
+        row.product_id = None
+        result["selection_sessions"]["repaired"] += 1
+
+    bag_stmt = select(MobileBagItem)
+    if targeted_mode and normalized_invalid_ids:
+        bag_stmt = bag_stmt.where(MobileBagItem.product_id.in_(sorted(normalized_invalid_ids)))
+    bag_rows = db.execute(bag_stmt).scalars().all()
+    result["bag_items"]["scanned"] = len(bag_rows)
+    for row in bag_rows:
+        product_id = str(row.product_id or "").strip()
+        if not product_id:
+            continue
+        if (not targeted_mode) and product_id in valid_product_ids:
+            continue
+        _mark_invalid(result["bag_items"], f"{row.id}:{product_id}")
+        if dry_run:
+            continue
+        db.delete(row)
+        result["bag_items"]["repaired"] += 1
+
+    usage_stmt = select(MobileCompareUsageStat)
+    if targeted_mode and normalized_invalid_ids:
+        usage_stmt = usage_stmt.where(MobileCompareUsageStat.product_id.in_(sorted(normalized_invalid_ids)))
+    usage_rows = db.execute(usage_stmt).scalars().all()
+    result["compare_usage_stats"]["scanned"] = len(usage_rows)
+    for row in usage_rows:
+        product_id = str(row.product_id or "").strip()
+        if not product_id:
+            continue
+        if (not targeted_mode) and product_id in valid_product_ids:
+            continue
+        _mark_invalid(
+            result["compare_usage_stats"],
+            f"{row.owner_type}/{row.owner_id}/{row.category}:{product_id}",
+        )
+        if dry_run:
+            continue
+        db.delete(row)
+        result["compare_usage_stats"]["repaired"] += 1
+
+    result["total_invalid"] = (
+        result["selection_sessions"]["invalid"]
+        + result["bag_items"]["invalid"]
+        + result["compare_usage_stats"]["invalid"]
+    )
+    result["total_repaired"] = (
+        result["selection_sessions"]["repaired"]
+        + result["bag_items"]["repaired"]
+        + result["compare_usage_stats"]["repaired"]
+    )
+    return MobileInvalidProductRefCleanupResponse.model_validate(result)
+
+
+@router.post("/maintenance/mobile/product-refs/cleanup", response_model=MobileInvalidProductRefCleanupResponse)
+def cleanup_invalid_mobile_product_refs(
+    payload: MobileInvalidProductRefCleanupRequest,
+    db: Session = Depends(get_db),
+):
+    result = _cleanup_mobile_invalid_product_refs(
+        db=db,
+        dry_run=bool(payload.dry_run),
+        sample_limit=int(payload.sample_limit),
+        selection_deleted_by="maintenance:mobile_product_ref_cleanup",
+    )
+    if (not payload.dry_run) and result.total_repaired > 0:
+        db.commit()
+    return result
 
 
 @router.post("/maintenance/storage/orphans/cleanup", response_model=OrphanStorageCleanupResponse)

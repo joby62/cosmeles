@@ -3,6 +3,8 @@ from pathlib import Path
 
 import pytest
 
+from app.db.models import MobileBagItem, MobileCompareUsageStat, MobileSelectionSession
+from app.db.session import get_db
 from app.routes import ingest as ingest_routes
 from app.routes import mobile as mobile_routes
 from backend.tests.support_images import VALID_TEST_IMAGE_BYTES, install_fake_save_image
@@ -815,3 +817,139 @@ def test_mobile_compare_sessions_reindex_uses_result_fallback_when_session_missi
     detail_payload = detail.json()
     assert detail_payload["compare_id"] == compare_id
     assert detail_payload["result"]["headline"] == "建议替换。"
+
+
+def test_mobile_product_ref_cleanup_scans_and_repairs_invalid_mobile_references(
+    test_client,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    client, _ = test_client
+
+    _install_fake_ingest_pipeline(
+        monkeypatch,
+        {
+            "category": "shampoo",
+            "brand": "CleanupBrand",
+            "name": "CleanupProduct",
+            "one_sentence": "cleanup seed",
+        },
+    )
+    product_id = _ingest_one(client, "cleanup-seed.jpg")
+    _set_shampoo_featured_slots(client, product_id=product_id)
+
+    selection = client.post(
+        "/api/mobile/selection/resolve",
+        json={"category": "shampoo", "answers": {"q1": "A", "q2": "C", "q3": "B"}},
+    )
+    assert selection.status_code == 200
+
+    bag = client.post("/api/mobile/bag/items", json={"product_id": product_id, "quantity": 1})
+    assert bag.status_code == 200
+
+    owner_id = str(client.cookies.get("mx_device_id") or "").strip()
+    assert owner_id
+    stale_product_id = "missing-product-cleanup-001"
+    stale_session_id = "stale-selection-cleanup-001"
+    stale_bag_id = "stale-bag-cleanup-001"
+
+    stale_result_payload = dict(selection.json())
+    stale_result_payload["session_id"] = stale_session_id
+    stale_result_payload["recommended_product"] = {
+        **stale_result_payload["recommended_product"],
+        "id": stale_product_id,
+    }
+
+    db_gen = client.app.dependency_overrides[get_db]()
+    db = next(db_gen)
+    try:
+        db.add(
+            MobileSelectionSession(
+                id=stale_session_id,
+                owner_type="device",
+                owner_id=owner_id,
+                category="shampoo",
+                rules_version="2026-03-03.1",
+                answers_hash="stale-cleanup-hash",
+                route_key="stale-route",
+                route_title="stale-route",
+                product_id=stale_product_id,
+                answers_json=json.dumps({"q1": "A"}, ensure_ascii=False),
+                result_json=json.dumps(stale_result_payload, ensure_ascii=False),
+                is_pinned=False,
+                pinned_at=None,
+                deleted_at=None,
+                deleted_by=None,
+                created_at="2026-03-06T00:00:00.000000Z",
+            )
+        )
+        db.add(
+            MobileBagItem(
+                id=stale_bag_id,
+                owner_type="device",
+                owner_id=owner_id,
+                category="shampoo",
+                product_id=stale_product_id,
+                quantity=1,
+                created_at="2026-03-06T00:00:00.000000Z",
+                updated_at="2026-03-06T00:00:00.000000Z",
+            )
+        )
+        db.add(
+            MobileCompareUsageStat(
+                owner_type="device",
+                owner_id=owner_id,
+                category="shampoo",
+                product_id=stale_product_id,
+                usage_count=2,
+                updated_at="2026-03-06T00:00:00.000000Z",
+            )
+        )
+        db.commit()
+    finally:
+        db_gen.close()
+
+    preview = client.post(
+        "/api/maintenance/mobile/product-refs/cleanup",
+        json={"dry_run": True, "sample_limit": 5},
+    )
+    assert preview.status_code == 200
+    preview_body = preview.json()
+    assert preview_body["dry_run"] is True
+    assert preview_body["total_invalid"] == 3
+    assert preview_body["total_repaired"] == 0
+    assert preview_body["selection_sessions"]["invalid"] == 1
+    assert preview_body["bag_items"]["invalid"] == 1
+    assert preview_body["compare_usage_stats"]["invalid"] == 1
+
+    repair = client.post(
+        "/api/maintenance/mobile/product-refs/cleanup",
+        json={"dry_run": False, "sample_limit": 5},
+    )
+    assert repair.status_code == 200
+    repair_body = repair.json()
+    assert repair_body["dry_run"] is False
+    assert repair_body["total_repaired"] == 3
+    assert repair_body["selection_sessions"]["repaired"] == 1
+    assert repair_body["bag_items"]["repaired"] == 1
+    assert repair_body["compare_usage_stats"]["repaired"] == 1
+
+    db_gen = client.app.dependency_overrides[get_db]()
+    db = next(db_gen)
+    try:
+        stale_session_row = db.get(MobileSelectionSession, stale_session_id)
+        assert stale_session_row is not None
+        assert stale_session_row.deleted_at is not None
+        assert stale_session_row.product_id is None
+
+        assert db.get(MobileBagItem, stale_bag_id) is None
+        assert db.get(MobileCompareUsageStat, ("device", owner_id, "shampoo", stale_product_id)) is None
+    finally:
+        db_gen.close()
+
+    after = client.post(
+        "/api/maintenance/mobile/product-refs/cleanup",
+        json={"dry_run": True, "sample_limit": 5},
+    )
+    assert after.status_code == 200
+    after_body = after.json()
+    assert after_body["total_invalid"] == 0

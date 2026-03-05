@@ -374,6 +374,29 @@ export type OrphanStorageCleanupResponse = {
   };
 };
 
+export type MobileInvalidProductRefCleanupRequest = {
+  dry_run?: boolean;
+  sample_limit?: number;
+};
+
+export type MobileInvalidProductRefCleanupScopeResult = {
+  scanned: number;
+  invalid: number;
+  repaired: number;
+  sample_refs: string[];
+};
+
+export type MobileInvalidProductRefCleanupResponse = {
+  status: string;
+  dry_run: boolean;
+  product_count: number;
+  total_invalid: number;
+  total_repaired: number;
+  selection_sessions: MobileInvalidProductRefCleanupScopeResult;
+  bag_items: MobileInvalidProductRefCleanupScopeResult;
+  compare_usage_stats: MobileInvalidProductRefCleanupScopeResult;
+};
+
 export type ProductDoc = {
   product: {
     category: string;
@@ -1112,6 +1135,15 @@ export async function deleteProductsBatch(payload: ProductBatchDeleteRequest): P
 
 export async function cleanupOrphanStorage(payload: OrphanStorageCleanupRequest): Promise<OrphanStorageCleanupResponse> {
   return apiFetch<OrphanStorageCleanupResponse>("/api/maintenance/storage/orphans/cleanup", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function cleanupInvalidMobileProductRefs(
+  payload: MobileInvalidProductRefCleanupRequest,
+): Promise<MobileInvalidProductRefCleanupResponse> {
+  return apiFetch<MobileInvalidProductRefCleanupResponse>("/api/maintenance/mobile/product-refs/cleanup", {
     method: "POST",
     body: JSON.stringify(payload),
   });

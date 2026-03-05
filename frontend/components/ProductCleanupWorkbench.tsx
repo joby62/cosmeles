@@ -5,7 +5,9 @@ import { useRouter } from "next/navigation";
 import {
   Product,
   OrphanStorageCleanupResponse,
+  MobileInvalidProductRefCleanupResponse,
   cleanupOrphanStorage,
+  cleanupInvalidMobileProductRefs,
   deleteProductsBatch,
   downloadAllProductImagesZip,
 } from "@/lib/api";
@@ -30,6 +32,10 @@ export default function ProductCleanupWorkbench({ initialProducts }: { initialPr
   const [cleanupError, setCleanupError] = useState<string | null>(null);
   const [lastCleanup, setLastCleanup] = useState<OrphanStorageCleanupResponse | null>(null);
   const cleanupRunningRef = useRef(false);
+  const [mobileRefsRunning, setMobileRefsRunning] = useState(false);
+  const [mobileRefsSummary, setMobileRefsSummary] = useState<string | null>(null);
+  const [mobileRefsError, setMobileRefsError] = useState<string | null>(null);
+  const [mobileRefsLast, setMobileRefsLast] = useState<MobileInvalidProductRefCleanupResponse | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [downloadingImages, setDownloadingImages] = useState(false);
   const [downloadSummary, setDownloadSummary] = useState<string | null>(null);
@@ -157,6 +163,33 @@ export default function ProductCleanupWorkbench({ initialProducts }: { initialPr
     }
   }
 
+  async function runMobileRefCleanup(dryRun: boolean) {
+    setMobileRefsRunning(true);
+    setMobileRefsSummary(null);
+    setMobileRefsError(null);
+    try {
+      const result = await cleanupInvalidMobileProductRefs({
+        dry_run: dryRun,
+        sample_limit: 8,
+      });
+      setMobileRefsLast(result);
+      if (dryRun) {
+        setMobileRefsSummary(
+          `扫描完成：失效引用 ${result.total_invalid} 条（会话 ${result.selection_sessions.invalid} / 购物袋 ${result.bag_items.invalid} / 使用统计 ${result.compare_usage_stats.invalid}）。`,
+        );
+      } else {
+        setMobileRefsSummary(
+          `修复完成：已处理 ${result.total_repaired} 条失效引用（会话 ${result.selection_sessions.repaired} / 购物袋 ${result.bag_items.repaired} / 使用统计 ${result.compare_usage_stats.repaired}）。`,
+        );
+        router.refresh();
+      }
+    } catch (err) {
+      setMobileRefsError(formatErrorDetail(err));
+    } finally {
+      setMobileRefsRunning(false);
+    }
+  }
+
   return (
     <section className="mt-8 rounded-[30px] border border-black/10 bg-white p-6">
       <div className="flex flex-wrap items-center gap-2">
@@ -218,6 +251,35 @@ export default function ProductCleanupWorkbench({ initialProducts }: { initialPr
             最近结果：images 扫描 {lastCleanup.images.scanned_images} / orphan {lastCleanup.images.orphan_images}；runs 扫描 {lastCleanup.runs.scanned_runs} / orphan {lastCleanup.runs.orphan_runs}
           </div>
         ) : null}
+        <div className="mt-3 rounded-xl border border-black/10 bg-white p-3">
+          <div className="text-[12px] font-semibold text-black/78">移动端失效引用修复</div>
+          <div className="mt-1 text-[12px] text-black/56">清理已删除产品在移动端历史里的残留引用，避免 compare 出现 Product not found。</div>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => runMobileRefCleanup(true)}
+              disabled={mobileRefsRunning}
+              className="inline-flex h-9 items-center justify-center rounded-full border border-black/14 bg-white px-4 text-[12px] font-semibold text-black/78 disabled:opacity-50"
+            >
+              {mobileRefsRunning ? "处理中..." : "扫描失效引用"}
+            </button>
+            <button
+              type="button"
+              onClick={() => runMobileRefCleanup(false)}
+              disabled={mobileRefsRunning}
+              className="inline-flex h-9 items-center justify-center rounded-full bg-[#0a84ff] px-4 text-[12px] font-semibold text-white disabled:bg-[#0a84ff]/35"
+            >
+              {mobileRefsRunning ? "处理中..." : "一键修复失效引用"}
+            </button>
+          </div>
+          {mobileRefsSummary ? <div className="mt-2 text-[12px] text-[#116a3f]">{mobileRefsSummary}</div> : null}
+          {mobileRefsError ? <div className="mt-2 text-[12px] text-[#b42318]">{mobileRefsError}</div> : null}
+          {mobileRefsLast ? (
+            <div className="mt-2 text-[12px] text-black/62">
+              会话扫描 {mobileRefsLast.selection_sessions.scanned}；购物袋扫描 {mobileRefsLast.bag_items.scanned}；使用统计扫描 {mobileRefsLast.compare_usage_stats.scanned}。
+            </div>
+          ) : null}
+        </div>
         {settingsOpen ? (
           <div className="mt-3 rounded-xl border border-black/10 bg-white p-3">
             <div className="text-[12px] font-semibold text-black/78">维护设置</div>
