@@ -1083,6 +1083,7 @@ def run_mobile_compare_job_stream(
 ):
     owner_type, owner_id, owner_cookie_new = _resolve_owner(request)
     category_hint = str(payload.category or "").strip().lower() or "unknown"
+    targets_snapshot = _build_compare_targets_snapshot(payload.targets)
     compare_id = new_id()
     events: queue.Queue[tuple[str, dict[str, Any]] | None] = queue.Queue()
     SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=db.get_bind())
@@ -1134,6 +1135,7 @@ def run_mobile_compare_job_stream(
             "stage_label": MOBILE_COMPARE_STAGE_META.get("prepare"),
             "message": "任务已提交，正在准备分析。",
             "percent": 2,
+            "targets_snapshot": targets_snapshot,
         },
     )
     emit(
@@ -1855,6 +1857,39 @@ def _normalize_compare_targets(
     return normalized
 
 
+def _build_compare_targets_snapshot(raw_targets: list[MobileCompareJobTargetInput] | None) -> list[dict[str, str]]:
+    snapshot: list[dict[str, str]] = []
+    if not raw_targets:
+        return snapshot
+
+    seen: set[str] = set()
+    for item in raw_targets:
+        source = str(item.source or "").strip().lower()
+        if source == "upload_new":
+            upload_id = str(item.upload_id or "").strip()
+            if not upload_id:
+                continue
+            key = f"upload:{upload_id}"
+            normalized_item = {"source": "upload_new", "upload_id": upload_id}
+        elif source == "history_product":
+            product_id = str(item.product_id or "").strip()
+            if not product_id:
+                continue
+            key = f"history:{product_id}"
+            normalized_item = {"source": "history_product", "product_id": product_id}
+        else:
+            continue
+
+        if key in seen:
+            continue
+        seen.add(key)
+        snapshot.append(normalized_item)
+        if len(snapshot) >= 3:
+            break
+
+    return snapshot
+
+
 def _target_identity(target: MobileCompareJobTargetInput) -> str:
     source = str(target.source or "").strip().lower()
     if source == "upload_new":
@@ -2569,6 +2604,7 @@ def _upsert_mobile_compare_session(
         "percent": percent_value,
         "pair_index": patch.get("pair_index", existing_payload.get("pair_index")),
         "pair_total": patch.get("pair_total", existing_payload.get("pair_total")),
+        "targets_snapshot": patch.get("targets_snapshot", existing_payload.get("targets_snapshot", [])),
         "result": patch.get("result", existing_payload.get("result")),
         "error": patch.get("error", existing_payload.get("error")),
     }
@@ -2576,6 +2612,8 @@ def _upsert_mobile_compare_session(
         merged["result"] = None
     if patch.get("error") is None and "error" in patch:
         merged["error"] = None
+    if patch.get("targets_snapshot") is None and "targets_snapshot" in patch:
+        merged["targets_snapshot"] = []
 
     save_doubao_artifact(compare_id, MOBILE_COMPARE_SESSION_STAGE, merged)
     _upsert_mobile_compare_session_index(db=db, payload=merged)
@@ -2617,6 +2655,41 @@ def _normalize_mobile_compare_session_payload(payload: dict[str, Any]) -> Mobile
     except Exception:
         pair_total = None
 
+    targets_snapshot: list[MobileCompareJobTargetInput] = []
+    raw_targets_snapshot = payload.get("targets_snapshot")
+    if isinstance(raw_targets_snapshot, list):
+        seen: set[str] = set()
+        for raw_target in raw_targets_snapshot:
+            if not isinstance(raw_target, dict):
+                continue
+            try:
+                candidate = MobileCompareJobTargetInput.model_validate(raw_target)
+            except Exception:
+                continue
+
+            source = str(candidate.source or "").strip().lower()
+            if source == "upload_new":
+                upload_id = str(candidate.upload_id or "").strip()
+                if not upload_id:
+                    continue
+                key = f"upload:{upload_id}"
+                normalized_target = MobileCompareJobTargetInput(source="upload_new", upload_id=upload_id)
+            elif source == "history_product":
+                product_id = str(candidate.product_id or "").strip()
+                if not product_id:
+                    continue
+                key = f"history:{product_id}"
+                normalized_target = MobileCompareJobTargetInput(source="history_product", product_id=product_id)
+            else:
+                continue
+
+            if key in seen:
+                continue
+            seen.add(key)
+            targets_snapshot.append(normalized_target)
+            if len(targets_snapshot) >= 3:
+                break
+
     result_brief: MobileCompareSessionResultBrief | None = None
     raw_result = payload.get("result")
     if isinstance(raw_result, dict):
@@ -2646,6 +2719,7 @@ def _normalize_mobile_compare_session_payload(payload: dict[str, Any]) -> Mobile
             percent=percent,
             pair_index=pair_index,
             pair_total=pair_total,
+            targets_snapshot=targets_snapshot,
             result=result_brief,
             error=error_payload,
         )
@@ -2787,6 +2861,15 @@ def _get_mobile_compare_session_record(
     owner_type: str,
     owner_id: str,
 ) -> MobileCompareSessionResponse | None:
+    session_rel = _mobile_compare_session_rel_path(compare_id)
+    session_payload = _safe_load_json_dict(session_rel)
+    if session_payload is not None:
+        if _session_payload_belongs_to_owner(session_payload, owner_type=owner_type, owner_id=owner_id):
+            _upsert_mobile_compare_session_index(db=db, payload=session_payload)
+            normalized = _normalize_mobile_compare_session_payload(session_payload)
+            if normalized is not None:
+                return normalized
+
     row = db.get(MobileCompareSessionIndex, compare_id)
     if row is not None:
         if row.owner_type != owner_type or row.owner_id != owner_id:
@@ -2794,20 +2877,6 @@ def _get_mobile_compare_session_record(
         normalized = _normalize_mobile_compare_session_payload(_session_payload_from_index_row(row))
         if normalized is not None:
             return normalized
-
-    session_rel = _mobile_compare_session_rel_path(compare_id)
-    session_payload = _safe_load_json_dict(session_rel)
-    if session_payload is not None:
-        if _session_payload_belongs_to_owner(session_payload, owner_type=owner_type, owner_id=owner_id):
-            _upsert_mobile_compare_session_index(db=db, payload=session_payload)
-            payload_from_index = db.get(MobileCompareSessionIndex, compare_id)
-            if payload_from_index is not None:
-                normalized = _normalize_mobile_compare_session_payload(_session_payload_from_index_row(payload_from_index))
-                if normalized is not None:
-                    return normalized
-            normalized = _normalize_mobile_compare_session_payload(session_payload)
-            if normalized is not None:
-                return normalized
 
     result_rel = _mobile_compare_result_rel_path(compare_id)
     result_container = _safe_load_json_dict(result_rel)

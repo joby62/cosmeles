@@ -91,6 +91,8 @@ export default function MobileComparePage() {
   const [activeStageLabel, setActiveStageLabel] = useState(WAITING_STAGE_LABEL.prepare);
   const [progressPercent, setProgressPercent] = useState(0);
   const [pairProgress, setPairProgress] = useState<{ index: number; total: number } | null>(null);
+  const [selectionNotice, setSelectionNotice] = useState<string | null>(null);
+  const [lastProgressUpdateAt, setLastProgressUpdateAt] = useState<number | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [showGuide, setShowGuide] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -116,6 +118,13 @@ export default function MobileComparePage() {
     [orderedLibraryItems],
   );
   const selectedSet = useMemo(() => new Set(selectedProductIds), [selectedProductIds]);
+  const productTitleById = useMemo(() => {
+    const out = new Map<string, string>();
+    for (const item of orderedLibraryItems) {
+      out.set(item.productId, item.title);
+    }
+    return out;
+  }, [orderedLibraryItems]);
 
   const selectedCount = selectedProductIds.length;
   const hasUpload = Boolean(file);
@@ -145,16 +154,26 @@ export default function MobileComparePage() {
         : "来源：最近一次可用个人选项";
 
   const selectedProductSummary = useMemo(() => {
-    const titleById = new Map<string, string>();
-    for (const item of orderedLibraryItems) {
-      titleById.set(item.productId, item.title);
-    }
     const names = selectedProductIds
-      .map((id) => titleById.get(id))
+      .map((id) => productTitleById.get(id))
       .filter((value): value is string => Boolean(value));
     if (hasUpload) return ["我在用的产品", ...names];
     return names;
-  }, [hasUpload, orderedLibraryItems, selectedProductIds]);
+  }, [hasUpload, productTitleById, selectedProductIds]);
+
+  const selectedDraftItems = useMemo(() => {
+    const out: Array<{ key: string; label: string; source: "upload_new" | "history_product" }> = [];
+    if (hasUpload) {
+      const uploadLabel = [brand.trim(), name.trim()].filter(Boolean).join(" ").trim() || file?.name || "我在用的产品";
+      out.push({ key: "upload", label: uploadLabel, source: "upload_new" });
+    }
+    for (const productId of selectedProductIds) {
+      const label = productTitleById.get(productId);
+      if (!label) continue;
+      out.push({ key: productId, label, source: "history_product" });
+    }
+    return out;
+  }, [brand, file?.name, hasUpload, name, productTitleById, selectedProductIds]);
 
   const selectionStatusText = useMemo(() => {
     if (totalSelectedCount <= 0) return "先选 2 款开始";
@@ -166,6 +185,16 @@ export default function MobileComparePage() {
   const selectionAssistText = hasUpload
     ? `已包含在用产品；还可从产品库选 ${maxLibrarySelection} 款。`
     : "补充在用产品后，会额外判断：继续用 / 建议替换 / 分场景混用。";
+
+  const retryTargetsSnapshot = useMemo(
+    () => normalizeCompareTargetSnapshot(activeSession?.targets_snapshot || []),
+    [activeSession?.targets_snapshot],
+  );
+  const canRetryFailedTask = retryTargetsSnapshot.length >= 2;
+  const retryTargetLabels = useMemo(
+    () => retryTargetsSnapshot.map((item, idx) => describeCompareTarget(item, idx + 1, productTitleById)),
+    [productTitleById, retryTargetsSnapshot],
+  );
 
   const rememberActiveCompare = useCallback((compareId: string, targetCategory: MobileSelectionCategory | string) => {
     if (typeof window === "undefined") return;
@@ -195,6 +224,7 @@ export default function MobileComparePage() {
         : "pair_compare";
     setActiveStage(normalizedStage);
     setActiveStageLabel(String(session.stage_label || WAITING_STAGE_LABEL[normalizedStage] || "处理中"));
+    setLastProgressUpdateAt(Date.now());
     setProgressHint(
       String(session.message || "").trim() ||
         (session.status === "done" ? "对比已完成。" : session.status === "failed" ? "对比失败。" : "系统仍在分析中，请稍候。"),
@@ -309,6 +339,7 @@ export default function MobileComparePage() {
   useEffect(() => {
     if (!activeCompareId) {
       setActiveSession(null);
+      setLastProgressUpdateAt(null);
       return;
     }
     let cancelled = false;
@@ -379,9 +410,11 @@ export default function MobileComparePage() {
   useEffect(() => {
     if (!running) {
       setElapsedSeconds(0);
+      setLastProgressUpdateAt(null);
       return;
     }
     const started = Date.now();
+    setLastProgressUpdateAt(started);
     const timer = window.setInterval(() => {
       setElapsedSeconds(Math.max(0, Math.floor((Date.now() - started) / 1000)));
     }, 1000);
@@ -389,6 +422,16 @@ export default function MobileComparePage() {
       window.clearInterval(timer);
     };
   }, [running]);
+
+  useEffect(() => {
+    if (!selectionNotice) return;
+    const timer = window.setTimeout(() => {
+      setSelectionNotice(null);
+    }, 1600);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [selectionNotice]);
 
   const openHistoryPanel = useCallback(() => {
     setHistoryOpen(true);
@@ -405,6 +448,8 @@ export default function MobileComparePage() {
     setActiveStageLabel(WAITING_STAGE_LABEL.prepare);
     setProgressPercent(0);
     setPairProgress(null);
+    setSelectionNotice(null);
+    setLastProgressUpdateAt(null);
     setStep(1);
     setShowGuide(true);
     clearActiveCompare();
@@ -436,8 +481,24 @@ export default function MobileComparePage() {
     [rememberActiveCompare, router],
   );
 
-  async function startCompare() {
+  const notifySelectionLimit = useCallback(() => {
+    setSelectionNotice("本次最多选择 3 款产品，已选满。");
+    if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+      navigator.vibrate(10);
+    }
+  }, []);
+
+  async function startCompare(options?: {
+    targetsSnapshot?: MobileCompareJobTargetInput[];
+    categoryOverride?: MobileSelectionCategory;
+    runMode?: "fresh" | "retry_snapshot";
+  }) {
     if (running) return;
+    const snapshotTargets = normalizeCompareTargetSnapshot(options?.targetsSnapshot || []);
+    const isRetryRun = snapshotTargets.length >= 2;
+    const targetCategory = options?.categoryOverride || category;
+    let trackedTargets: MobileCompareJobTargetInput[] = [];
+
     setShowGuide(false);
     setRunError(null);
     setRunning(true);
@@ -446,40 +507,54 @@ export default function MobileComparePage() {
     setActiveStageLabel(WAITING_STAGE_LABEL.prepare);
     setProgressPercent(4);
     setPairProgress(null);
-
-    void safeTrack("compare_run_start", {
-      category,
-      profile_mode: "reuse_latest",
-      has_upload: hasUpload,
-      selected_library_count: selectedCount,
-      total_count: totalSelectedCount,
-    });
+    setSelectionNotice(null);
+    setActiveSession(null);
+    setActiveCompareId(null);
+    activeCompareIdRef.current = null;
+    clearActiveCompare();
+    setLastProgressUpdateAt(Date.now());
 
     try {
       const targets: MobileCompareJobTargetInput[] = [];
-      if (file) {
-        setProgressHint("正在上传你正在用的产品...");
-        const uploaded = await uploadMobileCompareCurrentProduct({
-          category,
-          image: file,
-          brand: brand.trim() || undefined,
-          name: name.trim() || undefined,
-        });
-        targets.push({ source: "upload_new", upload_id: uploaded.upload_id });
-        void safeTrack("compare_upload_success", { category, upload_id: uploaded.upload_id });
-      }
+      if (isRetryRun) {
+        targets.push(...snapshotTargets.map((item) => ({ ...item })));
+      } else {
+        if (file) {
+          setProgressHint("正在上传你正在用的产品...");
+          const uploaded = await uploadMobileCompareCurrentProduct({
+            category: targetCategory,
+            image: file,
+            brand: brand.trim() || undefined,
+            name: name.trim() || undefined,
+          });
+          targets.push({ source: "upload_new", upload_id: uploaded.upload_id });
+          void safeTrack("compare_upload_success", { category: targetCategory, upload_id: uploaded.upload_id });
+        }
 
-      for (const productId of selectedProductIds) {
-        targets.push({ source: "history_product", product_id: productId });
+        for (const productId of selectedProductIds) {
+          targets.push({ source: "history_product", product_id: productId });
+        }
       }
 
       if (targets.length < 2 || targets.length > MAX_TOTAL_SELECTION) {
         throw new Error("请选择 2~3 款产品后再开始专业对比。");
       }
+      trackedTargets = targets;
+      const trackedLibraryCount = targets.filter((item) => item.source === "history_product").length;
+      const trackedHasUpload = targets.some((item) => item.source === "upload_new");
+
+      void safeTrack("compare_run_start", {
+        category: targetCategory,
+        profile_mode: "reuse_latest",
+        run_mode: options?.runMode || (isRetryRun ? "retry_snapshot" : "fresh"),
+        has_upload: trackedHasUpload,
+        selected_library_count: trackedLibraryCount,
+        total_count: targets.length,
+      });
 
       const result = await runMobileCompareJobStream(
         {
-          category,
+          category: targetCategory,
           profile_mode: "reuse_latest",
           targets,
           options: {
@@ -489,13 +564,14 @@ export default function MobileComparePage() {
         },
         (event) => {
           if (event.event === "accepted") {
+            setLastProgressUpdateAt(Date.now());
             const compareId = String(event.data.compare_id || event.data.trace_id || "").trim();
             if (compareId) {
               if (activeCompareIdRef.current !== compareId) {
                 activeCompareIdRef.current = compareId;
                 setActiveCompareId(compareId);
               }
-              rememberActiveCompare(compareId, category);
+              rememberActiveCompare(compareId, targetCategory);
             }
             const stage = String(event.data.stage || "").trim();
             if (stage) {
@@ -514,11 +590,12 @@ export default function MobileComparePage() {
             return;
           }
           if (event.event === "progress") {
+            setLastProgressUpdateAt(Date.now());
             const compareId = String(event.data.trace_id || "").trim();
             if (compareId && compareId !== activeCompareIdRef.current) {
               activeCompareIdRef.current = compareId;
               setActiveCompareId(compareId);
-              rememberActiveCompare(compareId, category);
+              rememberActiveCompare(compareId, targetCategory);
             }
             const message = String(event.data.message || "").trim();
             const stage = String(event.data.stage || "").trim();
@@ -543,6 +620,7 @@ export default function MobileComparePage() {
             return;
           }
           if (event.event === "heartbeat") {
+            setLastProgressUpdateAt(Date.now());
             const message = String(event.data.message || "").trim();
             if (message) setProgressHint(message);
           }
@@ -562,6 +640,7 @@ export default function MobileComparePage() {
         percent: 100,
         pair_index: null,
         pair_total: null,
+        targets_snapshot: trackedTargets.map((item) => ({ ...item })),
         result: {
           decision: result.verdict.decision,
           headline: result.verdict.headline,
@@ -573,33 +652,64 @@ export default function MobileComparePage() {
       rememberActiveCompare(result.compare_id, result.category);
 
       void safeTrack("compare_run_success", {
-        category,
+        category: targetCategory,
         compare_id: result.compare_id,
-        has_upload: hasUpload,
-        selected_library_count: selectedCount,
-        total_count: totalSelectedCount,
+        run_mode: options?.runMode || (isRetryRun ? "retry_snapshot" : "fresh"),
+        has_upload: trackedTargets.some((item) => item.source === "upload_new"),
+        selected_library_count: trackedTargets.filter((item) => item.source === "history_product").length,
+        total_count: trackedTargets.length,
         pair_count: (result.pair_results || []).length,
       });
       router.push(`/m/compare/result/${encodeURIComponent(result.compare_id)}`);
     } catch (err) {
       const text = err instanceof Error ? err.message : String(err);
-      if (isMissingProductError(text)) {
+      if (isMissingProductError(text) && !isRetryRun) {
         setSelectedProductIds((prev) => prev.filter((id) => availableProductIdSet.has(id)));
         setStep(3);
         setRunError("检测到 1 款历史产品已失效，已自动移除。请重新确认后再开始。");
+      } else if (isMissingProductError(text) && isRetryRun) {
+        setStep(3);
+        setRunError("上次组合里有产品已失效，请重新选择后再试。");
       } else {
         setRunError(humanizeCompareError(text));
       }
       void safeTrack("compare_run_error", {
-        category,
+        category: targetCategory,
         error: text,
-        has_upload: hasUpload,
-        selected_library_count: selectedCount,
-        total_count: totalSelectedCount,
+        run_mode: options?.runMode || (isRetryRun ? "retry_snapshot" : "fresh"),
+        has_upload: trackedTargets.some((item) => item.source === "upload_new"),
+        selected_library_count: trackedTargets.filter((item) => item.source === "history_product").length,
+        total_count: trackedTargets.length,
       });
     } finally {
       setRunning(false);
     }
+  }
+
+  async function retryFailedCompare() {
+    if (!activeSession || running) return;
+    const targetCategory =
+      CATEGORY_ORDER.includes(activeSession.category as MobileSelectionCategory)
+        ? (activeSession.category as MobileSelectionCategory)
+        : category;
+    const snapshot = normalizeCompareTargetSnapshot(activeSession.targets_snapshot || []);
+    if (snapshot.length < 2) {
+      setRunError("无法恢复上次对比对象，请重新选择产品后再试。");
+      setShowGuide(false);
+      setStep(3);
+      setActiveCompareId(null);
+      setActiveSession(null);
+      clearActiveCompare();
+      return;
+    }
+    if (targetCategory !== category) {
+      setCategory(targetCategory);
+    }
+    await startCompare({
+      categoryOverride: targetCategory,
+      targetsSnapshot: snapshot,
+      runMode: "retry_snapshot",
+    });
   }
 
   function toggleSelected(pid: string) {
@@ -731,6 +841,56 @@ export default function MobileComparePage() {
           <div>{selectionStatusText}</div>
           <div className="mt-1 text-[11px] opacity-85">{selectionAssistText}</div>
         </div>
+        <div className="mt-3 rounded-[18px] border border-black/10 bg-black/[0.02] px-3 py-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-[12px] text-black/56">已选对象（{totalSelectedCount}/{MAX_TOTAL_SELECTION}）</div>
+            {totalSelectedCount > 0 ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedProductIds([]);
+                  setFile(null);
+                  setBrand("");
+                  setName("");
+                  setSelectionNotice(null);
+                }}
+                className="inline-flex h-7 items-center rounded-full border border-black/12 px-3 text-[11px] text-black/64 active:bg-black/[0.04]"
+              >
+                清空
+              </button>
+            ) : null}
+          </div>
+          {selectedDraftItems.length > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {selectedDraftItems.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => {
+                    if (item.source === "upload_new") {
+                      setFile(null);
+                      setBrand("");
+                      setName("");
+                      return;
+                    }
+                    toggleSelected(item.key);
+                  }}
+                  className="inline-flex h-8 items-center gap-1 rounded-full border border-black/12 bg-white/70 px-3 text-[12px] text-black/76 active:bg-black/[0.03]"
+                >
+                  <span className="max-w-[170px] truncate">{item.label}</span>
+                  <span aria-hidden>×</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-2 text-[12px] text-black/52">还没选择产品，先从下面挑 2~3 款。</div>
+          )}
+        </div>
+        {selectionNotice ? (
+          <div className="mt-2 rounded-xl border border-[#ffd596]/70 bg-[#fff6e6] px-3 py-2 text-[12px] text-[#8b5a12] dark:border-[#c99345]/58 dark:bg-[#4f391b]/60 dark:text-[#ffdca3]">
+            {selectionNotice}
+          </div>
+        ) : null}
 
         <input
           ref={uploadInputRef}
@@ -758,7 +918,9 @@ export default function MobileComparePage() {
         ) : orderedLibraryItems.length === 0 ? (
           <div className="mt-3 text-[13px] text-black/55">该品类暂时还没有可用产品。</div>
         ) : (
-          <div className="mt-3 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="mt-3">
+            <div className="text-[12px] text-black/52">可选产品（左右滑动）</div>
+            <div className="mt-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <div className="flex min-w-max gap-3 pr-2">
               <UploadProductCard
                 selected={hasUpload}
@@ -786,7 +948,10 @@ export default function MobileComparePage() {
                     selected={selected}
                     disabled={running || disabled}
                     onPress={() => {
-                      if (!canToggle) return;
+                      if (!canToggle) {
+                        notifySelectionLimit();
+                        return;
+                      }
                       toggleSelected(pid);
                       void safeTrack("compare_library_pick", {
                         category,
@@ -798,7 +963,10 @@ export default function MobileComparePage() {
                     }}
                     onToggle={(event) => {
                       event.stopPropagation();
-                      if (!canToggle) return;
+                      if (!canToggle) {
+                        notifySelectionLimit();
+                        return;
+                      }
                       toggleSelected(pid);
                       void safeTrack("compare_library_pick", {
                         category,
@@ -812,6 +980,7 @@ export default function MobileComparePage() {
                 );
               })}
             </div>
+          </div>
           </div>
         )}
 
@@ -928,6 +1097,8 @@ export default function MobileComparePage() {
   const isFailedTask = !isRunningTask && activeSession?.status === "failed";
   const shouldShowTaskPanel = running || (hasActiveTask && (isRunningTask || isDoneTask || isFailedTask));
   const activeResultId = String(activeSession?.compare_id || activeCompareId || "").trim();
+  const secondsSinceProgressUpdate =
+    isRunningTask && lastProgressUpdateAt ? Math.max(0, Math.floor((Date.now() - lastProgressUpdateAt) / 1000)) : null;
 
   const historySheet = historyOpen ? (
     <CompareHistorySheet
@@ -961,7 +1132,7 @@ export default function MobileComparePage() {
           {isDoneTask
             ? "任务已经完成，你可以直接查看结果或继续浏览历史。"
             : isFailedTask
-              ? "上次任务未完成，建议重置后重新开始。"
+              ? "上次任务未完成。可直接按上次组合重试，或重新选择。"
               : "任务进行中。你离开页面也不会丢失进度。"}
         </p>
 
@@ -973,6 +1144,7 @@ export default function MobileComparePage() {
             percent={progressPercent}
             pairProgress={pairProgress}
             elapsedSeconds={elapsedSeconds}
+            secondsSinceLastUpdate={secondsSinceProgressUpdate}
           />
         ) : null}
 
@@ -1003,6 +1175,15 @@ export default function MobileComparePage() {
         {isFailedTask ? (
           <div className="mt-4 rounded-[22px] border border-[#ff8f8f]/45 bg-[#ff5f5f]/10 px-4 py-3 text-[13px] text-[#b53a3a] dark:border-[#ff8f8f]/35 dark:bg-[#5a1f26]/45 dark:text-[#ffd1d1]">
             {runError || activeSession?.error?.detail || "任务失败，请重置后重试。"}
+            {retryTargetLabels.length > 0 ? (
+              <div className="mt-2 flex flex-wrap gap-1.5 text-[12px]">
+                {retryTargetLabels.map((label) => (
+                  <span key={label} className="inline-flex rounded-full border border-[#ffb9b9]/80 bg-white/65 px-2.5 py-1 text-[11px] text-[#9d3e3e] dark:border-[#ffb9b9]/35 dark:bg-[#5f2a2f]/62 dark:text-[#ffd3d3]">
+                    {label}
+                  </span>
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : null}
 
@@ -1014,6 +1195,18 @@ export default function MobileComparePage() {
             >
               先去逛成分百科
             </Link>
+          ) : null}
+          {isFailedTask ? (
+            <button
+              type="button"
+              disabled={!canRetryFailedTask || running}
+              onClick={() => {
+                void retryFailedCompare();
+              }}
+              className="inline-flex h-10 items-center justify-center rounded-xl bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-4 text-[13px] font-semibold text-white shadow-[0_10px_24px_rgba(0,113,227,0.22)] disabled:opacity-45"
+            >
+              按上次组合重试
+            </button>
           ) : null}
           <button
             type="button"
@@ -1252,6 +1445,7 @@ function CompareWaitingPanel({
   percent,
   pairProgress,
   elapsedSeconds,
+  secondsSinceLastUpdate,
 }: {
   stage: WaitingStage;
   stageLabel: string;
@@ -1259,9 +1453,10 @@ function CompareWaitingPanel({
   percent: number;
   pairProgress: { index: number; total: number } | null;
   elapsedSeconds: number;
+  secondsSinceLastUpdate: number | null;
 }) {
   const currentStageIndex = WAITING_STAGE_ORDER.indexOf(stage);
-  const showInsight = elapsedSeconds >= 8;
+  const isFreshUpdate = secondsSinceLastUpdate == null || secondsSinceLastUpdate <= 6;
   return (
     <div className="mt-4 overflow-hidden rounded-[26px] border border-black/10 bg-[linear-gradient(180deg,#f8fbff_0%,#eef4ff_44%,#ffffff_100%)] p-4 shadow-[0_10px_28px_rgba(35,61,102,0.08)] dark:border-white/12 dark:bg-[linear-gradient(180deg,rgba(20,33,56,0.94)_0%,rgba(17,28,48,0.9)_44%,rgba(15,24,41,0.92)_100%)] dark:shadow-[0_10px_30px_rgba(0,0,0,0.42)]">
       <div className="flex items-center justify-between">
@@ -1287,11 +1482,18 @@ function CompareWaitingPanel({
         </div>
       ) : null}
 
-      {showInsight ? (
-        <div className="mt-3 rounded-xl border border-[#bcd2ff] bg-[#edf4ff] px-3 py-2 text-[12px] text-[#305fb8] dark:border-[#7aaef4]/42 dark:bg-[#213c66]/72 dark:text-[#c2deff]">
-          已识别关键差异维度：清洁力、刺激风险、修护倾向。
-        </div>
-      ) : null}
+      <div
+        className={`mt-3 rounded-xl border px-3 py-2 text-[12px] ${
+          isFreshUpdate
+            ? "border-[#bcd2ff] bg-[#edf4ff] text-[#305fb8] dark:border-[#7aaef4]/42 dark:bg-[#213c66]/72 dark:text-[#c2deff]"
+            : "border-[#d7dce6] bg-white/84 text-black/62 dark:border-white/16 dark:bg-white/8 dark:text-[rgba(213,227,249,0.82)]"
+        }`}
+      >
+        {isFreshUpdate
+          ? "连接正常，正在持续刷新进度。"
+          : `连接正常，最近一次进度更新在 ${secondsSinceLastUpdate} 秒前。`}
+      </div>
+      <div className="mt-2 text-[11px] text-black/56">当前完成度 {Math.max(0, Math.min(100, Math.round(percent || 0)))}%，耗时会随产品数量和图片复杂度变化。</div>
 
       <div className="mt-4 grid gap-2">
         {WAITING_STAGE_ORDER.map((item, idx) => {
@@ -1588,6 +1790,45 @@ function resolveProductImage(raw?: string | null): string | null {
   if (value.startsWith("http://") || value.startsWith("https://")) return value;
   if (value.startsWith("/")) return value;
   return `/${value}`;
+}
+
+function normalizeCompareTargetSnapshot(raw: MobileCompareJobTargetInput[]): MobileCompareJobTargetInput[] {
+  if (!Array.isArray(raw) || raw.length === 0) return [];
+  const normalized: MobileCompareJobTargetInput[] = [];
+  const seen = new Set<string>();
+  for (const target of raw) {
+    const source = String(target.source || "").trim().toLowerCase();
+    if (source === "upload_new") {
+      const uploadId = String(target.upload_id || "").trim();
+      if (!uploadId) continue;
+      const key = `upload:${uploadId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      normalized.push({ source: "upload_new", upload_id: uploadId });
+      continue;
+    }
+    if (source === "history_product") {
+      const productId = String(target.product_id || "").trim();
+      if (!productId) continue;
+      const key = `history:${productId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      normalized.push({ source: "history_product", product_id: productId });
+    }
+    if (normalized.length >= MAX_TOTAL_SELECTION) break;
+  }
+  return normalized;
+}
+
+function describeCompareTarget(
+  target: MobileCompareJobTargetInput,
+  index: number,
+  titleById: Map<string, string>,
+): string {
+  if (target.source === "upload_new") return "上次上传产品";
+  const productId = String(target.product_id || "").trim();
+  if (!productId) return `历史产品 ${index}`;
+  return titleById.get(productId) || `历史产品 ${index}`;
 }
 
 async function safeTrack(name: string, props: Record<string, unknown>) {

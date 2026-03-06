@@ -990,6 +990,7 @@ class MobileCompareSessionResponse(BaseModel):
     percent: int = Field(default=0, ge=0, le=100)
     pair_index: Optional[int] = None
     pair_total: Optional[int] = None
+    targets_snapshot: List[MobileCompareJobTargetInput] = Field(default_factory=list)
     result: Optional[MobileCompareSessionResultBrief] = None
     error: Optional[MobileCompareSessionError] = None
 

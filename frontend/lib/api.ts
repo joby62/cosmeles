@@ -852,6 +852,7 @@ export type MobileCompareSession = {
   percent: number;
   pair_index?: number | null;
   pair_total?: number | null;
+  targets_snapshot?: MobileCompareJobTargetInput[];
   result?: {
     decision?: "keep" | "switch" | "hybrid" | null;
     headline?: string | null;

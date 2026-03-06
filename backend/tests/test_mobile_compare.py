@@ -275,6 +275,13 @@ def test_mobile_compare_stream_success_and_fetch_result(test_client, monkeypatch
     assert session_payload["status"] == "done"
     assert session_payload["compare_id"] == result["compare_id"]
     assert session_payload["result"]["headline"] == result["verdict"]["headline"]
+    assert len(session_payload["targets_snapshot"]) == 2
+    assert session_payload["targets_snapshot"][0] == {"source": "upload_new", "upload_id": upload_id, "product_id": None}
+    assert session_payload["targets_snapshot"][1] == {
+        "source": "history_product",
+        "upload_id": None,
+        "product_id": recommendation_product_id,
+    }
 
     session_list = client.get("/api/mobile/compare/sessions", params={"category": "shampoo", "limit": 20})
     assert session_list.status_code == 200
