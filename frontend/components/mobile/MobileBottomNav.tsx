@@ -31,8 +31,6 @@ function isActive(pathname: string, key: NavKey): boolean {
 }
 
 function NavIcon({ name }: { name: NavKey }) {
-  const cls = "currentColor";
-
   if (name === "choose") {
     return <span className="m-nav-choose-icon" aria-hidden="true" />;
   }
@@ -41,12 +39,7 @@ function NavIcon({ name }: { name: NavKey }) {
     return <span className="m-nav-compare-icon" aria-hidden="true" />;
   }
 
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-      <path d="M3.5 4.1A1.6 1.6 0 0 1 5.1 2.5h7.8v11.4H5.1a1.6 1.6 0 0 0-1.6 1.6V4.1Z" fill="none" stroke={cls} strokeWidth="1.4" />
-      <path d="M5.9 5.6h4.9M5.9 8h4.9M5.9 10.4h3.6" fill="none" stroke={cls} strokeWidth="1.4" strokeLinecap="round" />
-    </svg>
-  );
+  return <span className="m-nav-wiki-icon" aria-hidden="true" />;
 }
 
 export default function MobileBottomNav() {
