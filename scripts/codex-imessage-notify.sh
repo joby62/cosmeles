@@ -136,7 +136,7 @@ EOF
     return 0
   fi
 
-  if [[ "$output" == *"Application can't be found"* || "$output" == *"(-2700)"* || "$output" == *"(-1728)"* || "$output" == *"(-10827)"* ]]; then
+  if [[ "$output" == *"Application can't be found"* || "$output" == *"(-2700)"* || "$output" == *"(-10827)"* ]]; then
     cat >&2 <<'EOF'
 This process could not reach macOS GUI automation APIs.
 
@@ -318,7 +318,14 @@ send_message() {
 
   if [[ "$direct_only" == "1" ]]; then
     if ! print_service_help "$output" && ! print_permission_help "$output"; then
-      [[ -n "$output" ]] && print -u2 -- "$output"
+      cat >&2 <<'EOF'
+Direct iMessage send failed.
+EOF
+    fi
+    if [[ -n "$output" ]]; then
+      print -u2 -- ""
+      print -u2 -- "Underlying AppleScript error:"
+      print -u2 -- "$output"
     fi
     return 1
   fi
