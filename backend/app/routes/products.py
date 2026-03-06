@@ -552,7 +552,14 @@ def cancel_ingredient_library_build_job(job_id: str, db: Session = Depends(get_d
         rec.stage_label = _ingredient_build_stage_label("cancelling")
         rec.message = "已收到取消请求，当前成分处理结束后停止。"
     db.add(rec)
-    db.commit()
+    try:
+        db.commit()
+    except OperationalError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"[stage=ingredient_build_cancel] database write failed: {exc}",
+        ) from exc
     db.refresh(rec)
     return IngredientLibraryBuildJobCancelResponse(status="ok", job=_to_ingredient_build_job_view(rec))
 
@@ -1744,15 +1751,10 @@ def _run_ingredient_library_build_job(
     db.add(rec)
     db.commit()
 
-    ProgressSessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=db.get_bind())
     CancelSessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=db.get_bind())
 
     def on_progress(event: dict[str, Any]) -> None:
-        progress_db = ProgressSessionMaker()
-        try:
-            _apply_ingredient_build_job_progress(db=progress_db, job_id=job_id, payload=event)
-        finally:
-            progress_db.close()
+        _apply_ingredient_build_job_progress(db=db, job_id=job_id, payload=event)
 
     def stop_checker() -> bool:
         cancel_db = CancelSessionMaker()
