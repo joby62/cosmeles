@@ -85,8 +85,8 @@ def _install_fake_route_mapping_builder(monkeypatch: pytest.MonkeyPatch) -> None
                 "category": "shampoo",
                 "rules_version": "2026-03-03.1",
                 "primary_route": {
-                    "route_key": "volume-support",
-                    "route_title": "蓬松支撑型",
+                    "route_key": "moisture-balance",
+                    "route_title": "水油平衡型",
                     "confidence": 93,
                     "reason": "mock",
                 },
@@ -97,10 +97,10 @@ def _install_fake_route_mapping_builder(monkeypatch: pytest.MonkeyPatch) -> None
                     "reason": "mock",
                 },
                 "route_scores": [
-                    {"route_key": "volume-support", "route_title": "蓬松支撑型", "confidence": 93, "reason": "mock"},
+                    {"route_key": "moisture-balance", "route_title": "水油平衡型", "confidence": 93, "reason": "mock"},
                     {"route_key": "deep-oil-control", "route_title": "深层控油型", "confidence": 72, "reason": "mock"},
                     {"route_key": "gentle-soothing", "route_title": "温和舒缓型", "confidence": 36, "reason": "mock"},
-                    {"route_key": "deep-repair", "route_title": "深度修护型", "confidence": 24, "reason": "mock"},
+                    {"route_key": "anti-hair-loss", "route_title": "防脱强韧型", "confidence": 24, "reason": "mock"},
                     {"route_key": "anti-dandruff-itch", "route_title": "去屑止痒型", "confidence": 10, "reason": "mock"},
                 ],
                 "evidence": {"positive": [], "counter": []},
@@ -224,7 +224,7 @@ def test_mobile_selection_resolve_shampoo_route_mapping(test_client, monkeypatch
     _ingest_one(client, "shampoo.jpg")
     _install_fake_route_mapping_builder(monkeypatch)
     _build_route_mapping(client, "shampoo")
-    _set_featured_slot(client, "shampoo", "volume-support")
+    _set_featured_slot(client, "shampoo", "deep-oil-control")
 
     resp = client.post(
         "/api/mobile/selection/resolve",
@@ -236,9 +236,9 @@ def test_mobile_selection_resolve_shampoo_route_mapping(test_client, monkeypatch
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "ok"
-    assert body["route"]["key"] == "oil-lightweight-volume"
-    assert body["route"]["title"] == "蓬松支撑型"
-    assert body["links"]["wiki"].endswith("focus=volume-support")
+    assert body["route"]["key"] == "deep-oil-control"
+    assert body["route"]["title"] == "深层控油型"
+    assert body["links"]["wiki"].endswith("focus=deep-oil-control")
     assert body["recommended_product"]["category"] == "shampoo"
     assert body["recommended_product"]["id"]
 
@@ -263,15 +263,43 @@ def test_mobile_selection_resolve_bodywash_fastpath(test_client, monkeypatch: py
         "/api/mobile/selection/resolve",
         json={
             "category": "bodywash",
-            "answers": {"q1": "B", "q2": "A"},
+            "answers": {"q1": "B", "q2": "A", "q3": "A", "q4": "A", "q5": "B"},
         },
     )
     assert resp.status_code == 200
     body = resp.json()
     assert body["route"]["key"] == "rescue"
     assert body["route"]["title"] == "恒温舒缓修护型"
-    assert [item["key"] for item in body["choices"]] == ["q1", "q2"]
+    assert [item["key"] for item in body["choices"]] == ["q1", "q2", "q3", "q4", "q5"]
 
+
+def test_mobile_selection_resolve_conditioner_matrix(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, _ = test_client
+    _install_fake_ingest_pipeline(
+        monkeypatch,
+        {
+            "category": "conditioner",
+            "brand": "Pantene",
+            "name": "Conditioner Matrix",
+            "one_sentence": "护发素矩阵测试",
+        },
+    )
+    _ingest_one(client, "conditioner.jpg")
+    _set_featured_slot(client, "conditioner", "__category__")
+
+    resp = client.post(
+        "/api/mobile/selection/resolve",
+        json={
+            "category": "conditioner",
+            "answers": {"c_q1": "A", "c_q2": "A", "c_q3": "A"},
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["route"]["key"] == "c-color-lock"
+    assert body["route"]["title"] == "锁色固色型"
+    assert [item["key"] for item in body["choices"]] == ["c_q1", "c_q2", "c_q3"]
+    assert any(item["rule"] == "veto" for item in body["rule_hits"])
 
 def test_mobile_selection_resolve_reuse_existing_session(test_client, monkeypatch: pytest.MonkeyPatch):
     client, _ = test_client
@@ -323,7 +351,7 @@ def test_mobile_selection_isolated_by_device_cookie(test_client, monkeypatch: py
     _ingest_one(client, "isolation.jpg")
     _install_fake_route_mapping_builder(monkeypatch)
     _build_route_mapping(client, "shampoo")
-    _set_featured_slot(client, "shampoo", "volume-support")
+    _set_featured_slot(client, "shampoo", "deep-oil-control")
 
     payload = {
         "category": "shampoo",
@@ -364,7 +392,7 @@ def test_mobile_selection_batch_delete_scoped_by_owner(test_client, monkeypatch:
     _build_route_mapping(client, "bodywash")
     _set_featured_slot(client, "bodywash", "rescue")
 
-    payload = {"category": "bodywash", "answers": {"q1": "B", "q2": "A"}}
+    payload = {"category": "bodywash", "answers": {"q1": "B", "q2": "A", "q3": "A", "q4": "A", "q5": "B"}}
 
     first = client.post("/api/mobile/selection/resolve", json=payload)
     assert first.status_code == 200
@@ -452,7 +480,7 @@ def test_mobile_selection_pin_and_list_order(test_client, monkeypatch: pytest.Mo
     _ingest_one(client, "pin-order.jpg")
     _install_fake_route_mapping_builder(monkeypatch)
     _build_route_mapping(client, "shampoo")
-    _set_featured_slot(client, "shampoo", "volume-support")
+    _set_featured_slot(client, "shampoo", "deep-oil-control")
 
     first = client.post(
         "/api/mobile/selection/resolve",

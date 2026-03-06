@@ -83,6 +83,11 @@ from app.schemas import (
     ProductCard,
 )
 from app.services.doubao_pipeline_service import DoubaoPipelineService
+from app.services.matrix_decision import (
+    MatrixDecisionError,
+    compile_matrix_config,
+    resolve_matrix_selection,
+)
 from app.services.parser import normalize_doc
 from app.services.storage import (
     exists_rel_path,
@@ -143,122 +148,92 @@ CATEGORY_ALIASES: dict[str, str] = {
     "洁面乳": "cleanser",
 }
 
-SHAMPOO_Q1_LABELS = {
-    "A": "一天不洗就塌/油",
-    "B": "2-3天洗一次正好",
-    "C": "3天以上不洗也不油",
-}
-SHAMPOO_Q2_LABELS = {
-    "A": "有头屑且发痒",
-    "B": "头皮发红/刺痛/长痘",
-    "C": "无特殊感觉",
-}
-SHAMPOO_Q3_LABELS = {
-    "A": "频繁染烫/干枯易断",
-    "B": "细软塌/贴头皮",
-    "C": "原生发/健康",
-}
-SHAMPOO_BUNDLE_TITLES = {
+SHAMPOO_ROUTE_TITLES = {
     "deep-oil-control": "深层控油型",
     "anti-dandruff-itch": "去屑止痒型",
     "gentle-soothing": "温和舒缓型",
-    "deep-repair": "深度修护型",
-    "volume-support": "蓬松支撑型",
-}
-SHAMPOO_ROUTE_DECISIONS: dict[str, dict[str, str | None]] = {
-    "fast-anti-dandruff": {
-        "bundle_key": "anti-dandruff-itch",
-        "base_filter": "Q1 底色保留当前清洁强度，优先保证抗真菌活性发挥。",
-        "pain_filter": "Q2 触发“有屑且痒”快路径，直接进入去屑止痒线。",
-        "bonus_filter": "快路径已完成，不再继续 Q3。",
-    },
-    "fast-sensitive-soothe": {
-        "bundle_key": "gentle-soothing",
-        "base_filter": "Q1 底色回退到低刺激清洁框架。",
-        "pain_filter": "Q2 触发“发红/刺痛”快路径，优先舒缓与屏障修护。",
-        "bonus_filter": "快路径已完成，不再继续 Q3。",
-    },
-    "oil-repair-balance": {
-        "bundle_key": "deep-repair",
-        "base_filter": "Q1=油性，清洁底色仍要保持对头皮油脂的控制。",
-        "pain_filter": "Q2 无特殊不适，继续以发丝状态做细化。",
-        "bonus_filter": "Q3=受损，添加修护插件并建议分区洗。",
-    },
-    "oil-lightweight-volume": {
-        "bundle_key": "volume-support",
-        "base_filter": "Q1=油性，保持清爽底色。",
-        "pain_filter": "Q2 无特殊不适，进入发质插件阶段。",
-        "bonus_filter": "Q3=细软塌，锁定蓬松支撑插件。",
-    },
-    "oil-control-clean": {
-        "bundle_key": "deep-oil-control",
-        "base_filter": "Q1=油性，底色走高效控油清洁。",
-        "pain_filter": "Q2 无特殊不适，不需要药理去屑或舒缓优先。",
-        "bonus_filter": "Q3=健康发丝，以控油稳定为主。",
-    },
-    "balance-repair": {
-        "bundle_key": "deep-repair",
-        "base_filter": "Q1=平衡节奏，底色保持温和。",
-        "pain_filter": "Q2 无特殊不适，继续按发丝状态分流。",
-        "bonus_filter": "Q3=受损，进入深度修护线。",
-    },
-    "balance-lightweight": {
-        "bundle_key": "volume-support",
-        "base_filter": "Q1=平衡节奏，清洁不过度。",
-        "pain_filter": "Q2 无特殊不适，继续按发质定位。",
-        "bonus_filter": "Q3=细软塌，进入蓬松支撑线。",
-    },
-    "balance-simple": {
-        "bundle_key": "gentle-soothing",
-        "base_filter": "Q1=平衡节奏，优先稳定可持续。",
-        "pain_filter": "Q2 无头皮困扰，无需功效线加码。",
-        "bonus_filter": "Q3=健康发丝，收敛到温和维稳线。",
-    },
-    "moisture-repair": {
-        "bundle_key": "deep-repair",
-        "base_filter": "Q1=低出油，底色以滋润舒适为主。",
-        "pain_filter": "Q2 无头皮困扰，继续按发丝状态判断。",
-        "bonus_filter": "Q3=受损，锁定修护与补脂。",
-    },
-    "moisture-lightweight": {
-        "bundle_key": "volume-support",
-        "base_filter": "Q1=低出油，仍需避免发根负担过重。",
-        "pain_filter": "Q2 无特殊不适，进入发质插件阶段。",
-        "bonus_filter": "Q3=细软塌，优先轻盈与支撑。",
-    },
-    "moisture-gentle": {
-        "bundle_key": "gentle-soothing",
-        "base_filter": "Q1=低出油，底色优先温和舒适。",
-        "pain_filter": "Q2 无明显困扰，维持低刺激框架。",
-        "bonus_filter": "Q3=健康发丝，避免功能堆叠。",
-    },
+    "anti-hair-loss": "防脱强韧型",
+    "moisture-balance": "水油平衡型",
 }
 
-BODYWASH_Q1_LABELS = {
-    "A": "干燥寒冷",
-    "B": "干燥炎热",
-    "C": "潮湿闷热",
-    "D": "潮湿寒冷",
+SHAMPOO_MATRIX_MODEL = {
+    "category": "shampoo",
+    "categories": [
+        "deep-oil-control",
+        "anti-dandruff-itch",
+        "gentle-soothing",
+        "anti-hair-loss",
+        "moisture-balance",
+    ],
+    "questions": [
+        {
+            "key": "q1",
+            "title": "头皮出油节奏",
+            "options": {
+                "A": "一天不洗就塌/油 (重度)",
+                "B": "2-3天洗一次正好 (中度)",
+                "C": "3天以上不洗也不油 (干性)",
+            },
+        },
+        {
+            "key": "q2",
+            "title": "头皮核心痛点",
+            "options": {
+                "A": "有头屑且发痒 (真菌)",
+                "B": "头皮发红/刺痛/长痘 (敏感)",
+                "C": "掉发明显/发根脆弱 (脱发)",
+                "D": "无特殊感觉 (健康)",
+            },
+        },
+        {
+            "key": "q3",
+            "title": "发丝状态参考",
+            "options": {
+                "A": "频繁染烫/干枯易断",
+                "B": "细软塌/贴头皮",
+                "C": "原生发/健康",
+            },
+        },
+    ],
+    "scoring_matrix": {
+        "q1": {
+            "A": [15, 5, -10, -15, -15],
+            "B": [-5, 0, 5, 0, 5],
+            "C": [-15, -5, 10, 0, 15],
+        },
+        "q2": {
+            "A": [0, 30, 0, 0, -10],
+            "B": [-20, -15, 30, -10, 5],
+            "C": [5, 0, 5, 30, 0],
+            "D": [2, -5, -5, -5, 5],
+        },
+        "q3": {
+            "A": [-5, 0, 5, 0, 8],
+            "B": [5, 0, 0, 5, -5],
+            "C": [0, 0, 0, 0, 0],
+        },
+    },
+    "veto_masks": [
+        {
+            "trigger": "q2 == 'B'",
+            "mask": [0, 0, 1, 0, 1],
+            "note": "敏感防线：长痘/红肿期禁止使用强去油、强去屑及扩张血管的防脱成分",
+        },
+        {
+            "trigger": "q2 == 'A'",
+            "mask": [1, 1, 1, 1, 0],
+            "note": "真菌防线：真菌感染期禁止使用高保湿平衡型产品，避免养活菌群",
+        },
+        {
+            "trigger": "q1 == 'C'",
+            "mask": [0, 1, 1, 1, 1],
+            "note": "干皮脱脂防线：干性头皮禁止使用重度控油产品",
+        },
+    ],
 }
-BODYWASH_Q2_LABELS = {
-    "A": "极度敏感",
-    "B": "屏障健康",
-}
-BODYWASH_Q3_LABELS = {
-    "A": "出油旺盛",
-    "B": "缺油干涩",
-    "C": "角质堆积（鸡皮/厚茧）",
-    "D": "状态正常（无明显痛点）",
-}
-BODYWASH_Q4_LABELS = {
-    "A": "清爽干脆",
-    "B": "柔滑滋润",
-}
-BODYWASH_Q5_LABELS = {
-    "A": "极致纯净",
-    "B": "情绪留香",
-}
-BODYWASH_ROUTE_CATEGORY = {
+SHAMPOO_MATRIX_CONFIG = compile_matrix_config(SHAMPOO_MATRIX_MODEL)
+
+BODYWASH_ROUTE_TITLES = {
     "rescue": "恒温舒缓修护型",
     "purge": "水杨酸净彻控油型",
     "polish": "乳酸尿素更新型",
@@ -267,38 +242,190 @@ BODYWASH_ROUTE_CATEGORY = {
     "vibe": "轻盈香氛平衡型",
 }
 
-CONDITIONER_LABELS = {
-    "target": {
-        "tangle": "打结难梳",
-        "frizz": "毛躁炸开",
-        "dry-ends": "发尾干硬分叉",
-        "flat-roots": "贴头皮没蓬松",
+BODYWASH_MATRIX_MODEL = {
+    "category": "bodywash",
+    "categories": [
+        "rescue",
+        "purge",
+        "polish",
+        "glow",
+        "shield",
+        "vibe",
+    ],
+    "questions": [
+        {
+            "key": "q1",
+            "title": "气候与微环境",
+            "options": {
+                "A": "干燥寒冷",
+                "B": "干燥炎热",
+                "C": "潮湿闷热",
+                "D": "潮湿寒冷",
+            },
+        },
+        {
+            "key": "q2",
+            "title": "耐受度",
+            "options": {
+                "A": "极度敏感",
+                "B": "屏障健康",
+            },
+        },
+        {
+            "key": "q3",
+            "title": "油脂与角质状态",
+            "options": {
+                "A": "出油旺盛",
+                "B": "缺油干涩",
+                "C": "角质堆积（鸡皮/厚茧）",
+                "D": "状态正常（无明显痛点）",
+            },
+        },
+        {
+            "key": "q4",
+            "title": "冲洗肤感偏好",
+            "options": {
+                "A": "清爽干脆",
+                "B": "柔滑滋润",
+            },
+        },
+        {
+            "key": "q5",
+            "title": "特殊限制",
+            "options": {
+                "A": "极致纯净",
+                "B": "情绪留香",
+            },
+        },
+    ],
+    "scoring_matrix": {
+        "q1": {
+            "A": [5, -10, -5, 0, 10, 0],
+            "B": [0, 5, 0, 10, -5, 5],
+            "C": [0, 10, 5, 5, -10, 5],
+            "D": [5, 0, 0, 0, 5, 0],
+        },
+        "q2": {
+            "A": [15, 0, 0, 0, 0, 0],
+            "B": [0, 5, 5, 5, 0, 5],
+        },
+        "q3": {
+            "A": [0, 20, 10, 0, -20, 5],
+            "B": [10, -20, -10, 0, 20, 0],
+            "C": [0, 10, 20, 0, -10, 0],
+            "D": [0, -5, -5, 10, 0, 10],
+        },
+        "q4": {
+            "A": [0, 5, 5, 5, -5, 5],
+            "B": [0, 0, 0, 0, 5, 5],
+        },
+        "q5": {
+            "A": [5, 0, 0, 0, 0, 0],
+            "B": [-5, 0, 0, 5, 0, 5],
+        },
     },
-    "hair": {
-        "short": "短发或中短",
-        "mid-long": "中长发",
-        "long-damaged": "长发/经常烫染",
-        "fine-flat": "细软扁塌",
-    },
-    "use": {
-        "tips-quick": "只抹发尾，快冲",
-        "hold-1-3": "停留 1-3 分钟",
-        "more-for-smooth": "用量偏多，追求更顺",
-        "touch-scalp": "常不小心碰到头皮",
-    },
-    "avoid": {
-        "still-rough": "冲完还是涩",
-        "next-day-flat": "第二天就塌",
-        "strong-fragrance": "香味太重",
-        "residue-film": "有残留膜感",
-    },
+    "veto_masks": [
+        {
+            "trigger": "q2 == 'A'",
+            "mask": [1, 0, 0, 0, 1, 0],
+            "note": "病理防线：极度敏感肌强制清零所有刺激项，仅保留舒缓型与脂类补充沐浴油",
+        },
+        {
+            "trigger": "q5 == 'A'",
+            "mask": [1, 0, 0, 1, 1, 0],
+            "note": "孕妇/绝对纯净防线：强制清零刺激性酸类（水杨酸/果酸）及香氛型产品，守住母婴安全红线",
+        },
+        {
+            "trigger": "q3 == 'B'",
+            "mask": [1, 0, 1, 1, 1, 1],
+            "note": "成分排斥防线：大干皮严禁使用水杨酸控油型",
+        },
+        {
+            "trigger": "q3 == 'A'",
+            "mask": [1, 1, 1, 1, 0, 1],
+            "note": "成分排斥防线：大油田严禁使用重度脂类油膏",
+        },
+    ],
 }
-CONDITIONER_TARGET_TITLE = {
-    "tangle": "顺滑梳理",
-    "frizz": "控躁服帖",
-    "dry-ends": "尾段修护",
-    "flat-roots": "轻盈蓬松",
+BODYWASH_MATRIX_CONFIG = compile_matrix_config(BODYWASH_MATRIX_MODEL)
+
+CONDITIONER_ROUTE_TITLES = {
+    "c-color-lock": "锁色固色型",
+    "c-airy-light": "轻盈蓬松型",
+    "c-structure-rebuild": "结构修护型",
+    "c-smooth-frizz": "柔顺抗躁型",
+    "c-basic-hydrate": "基础保湿型",
 }
+
+CONDITIONER_MATRIX_MODEL = {
+    "category": "conditioner",
+    "categories": [
+        "c-color-lock",
+        "c-airy-light",
+        "c-structure-rebuild",
+        "c-smooth-frizz",
+        "c-basic-hydrate",
+    ],
+    "questions": [
+        {
+            "key": "c_q1",
+            "title": "发丝受损史",
+            "options": {
+                "A": "频繁漂/染/烫 (干枯空洞)",
+                "B": "偶尔染烫/经常使用热工具 (轻度受损)",
+                "C": "原生发/几乎不折腾 (健康)",
+            },
+        },
+        {
+            "key": "c_q2",
+            "title": "发丝物理形态",
+            "options": {
+                "A": "细软少/极易贴头皮",
+                "B": "粗硬/沙发/天生毛躁",
+                "C": "正常适中",
+            },
+        },
+        {
+            "key": "c_q3",
+            "title": "当前最渴望的视觉效果",
+            "options": {
+                "A": "刚染完，需要锁色/固色",
+                "B": "打结梳不开，需要极致顺滑",
+                "C": "发尾不干枯，保持自然蓬松就行",
+            },
+        },
+    ],
+    "scoring_matrix": {
+        "c_q1": {
+            "A": [15, -5, 20, 10, -10],
+            "B": [5, 5, 5, 5, 10],
+            "C": [-15, 10, -15, -5, 15],
+        },
+        "c_q2": {
+            "A": [0, 25, 5, -20, 5],
+            "B": [0, -15, 10, 25, -5],
+            "C": [0, 5, 0, 5, 5],
+        },
+        "c_q3": {
+            "A": [25, 0, 5, 0, 0],
+            "B": [0, -10, 5, 20, 5],
+            "C": [0, 10, 0, -5, 10],
+        },
+    },
+    "veto_masks": [
+        {
+            "trigger": "c_q2 == 'A'",
+            "mask": [1, 1, 1, 0, 1],
+            "note": "质地防线：细软塌发质禁止使用重度柔顺产品，防贴头皮",
+        },
+        {
+            "trigger": "c_q1 == 'C'",
+            "mask": [0, 1, 0, 1, 1],
+            "note": "过氧化/悖论防线：原生发禁止使用结构重塑型和锁色型产品，防发丝过载变硬",
+        },
+    ],
+}
+CONDITIONER_MATRIX_CONFIG = compile_matrix_config(CONDITIONER_MATRIX_MODEL)
 
 LOTION_LABELS = {
     "group": {
@@ -3836,11 +3963,7 @@ def _selection_target_type_key(category: str, route_key: str) -> str | None:
             return CATEGORY_LEVEL_TARGET_KEY
         return None
     if normalized_category == "shampoo":
-        decision = SHAMPOO_ROUTE_DECISIONS.get(normalized_route_key)
-        if not decision:
-            return None
-        mapped = str(decision.get("bundle_key") or "").strip()
-        return mapped or None
+        return normalized_route_key or None
     if normalized_category == "bodywash":
         return normalized_route_key or None
     return None
@@ -3986,34 +4109,47 @@ def _resolve_selection(category: str, answers: dict[str, str]) -> dict[str, Any]
 
 
 def _resolve_shampoo(answers: dict[str, str]) -> dict[str, Any]:
-    q1 = _require_value(answers, "q1", {"A", "B", "C"})
-    q2 = _require_value(answers, "q2", {"A", "B", "C"})
-    q3 = answers.get("q3")
-    if q2 not in {"A", "B"}:
-        q3 = _require_value(answers, "q3", {"A", "B", "C"})
-    elif q3 and q3 not in {"A", "B", "C"}:
-        raise HTTPException(status_code=400, detail="Invalid answer: q3.")
+    try:
+        decision = resolve_matrix_selection(SHAMPOO_MATRIX_CONFIG, answers)
+    except MatrixDecisionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    route_key = _resolve_shampoo_route_key(q1=q1, q2=q2, q3=q3)
-    decision = SHAMPOO_ROUTE_DECISIONS[route_key]
-    bundle_key = str(decision["bundle_key"])
-    route_title = SHAMPOO_BUNDLE_TITLES[bundle_key]
+    route_key = decision.best_category
+    route_title = SHAMPOO_ROUTE_TITLES.get(route_key, route_key)
+    normalized_answers = decision.normalized_answers
 
-    choices = [
-        {"key": "q1", "value": q1, "label": SHAMPOO_Q1_LABELS[q1]},
-        {"key": "q2", "value": q2, "label": SHAMPOO_Q2_LABELS[q2]},
-    ]
-    normalized_answers = {"q1": q1, "q2": q2}
-    if q3:
-        choices.append({"key": "q3", "value": q3, "label": SHAMPOO_Q3_LABELS[q3]})
-        normalized_answers["q3"] = q3
+    choices: list[dict[str, str]] = []
+    for question in SHAMPOO_MATRIX_CONFIG.questions:
+        value = normalized_answers.get(question.key)
+        if not value:
+            continue
+        label = question.options.get(value) or value
+        choices.append({"key": question.key, "value": value, "label": label})
 
-    rule_hits = [
-        {"rule": "base_filter", "effect": str(decision["base_filter"])},
-        {"rule": "pain_filter", "effect": str(decision["pain_filter"])},
-    ]
-    if decision.get("bonus_filter"):
-        rule_hits.append({"rule": "bonus_filter", "effect": str(decision["bonus_filter"])})
+    rule_hits: list[dict[str, str]] = []
+    for question in SHAMPOO_MATRIX_CONFIG.questions:
+        value = normalized_answers.get(question.key)
+        if not value:
+            continue
+        deltas = decision.question_contributions.get(question.key) or {}
+        effect = " / ".join(
+            f"{category}:{'+' if points >= 0 else ''}{points}"
+            for category, points in deltas.items()
+        )
+        rule_hits.append(
+            {
+                "rule": question.key,
+                "effect": f"{question.title}={question.options.get(value) or value}；得分贡献 {effect}",
+            }
+        )
+
+    for item in decision.triggered_vetoes:
+        blocked = "、".join(item.excluded_categories) if item.excluded_categories else "-"
+        note = item.note or item.trigger
+        rule_hits.append({"rule": "veto", "effect": f"{note}（禁用：{blocked}）"})
+
+    top2_text = " / ".join(f"{category}:{score}" for category, score in decision.top2) or "-"
+    rule_hits.append({"rule": "route", "effect": f"最终收敛：{route_title}（{route_key}）；Top2={top2_text}"})
 
     return {
         "answers": normalized_answers,
@@ -4021,87 +4157,52 @@ def _resolve_shampoo(answers: dict[str, str]) -> dict[str, Any]:
         "route_title": route_title,
         "choices": choices,
         "rule_hits": rule_hits,
-        "wiki_href": f"/m/wiki/shampoo?focus={bundle_key}",
+        "wiki_href": f"/m/wiki/shampoo?focus={route_key}",
     }
 
 
-def _resolve_shampoo_route_key(q1: str, q2: str, q3: str | None) -> str:
-    # Keep same ordering as frontend/lib/mobile/shampooDecision.ts.
-    if q2 == "A":
-        return "fast-anti-dandruff"
-    if q2 == "B":
-        return "fast-sensitive-soothe"
-
-    q3v = q3 or "C"
-    if q1 == "A" and q3v == "A":
-        return "oil-repair-balance"
-    if q1 == "A" and q3v == "B":
-        return "oil-lightweight-volume"
-    if q1 == "A" and q3v == "C":
-        return "oil-control-clean"
-
-    if q1 == "B" and q3v == "A":
-        return "balance-repair"
-    if q1 == "B" and q3v == "B":
-        return "balance-lightweight"
-    if q1 == "B" and q3v == "C":
-        return "balance-simple"
-
-    if q1 == "C" and q3v == "A":
-        return "moisture-repair"
-    if q1 == "C" and q3v == "B":
-        return "moisture-lightweight"
-    return "moisture-gentle"
-
-
 def _resolve_bodywash(answers: dict[str, str]) -> dict[str, Any]:
-    q1 = _require_value(answers, "q1", {"A", "B", "C", "D"})
-    q2 = _require_value(answers, "q2", {"A", "B"})
-    q3 = answers.get("q3")
-    q4 = answers.get("q4")
-    q5 = answers.get("q5")
+    try:
+        decision = resolve_matrix_selection(BODYWASH_MATRIX_CONFIG, answers)
+    except MatrixDecisionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    if q2 == "B":
-        q3 = _require_value(answers, "q3", {"A", "B", "C", "D"})
-        q4 = _require_value(answers, "q4", {"A", "B"})
-        q5 = _require_value(answers, "q5", {"A", "B"})
-    else:
-        if q3 and q3 not in {"A", "B", "C", "D"}:
-            raise HTTPException(status_code=400, detail="Invalid answer: q3.")
-        if q4 and q4 not in {"A", "B"}:
-            raise HTTPException(status_code=400, detail="Invalid answer: q4.")
-        if q5 and q5 not in {"A", "B"}:
-            raise HTTPException(status_code=400, detail="Invalid answer: q5.")
+    route_key = decision.best_category
+    route_title = BODYWASH_ROUTE_TITLES.get(route_key, route_key)
+    normalized_answers = decision.normalized_answers
 
-    route_key = _resolve_bodywash_route_key(q1=q1, q2=q2, q3=q3, q4=q4, q5=q5)
-    route_title = BODYWASH_ROUTE_CATEGORY[route_key]
+    choices: list[dict[str, str]] = []
+    for question in BODYWASH_MATRIX_CONFIG.questions:
+        value = normalized_answers.get(question.key)
+        if not value:
+            continue
+        label = question.options.get(value) or value
+        choices.append({"key": question.key, "value": value, "label": label})
 
-    choices = [
-        {"key": "q1", "value": q1, "label": BODYWASH_Q1_LABELS[q1]},
-        {"key": "q2", "value": q2, "label": BODYWASH_Q2_LABELS[q2]},
-    ]
-    normalized_answers = {"q1": q1, "q2": q2}
-    if q3:
-        choices.append({"key": "q3", "value": q3, "label": BODYWASH_Q3_LABELS[q3]})
-        normalized_answers["q3"] = q3
-    if q4:
-        choices.append({"key": "q4", "value": q4, "label": BODYWASH_Q4_LABELS[q4]})
-        normalized_answers["q4"] = q4
-    if q5:
-        choices.append({"key": "q5", "value": q5, "label": BODYWASH_Q5_LABELS[q5]})
-        normalized_answers["q5"] = q5
+    rule_hits: list[dict[str, str]] = []
+    for question in BODYWASH_MATRIX_CONFIG.questions:
+        value = normalized_answers.get(question.key)
+        if not value:
+            continue
+        deltas = decision.question_contributions.get(question.key) or {}
+        effect = " / ".join(
+            f"{category}:{'+' if points >= 0 else ''}{points}"
+            for category, points in deltas.items()
+        )
+        rule_hits.append(
+            {
+                "rule": question.key,
+                "effect": f"{question.title}={question.options.get(value) or value}；得分贡献 {effect}",
+            }
+        )
 
-    rule_hits = [
-        {"rule": "q1", "effect": f"基础背景：{BODYWASH_Q1_LABELS[q1]}。"},
-        {"rule": "q2", "effect": f"安全优先：{BODYWASH_Q2_LABELS[q2]}。"},
-    ]
-    if q2 == "A":
-        rule_hits.append({"rule": "hard_filter", "effect": "触发敏感快路径，关闭酸类/强洗剂路径。"})
-    else:
-        rule_hits.append({"rule": "q3", "effect": f"功能主线：{BODYWASH_Q3_LABELS[q3 or 'D']}。"})
-        rule_hits.append({"rule": "q4", "effect": f"肤感修正：{BODYWASH_Q4_LABELS[q4 or 'A']}。"})
-        rule_hits.append({"rule": "q5", "effect": f"特殊限制：{BODYWASH_Q5_LABELS[q5 or 'B']}。"})
-    rule_hits.append({"rule": "route", "effect": f"最终收敛：{route_title}。"})
+    for item in decision.triggered_vetoes:
+        blocked = "、".join(item.excluded_categories) if item.excluded_categories else "-"
+        note = item.note or item.trigger
+        rule_hits.append({"rule": "veto", "effect": f"{note}（禁用：{blocked}）"})
+
+    top2_text = " / ".join(f"{category}:{score}" for category, score in decision.top2) or "-"
+    rule_hits.append({"rule": "route", "effect": f"最终收敛：{route_title}（{route_key}）；Top2={top2_text}"})
 
     return {
         "answers": normalized_answers,
@@ -4113,49 +4214,51 @@ def _resolve_bodywash(answers: dict[str, str]) -> dict[str, Any]:
     }
 
 
-def _resolve_bodywash_route_key(q1: str, q2: str, q3: str | None, q4: str | None, q5: str | None) -> str:
-    # Keep same ordering as frontend/lib/mobile/bodywashDecision.ts.
-    if q2 == "A" or q5 == "A":
-        return "rescue"
-    if q3 == "C":
-        return "polish"
-    if q3 == "A":
-        return "purge"
-
-    if q3 == "B":
-        return "shield"
-    if q1 == "A":
-        return "shield"
-    if q1 == "D" and q4 == "B":
-        return "shield"
-
-    if (q1 == "B" or q1 == "C") and q3 == "D" and q2 == "B":
-        return "glow"
-    return "vibe"
-
-
 def _resolve_conditioner(answers: dict[str, str]) -> dict[str, Any]:
-    target = _require_value(answers, "target", {"tangle", "frizz", "dry-ends", "flat-roots"})
-    hair = _require_value(answers, "hair", {"short", "mid-long", "long-damaged", "fine-flat"})
-    use = _require_value(answers, "use", {"tips-quick", "hold-1-3", "more-for-smooth", "touch-scalp"})
-    avoid = _require_value(answers, "avoid", {"still-rough", "next-day-flat", "strong-fragrance", "residue-film"})
+    try:
+        decision = resolve_matrix_selection(CONDITIONER_MATRIX_CONFIG, answers)
+    except MatrixDecisionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    route_key = f"target:{target}|hair:{hair}|use:{use}|avoid:{avoid}"
-    route_title = CONDITIONER_TARGET_TITLE[target]
-    choices = [
-        {"key": "target", "value": target, "label": CONDITIONER_LABELS["target"][target]},
-        {"key": "hair", "value": hair, "label": CONDITIONER_LABELS["hair"][hair]},
-        {"key": "use", "value": use, "label": CONDITIONER_LABELS["use"][use]},
-        {"key": "avoid", "value": avoid, "label": CONDITIONER_LABELS["avoid"][avoid]},
-    ]
-    rule_hits = [
-        {"rule": "target", "effect": f"核心诉求：{CONDITIONER_LABELS['target'][target]}。"},
-        {"rule": "hair", "effect": f"发质约束：{CONDITIONER_LABELS['hair'][hair]}。"},
-        {"rule": "use", "effect": f"用法约束：{CONDITIONER_LABELS['use'][use]}。"},
-        {"rule": "avoid", "effect": f"排除条件：{CONDITIONER_LABELS['avoid'][avoid]}。"},
-    ]
+    route_key = decision.best_category
+    route_title = CONDITIONER_ROUTE_TITLES.get(route_key, route_key)
+    normalized_answers = decision.normalized_answers
+
+    choices: list[dict[str, str]] = []
+    for question in CONDITIONER_MATRIX_CONFIG.questions:
+        value = normalized_answers.get(question.key)
+        if not value:
+            continue
+        label = question.options.get(value) or value
+        choices.append({"key": question.key, "value": value, "label": label})
+
+    rule_hits: list[dict[str, str]] = []
+    for question in CONDITIONER_MATRIX_CONFIG.questions:
+        value = normalized_answers.get(question.key)
+        if not value:
+            continue
+        deltas = decision.question_contributions.get(question.key) or {}
+        effect = " / ".join(
+            f"{category}:{'+' if points >= 0 else ''}{points}"
+            for category, points in deltas.items()
+        )
+        rule_hits.append(
+            {
+                "rule": question.key,
+                "effect": f"{question.title}={question.options.get(value) or value}；得分贡献 {effect}",
+            }
+        )
+
+    for item in decision.triggered_vetoes:
+        blocked = "、".join(item.excluded_categories) if item.excluded_categories else "-"
+        note = item.note or item.trigger
+        rule_hits.append({"rule": "veto", "effect": f"{note}（禁用：{blocked}）"})
+
+    top2_text = " / ".join(f"{category}:{score}" for category, score in decision.top2) or "-"
+    rule_hits.append({"rule": "route", "effect": f"最终收敛：{route_title}（{route_key}）；Top2={top2_text}"})
+
     return {
-        "answers": {"target": target, "hair": hair, "use": use, "avoid": avoid},
+        "answers": normalized_answers,
         "route_key": route_key,
         "route_title": route_title,
         "choices": choices,

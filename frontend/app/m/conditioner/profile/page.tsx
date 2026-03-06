@@ -1,5 +1,8 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import {
+  conditionerChoiceLabel,
+  isCompleteConditionerSignals,
   normalizeConditionerSignals,
   toConditionerSearchParams,
   type ConditionerSignals,
@@ -7,87 +10,50 @@ import {
 
 type Search = Record<string, string | string[] | undefined>;
 type StepKey = keyof ConditionerSignals;
-type Option = { value: string; label: string; sub: string };
+type Option = { value: "A" | "B" | "C"; label: string; sub: string };
 
 const STEPS: Array<{ key: StepKey; title: string; note: string; options: Option[] }> = [
   {
-    key: "target",
-    title: "你最想先解决哪一个问题",
-    note: "只选当前最困扰你的",
+    key: "c_q1",
+    title: "Q1 发丝受损史",
+    note: "先确认基础受损程度，作为修护权重底盘。",
     options: [
-      { value: "tangle", label: "打结难梳", sub: "洗后梳理费劲" },
-      { value: "frizz", label: "毛躁炸开", sub: "发丝不服帖" },
-      { value: "dry-ends", label: "发尾干硬分叉", sub: "尾段发涩没弹性" },
-      { value: "flat-roots", label: "贴头皮没蓬松", sub: "一顺就容易塌" },
+      { value: "A", label: "A. 频繁漂/染/烫 (干枯空洞)", sub: "高受损，优先修护与抗断裂能力" },
+      { value: "B", label: "B. 偶尔染烫/经常使用热工具 (轻度受损)", sub: "中度受损，平衡修护与轻盈感" },
+      { value: "C", label: "C. 原生发/几乎不折腾 (健康)", sub: "低受损，避免配方过重导致发丝过载" },
     ],
   },
   {
-    key: "hair",
-    title: "你的头发长度/状态更像",
-    note: "按最常见状态选",
+    key: "c_q2",
+    title: "Q2 发丝物理形态",
+    note: "这一步会触发质地防线，决定能否用重柔顺路线。",
     options: [
-      { value: "short", label: "短发或中短", sub: "希望轻量快冲" },
-      { value: "mid-long", label: "中长发", sub: "希望顺滑稳定" },
-      { value: "long-damaged", label: "长发/经常烫染", sub: "需要控躁与修护" },
-      { value: "fine-flat", label: "细软扁塌", sub: "怕厚重压塌" },
+      { value: "A", label: "A. 细软少/极易贴头皮", sub: "优先轻盈蓬松，禁重度柔顺" },
+      { value: "B", label: "B. 粗硬/沙发/天生毛躁", sub: "优先抗躁顺滑与服帖度" },
+      { value: "C", label: "C. 正常适中", sub: "不偏科，按目标效果做收敛" },
     ],
   },
   {
-    key: "use",
-    title: "你通常怎么用护发素",
-    note: "按你真实习惯选",
+    key: "c_q3",
+    title: "Q3 当前最渴望的视觉效果",
+    note: "最后一步，锁定主诉求并给出唯一推荐路径。",
     options: [
-      { value: "tips-quick", label: "只抹发尾，快冲", sub: "停留时间很短" },
-      { value: "hold-1-3", label: "停留 1-3 分钟", sub: "可以等一会再冲" },
-      { value: "more-for-smooth", label: "用量偏多，追求更顺", sub: "希望手感更明显" },
-      { value: "touch-scalp", label: "常不小心碰到头皮", sub: "担心残留或塌" },
-    ],
-  },
-  {
-    key: "avoid",
-    title: "最后一个排除条件",
-    note: "告诉我们你不能接受什么",
-    options: [
-      { value: "still-rough", label: "冲完还是涩", sub: "希望真实顺滑" },
-      { value: "next-day-flat", label: "第二天就塌", sub: "希望轻盈不压塌" },
-      { value: "strong-fragrance", label: "香味太重", sub: "希望低气味负担" },
-      { value: "residue-film", label: "有残留膜感", sub: "希望冲净感更强" },
+      { value: "A", label: "A. 刚染完，需要锁色/固色", sub: "优先锁色膜与色泽维持能力" },
+      { value: "B", label: "B. 打结梳不开，需要极致顺滑", sub: "优先抗毛躁与梳理滑度" },
+      { value: "C", label: "C. 发尾不干枯，保持自然蓬松就行", sub: "优先基础保湿和轻盈平衡" },
     ],
   },
 ];
 
-const CHOICE_LABELS: Record<StepKey, Record<string, string>> = {
-  target: {
-    tangle: "打结难梳",
-    frizz: "毛躁炸开",
-    "dry-ends": "发尾干硬分叉",
-    "flat-roots": "贴头皮没蓬松",
-  },
-  hair: {
-    short: "短发或中短",
-    "mid-long": "中长发",
-    "long-damaged": "长发/经常烫染",
-    "fine-flat": "细软扁塌",
-  },
-  use: {
-    "tips-quick": "只抹发尾，快冲",
-    "hold-1-3": "停留 1-3 分钟",
-    "more-for-smooth": "用量偏多，追求更顺",
-    "touch-scalp": "常不小心碰到头皮",
-  },
-  avoid: {
-    "still-rough": "冲完还是涩",
-    "next-day-flat": "第二天就塌",
-    "strong-fragrance": "香味太重",
-    "residue-film": "有残留膜感",
-  },
-};
+function queryValue(v: string | string[] | undefined): string | undefined {
+  return Array.isArray(v) ? v[0] : v;
+}
 
-function makeHref(signals: ConditionerSignals, key: StepKey, value: string, nextStep: number): string {
+function makeHref(signals: ConditionerSignals, key: StepKey, value: "A" | "B" | "C", nextStep: number): string {
   const merged: ConditionerSignals = { ...signals, [key]: value };
   const qp = toConditionerSearchParams(merged);
+  if (isCompleteConditionerSignals(merged)) return `/m/conditioner/resolve?${qp.toString()}`;
   qp.set("step", String(nextStep));
-  if (nextStep > STEPS.length) return `/m/conditioner/resolve?${qp.toString()}`;
   return `/m/conditioner/profile?${qp.toString()}`;
 }
 
@@ -98,8 +64,24 @@ export default async function ConditionerProfilePage({
 }) {
   const raw = (await Promise.resolve(searchParams)) || {};
   const signals = normalizeConditionerSignals(raw);
-  const stepNumRaw = Array.isArray(raw.step) ? raw.step[0] : raw.step;
+  const stepNumRaw = queryValue(raw.step);
   const parsed = Number(stepNumRaw || "1");
+
+  if (!signals.c_q1 && parsed > 1) {
+    redirect("/m/conditioner/profile?step=1");
+  }
+  if (signals.c_q1 && !signals.c_q2 && parsed > 2) {
+    redirect(`/m/conditioner/profile?${toConditionerSearchParams({ c_q1: signals.c_q1 }).toString()}&step=2`);
+  }
+  if (signals.c_q1 && signals.c_q2 && !signals.c_q3 && parsed > 3) {
+    redirect(
+      `/m/conditioner/profile?${toConditionerSearchParams({ c_q1: signals.c_q1, c_q2: signals.c_q2 }).toString()}&step=3`,
+    );
+  }
+  if (isCompleteConditionerSignals(signals)) {
+    redirect(`/m/conditioner/resolve?${toConditionerSearchParams(signals).toString()}`);
+  }
+
   const stepNum = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), STEPS.length) : 1;
   const current = STEPS[stepNum - 1];
 
@@ -125,7 +107,7 @@ export default async function ConditionerProfilePage({
       <div className="mt-7 rounded-2xl border border-black/8 bg-black/[0.02] px-4 py-4">
         <div className="text-[13px] font-medium text-black/55">已收集信号</div>
         <div className="mt-2 flex flex-wrap gap-2">
-          {(["target", "hair", "use", "avoid"] as StepKey[]).map((k) => {
+          {(["c_q1", "c_q2", "c_q3"] as StepKey[]).map((k) => {
             const value = signals[k];
             if (!value) return null;
             return (
@@ -133,7 +115,7 @@ export default async function ConditionerProfilePage({
                 key={`${k}-${value}`}
                 className="inline-flex h-7 items-center rounded-full bg-black/[0.06] px-3 text-[12px] text-black/70"
               >
-                {CHOICE_LABELS[k][value]}
+                {k.toUpperCase()} · {value} · {conditionerChoiceLabel(k, value)}
               </span>
             );
           })}

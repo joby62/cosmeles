@@ -1,13 +1,11 @@
-export type TargetSignal = "tangle" | "frizz" | "dry-ends" | "flat-roots";
-export type HairSignal = "short" | "mid-long" | "long-damaged" | "fine-flat";
-export type UseSignal = "tips-quick" | "hold-1-3" | "more-for-smooth" | "touch-scalp";
-export type AvoidSignal = "still-rough" | "next-day-flat" | "strong-fragrance" | "residue-film";
+export type CQ1Signal = "A" | "B" | "C";
+export type CQ2Signal = "A" | "B" | "C";
+export type CQ3Signal = "A" | "B" | "C";
 
 export type ConditionerSignals = {
-  target?: TargetSignal;
-  hair?: HairSignal;
-  use?: UseSignal;
-  avoid?: AvoidSignal;
+  c_q1?: CQ1Signal;
+  c_q2?: CQ2Signal;
+  c_q3?: CQ3Signal;
 };
 
 export function normalizeConditionerSignals(
@@ -18,46 +16,47 @@ export function normalizeConditionerSignals(
     return Array.isArray(v) ? v[0] : v;
   };
 
-  const target = value("target");
-  const hair = value("hair");
-  const use = value("use");
-  const avoid = value("avoid");
+  const cQ1 = value("c_q1");
+  const cQ2 = value("c_q2");
+  const cQ3 = value("c_q3");
 
   return {
-    target: isTargetSignal(target) ? target : undefined,
-    hair: isHairSignal(hair) ? hair : undefined,
-    use: isUseSignal(use) ? use : undefined,
-    avoid: isAvoidSignal(avoid) ? avoid : undefined,
+    c_q1: isABC(cQ1) ? cQ1 : undefined,
+    c_q2: isABC(cQ2) ? cQ2 : undefined,
+    c_q3: isABC(cQ3) ? cQ3 : undefined,
   };
 }
 
 export function isCompleteConditionerSignals(
   s: ConditionerSignals,
 ): s is Required<ConditionerSignals> {
-  return Boolean(s.target && s.hair && s.use && s.avoid);
+  return Boolean(s.c_q1 && s.c_q2 && s.c_q3);
 }
 
 export function toConditionerSearchParams(s: ConditionerSignals): URLSearchParams {
   const qp = new URLSearchParams();
-  if (s.target) qp.set("target", s.target);
-  if (s.hair) qp.set("hair", s.hair);
-  if (s.use) qp.set("use", s.use);
-  if (s.avoid) qp.set("avoid", s.avoid);
+  if (s.c_q1) qp.set("c_q1", s.c_q1);
+  if (s.c_q2) qp.set("c_q2", s.c_q2);
+  if (s.c_q3) qp.set("c_q3", s.c_q3);
   return qp;
 }
 
-function isTargetSignal(v?: string): v is TargetSignal {
-  return v === "tangle" || v === "frizz" || v === "dry-ends" || v === "flat-roots";
+export function conditionerChoiceLabel(key: "c_q1" | "c_q2" | "c_q3", value: "A" | "B" | "C"): string {
+  if (key === "c_q1") {
+    if (value === "A") return "频繁漂/染/烫 (干枯空洞)";
+    if (value === "B") return "偶尔染烫/经常使用热工具 (轻度受损)";
+    return "原生发/几乎不折腾 (健康)";
+  }
+  if (key === "c_q2") {
+    if (value === "A") return "细软少/极易贴头皮";
+    if (value === "B") return "粗硬/沙发/天生毛躁";
+    return "正常适中";
+  }
+  if (value === "A") return "刚染完，需要锁色/固色";
+  if (value === "B") return "打结梳不开，需要极致顺滑";
+  return "发尾不干枯，保持自然蓬松就行";
 }
 
-function isHairSignal(v?: string): v is HairSignal {
-  return v === "short" || v === "mid-long" || v === "long-damaged" || v === "fine-flat";
-}
-
-function isUseSignal(v?: string): v is UseSignal {
-  return v === "tips-quick" || v === "hold-1-3" || v === "more-for-smooth" || v === "touch-scalp";
-}
-
-function isAvoidSignal(v?: string): v is AvoidSignal {
-  return v === "still-rough" || v === "next-day-flat" || v === "strong-fragrance" || v === "residue-film";
+function isABC(v?: string): v is "A" | "B" | "C" {
+  return v === "A" || v === "B" || v === "C";
 }

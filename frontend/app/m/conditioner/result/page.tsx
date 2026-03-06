@@ -13,12 +13,11 @@ function getValue(raw: Search, key: string): string | null {
 }
 
 function parseAnswers(raw: Search): Record<string, string> | null {
-  const target = getValue(raw, "target");
-  const hair = getValue(raw, "hair");
-  const use = getValue(raw, "use");
-  const avoid = getValue(raw, "avoid");
-  if (!target || !hair || !use || !avoid) return null;
-  return { target, hair, use, avoid };
+  const cQ1 = getValue(raw, "c_q1");
+  const cQ2 = getValue(raw, "c_q2");
+  const cQ3 = getValue(raw, "c_q3");
+  if (!cQ1 || !cQ2 || !cQ3) return null;
+  return { c_q1: cQ1, c_q2: cQ2, c_q3: cQ3 };
 }
 
 export default async function ConditionerResultPage({

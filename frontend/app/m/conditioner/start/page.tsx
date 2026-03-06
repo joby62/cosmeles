@@ -7,7 +7,7 @@ export default function ConditionerStart() {
         护发素 · 浴室的最终答案
       </div>
       <p className="mt-3 text-[15px] leading-[1.55] text-black/60">
-        不用研究参数。用 4 个自然问题收齐信号，我们直接拍板，只给你一个答案。
+        不用研究参数。用 3 个自然问题收齐信号，按矩阵+掩码直接收敛，只给你一个答案。
       </p>
       <p className="mt-2 text-[14px] leading-[1.5] text-black/45">全程约 30 秒，一步只做一件事。</p>
 

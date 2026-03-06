@@ -65,6 +65,7 @@ function top2(scores: ScoreMap): Array<{ category: string; score: number }> {
 
 export function calculateBestMatch(userAnswers: AnswerMap, config: MatrixConfig): MatrixResult {
   const scores: ScoreMap = Object.fromEntries(config.categories.map((category) => [category, 0]));
+  const excluded = new Set<string>();
 
   for (const [questionKey, answerVal] of Object.entries(userAnswers)) {
     const answerWeights = config.scoringMatrix[questionKey]?.[answerVal];
@@ -80,10 +81,14 @@ export function calculateBestMatch(userAnswers: AnswerMap, config: MatrixConfig)
     const triggered = Object.entries(veto.trigger).every(([tKey, tVal]) => userAnswers[tKey] === tVal);
     if (!triggered) continue;
     for (const [category, maskValue] of Object.entries(veto.mask)) {
-      if (category in scores) {
-        scores[category] *= maskValue;
+      if (category in scores && maskValue <= 0) {
+        excluded.add(category);
       }
     }
+  }
+
+  for (const category of excluded) {
+    scores[category] = Number.NEGATIVE_INFINITY;
   }
 
   let bestMatch = config.categories[0];
@@ -104,7 +109,7 @@ export const SHAMPOO_CONFIG: MatrixConfig = {
   categories: ["deep-oil-control", "anti-dandruff-itch", "gentle-soothing", "anti-hair-loss", "moisture-balance"],
   scoringMatrix: {
     q1: {
-      A: { "deep-oil-control": 15, "anti-dandruff-itch": 5, "gentle-soothing": -10, "anti-hair-loss": 2, "moisture-balance": -15 },
+      A: { "deep-oil-control": 15, "anti-dandruff-itch": 5, "gentle-soothing": -10, "anti-hair-loss": -15, "moisture-balance": -15 },
       B: { "deep-oil-control": -5, "anti-dandruff-itch": 0, "gentle-soothing": 5, "anti-hair-loss": 0, "moisture-balance": 5 },
       C: { "deep-oil-control": -15, "anti-dandruff-itch": -5, "gentle-soothing": 10, "anti-hair-loss": 0, "moisture-balance": 15 },
     },
@@ -112,7 +117,7 @@ export const SHAMPOO_CONFIG: MatrixConfig = {
       A: { "deep-oil-control": 0, "anti-dandruff-itch": 30, "gentle-soothing": 0, "anti-hair-loss": 0, "moisture-balance": -10 },
       B: { "deep-oil-control": -20, "anti-dandruff-itch": -15, "gentle-soothing": 30, "anti-hair-loss": -10, "moisture-balance": 5 },
       C: { "deep-oil-control": 5, "anti-dandruff-itch": 0, "gentle-soothing": 5, "anti-hair-loss": 30, "moisture-balance": 0 },
-      D: { "deep-oil-control": 2, "anti-dandruff-itch": -15, "gentle-soothing": -5, "anti-hair-loss": -10, "moisture-balance": 5 },
+      D: { "deep-oil-control": 2, "anti-dandruff-itch": -5, "gentle-soothing": -5, "anti-hair-loss": -5, "moisture-balance": 5 },
     },
     q3: {
       A: { "deep-oil-control": -5, "anti-dandruff-itch": 0, "gentle-soothing": 5, "anti-hair-loss": 0, "moisture-balance": 8 },
@@ -121,7 +126,7 @@ export const SHAMPOO_CONFIG: MatrixConfig = {
     },
   },
   vetoMasks: [
-    { trigger: { q2: "B" }, mask: { "deep-oil-control": 0, "anti-dandruff-itch": 0 } },
+    { trigger: { q2: "B" }, mask: { "deep-oil-control": 0, "anti-dandruff-itch": 0, "anti-hair-loss": 0 } },
     { trigger: { q2: "A" }, mask: { "moisture-balance": 0 } },
     { trigger: { q1: "C" }, mask: { "deep-oil-control": 0 } },
   ],
@@ -131,9 +136,9 @@ export const CONDITIONER_CONFIG: MatrixConfig = {
   categories: ["c-color-lock", "c-airy-light", "c-structure-rebuild", "c-smooth-frizz", "c-basic-hydrate"],
   scoringMatrix: {
     c_q1: {
-      A: { "c-color-lock": 0, "c-airy-light": -5, "c-structure-rebuild": 20, "c-smooth-frizz": 10, "c-basic-hydrate": -10 },
-      B: { "c-color-lock": 0, "c-airy-light": 5, "c-structure-rebuild": 5, "c-smooth-frizz": 5, "c-basic-hydrate": 10 },
-      C: { "c-color-lock": 0, "c-airy-light": 10, "c-structure-rebuild": -15, "c-smooth-frizz": -5, "c-basic-hydrate": 15 },
+      A: { "c-color-lock": 15, "c-airy-light": -5, "c-structure-rebuild": 20, "c-smooth-frizz": 10, "c-basic-hydrate": -10 },
+      B: { "c-color-lock": 5, "c-airy-light": 5, "c-structure-rebuild": 5, "c-smooth-frizz": 5, "c-basic-hydrate": 10 },
+      C: { "c-color-lock": -15, "c-airy-light": 10, "c-structure-rebuild": -15, "c-smooth-frizz": -5, "c-basic-hydrate": 15 },
     },
     c_q2: {
       A: { "c-color-lock": 0, "c-airy-light": 25, "c-structure-rebuild": 5, "c-smooth-frizz": -20, "c-basic-hydrate": 5 },
@@ -141,14 +146,14 @@ export const CONDITIONER_CONFIG: MatrixConfig = {
       C: { "c-color-lock": 0, "c-airy-light": 5, "c-structure-rebuild": 0, "c-smooth-frizz": 5, "c-basic-hydrate": 5 },
     },
     c_q3: {
-      A: { "c-color-lock": 40, "c-airy-light": 0, "c-structure-rebuild": 5, "c-smooth-frizz": 0, "c-basic-hydrate": 0 },
+      A: { "c-color-lock": 25, "c-airy-light": 0, "c-structure-rebuild": 5, "c-smooth-frizz": 0, "c-basic-hydrate": 0 },
       B: { "c-color-lock": 0, "c-airy-light": -10, "c-structure-rebuild": 5, "c-smooth-frizz": 20, "c-basic-hydrate": 5 },
       C: { "c-color-lock": 0, "c-airy-light": 10, "c-structure-rebuild": 0, "c-smooth-frizz": -5, "c-basic-hydrate": 10 },
     },
   },
   vetoMasks: [
     { trigger: { c_q2: "A" }, mask: { "c-smooth-frizz": 0 } },
-    { trigger: { c_q1: "C" }, mask: { "c-structure-rebuild": 0 } },
+    { trigger: { c_q1: "C" }, mask: { "c-color-lock": 0, "c-structure-rebuild": 0 } },
   ],
 };
 
@@ -168,8 +173,8 @@ export const SHAMPOO_QUESTIONS: MatrixQuestion[] = [
     options: [
       { value: "A", label: "A 头屑发痒" },
       { value: "B", label: "B 发红刺痛" },
-      { value: "C", label: "C 无特殊感觉" },
-      { value: "D", label: "D 偶发轻微不适" },
+      { value: "C", label: "C 掉发明显/发根脆弱" },
+      { value: "D", label: "D 无特殊感觉" },
     ],
   },
   {
@@ -186,29 +191,29 @@ export const SHAMPOO_QUESTIONS: MatrixQuestion[] = [
 export const CONDITIONER_QUESTIONS: MatrixQuestion[] = [
   {
     key: "c_q1",
-    label: "C_Q1 发丝受损程度",
+    label: "C_Q1 发丝受损史",
     options: [
-      { value: "A", label: "A 受损明显" },
-      { value: "B", label: "B 轻微受损" },
-      { value: "C", label: "C 相对健康" },
+      { value: "A", label: "A 频繁漂/染/烫 (干枯空洞)" },
+      { value: "B", label: "B 偶尔染烫/经常使用热工具 (轻度受损)" },
+      { value: "C", label: "C 原生发/几乎不折腾 (健康)" },
     ],
   },
   {
     key: "c_q2",
-    label: "C_Q2 使用偏好",
+    label: "C_Q2 发丝物理形态",
     options: [
-      { value: "A", label: "A 轻盈空气感" },
-      { value: "B", label: "B 强顺滑服帖" },
-      { value: "C", label: "C 平衡通用" },
+      { value: "A", label: "A 细软少/极易贴头皮" },
+      { value: "B", label: "B 粗硬/沙发/天生毛躁" },
+      { value: "C", label: "C 正常适中" },
     ],
   },
   {
     key: "c_q3",
-    label: "C_Q3 特殊诉求",
+    label: "C_Q3 当前最渴望的视觉效果",
     options: [
-      { value: "A", label: "A 染后锁色" },
-      { value: "B", label: "B 抗毛躁抛光" },
-      { value: "C", label: "C 基础补水" },
+      { value: "A", label: "A 刚染完，需要锁色/固色" },
+      { value: "B", label: "B 打结梳不开，需要极致顺滑" },
+      { value: "C", label: "C 发尾不干枯，保持自然蓬松就行" },
     ],
   },
 ];
