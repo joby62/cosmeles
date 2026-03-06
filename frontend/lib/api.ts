@@ -1723,6 +1723,7 @@ export async function ingestProductStage2Stream(
 
 export async function createUploadIngestJob(input: {
   image: File;
+  supplementImage?: File;
   category?: string;
   brand?: string;
   name?: string;
@@ -1733,6 +1734,7 @@ export async function createUploadIngestJob(input: {
   const url = base ? new URL("/api/upload/jobs", base).toString() : "/api/upload/jobs";
   const fd = new FormData();
   fd.append("image", input.image);
+  if (input.supplementImage) fd.append("supplement_image", input.supplementImage);
   if (input.category) fd.append("category", input.category);
   if (input.brand) fd.append("brand", input.brand);
   if (input.name) fd.append("name", input.name);

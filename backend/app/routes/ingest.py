@@ -20,7 +20,6 @@ from app.services.storage import (
     cleanup_doubao_artifacts,
     convert_temp_upload_to_storage_image,
     exists_rel_path,
-    image_variant_rel_paths,
     load_json,
     move_image_to_category,
     new_id,
@@ -582,6 +581,8 @@ def ingest_stage2_stream(
 async def create_upload_ingest_job(
     image: UploadFile | None = File(None),
     file: UploadFile | None = File(None),
+    supplement_image: UploadFile | None = File(None),
+    supplement_file: UploadFile | None = File(None),
     category: str | None = Form(None),
     brand: str | None = Form(None),
     name: str | None = Form(None),
@@ -591,11 +592,16 @@ async def create_upload_ingest_job(
 ):
     if image and file:
         raise HTTPException(status_code=400, detail="Please provide only one file field: image or file.")
+    if supplement_image and supplement_file:
+        raise HTTPException(status_code=400, detail="Please provide only one supplement file field: supplement_image or supplement_file.")
     upload = image or file
+    supplement_upload = supplement_image or supplement_file
     if upload is None:
         raise HTTPException(status_code=400, detail="upload jobs require image/file.")
     if not upload.content_type or not upload.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Only image upload is supported.")
+    if supplement_upload and (not supplement_upload.content_type or not supplement_upload.content_type.startswith("image/")):
+        raise HTTPException(status_code=400, detail="Only image upload is supported for supplement image.")
 
     normalized_category = _normalize_optional_text(category, lower=True)
     if normalized_category and normalized_category not in VALID_CATEGORIES:
@@ -619,18 +625,39 @@ async def create_upload_ingest_job(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Temp upload persistence failed: {e}") from e
 
+    supplement_temp_rel: str | None = None
+    if supplement_upload is not None:
+        supplement_content = await supplement_upload.read()
+        if len(supplement_content) > settings.max_upload_bytes:
+            remove_rel_path(temp_rel)
+            raise HTTPException(status_code=413, detail=f"Supplement image too large. Max {settings.max_upload_bytes} bytes.")
+        try:
+            supplement_temp_rel = save_temp_upload_image(
+                job_id,
+                supplement_upload.filename or "supplement.img",
+                supplement_content,
+                content_type=supplement_upload.content_type,
+                suffix="supp1",
+            )
+        except Exception as e:
+            remove_rel_path(temp_rel)
+            raise HTTPException(status_code=400, detail=f"Supplement temp persistence failed: {e}") from e
+
     now = now_iso()
     rec = UploadIngestJob(
         job_id=job_id,
         status="queued",
         stage="queued",
         stage_label=_upload_ingest_job_stage_label("queued"),
-        message=f"任务已入队，等待执行（并发上限 {UPLOAD_INGEST_MAX_CONCURRENCY}）。",
+        message=(
+            f"任务已入队，等待执行（并发上限 {UPLOAD_INGEST_MAX_CONCURRENCY}）。"
+            + ("（双图同品）" if supplement_temp_rel else "")
+        ),
         percent=3,
         file_name=str(upload.filename or "").strip() or "upload.img",
         source_content_type=str(upload.content_type or "").strip() or None,
         temp_upload_path=temp_rel,
-        supplement_temp_upload_path=None,
+        supplement_temp_upload_path=supplement_temp_rel,
         image_path=None,
         image_paths_json="[]",
         category_override=normalized_category,
@@ -1125,12 +1152,13 @@ def _run_upload_ingest_job(*, job_id: str, db: Session, resume: bool) -> None:
 def _start_upload_ingest_job_flow(*, db: Session, rec: UploadIngestJob) -> None:
     job_id = str(rec.job_id)
     _assert_upload_job_not_cancelled(db=db, rec=rec)
+    has_initial_supplement = bool(str(rec.supplement_temp_upload_path or "").strip())
 
     _update_upload_job_stage(
         db=db,
         rec=rec,
         stage="converting",
-        message="图片转换中（生成 webp/jpg）。",
+        message="图片转换中（生成 webp/jpg）。" if not has_initial_supplement else "双图转换中（主图+补图，生成 webp/jpg）。",
         percent=max(15, int(rec.percent or 0)),
     )
     temp_upload = str(rec.temp_upload_path or "").strip()
@@ -1141,13 +1169,28 @@ def _start_upload_ingest_job_flow(*, db: Session, rec: UploadIngestJob) -> None:
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"[stage=upload_job_convert] image conversion failed: {e}") from e
 
-    image_paths = image_variant_rel_paths(image_rel)
+    supplement_temp = str(rec.supplement_temp_upload_path or "").strip()
+    supplement_image_rel: str | None = None
+    if supplement_temp:
+        try:
+            supplement_image_rel = convert_temp_upload_to_storage_image(
+                supplement_temp,
+                image_id=f"{job_id}.supp1",
+                subdir="tmp",
+            )
+        except Exception as e:
+            raise HTTPException(status_code=422, detail=f"[stage=upload_job_convert_supplement] image conversion failed: {e}") from e
+
+    stage1_input_paths = [image_rel]
+    if supplement_image_rel:
+        stage1_input_paths.append(supplement_image_rel)
     rec = db.get(UploadIngestJob, job_id)
     if rec is None:
         return
     rec.temp_upload_path = None
+    rec.supplement_temp_upload_path = None
     rec.image_path = image_rel
-    rec.image_paths_json = json.dumps(image_paths, ensure_ascii=False)
+    rec.image_paths_json = json.dumps(stage1_input_paths, ensure_ascii=False)
     rec.updated_at = now_iso()
     db.add(rec)
     db.commit()
@@ -1165,14 +1208,15 @@ def _start_upload_ingest_job_flow(*, db: Session, rec: UploadIngestJob) -> None:
         image_rel=image_rel,
         trace_id=job_id,
         model_tier=rec.stage1_model_tier,
-        image_paths=None,
+        image_paths=stage1_input_paths[:2] if len(stage1_input_paths) > 1 else None,
         event_callback=lambda event: _append_upload_job_stage_event(bind=db.get_bind(), job_id=job_id, event=event),
     )
     _persist_stage1_context(
         db=db,
         rec=rec,
         stage1=stage1,
-        image_paths=image_paths or [image_rel],
+        image_paths=stage1_input_paths[:2],
+        supplement_image_path=supplement_image_rel,
     )
 
     stage1_requirement = _build_upload_job_stage1_requirement(stage1.get("vision_text"))
@@ -1209,11 +1253,23 @@ def _resume_upload_ingest_job_flow(*, db: Session, rec: UploadIngestJob) -> None
         raise HTTPException(status_code=422, detail="Invalid stage1 context: missing image_path.")
     if not exists_rel_path(image_path):
         raise HTTPException(status_code=404, detail=f"Primary image missing: {image_path}")
+    image_paths_raw = context.get("image_paths")
+    if isinstance(image_paths_raw, list):
+        combined_paths = [str(item or "").strip() for item in image_paths_raw if str(item or "").strip()]
+    else:
+        combined_paths = []
+    if not combined_paths:
+        combined_paths = [image_path]
 
     stage1_requirement = _build_upload_job_stage1_requirement(context.get("vision_text"))
 
     supplement_temp = str(rec.supplement_temp_upload_path or "").strip()
     if supplement_temp:
+        if len(combined_paths) >= 2:
+            raise HTTPException(
+                status_code=409,
+                detail="[stage=upload_job_resume] stage1 already has two images; please resume with manual category/brand/name only.",
+            )
         _update_upload_job_stage(
             db=db,
             rec=rec,
@@ -1239,13 +1295,6 @@ def _resume_upload_ingest_job_flow(*, db: Session, rec: UploadIngestJob) -> None
         db.commit()
         db.refresh(rec)
 
-        image_paths_raw = context.get("image_paths")
-        if isinstance(image_paths_raw, list):
-            combined_paths = [str(item or "").strip() for item in image_paths_raw if str(item or "").strip()]
-        else:
-            combined_paths = []
-        if not combined_paths:
-            combined_paths = [image_path]
         if supplement_image_rel not in combined_paths:
             combined_paths.append(supplement_image_rel)
 

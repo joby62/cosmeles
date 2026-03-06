@@ -106,6 +106,79 @@ def test_upload_job_can_run_to_done(test_client, monkeypatch: pytest.MonkeyPatch
     assert leftovers == []
 
 
+def test_upload_job_can_run_with_initial_two_images(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, storage_dir = test_client
+    _install_fake_convert(monkeypatch, storage_dir)
+    captured: dict[str, object] = {}
+
+    def fake_stage1(image_rel: str, trace_id: str, image_paths=None, model_tier=None, event_callback=None):
+        _ = model_tier
+        captured["trace_id"] = trace_id
+        captured["image_rel"] = image_rel
+        captured["image_paths"] = image_paths
+        if event_callback:
+            event_callback({"type": "step", "stage": "stage1_vision", "message": "stage1"})
+        return {
+            "vision_text": "【品牌】测试品牌\n【产品名】测试产品\n【成分表原文】水、甘油",
+            "model": "doubao-stage1-mini",
+            "artifact": f"doubao_runs/{trace_id}/stage1_vision.json",
+        }
+
+    def fake_stage2(*, trace_id: str, category: str | None, brand: str | None, name: str | None, model_tier: str | None, db, event_callback=None):
+        _ = category
+        _ = brand
+        _ = name
+        _ = model_tier
+        _ = db
+        _ = event_callback
+        return {
+            "id": trace_id,
+            "status": "ok",
+            "mode": "doubao_two_stage",
+            "category": "shampoo",
+            "image_path": f"images/webp/tmp/{trace_id}.webp",
+            "json_path": f"products/{trace_id}.json",
+            "doubao": {
+                "models": {"vision": "doubao-stage1-mini", "struct": "doubao-stage2-mini"},
+                "struct_text": "{\"ok\":true}",
+                "vision_text": "【品牌】测试品牌",
+                "artifacts": {
+                    "vision": f"doubao_runs/{trace_id}/stage1_vision.json",
+                    "struct": f"doubao_runs/{trace_id}/stage2_struct.json",
+                    "context": f"doubao_runs/{trace_id}/stage1_context.json",
+                },
+            },
+        }
+
+    monkeypatch.setattr(ingest_routes, "_invoke_stage1_analyzer", fake_stage1)
+    monkeypatch.setattr(ingest_routes, "_finalize_stage2", fake_stage2)
+
+    created = client.post(
+        "/api/upload/jobs",
+        files=[
+            ("image", ("sample-front.jpg", VALID_TEST_IMAGE_BYTES, "image/jpeg")),
+            ("supplement_image", ("sample-back.jpg", VALID_TEST_IMAGE_BYTES, "image/jpeg")),
+        ],
+    )
+    assert created.status_code == 200
+    job_id = created.json()["job_id"]
+
+    done = _wait_upload_job_status(client, job_id=job_id, expected={"done"})
+    assert done["status"] == "done"
+    assert done["result"]["id"] == job_id
+    image_paths = done.get("image_paths") or []
+    assert len(image_paths) == 2
+
+    stage1_paths = captured.get("image_paths")
+    assert isinstance(stage1_paths, list)
+    assert len(stage1_paths) == 2
+    assert all(str(item).startswith("images/webp/tmp/") for item in stage1_paths)
+
+    tmp_dir = Path(storage_dir) / "tmp_uploads"
+    leftovers = list(tmp_dir.glob(f"{job_id}*"))
+    assert leftovers == []
+
+
 def test_upload_job_waiting_more_can_resume_with_manual_brand(test_client, monkeypatch: pytest.MonkeyPatch):
     client, storage_dir = test_client
     _install_fake_convert(monkeypatch, storage_dir)

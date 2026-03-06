@@ -89,6 +89,7 @@ export default function ProductIngestWorkbench() {
   const [stage2ModelTier, setStage2ModelTier] = useState<ModelTier>("mini");
   const [jsonText, setJsonText] = useState("");
   const [images, setImages] = useState<File[]>([]);
+  const [pairAsSingleProduct, setPairAsSingleProduct] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
   const [jobsLoading, setJobsLoading] = useState(false);
@@ -103,9 +104,12 @@ export default function ProductIngestWorkbench() {
   const canSubmit = useMemo(() => {
     if (submitting) return false;
     if (images.length === 0) return false;
+    if (!useJsonOverride && source === "doubao" && pairAsSingleProduct) {
+      return images.length >= 2 && images.length % 2 === 0;
+    }
     if (useJsonOverride) return !!jsonText.trim();
     return true;
-  }, [images.length, jsonText, submitting, useJsonOverride]);
+  }, [images.length, jsonText, pairAsSingleProduct, source, submitting, useJsonOverride]);
 
   const sortedJobs = useMemo(
     () => [...uploadJobs].sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || ""))),
@@ -171,6 +175,32 @@ export default function ProductIngestWorkbench() {
       if (source === "doubao" && !useJsonOverride) {
         let ok = 0;
         let fail = 0;
+        if (pairAsSingleProduct) {
+          if (images.length % 2 !== 0) {
+            setError("双图同品模式要求图片数量为偶数（每 2 张图组成 1 个任务）。");
+            return;
+          }
+          const pairCount = Math.floor(images.length / 2);
+          for (let i = 0; i < images.length; i += 2) {
+            try {
+              await createUploadIngestJob({
+                image: images[i],
+                supplementImage: images[i + 1],
+                stage1ModelTier,
+                stage2ModelTier,
+              });
+              ok += 1;
+            } catch (err) {
+              fail += 1;
+              setError(formatError(err));
+            }
+          }
+          await refreshJobs();
+          if (fail > 0) {
+            setError(`任务创建完成：${ok}/${pairCount} 成功，${fail} 失败。`);
+          }
+          return;
+        }
         for (const image of images) {
           try {
             await createUploadIngestJob({
@@ -329,8 +359,19 @@ export default function ProductIngestWorkbench() {
           />
           {images.length > 0 ? (
             <div className="rounded-xl border border-black/8 bg-black/[0.02] px-3 py-2 text-[12px] text-black/66">
-              已选 {images.length} 张：{images.map((f) => f.name).join("、")}
+              已选 {images.length} 张{pairAsSingleProduct ? `（预计创建 ${Math.floor(images.length / 2)} 个双图任务）` : ""}：{images.map((f) => f.name).join("、")}
             </div>
+          ) : null}
+          {!useJsonOverride && source === "doubao" ? (
+            <label className="mt-1 inline-flex items-center gap-2 text-[12px] text-black/66">
+              <input
+                type="checkbox"
+                checked={pairAsSingleProduct}
+                onChange={(e) => setPairAsSingleProduct(e.target.checked)}
+                className="h-4 w-4 rounded border border-black/25"
+              />
+              双图同品分析（每 2 张图作为同一产品，直接进入双图 Stage1）
+            </label>
           ) : null}
           <div className="text-[12px] text-black/52">状态覆盖：上传中、转换中、Stage1、Stage2、待补拍/补录。</div>
         </label>

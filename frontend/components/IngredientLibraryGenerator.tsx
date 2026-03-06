@@ -36,8 +36,10 @@ export default function IngredientLibraryGenerator({
   const [activeJob, setActiveJob] = useState<IngredientLibraryBuildJob | null>(null);
   const [liveLogs, setLiveLogs] = useState<string[]>([]);
   const lastLogRef = useRef("");
+  const lastLogStampRef = useRef("");
   const modelDeltaBufferRef = useRef("");
   const modelDeltaIngredientRef = useRef("");
+  const modelDeltaLogIndexRef = useRef<number | null>(null);
   const [preflightLoading, setPreflightLoading] = useState(false);
   const [preflightError, setPreflightError] = useState<string | null>(null);
   const [preflightResult, setPreflightResult] = useState<IngredientLibraryPreflightResponse | null>(null);
@@ -91,15 +93,39 @@ export default function IngredientLibraryGenerator({
     });
   }, []);
 
+  const syncModelDeltaLog = useCallback((updatedAt: string) => {
+    const merged = modelDeltaBufferRef.current.replace(/\s+/g, " ").trim();
+    if (!merged) return;
+    const ingredient = modelDeltaIngredientRef.current || "-";
+    const line = `[${updatedAt}] 模型输出流 | ${ingredient} | ${merged}`;
+    setLiveLogs((prev) => {
+      let next = [...prev];
+      const idx = modelDeltaLogIndexRef.current;
+      if (idx === null || idx < 0 || idx >= next.length) {
+        next.push(line);
+        modelDeltaLogIndexRef.current = next.length - 1;
+      } else {
+        next[idx] = line;
+      }
+      if (next.length > 200) {
+        const overflow = next.length - 200;
+        next = next.slice(overflow);
+        if (modelDeltaLogIndexRef.current !== null) {
+          modelDeltaLogIndexRef.current = Math.max(0, modelDeltaLogIndexRef.current - overflow);
+        }
+      }
+      return next;
+    });
+    lastLogRef.current = line;
+  }, []);
+
   const flushModelDeltaLog = useCallback(
     (updatedAt: string) => {
-      const merged = modelDeltaBufferRef.current.replace(/\s+/g, " ").trim();
-      if (!merged) return;
-      const ingredient = modelDeltaIngredientRef.current || "-";
-      appendLiveLog(`[${updatedAt}] 模型输出片段 | ${ingredient} | ${merged}`);
+      syncModelDeltaLog(updatedAt);
       modelDeltaBufferRef.current = "";
+      modelDeltaLogIndexRef.current = null;
     },
-    [appendLiveLog],
+    [syncModelDeltaLog],
   );
 
   const applyActiveJob = useCallback(
@@ -108,6 +134,11 @@ export default function IngredientLibraryGenerator({
       const stage = String(job.stage_label || job.stage || "处理中");
       const stageKey = String(job.stage || "").trim().toLowerCase();
       const message = String(job.message || "").trim();
+      const stamp = `${job.updated_at}|${job.status}|${stageKey}|${message}`;
+      if (stamp === lastLogStampRef.current) {
+        return;
+      }
+      lastLogStampRef.current = stamp;
       if (stageKey === "ingredient_model_delta") {
         const ingredientId = String(job.current_ingredient_id || "").trim();
         if (ingredientId && modelDeltaIngredientRef.current && modelDeltaIngredientRef.current !== ingredientId) {
@@ -116,9 +147,7 @@ export default function IngredientLibraryGenerator({
         if (ingredientId) modelDeltaIngredientRef.current = ingredientId;
         if (message) {
           modelDeltaBufferRef.current = `${modelDeltaBufferRef.current}${message}`;
-          const compact = modelDeltaBufferRef.current.replace(/\s+/g, " ").trim();
-          const shouldFlush = /[。！？；，,:.\n]/.test(message) || compact.length >= 24;
-          if (shouldFlush) flushModelDeltaLog(job.updated_at);
+          syncModelDeltaLog(job.updated_at);
         }
       } else {
         flushModelDeltaLog(job.updated_at);
@@ -130,7 +159,7 @@ export default function IngredientLibraryGenerator({
         clearActiveJob();
       }
     },
-    [appendLiveLog, clearActiveJob, flushModelDeltaLog],
+    [appendLiveLog, clearActiveJob, flushModelDeltaLog, syncModelDeltaLog],
   );
 
   const loadJobs = useCallback(async () => {
