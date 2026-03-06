@@ -427,38 +427,127 @@ CONDITIONER_MATRIX_MODEL = {
 }
 CONDITIONER_MATRIX_CONFIG = compile_matrix_config(CONDITIONER_MATRIX_MODEL)
 
-LOTION_LABELS = {
-    "group": {
-        "dry-tight": "洗后常紧绷、偏干",
-        "rough-dull": "摸起来粗糙、缺光泽",
-        "sensitive-red": "容易泛红或刺痒",
-        "stable-maintain": "整体稳定，想长期维护",
-    },
-    "issue": {
-        "itch-flake": "干痒/轻微起屑",
-        "rough-patch": "局部粗糙（手肘膝盖）",
-        "dull-no-soft": "不够细腻柔软",
-        "none": "没有明显困扰",
-    },
-    "scene": {
-        "after-shower": "洗澡后马上用",
-        "dry-cold": "换季/干冷时用",
-        "ac-room": "空调环境白天用",
-        "night-repair": "夜间修护用",
-    },
-    "avoid": {
-        "sticky-greasy": "黏腻厚重",
-        "strong-fragrance": "香味太重",
-        "active-too-much": "活性叠加太多",
-        "none": "没有特别排除",
-    },
+LOTION_ROUTE_TITLES = {
+    "light_hydrate": "轻盈保湿型",
+    "heavy_repair": "重度修护型",
+    "bha_clear": "BHA净痘型",
+    "aha_renew": "AHA焕肤型",
+    "glow_bright": "亮肤提光型",
+    "vibe_fragrance": "留香氛围型",
 }
-LOTION_GROUP_TITLE = {
-    "dry-tight": "干燥紧绷路线",
-    "rough-dull": "粗糙暗沉路线",
-    "sensitive-red": "敏感脆弱路线",
-    "stable-maintain": "稳定维护路线",
+
+LOTION_MATRIX_MODEL = {
+    "category": "lotion",
+    "categories": [
+        "light_hydrate",
+        "heavy_repair",
+        "bha_clear",
+        "aha_renew",
+        "glow_bright",
+        "vibe_fragrance",
+    ],
+    "questions": [
+        {
+            "key": "q1",
+            "title": "气候环境与当前季节",
+            "options": {
+                "A": "干燥寒冷 / 长时间待在暖气房",
+                "B": "炎热潮湿 / 夏季易出汗环境",
+                "C": "换季温差大 / 经常刮风",
+                "D": "气候温和 / 室内温湿度适宜",
+            },
+        },
+        {
+            "key": "q2",
+            "title": "身体肌肤耐受度",
+            "options": {
+                "A": "极度敏感（易泛红、动不动就干痒、有湿疹/荨麻疹病史）",
+                "B": "屏障健康（耐受力强，用猛药极少翻车）",
+            },
+        },
+        {
+            "key": "q3",
+            "title": "最核心的皮肤痛点",
+            "options": {
+                "A": "极度干屑（小腿有蛇皮纹、脱屑、干到紧绷瘙痒）",
+                "B": "躯干痘痘（前胸后背出油多，常起红肿痘或粉刺）",
+                "C": "粗糙颗粒（大腿/手臂有鸡皮肤、毛孔粗糙、手肘脚踝角质厚）",
+                "D": "暗沉色差（关节发黑、有晒痕、全身肤色不均）",
+                "E": "状态正常（无明显痛点，只需日常维稳与保养）",
+            },
+        },
+        {
+            "key": "q4",
+            "title": "身体乳质地与肤感偏好",
+            "options": {
+                "A": "秒吸收的轻薄水感（最怕粘腻沾睡衣，哪怕需要频繁补涂也只选清爽的）",
+                "B": "适中滋润的丝滑乳液感（平衡型，好推开且有一定保湿续航）",
+                "C": "强包裹的丰润油膏感（必须有厚重的膜感，不然总觉得没涂够）",
+            },
+        },
+        {
+            "key": "q5",
+            "title": "特殊限制与诉求",
+            "options": {
+                "A": "极致纯净（孕妇/哺乳期可用，或极度排斥香精、色素、防腐剂）",
+                "B": "情绪留香（看重身体乳的调香，希望带香入睡或伪体香）",
+                "C": "无特殊限制（更看重实际功效，对香气和纯净度无执念）",
+            },
+        },
+    ],
+    "scoring_matrix": {
+        "q1": {
+            "A": [-10, 10, 0, 0, 0, 5],
+            "B": [10, -10, 5, 0, 0, -5],
+            "C": [-5, 5, 0, 0, 0, 0],
+            "D": [5, -5, 0, 0, 0, 5],
+        },
+        "q2": {
+            "A": [15, 15, 0, 0, 0, 0],
+            "B": [0, 0, 5, 5, 5, 0],
+        },
+        "q3": {
+            "A": [-10, 25, -20, -5, -5, -5],
+            "B": [10, -20, 25, 5, 0, 0],
+            "C": [0, -10, 10, 25, 5, 0],
+            "D": [5, 0, 0, 10, 25, 5],
+            "E": [15, -10, -15, -15, 10, 20],
+        },
+        "q4": {
+            "A": [5, -5, 0, 0, 0, 0],
+            "B": [0, 0, 0, 0, 0, 5],
+            "C": [-5, 5, 0, 0, 0, 0],
+        },
+        "q5": {
+            "A": [5, 5, 0, 0, 0, 0],
+            "B": [-5, 0, 0, 0, 5, 10],
+            "C": [0, 0, 0, 0, 0, 0],
+        },
+    },
+    "veto_masks": [
+        {
+            "trigger": "q2 == 'A'",
+            "mask": [1, 1, 0, 0, 1, 1],
+            "note": "敏感防线：极度敏感强制清零水杨酸和果酸",
+        },
+        {
+            "trigger": "q3 == 'B'",
+            "mask": [1, 0, 1, 1, 1, 1],
+            "note": "致痘防线：长痘强制清零重度修护霜防闷痘",
+        },
+        {
+            "trigger": "q3 == 'A'",
+            "mask": [1, 1, 0, 1, 1, 1],
+            "note": "脱脂防线：极度干屑强制清零水杨酸防皲裂",
+        },
+        {
+            "trigger": "q5 == 'A'",
+            "mask": [1, 1, 0, 0, 1, 0],
+            "note": "孕妇/绝对纯净防线：强制清零所有酸类剥脱成分（水杨酸/果酸）及香氛精油",
+        },
+    ],
 }
+LOTION_MATRIX_CONFIG = compile_matrix_config(LOTION_MATRIX_MODEL)
 
 CLEANSER_ROUTE_TITLES = {
     "apg_soothing": "APG舒缓型",
@@ -4356,32 +4445,50 @@ def _resolve_conditioner(answers: dict[str, str]) -> dict[str, Any]:
 
 
 def _resolve_lotion(answers: dict[str, str]) -> dict[str, Any]:
-    group = _require_value(answers, "group", {"dry-tight", "rough-dull", "sensitive-red", "stable-maintain"})
-    issue = _require_value(answers, "issue", {"itch-flake", "rough-patch", "dull-no-soft", "none"})
-    scene = _require_value(answers, "scene", {"after-shower", "dry-cold", "ac-room", "night-repair"})
-    avoid = _require_value(answers, "avoid", {"sticky-greasy", "strong-fragrance", "active-too-much", "none"})
+    try:
+        decision = resolve_matrix_selection(LOTION_MATRIX_CONFIG, answers)
+    except MatrixDecisionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    fallback = group == "sensitive-red" and (issue == "itch-flake" or avoid == "active-too-much")
-    route_key = f"group:{group}|issue:{issue}|scene:{scene}|avoid:{avoid}|fallback:{'yes' if fallback else 'no'}"
-    route_title = LOTION_GROUP_TITLE[group]
+    route_key = decision.best_category
+    route_title = LOTION_ROUTE_TITLES.get(route_key, route_key)
+    normalized_answers = decision.normalized_answers
 
-    choices = [
-        {"key": "group", "value": group, "label": LOTION_LABELS["group"][group]},
-        {"key": "issue", "value": issue, "label": LOTION_LABELS["issue"][issue]},
-        {"key": "scene", "value": scene, "label": LOTION_LABELS["scene"][scene]},
-        {"key": "avoid", "value": avoid, "label": LOTION_LABELS["avoid"][avoid]},
-    ]
-    rule_hits = [
-        {"rule": "group", "effect": f"人群定位：{LOTION_LABELS['group'][group]}。"},
-        {"rule": "issue", "effect": f"核心困扰：{LOTION_LABELS['issue'][issue]}。"},
-        {"rule": "scene", "effect": f"主要场景：{LOTION_LABELS['scene'][scene]}。"},
-        {"rule": "avoid", "effect": f"排除条件：{LOTION_LABELS['avoid'][avoid]}。"},
-    ]
-    if fallback:
-        rule_hits.append({"rule": "fallback", "effect": "触发稳态回退：优先极简修护路径。"})
+    choices: list[dict[str, str]] = []
+    for question in LOTION_MATRIX_CONFIG.questions:
+        value = normalized_answers.get(question.key)
+        if not value:
+            continue
+        label = question.options.get(value) or value
+        choices.append({"key": question.key, "value": value, "label": label})
+
+    rule_hits: list[dict[str, str]] = []
+    for question in LOTION_MATRIX_CONFIG.questions:
+        value = normalized_answers.get(question.key)
+        if not value:
+            continue
+        deltas = decision.question_contributions.get(question.key) or {}
+        effect = " / ".join(
+            f"{category}:{'+' if points >= 0 else ''}{points}"
+            for category, points in deltas.items()
+        )
+        rule_hits.append(
+            {
+                "rule": question.key,
+                "effect": f"{question.title}={question.options.get(value) or value}；得分贡献 {effect}",
+            }
+        )
+
+    for item in decision.triggered_vetoes:
+        blocked = "、".join(item.excluded_categories) if item.excluded_categories else "-"
+        note = item.note or item.trigger
+        rule_hits.append({"rule": "veto", "effect": f"{note}（禁用：{blocked}）"})
+
+    top2_text = " / ".join(f"{category}:{score}" for category, score in decision.top2) or "-"
+    rule_hits.append({"rule": "route", "effect": f"最终收敛：{route_title}（{route_key}）；Top2={top2_text}"})
 
     return {
-        "answers": {"group": group, "issue": issue, "scene": scene, "avoid": avoid},
+        "answers": normalized_answers,
         "route_key": route_key,
         "route_title": route_title,
         "choices": choices,

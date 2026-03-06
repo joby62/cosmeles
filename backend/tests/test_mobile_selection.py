@@ -331,6 +331,35 @@ def test_mobile_selection_resolve_cleanser_matrix(test_client, monkeypatch: pyte
     assert any(item["rule"] == "veto" for item in body["rule_hits"])
 
 
+def test_mobile_selection_resolve_lotion_matrix(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, _ = test_client
+    _install_fake_ingest_pipeline(
+        monkeypatch,
+        {
+            "category": "lotion",
+            "brand": "CeraVe",
+            "name": "Lotion Matrix",
+            "one_sentence": "身体乳矩阵测试",
+        },
+    )
+    _ingest_one(client, "lotion-matrix.jpg")
+    _set_featured_slot(client, "lotion", "__category__")
+
+    resp = client.post(
+        "/api/mobile/selection/resolve",
+        json={
+            "category": "lotion",
+            "answers": {"q1": "A", "q2": "A", "q3": "A", "q4": "C", "q5": "A"},
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["route"]["key"] == "heavy_repair"
+    assert body["route"]["title"] == "重度修护型"
+    assert [item["key"] for item in body["choices"]] == ["q1", "q2", "q3", "q4", "q5"]
+    assert any(item["rule"] == "veto" for item in body["rule_hits"])
+
+
 def test_mobile_selection_resolve_reuse_existing_session(test_client, monkeypatch: pytest.MonkeyPatch):
     client, _ = test_client
     _install_fake_ingest_pipeline(
@@ -473,10 +502,11 @@ def test_mobile_selection_resolve_with_forwarded_device_header(test_client, monk
     payload = {
         "category": "lotion",
         "answers": {
-            "group": "dry-tight",
-            "issue": "itch-flake",
-            "scene": "after-shower",
-            "avoid": "none",
+            "q1": "D",
+            "q2": "B",
+            "q3": "E",
+            "q4": "B",
+            "q5": "C",
         },
     }
     resolved = client.post("/api/mobile/selection/resolve", json=payload, headers=headers)
