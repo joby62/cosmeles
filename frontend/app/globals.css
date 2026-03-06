@@ -558,6 +558,16 @@ html[data-nav-open="1"] #app-main{
   transform: translateY(0.5px);
 }
 
+.m-nav-choose-icon {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  background-color: currentColor;
+  -webkit-mask: url("/m/icons/mobile-nav-choose.svg") center / contain no-repeat;
+  mask: url("/m/icons/mobile-nav-choose.svg") center / contain no-repeat;
+  transform: translateY(0.5px);
+}
+
 .m-compare-selection-tip {
   border-color: var(--m-compare-selection-tip-border);
   background: var(--m-compare-selection-tip-bg);
