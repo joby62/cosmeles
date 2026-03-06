@@ -295,6 +295,24 @@ html[data-nav-open="1"] #app-main{
   --m-nav-item-active-bg: rgba(0,0,0,0.05);
   --m-nav-active-bg: rgba(0,113,227,0.16);
   --m-nav-active-text: #0071e3;
+  --m-profile-step-index: rgba(32,41,59,0.48);
+  --m-profile-title: rgba(20,25,35,0.96);
+  --m-profile-note: rgba(39,51,75,0.74);
+  --m-profile-meta: rgba(47,61,88,0.62);
+  --m-profile-option-bg: rgba(255,255,255,0.9);
+  --m-profile-option-border: rgba(18,33,58,0.14);
+  --m-profile-option-text: rgba(21,28,43,0.95);
+  --m-profile-option-sub: rgba(52,70,101,0.7);
+  --m-profile-option-active-bg: rgba(231,242,255,0.92);
+  --m-profile-option-active-border: #0a84ff;
+  --m-profile-option-active-shadow: 0 0 0 1px rgba(10,132,255,0.34), 0 12px 24px rgba(10,132,255,0.16);
+  --m-profile-chip-bg: rgba(16,27,45,0.08);
+  --m-profile-chip-text: rgba(37,52,79,0.78);
+  --m-profile-summary-bg: rgba(255,255,255,0.7);
+  --m-profile-summary-border: rgba(16,27,45,0.12);
+  --m-profile-cta-bg: #0a84ff;
+  --m-profile-cta-bg-active: #0071e3;
+  --m-profile-cta-text: #ffffff;
 
   --m-wiki-canvas: #f2f5fa;
   --m-wiki-text-strong: rgba(22,33,53,0.94);
@@ -419,6 +437,24 @@ html[data-nav-open="1"] #app-main{
     --m-nav-item-active-bg: rgba(255,255,255,0.1);
     --m-nav-active-bg: rgba(114,182,255,0.24);
     --m-nav-active-text: #72b6ff;
+    --m-profile-step-index: rgba(177,194,226,0.62);
+    --m-profile-title: rgba(246,249,255,0.96);
+    --m-profile-note: rgba(197,211,236,0.78);
+    --m-profile-meta: rgba(168,186,223,0.66);
+    --m-profile-option-bg: rgba(20,31,50,0.9);
+    --m-profile-option-border: rgba(255,255,255,0.16);
+    --m-profile-option-text: rgba(239,245,255,0.96);
+    --m-profile-option-sub: rgba(184,203,239,0.76);
+    --m-profile-option-active-bg: rgba(32,54,87,0.9);
+    --m-profile-option-active-border: #3c9cff;
+    --m-profile-option-active-shadow: 0 0 0 1px rgba(60,156,255,0.46), 0 14px 26px rgba(8,38,83,0.45);
+    --m-profile-chip-bg: rgba(255,255,255,0.12);
+    --m-profile-chip-text: rgba(221,232,255,0.9);
+    --m-profile-summary-bg: rgba(19,28,45,0.72);
+    --m-profile-summary-border: rgba(255,255,255,0.16);
+    --m-profile-cta-bg: #3c9cff;
+    --m-profile-cta-bg-active: #2a8eef;
+    --m-profile-cta-text: #ffffff;
 
     --m-wiki-canvas: #090c12;
     --m-wiki-text-strong: rgba(255,255,255,0.94);
@@ -576,6 +612,150 @@ html[data-nav-open="1"] #app-main{
   -webkit-mask: url("/m/icons/mobile-nav-wiki.svg") center / contain no-repeat;
   mask: url("/m/icons/mobile-nav-wiki.svg") center / contain no-repeat;
   transform: translateY(0.5px);
+}
+
+.m-profile-step {
+  min-height: calc(100dvh - 192px);
+  scroll-margin-top: 66px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  padding: 4px 0 20px;
+}
+
+.m-profile-step-index {
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--m-profile-step-index);
+}
+
+.m-profile-step-title {
+  margin-top: 8px;
+  font-size: 45px;
+  line-height: 1.08;
+  font-weight: 640;
+  letter-spacing: -0.03em;
+  color: var(--m-profile-title);
+}
+
+.m-profile-step-note {
+  margin-top: 10px;
+  font-size: 18px;
+  line-height: 1.5;
+  color: var(--m-profile-note);
+}
+
+.m-profile-option {
+  width: 100%;
+  border-radius: 26px;
+  border: 1px solid var(--m-profile-option-border);
+  background: var(--m-profile-option-bg);
+  padding: 16px 18px;
+  text-align: left;
+  transition:
+    border-color var(--m-dur-fast) var(--m-ease),
+    background-color var(--m-dur-fast) var(--m-ease),
+    box-shadow var(--m-dur-fast) var(--m-ease),
+    transform var(--m-dur-fast) var(--m-ease);
+}
+
+.m-profile-option:active {
+  transform: scale(0.992);
+}
+
+.m-profile-option-active {
+  border-color: var(--m-profile-option-active-border);
+  background: var(--m-profile-option-active-bg);
+  box-shadow: var(--m-profile-option-active-shadow);
+}
+
+.m-profile-option-locked {
+  opacity: 0.48;
+}
+
+.m-profile-option-label {
+  font-size: 17px;
+  line-height: 1.38;
+  font-weight: 640;
+  letter-spacing: -0.014em;
+  color: var(--m-profile-option-text);
+}
+
+.m-profile-option-sub {
+  margin-top: 6px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--m-profile-option-sub);
+}
+
+.m-profile-inline-hint {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--m-profile-meta);
+}
+
+.m-profile-summary {
+  border-radius: 24px;
+  border: 1px solid var(--m-profile-summary-border);
+  background: var(--m-profile-summary-bg);
+  padding: 16px 16px 14px;
+}
+
+.m-profile-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  border-radius: 999px;
+  background: var(--m-profile-chip-bg);
+  padding: 0 12px;
+  font-size: 12px;
+  color: var(--m-profile-chip-text);
+}
+
+.m-profile-primary-btn {
+  border-radius: 999px;
+  background: var(--m-profile-cta-bg);
+  color: var(--m-profile-cta-text);
+  transition:
+    background-color var(--m-dur-fast) var(--m-ease),
+    transform var(--m-dur-fast) var(--m-ease);
+}
+
+.m-profile-primary-btn:active {
+  background: var(--m-profile-cta-bg-active);
+  transform: scale(0.987);
+}
+
+.m-profile-secondary-btn {
+  display: inline-flex;
+  height: 38px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--m-profile-summary-border);
+  background: transparent;
+  padding: 0 14px;
+  font-size: 14px;
+  font-weight: 550;
+  color: var(--m-profile-note);
+  transition:
+    background-color var(--m-dur-fast) var(--m-ease),
+    transform var(--m-dur-fast) var(--m-ease);
+}
+
+.m-profile-secondary-btn:active {
+  background: var(--m-press);
+  transform: scale(0.988);
+}
+
+@media (max-width: 420px) {
+  .m-profile-step-title {
+    font-size: 33px;
+  }
+
+  .m-profile-step-note {
+    font-size: 16px;
+  }
 }
 
 .m-compare-selection-tip {
