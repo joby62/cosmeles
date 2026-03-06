@@ -2,7 +2,10 @@ import json
 from pathlib import Path
 
 import pytest
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import sessionmaker
 
+from app.db.models import Base
 from app.routes import ingest as ingest_routes
 from app.routes import products as products_routes
 from backend.tests.support_images import VALID_TEST_IMAGE_BYTES, install_fake_save_image
@@ -85,6 +88,55 @@ def _ingest_one(client, image_name: str = "sample.jpg") -> str:
     stage2 = client.post("/api/upload/stage2", data={"trace_id": trace_id})
     assert stage2.status_code == 200
     return trace_id
+
+
+def test_upsert_ingredient_aliases_no_duplicate_alias_id_when_autoflush_disabled(tmp_path: Path):
+    db_path = tmp_path / "alias-upsert.db"
+    engine = create_engine(
+        f"sqlite:///{db_path}",
+        connect_args={"check_same_thread": False},
+    )
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    Base.metadata.create_all(bind=engine)
+
+    db = SessionLocal()
+    try:
+        products_routes._ensure_ingredient_alias_tables(db)
+        alias_name = "水杨酸"
+        alias_keys = products_routes._build_ingredient_alias_keys(alias_name)
+        assert alias_keys
+        alias_key = alias_keys[0]
+
+        products_routes._upsert_ingredient_aliases(
+            db=db,
+            category="shampoo",
+            ingredient_id="ing-a",
+            alias_names=[alias_name],
+            resolver="test_case",
+        )
+        products_routes._upsert_ingredient_aliases(
+            db=db,
+            category="shampoo",
+            ingredient_id="ing-b",
+            alias_names=[alias_name],
+            resolver="test_case",
+        )
+        db.commit()
+
+        rows = db.execute(
+            select(products_routes.IngredientLibraryAlias)
+            .where(products_routes.IngredientLibraryAlias.category == "shampoo")
+            .where(products_routes.IngredientLibraryAlias.alias_key == alias_key)
+        ).scalars().all()
+        assert len(rows) == 1
+        assert str(rows[0].ingredient_id) == "ing-b"
+
+        redirect = db.get(products_routes.IngredientLibraryRedirect, "ing-a")
+        assert redirect is not None
+        assert str(redirect.new_ingredient_id) == "ing-b"
+    finally:
+        db.close()
+        engine.dispose()
 
 
 def test_build_ingredient_library_splits_same_name_by_category(test_client, monkeypatch: pytest.MonkeyPatch):

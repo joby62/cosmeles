@@ -4526,6 +4526,10 @@ def _upsert_ingredient_aliases(
     if not normalized_category or not target_id:
         return
     _ensure_ingredient_alias_tables(db)
+    # SessionLocal uses autoflush=False. Flush first so pending alias inserts in this
+    # transaction become visible to the lookup query below; otherwise duplicate alias_id
+    # rows can be staged and only fail at commit with UNIQUE constraint errors.
+    db.flush()
 
     key_to_alias_name: dict[str, str] = {}
     for raw in alias_names:
