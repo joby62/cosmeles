@@ -10,8 +10,8 @@ usage() {
   cat <<'EOF'
 Usage:
   codex-imessage-notify.sh --check
-  codex-imessage-notify.sh [--to <phone-or-email>] [--service <imessage|auto>] [--prefix <text>] --message <text>
-  codex-imessage-notify.sh [--to <phone-or-email>] [--service <imessage|auto>] [--prefix <text>] [message words...]
+  codex-imessage-notify.sh [--direct-only] [--to <phone-or-email>] [--service <imessage|auto>] [--prefix <text>] --message <text>
+  codex-imessage-notify.sh [--direct-only] [--to <phone-or-email>] [--service <imessage|auto>] [--prefix <text>] [message words...]
 
 Environment:
   CODEX_NOTIFY_TO        Default recipient. Use an iMessage phone number or Apple ID email.
@@ -161,6 +161,19 @@ EOF
     return 0
   fi
 
+  if [[ "$output" == *"Can’t get buddy"* || "$output" == *"Can't get buddy"* || "$output" == *"Can’t get participant"* || "$output" == *"Can't get participant"* ]]; then
+    cat >&2 <<'EOF'
+The recipient was not resolved as an iMessage target in Messages.
+
+This script only supports iMessage, not plain SMS. If this number shows as a green SMS target
+in Messages, direct sending will not work. Try one of these:
+  1. Use the recipient's Apple ID email instead of the phone number
+  2. Manually send one blue iMessage to this recipient in Messages first
+  3. Confirm the target is actually registered to iMessage on Apple's network
+EOF
+    return 0
+  fi
+
   return 1
 }
 
@@ -290,6 +303,7 @@ ui_send_message() {
 send_message() {
   local recipient="$1"
   local message="$2"
+  local direct_only="$3"
   local output=""
 
   set +e
@@ -300,6 +314,13 @@ send_message() {
   if [[ $direct_exit_code -eq 0 ]]; then
     print -- "$output"
     return 0
+  fi
+
+  if [[ "$direct_only" == "1" ]]; then
+    if ! print_service_help "$output" && ! print_permission_help "$output"; then
+      [[ -n "$output" ]] && print -u2 -- "$output"
+    fi
+    return 1
   fi
 
   if [[ "$output" == *"No signed-in iMessage service is available."* ]]; then
@@ -328,11 +349,16 @@ main() {
   local prefix="$DEFAULT_PREFIX"
   local message=""
   local mode="send"
+  local direct_only="0"
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --check)
         mode="check"
+        shift
+        ;;
+      --direct-only)
+        direct_only="1"
         shift
         ;;
       --to)
@@ -396,7 +422,7 @@ main() {
   [[ -n "$message" ]] || fail "message is empty after normalization"
 
   probe_messages_access
-  send_message "$recipient" "$message"
+  send_message "$recipient" "$message" "$direct_only"
 }
 
 main "$@"

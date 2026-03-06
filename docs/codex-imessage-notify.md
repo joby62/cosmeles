@@ -74,6 +74,12 @@ On current macOS versions it is not a reliable per-app Accessibility signal for 
 CODEX_NOTIFY_TO="+8613812345678" ./scripts/codex-imessage-notify.sh --message "test notification"
 ```
 
+If you want to diagnose direct iMessage resolution without any UI fallback, run:
+
+```bash
+./scripts/codex-imessage-notify.sh --direct-only --to "+8613812345678" --message "test notification"
+```
+
 Or rely on the default message:
 
 ```bash
@@ -89,6 +95,7 @@ The default body is normalized to one line and includes:
 ## Notes
 
 - This V1 now tries direct `Messages` AppleScript send first. Only unresolved recipients fall back to keyboard-driven UI automation.
+- `--direct-only` is the fastest way to verify whether a target can be resolved as a true iMessage recipient.
 - Message text is normalized to a single line before sending. Keep the payload short.
 - If recipient resolution is inconsistent, test with the exact iMessage phone number or Apple ID email you use in `Messages`.
 
