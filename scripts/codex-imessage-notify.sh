@@ -187,7 +187,7 @@ probe_messages_access() {
       -e 'tell application "Messages"' \
       -e 'set availableServices to every service whose service type is iMessage' \
       -e 'if (count of availableServices) is 0 then error "No signed-in iMessage service is available."' \
-      -e 'return name of item 1 of availableServices' \
+      -e 'return id of item 1 of availableServices' \
       -e 'end tell' 2>&1
   )"
   exit_code=$?
@@ -412,7 +412,7 @@ main() {
 
   if [[ "$mode" == "check" ]]; then
     probe_messages_access
-    print -- "Messages UI automation looks available for iMessage notifications."
+    print -- "Messages iMessage service looks available."
     exit 0
   fi
 
