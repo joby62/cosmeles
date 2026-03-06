@@ -1,5 +1,8 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import {
+  cleanserChoiceLabel,
+  isCompleteCleanserSignals,
   normalizeCleanserSignals,
   toCleanserSearchParams,
   type CleanserSignals,
@@ -7,87 +10,82 @@ import {
 
 type Search = Record<string, string | string[] | undefined>;
 type StepKey = keyof CleanserSignals;
-type Option = { value: string; label: string; sub: string };
+type OptionValue = "A" | "B" | "C" | "D" | "E";
+type Option = { value: OptionValue; label: string; sub: string };
 
 const STEPS: Array<{ key: StepKey; title: string; note: string; options: Option[] }> = [
   {
-    key: "skin",
-    title: "你更接近哪类肤质人群",
-    note: "先定位人群，再做复合收敛",
+    key: "q1",
+    title: "Q1 基础肤质与出油量",
+    note: "先确定皮脂基线，决定清洁强度的主权重。",
     options: [
-      { value: "oily-acne", label: "偏油、易闷痘", sub: "要清爽但不能过激" },
-      { value: "combo", label: "混合肌（T 区油、两颊一般）", sub: "要平衡清洁" },
-      { value: "dry-sensitive", label: "偏干、易敏感", sub: "先稳耐受" },
-      { value: "stable", label: "整体稳定", sub: "要长期稳定好用" },
+      { value: "A", label: "A. 大油田", sub: "全脸泛油，洗后很快回油" },
+      { value: "B", label: "B. 混油皮", sub: "T区明显出油，U区正常或偏干" },
+      { value: "C", label: "C. 中性/混干", sub: "出油正常，偶发干燥" },
+      { value: "D", label: "D. 大干皮", sub: "极少出油，洗后易紧绷起皮" },
     ],
   },
   {
-    key: "issue",
-    title: "你最想先解决什么",
-    note: "只选当前核心困扰",
+    key: "q2",
+    title: "Q2 屏障健康与敏感度",
+    note: "安全优先级最高，这一步会触发强制掩码。",
     options: [
-      { value: "oil-shine", label: "油光和闷感", sub: "希望回油慢一点" },
-      { value: "tight-after", label: "洗后紧绷", sub: "希望不拔干" },
-      { value: "sting-red", label: "刺痛/泛红", sub: "希望更温和" },
-      { value: "residue", label: "防晒残留洗不净", sub: "希望清洁更到位" },
+      { value: "A", label: "A. 重度敏感", sub: "常泛红发痒，容易刺痛" },
+      { value: "B", label: "B. 轻度敏感", sub: "偶尔泛红，需谨慎选品" },
+      { value: "C", label: "C. 屏障健康", sub: "耐受稳定，对活性成分容忍更高" },
     ],
   },
   {
-    key: "scene",
-    title: "你的主要使用场景",
-    note: "场景会影响清洁力度取舍",
+    key: "q3",
+    title: "Q3 日常清洁负担",
+    note: "根据彩妆/防晒负担修正洗净力需求。",
     options: [
-      { value: "morning-quick", label: "早晨快洗", sub: "要快、要稳" },
-      { value: "night-clean", label: "晚间日常清洁", sub: "要洗净但不过度" },
-      { value: "post-workout", label: "运动后清洁", sub: "要快速净汗" },
-      { value: "after-sunscreen", label: "防晒后清洁", sub: "要兼顾残留与温和" },
+      { value: "A", label: "A. 每天浓妆", sub: "常见防水妆或高倍防晒" },
+      { value: "B", label: "B. 淡妆/通勤防晒", sub: "日常隔离或轻薄底妆" },
+      { value: "C", label: "C. 仅素颜", sub: "只需清理皮脂与灰尘" },
     ],
   },
   {
-    key: "avoid",
-    title: "最后一个排除条件",
-    note: "告诉我们你不接受什么",
+    key: "q4",
+    title: "Q4 面部特殊痛点",
+    note: "这一题决定功能路径和排除策略。",
     options: [
-      { value: "over-clean", label: "清洁过猛", sub: "不想越洗越敏" },
-      { value: "strong-fragrance", label: "香味太重", sub: "希望气味克制" },
-      { value: "low-foam", label: "低泡无反馈", sub: "希望有适度清洁反馈" },
-      { value: "complex-formula", label: "配方过于复杂", sub: "希望简单稳定" },
+      { value: "A", label: "A. 黑头与闭口粉刺", sub: "毛孔堵塞与脂栓明显" },
+      { value: "B", label: "B. 红肿破口痘", sub: "处于炎症或破口阶段" },
+      { value: "C", label: "C. 暗沉粗糙", sub: "角质堆积、肤色不匀" },
+      { value: "D", label: "D. 极度缺水紧绷", sub: "洗后立刻干涩刺痛" },
+      { value: "E", label: "E. 无明显痛点", sub: "以健康维稳为主" },
+    ],
+  },
+  {
+    key: "q5",
+    title: "Q5 质地与洗后肤感",
+    note: "最后一步按偏好做轻量收敛，不越过安全边界。",
+    options: [
+      { value: "A", label: "A. 喜欢丰富绵密泡沫", sub: "更有清洁仪式感" },
+      { value: "B", label: "B. 喜欢绝对清爽感", sub: "追求更强去油触感" },
+      { value: "C", label: "C. 喜欢保留水润滑感", sub: "抗拒洗后紧绷" },
+      { value: "D", label: "D. 喜欢无泡/低泡温和感", sub: "只要温和不刺激" },
     ],
   },
 ];
 
-const CHOICE_LABELS: Record<StepKey, Record<string, string>> = {
-  skin: {
-    "oily-acne": "偏油、易闷痘",
-    combo: "混合肌",
-    "dry-sensitive": "偏干、易敏感",
-    stable: "整体稳定",
-  },
-  issue: {
-    "oil-shine": "油光和闷感",
-    "tight-after": "洗后紧绷",
-    "sting-red": "刺痛/泛红",
-    residue: "防晒残留洗不净",
-  },
-  scene: {
-    "morning-quick": "早晨快洗",
-    "night-clean": "晚间日常清洁",
-    "post-workout": "运动后清洁",
-    "after-sunscreen": "防晒后清洁",
-  },
-  avoid: {
-    "over-clean": "清洁过猛",
-    "strong-fragrance": "香味太重",
-    "low-foam": "低泡无反馈",
-    "complex-formula": "配方过于复杂",
-  },
-};
+function queryValue(v: string | string[] | undefined): string | undefined {
+  return Array.isArray(v) ? v[0] : v;
+}
 
-function makeHref(signals: CleanserSignals, key: StepKey, value: string, nextStep: number): string {
+function buildNextHref(
+  signals: CleanserSignals,
+  key: StepKey,
+  value: OptionValue,
+  nextStep: number,
+): string {
   const merged: CleanserSignals = { ...signals, [key]: value };
   const qp = toCleanserSearchParams(merged);
+  if (isCompleteCleanserSignals(merged)) {
+    return `/m/cleanser/resolve?${qp.toString()}`;
+  }
   qp.set("step", String(nextStep));
-  if (nextStep > STEPS.length) return `/m/cleanser/resolve?${qp.toString()}`;
   return `/m/cleanser/profile?${qp.toString()}`;
 }
 
@@ -98,9 +96,33 @@ export default async function CleanserProfilePage({
 }) {
   const raw = (await Promise.resolve(searchParams)) || {};
   const signals = normalizeCleanserSignals(raw);
-  const stepNumRaw = Array.isArray(raw.step) ? raw.step[0] : raw.step;
-  const parsed = Number(stepNumRaw || "1");
-  const stepNum = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), STEPS.length) : 1;
+  const stepRaw = queryValue(raw.step);
+  const parsedStep = Number(stepRaw || "1");
+
+  if (!signals.q1 && parsedStep > 1) {
+    redirect("/m/cleanser/profile?step=1");
+  }
+  if (signals.q1 && !signals.q2 && parsedStep > 2) {
+    redirect(`/m/cleanser/profile?${toCleanserSearchParams({ q1: signals.q1 }).toString()}&step=2`);
+  }
+  if (signals.q1 && signals.q2 && !signals.q3 && parsedStep > 3) {
+    redirect(`/m/cleanser/profile?${toCleanserSearchParams({ q1: signals.q1, q2: signals.q2 }).toString()}&step=3`);
+  }
+  if (signals.q1 && signals.q2 && signals.q3 && !signals.q4 && parsedStep > 4) {
+    redirect(
+      `/m/cleanser/profile?${toCleanserSearchParams({ q1: signals.q1, q2: signals.q2, q3: signals.q3 }).toString()}&step=4`,
+    );
+  }
+  if (signals.q1 && signals.q2 && signals.q3 && signals.q4 && !signals.q5 && parsedStep > 5) {
+    redirect(
+      `/m/cleanser/profile?${toCleanserSearchParams({ q1: signals.q1, q2: signals.q2, q3: signals.q3, q4: signals.q4 }).toString()}&step=5`,
+    );
+  }
+  if (isCompleteCleanserSignals(signals)) {
+    redirect(`/m/cleanser/resolve?${toCleanserSearchParams(signals).toString()}`);
+  }
+
+  const stepNum = Number.isFinite(parsedStep) ? Math.min(Math.max(parsedStep, 1), STEPS.length) : 1;
   const current = STEPS[stepNum - 1];
 
   return (
@@ -113,7 +135,7 @@ export default async function CleanserProfilePage({
         {current.options.map((opt) => (
           <Link
             key={opt.value}
-            href={makeHref(signals, current.key, opt.value, stepNum + 1)}
+            href={buildNextHref(signals, current.key, opt.value, stepNum + 1)}
             className="block rounded-2xl border border-black/10 bg-white px-4 py-4 active:bg-black/[0.03]"
           >
             <div className="text-[16px] font-semibold text-black/90">{opt.label}</div>
@@ -125,15 +147,15 @@ export default async function CleanserProfilePage({
       <div className="mt-7 rounded-2xl border border-black/8 bg-black/[0.02] px-4 py-4">
         <div className="text-[13px] font-medium text-black/55">已收集信号</div>
         <div className="mt-2 flex flex-wrap gap-2">
-          {(["skin", "issue", "scene", "avoid"] as StepKey[]).map((k) => {
-            const value = signals[k];
+          {(["q1", "q2", "q3", "q4", "q5"] as StepKey[]).map((key) => {
+            const value = signals[key];
             if (!value) return null;
             return (
               <span
-                key={`${k}-${value}`}
+                key={`${key}-${value}`}
                 className="inline-flex h-7 items-center rounded-full bg-black/[0.06] px-3 text-[12px] text-black/70"
               >
-                {CHOICE_LABELS[k][value]}
+                {key.toUpperCase()} · {value} · {cleanserChoiceLabel(key, value)}
               </span>
             );
           })}

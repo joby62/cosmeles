@@ -301,6 +301,36 @@ def test_mobile_selection_resolve_conditioner_matrix(test_client, monkeypatch: p
     assert [item["key"] for item in body["choices"]] == ["c_q1", "c_q2", "c_q3"]
     assert any(item["rule"] == "veto" for item in body["rule_hits"])
 
+
+def test_mobile_selection_resolve_cleanser_matrix(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, _ = test_client
+    _install_fake_ingest_pipeline(
+        monkeypatch,
+        {
+            "category": "cleanser",
+            "brand": "Freeplus",
+            "name": "Cleanser Matrix",
+            "one_sentence": "洁面矩阵测试",
+        },
+    )
+    _ingest_one(client, "cleanser-matrix.jpg")
+    _set_featured_slot(client, "cleanser", "__category__")
+
+    resp = client.post(
+        "/api/mobile/selection/resolve",
+        json={
+            "category": "cleanser",
+            "answers": {"q1": "B", "q2": "A", "q3": "B", "q4": "E", "q5": "D"},
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["route"]["key"] == "pure_amino"
+    assert body["route"]["title"] == "纯氨基酸温和型"
+    assert [item["key"] for item in body["choices"]] == ["q1", "q2", "q3", "q4", "q5"]
+    assert any(item["rule"] == "veto" for item in body["rule_hits"])
+
+
 def test_mobile_selection_resolve_reuse_existing_session(test_client, monkeypatch: pytest.MonkeyPatch):
     client, _ = test_client
     _install_fake_ingest_pipeline(
@@ -318,10 +348,11 @@ def test_mobile_selection_resolve_reuse_existing_session(test_client, monkeypatc
     payload = {
         "category": "cleanser",
         "answers": {
-            "skin": "combo",
-            "issue": "residue",
-            "scene": "night-clean",
-            "avoid": "complex-formula",
+            "q1": "B",
+            "q2": "B",
+            "q3": "B",
+            "q4": "E",
+            "q5": "C",
         },
         "reuse_existing": True,
     }

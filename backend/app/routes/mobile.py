@@ -460,38 +460,126 @@ LOTION_GROUP_TITLE = {
     "stable-maintain": "稳定维护路线",
 }
 
-CLEANSER_LABELS = {
-    "skin": {
-        "oily-acne": "偏油、易闷痘",
-        "combo": "混合肌",
-        "dry-sensitive": "偏干、易敏感",
-        "stable": "整体稳定",
-    },
-    "issue": {
-        "oil-shine": "油光和闷感",
-        "tight-after": "洗后紧绷",
-        "sting-red": "刺痛/泛红",
-        "residue": "防晒残留洗不净",
-    },
-    "scene": {
-        "morning-quick": "早晨快洗",
-        "night-clean": "晚间日常清洁",
-        "post-workout": "运动后清洁",
-        "after-sunscreen": "防晒后清洁",
-    },
-    "avoid": {
-        "over-clean": "清洁过猛",
-        "strong-fragrance": "香味太重",
-        "low-foam": "低泡无反馈",
-        "complex-formula": "配方过于复杂",
-    },
+CLEANSER_ROUTE_TITLES = {
+    "apg_soothing": "APG舒缓型",
+    "pure_amino": "纯氨基酸温和型",
+    "soap_amino_blend": "皂氨复配清洁型",
+    "bha_clearing": "BHA净肤型",
+    "clay_purifying": "泥膜净化型",
+    "enzyme_polishing": "酵素抛光型",
 }
-CLEANSER_SKIN_TITLE = {
-    "oily-acne": "油痘清衡路线",
-    "combo": "混合平衡路线",
-    "dry-sensitive": "干敏稳护路线",
-    "stable": "稳定维持路线",
+
+CLEANSER_MATRIX_MODEL = {
+    "category": "cleanser",
+    "categories": [
+        "apg_soothing",
+        "pure_amino",
+        "soap_amino_blend",
+        "bha_clearing",
+        "clay_purifying",
+        "enzyme_polishing",
+    ],
+    "questions": [
+        {
+            "key": "q1",
+            "title": "基础肤质与出油量",
+            "options": {
+                "A": "大油田（全脸泛油，刚洗完很快又油了，经常油光满面）",
+                "B": "混油皮（T区出油明显易长黑头，U区正常或偏干）",
+                "C": "中性/混干（出油量正常，只有换季或秋冬偶尔感到干燥）",
+                "D": "大干皮（极少出油，洗脸后常感紧绷，甚至有起皮脱屑）",
+            },
+        },
+        {
+            "key": "q2",
+            "title": "屏障健康与敏感度",
+            "options": {
+                "A": "重度敏感（有红血丝、常泛红发痒、处于烂脸期/皮炎期、极易刺痛）",
+                "B": "轻度敏感（换季或受刺激时偶尔泛红，挑选护肤品需要谨慎）",
+                "C": "屏障健康（“城墙皮”，基本不过敏，对猛药耐受度高）",
+            },
+        },
+        {
+            "key": "q3",
+            "title": "日常清洁负担",
+            "options": {
+                "A": "每天浓妆（全妆，常使用防水彩妆/高倍防水防晒，需强力二次清洁洗去卸妆油残留）",
+                "B": "日常淡妆/通勤防晒（仅涂抹普通防晒霜、隔离或轻薄气垫）",
+                "C": "仅素颜（基本不化妆，仅需洗去日常分泌的皮脂与灰尘）",
+            },
+        },
+        {
+            "key": "q4",
+            "title": "面部特殊痛点",
+            "options": {
+                "A": "黑头与闭口粉刺（T区毛孔粗大，有顽固脂栓）",
+                "B": "红肿破口痘（有正在发炎、红肿疼痛或已经破口的痘痘）",
+                "C": "暗沉粗糙（角质层较厚，摸起来不平滑，肤色不均/无光泽）",
+                "D": "极度缺水紧绷（洗脸是件痛苦的事，洗完立刻干涩刺痛）",
+                "E": "无明显痛点（状态稳定，日常健康维稳即可）",
+            },
+        },
+        {
+            "key": "q5",
+            "title": "质地与洗后肤感",
+            "options": {
+                "A": "喜欢丰富绵密的泡沫（注重起泡的仪式感和缓冲感）",
+                "B": "喜欢“搓盘子”般的绝对清爽感（追求极致去油，摸起来一点都不滑）",
+                "C": "喜欢洗后保留水润滑溜感（抗拒紧绷，甚至偏好微微的膜感或保湿感）",
+                "D": "喜欢无泡/低泡的温和感（只要温和不刺激就行，对泡沫无执念）",
+            },
+        },
+    ],
+    "scoring_matrix": {
+        "q1": {
+            "A": [-10, -5, 15, 10, 15, 5],
+            "B": [-5, 5, 5, 10, 5, 10],
+            "C": [5, 10, -10, -5, -5, 5],
+            "D": [15, 10, -20, -15, -15, -5],
+        },
+        "q2": {
+            "A": [20, 5, 0, 0, 0, 0],
+            "B": [5, 10, -10, -5, -10, -5],
+            "C": [-5, 0, 5, 5, 5, 5],
+        },
+        "q3": {
+            "A": [-10, 5, 15, -5, 0, 0],
+            "B": [0, 10, 5, 0, 0, 0],
+            "C": [10, 5, -5, 0, 0, 0],
+        },
+        "q4": {
+            "A": [0, 0, 10, 25, 15, 5],
+            "B": [15, 20, -20, 0, -20, -10],
+            "C": [0, 5, 5, 10, 5, 25],
+            "D": [25, 15, -20, -10, -15, -5],
+            "E": [5, 20, 5, -5, -5, 5],
+        },
+        "q5": {
+            "A": [-5, 5, 5, 0, 0, 5],
+            "B": [-5, -5, 5, 0, 5, 0],
+            "C": [5, 5, -5, 0, -5, 0],
+            "D": [5, -5, -5, 0, 0, 0],
+        },
+    },
+    "veto_masks": [
+        {
+            "trigger": "q2 == 'A'",
+            "mask": [1, 1, 0, 0, 0, 0],
+            "note": "敏感防线：重度敏感强制清零皂基、泥膜及所有酸类/酶类剥脱成分",
+        },
+        {
+            "trigger": "q4 == 'B'",
+            "mask": [1, 1, 0, 0, 0, 0],
+            "note": "破口防线：红肿破口痘强制清零皂基、泥膜物理摩擦以及所有酸类/酶类剥脱成分",
+        },
+        {
+            "trigger": "q1 == 'D' OR q4 == 'D'",
+            "mask": [1, 1, 0, 0, 0, 0],
+            "note": "脱脂与屏障防线：大干皮或极度紧绷刺痛，强制清零皂基、水杨酸、泥膜，并绝对封杀酵素生物剥脱",
+        },
+    ],
 }
+CLEANSER_MATRIX_CONFIG = compile_matrix_config(CLEANSER_MATRIX_MODEL)
 
 
 @router.post("/selection/resolve", response_model=MobileSelectionResolveResponse)
@@ -4303,32 +4391,50 @@ def _resolve_lotion(answers: dict[str, str]) -> dict[str, Any]:
 
 
 def _resolve_cleanser(answers: dict[str, str]) -> dict[str, Any]:
-    skin = _require_value(answers, "skin", {"oily-acne", "combo", "dry-sensitive", "stable"})
-    issue = _require_value(answers, "issue", {"oil-shine", "tight-after", "sting-red", "residue"})
-    scene = _require_value(answers, "scene", {"morning-quick", "night-clean", "post-workout", "after-sunscreen"})
-    avoid = _require_value(answers, "avoid", {"over-clean", "strong-fragrance", "low-foam", "complex-formula"})
+    try:
+        decision = resolve_matrix_selection(CLEANSER_MATRIX_CONFIG, answers)
+    except MatrixDecisionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    fallback = skin == "dry-sensitive" and (issue == "sting-red" or avoid == "over-clean")
-    route_key = f"skin:{skin}|issue:{issue}|scene:{scene}|avoid:{avoid}|fallback:{'yes' if fallback else 'no'}"
-    route_title = CLEANSER_SKIN_TITLE[skin]
+    route_key = decision.best_category
+    route_title = CLEANSER_ROUTE_TITLES.get(route_key, route_key)
+    normalized_answers = decision.normalized_answers
 
-    choices = [
-        {"key": "skin", "value": skin, "label": CLEANSER_LABELS["skin"][skin]},
-        {"key": "issue", "value": issue, "label": CLEANSER_LABELS["issue"][issue]},
-        {"key": "scene", "value": scene, "label": CLEANSER_LABELS["scene"][scene]},
-        {"key": "avoid", "value": avoid, "label": CLEANSER_LABELS["avoid"][avoid]},
-    ]
-    rule_hits = [
-        {"rule": "skin", "effect": f"肤质定位：{CLEANSER_LABELS['skin'][skin]}。"},
-        {"rule": "issue", "effect": f"核心困扰：{CLEANSER_LABELS['issue'][issue]}。"},
-        {"rule": "scene", "effect": f"主要场景：{CLEANSER_LABELS['scene'][scene]}。"},
-        {"rule": "avoid", "effect": f"排除条件：{CLEANSER_LABELS['avoid'][avoid]}。"},
-    ]
-    if fallback:
-        rule_hits.append({"rule": "fallback", "effect": "触发耐受回退：优先温和洁面路径。"})
+    choices: list[dict[str, str]] = []
+    for question in CLEANSER_MATRIX_CONFIG.questions:
+        value = normalized_answers.get(question.key)
+        if not value:
+            continue
+        label = question.options.get(value) or value
+        choices.append({"key": question.key, "value": value, "label": label})
+
+    rule_hits: list[dict[str, str]] = []
+    for question in CLEANSER_MATRIX_CONFIG.questions:
+        value = normalized_answers.get(question.key)
+        if not value:
+            continue
+        deltas = decision.question_contributions.get(question.key) or {}
+        effect = " / ".join(
+            f"{category}:{'+' if points >= 0 else ''}{points}"
+            for category, points in deltas.items()
+        )
+        rule_hits.append(
+            {
+                "rule": question.key,
+                "effect": f"{question.title}={question.options.get(value) or value}；得分贡献 {effect}",
+            }
+        )
+
+    for item in decision.triggered_vetoes:
+        blocked = "、".join(item.excluded_categories) if item.excluded_categories else "-"
+        note = item.note or item.trigger
+        rule_hits.append({"rule": "veto", "effect": f"{note}（禁用：{blocked}）"})
+
+    top2_text = " / ".join(f"{category}:{score}" for category, score in decision.top2) or "-"
+    rule_hits.append({"rule": "route", "effect": f"最终收敛：{route_title}（{route_key}）；Top2={top2_text}"})
 
     return {
-        "answers": {"skin": skin, "issue": issue, "scene": scene, "avoid": avoid},
+        "answers": normalized_answers,
         "route_key": route_key,
         "route_title": route_title,
         "choices": choices,
