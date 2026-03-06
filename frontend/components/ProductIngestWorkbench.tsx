@@ -425,7 +425,7 @@ export default function ProductIngestWorkbench() {
             {sortedJobs.map((job) => {
               const resultObj = job.result && typeof job.result === "object" ? (job.result as IngestResultLike) : null;
               const draft = resumeDrafts[job.job_id] || EMPTY_DRAFT;
-              const running = job.status === "running" || job.status === "cancelling";
+              const running = job.status === "queued" || job.status === "running" || job.status === "cancelling";
               return (
                 <article key={job.job_id} className="rounded-xl border border-black/10 bg-white p-3">
                   <div className="flex items-center justify-between gap-3">
@@ -590,7 +590,9 @@ function statusLabel(job: UploadIngestJob): string {
   if (job.status === "cancelled") return "已取消";
   if (job.status === "cancelling") return "取消中";
   if (job.status === "waiting_more") return "待补拍";
+  if (job.status === "queued") return "排队中";
   const stage = String(job.stage || "").toLowerCase();
+  if (stage === "queued") return "排队中";
   if (stage === "uploading") return "上传中";
   if (stage === "converting") return "转换中";
   if (stage === "stage1") return "Stage1";
@@ -603,8 +605,9 @@ function statusClassName(job: UploadIngestJob): string {
   if (job.status === "failed") return "bg-[#fdebec] text-[#b42318]";
   if (job.status === "cancelled" || job.status === "cancelling") return "bg-[#ffeceb] text-[#b42318]";
   if (job.status === "waiting_more") return "bg-[#fff4e6] text-[#9b5a00]";
+  if (job.status === "queued") return "bg-[#eef2ff] text-[#3151d8]";
   const stage = String(job.stage || "").toLowerCase();
-  if (stage === "uploading" || stage === "converting" || stage === "stage1" || stage === "stage2") {
+  if (stage === "queued" || stage === "uploading" || stage === "converting" || stage === "stage1" || stage === "stage2") {
     return "bg-[#eef2ff] text-[#3151d8]";
   }
   return "bg-black/6 text-black/60";

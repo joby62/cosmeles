@@ -18,6 +18,12 @@ class Settings(BaseSettings):
     # === 数据库 ===
     # SQLite 文件将位于 backend/storage/app.db
     database_url: str = f"sqlite:///{(DEFAULT_STORAGE_DIR / 'app.db').as_posix()}"
+    # 连接池（仅对非 sqlite 生效）
+    db_pool_size: int = 8
+    db_max_overflow: int = 4
+    db_pool_timeout_seconds: int = 30
+    db_pool_recycle_seconds: int = 1800
+    db_pool_pre_ping: bool = True
 
     # === 豆包配置 ===
     doubao_mode: str = "real"  # sample/mock | real
@@ -48,6 +54,8 @@ class Settings(BaseSettings):
 
     # === 上传安全边界 ===
     max_upload_bytes: int = 8 * 1024 * 1024  # 8MB
+    # 上传分析后台任务并发上限（2C4G 推荐 2）
+    upload_ingest_max_concurrency: int = 2
 
     # === Pydantic v2 配置 ===
     model_config = SettingsConfigDict(

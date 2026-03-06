@@ -3,6 +3,7 @@ import inspect
 import queue
 import threading
 import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException, Query
@@ -43,6 +44,11 @@ router = APIRouter(prefix="/api", tags=["ingest"])
 MODEL_TIER_OPTIONS = {"mini", "lite", "pro"}
 UPLOAD_INGEST_JOB_STALE_SECONDS = 60 * 30
 UPLOAD_INGEST_JOB_PROCESS_STARTED_AT = datetime.now(timezone.utc)
+UPLOAD_INGEST_MAX_CONCURRENCY = max(1, min(8, int(settings.upload_ingest_max_concurrency)))
+UPLOAD_INGEST_EXECUTOR = ThreadPoolExecutor(
+    max_workers=UPLOAD_INGEST_MAX_CONCURRENCY,
+    thread_name_prefix="upload-ingest",
+)
 
 @router.post("/ingest")
 @router.post("/upload")
@@ -616,11 +622,11 @@ async def create_upload_ingest_job(
     now = now_iso()
     rec = UploadIngestJob(
         job_id=job_id,
-        status="running",
-        stage="uploading",
-        stage_label=_upload_ingest_job_stage_label("uploading"),
-        message="上传完成，准备转换图片。",
-        percent=8,
+        status="queued",
+        stage="queued",
+        stage_label=_upload_ingest_job_stage_label("queued"),
+        message=f"任务已入队，等待执行（并发上限 {UPLOAD_INGEST_MAX_CONCURRENCY}）。",
+        percent=3,
         file_name=str(upload.filename or "").strip() or "upload.img",
         source_content_type=str(upload.content_type or "").strip() or None,
         temp_upload_path=temp_rel,
@@ -643,23 +649,13 @@ async def create_upload_ingest_job(
         error_json=None,
         created_at=now,
         updated_at=now,
-        started_at=now,
+        started_at=None,
         finished_at=None,
     )
     db.add(rec)
     db.commit()
     db.refresh(rec)
-
-    SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=db.get_bind())
-
-    def worker() -> None:
-        local_db = SessionMaker()
-        try:
-            _run_upload_ingest_job(job_id=job_id, db=local_db, resume=False)
-        finally:
-            local_db.close()
-
-    threading.Thread(target=worker, daemon=True).start()
+    _submit_upload_ingest_job(bind=db.get_bind(), job_id=job_id, resume=False)
     return _to_upload_ingest_job_view(rec)
 
 
@@ -791,29 +787,20 @@ async def resume_upload_ingest_job(
     if supplement_temp_rel is not None:
         rec.supplement_temp_upload_path = supplement_temp_rel
 
-    rec.status = "running"
-    rec.stage = "uploading"
-    rec.stage_label = _upload_ingest_job_stage_label("uploading")
-    rec.message = "继续任务：已接收补拍/补录信息。"
+    rec.status = "queued"
+    rec.stage = "queued"
+    rec.stage_label = _upload_ingest_job_stage_label("queued")
+    rec.message = f"继续任务已入队，等待执行（并发上限 {UPLOAD_INGEST_MAX_CONCURRENCY}）。"
     rec.percent = max(45, int(rec.percent or 0))
     rec.cancel_requested = False
     rec.error_json = None
+    rec.started_at = None
     rec.finished_at = None
     rec.updated_at = now
     db.add(rec)
     db.commit()
     db.refresh(rec)
-
-    SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=db.get_bind())
-
-    def worker() -> None:
-        local_db = SessionMaker()
-        try:
-            _run_upload_ingest_job(job_id=rec.job_id, db=local_db, resume=True)
-        finally:
-            local_db.close()
-
-    threading.Thread(target=worker, daemon=True).start()
+    _submit_upload_ingest_job(bind=db.get_bind(), job_id=rec.job_id, resume=True)
     return _to_upload_ingest_job_view(rec)
 
 
@@ -1062,6 +1049,28 @@ def _ensure_upload_ingest_job_table(db: Session) -> None:
     UploadIngestJob.__table__.create(bind=bind, checkfirst=True)
 
 
+def _submit_upload_ingest_job(*, bind: Any, job_id: str, resume: bool) -> None:
+    SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=bind)
+
+    def worker() -> None:
+        local_db = SessionMaker()
+        try:
+            _run_upload_ingest_job(job_id=job_id, db=local_db, resume=resume)
+        finally:
+            local_db.close()
+
+    try:
+        UPLOAD_INGEST_EXECUTOR.submit(worker)
+    except Exception as e:
+        _mark_upload_ingest_job_failed(
+            job_id=job_id,
+            bind=bind,
+            code="upload_ingest_dispatch_failed",
+            detail=f"[stage=upload_job_dispatch] executor submit failed: {e}",
+            http_status=500,
+        )
+
+
 def _run_upload_ingest_job(*, job_id: str, db: Session, resume: bool) -> None:
     _ensure_upload_ingest_job_table(db)
     rec = db.get(UploadIngestJob, job_id)
@@ -1071,6 +1080,20 @@ def _run_upload_ingest_job(*, job_id: str, db: Session, resume: bool) -> None:
     try:
         if bool(rec.cancel_requested):
             raise UploadIngestJobCancelledError("job cancelled before execution.")
+        now = now_iso()
+        rec.status = "running"
+        if not str(rec.started_at or "").strip():
+            rec.started_at = now
+        rec.finished_at = None
+        if str(rec.stage or "").strip().lower() == "queued":
+            rec.stage = "uploading"
+            rec.stage_label = _upload_ingest_job_stage_label("uploading")
+            rec.message = "任务开始执行。"
+            rec.percent = max(8, int(rec.percent or 0))
+        rec.updated_at = now
+        db.add(rec)
+        db.commit()
+        db.refresh(rec)
 
         if resume:
             _resume_upload_ingest_job_flow(db=db, rec=rec)
@@ -1407,6 +1430,7 @@ def _append_upload_job_stage_event(*, bind: Any, job_id: str, event: dict[str, A
 
         if text and event_type == "step":
             rec.message = text
+        rec.status = "running"
         if stage.startswith("stage1"):
             rec.stage = "stage1"
             rec.stage_label = _upload_ingest_job_stage_label("stage1")
@@ -1415,7 +1439,10 @@ def _append_upload_job_stage_event(*, bind: Any, job_id: str, event: dict[str, A
             rec.stage = "stage2"
             rec.stage_label = _upload_ingest_job_stage_label("stage2")
             rec.percent = max(78, int(rec.percent or 0))
-        rec.updated_at = now_iso()
+        now = now_iso()
+        rec.updated_at = now
+        if not str(rec.started_at or "").strip():
+            rec.started_at = now
         progress_db.add(rec)
         progress_db.commit()
     finally:
@@ -1437,15 +1464,20 @@ def _update_upload_job_stage(
     stage: str,
     message: str,
     percent: int,
+    status: str = "running",
 ) -> None:
     rec = db.get(UploadIngestJob, rec.job_id)
     if rec is None:
         return
+    now = now_iso()
+    rec.status = status
     rec.stage = stage
     rec.stage_label = _upload_ingest_job_stage_label(stage)
     rec.message = message
     rec.percent = max(0, min(100, int(percent)))
-    rec.updated_at = now_iso()
+    rec.updated_at = now
+    if status == "running" and not str(rec.started_at or "").strip():
+        rec.started_at = now
     db.add(rec)
     db.commit()
     db.refresh(rec)
