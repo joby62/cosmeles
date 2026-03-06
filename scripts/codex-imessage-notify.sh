@@ -19,7 +19,8 @@ Environment:
   CODEX_NOTIFY_PREFIX    Optional. Defaults to "[Codex]".
 
 Notes:
-  AppleScript V1 uses Messages UI automation. It does not support SMS routing.
+  AppleScript V1 sends via Messages directly first, then falls back to UI automation if needed.
+  It does not support SMS routing.
   Message text is normalized to a single line before sending.
 
 Examples:
@@ -148,6 +149,21 @@ EOF
   return 1
 }
 
+print_service_help() {
+  local output="$1"
+
+  if [[ "$output" == *"No signed-in iMessage service is available."* ]]; then
+    cat >&2 <<'EOF'
+No signed-in iMessage service is available in Messages.
+
+Open Messages, confirm this Mac is signed in to iMessage, then retry.
+EOF
+    return 0
+  fi
+
+  return 1
+}
+
 probe_messages_access() {
   local output=""
   local exit_code=0
@@ -155,14 +171,10 @@ probe_messages_access() {
   set +e
   output="$(
     run_osascript \
-      -e 'tell application "Messages" to activate' \
-      -e 'delay 0.8' \
-      -e 'tell application "System Events"' \
-      -e 'if not (exists process "Messages") then error "Messages process is not available."' \
-      -e 'tell process "Messages"' \
-      -e 'set frontmost to true' \
-      -e 'if not (exists menu bar 1) then error "Messages UI is not available."' \
-      -e 'end tell' \
+      -e 'tell application "Messages"' \
+      -e 'set availableServices to every service whose service type is iMessage' \
+      -e 'if (count of availableServices) is 0 then error "No signed-in iMessage service is available."' \
+      -e 'return name of item 1 of availableServices' \
       -e 'end tell' 2>&1
   )"
   exit_code=$?
@@ -172,13 +184,13 @@ probe_messages_access() {
     return 0
   fi
 
-  if ! print_permission_help "$output"; then
+  if ! print_service_help "$output" && ! print_permission_help "$output"; then
     [[ -n "$output" ]] && print -u2 -- "$output"
   fi
   return 1
 }
 
-send_message() {
+direct_send_message() {
   local recipient="$1"
   local message="$2"
   local output=""
@@ -190,27 +202,14 @@ send_message() {
       -e 'on run argv' \
       -e 'set recipientHandle to item 1 of argv' \
       -e 'set messageText to item 2 of argv' \
-      -e 'tell application "Messages" to activate' \
-      -e 'delay 0.8' \
-      -e 'tell application "System Events"' \
-      -e 'if not (exists process "Messages") then error "Messages process is not available."' \
-      -e 'tell process "Messages"' \
-      -e 'set frontmost to true' \
-      -e 'if not (exists menu bar 1) then error "Messages UI is not available."' \
+      -e 'tell application "Messages"' \
+      -e 'set availableServices to every service whose service type is iMessage' \
+      -e 'if (count of availableServices) is 0 then error "No signed-in iMessage service is available."' \
+      -e 'set targetService to item 1 of availableServices' \
+      -e 'set targetBuddy to buddy recipientHandle of targetService' \
+      -e 'send messageText to targetBuddy' \
+      -e 'return "sent-direct to " & recipientHandle' \
       -e 'end tell' \
-      -e 'keystroke "n" using command down' \
-      -e 'delay 0.5' \
-      -e 'keystroke recipientHandle' \
-      -e 'delay 0.5' \
-      -e 'key code 36' \
-      -e 'delay 0.5' \
-      -e 'key code 48' \
-      -e 'delay 0.3' \
-      -e 'keystroke messageText' \
-      -e 'delay 0.3' \
-      -e 'key code 36' \
-      -e 'end tell' \
-      -e 'return "sent to " & recipientHandle' \
       -e 'end run' \
       -- "$recipient" "$message" 2>&1
   )"
@@ -222,10 +221,103 @@ send_message() {
     return 0
   fi
 
-  if ! print_permission_help "$output"; then
+  [[ -n "$output" ]] && print -u2 -- "$output"
+  return 1
+}
+
+ui_send_message() {
+  local recipient="$1"
+  local message="$2"
+  local output=""
+  local exit_code=0
+
+  set +e
+  output="$(
+    run_osascript \
+      -e 'on run argv' \
+      -e 'set recipientHandle to item 1 of argv' \
+      -e 'set messageText to item 2 of argv' \
+      -e 'set priorClipboard to missing value' \
+      -e 'try' \
+      -e 'set priorClipboard to the clipboard' \
+      -e 'end try' \
+      -e 'try' \
+      -e 'tell application "Messages" to activate' \
+      -e 'delay 0.8' \
+      -e 'tell application "System Events"' \
+      -e 'if not (exists process "Messages") then error "Messages process is not available."' \
+      -e 'tell process "Messages"' \
+      -e 'set frontmost to true' \
+      -e 'if not (exists menu bar 1) then error "Messages UI is not available."' \
+      -e 'end tell' \
+      -e 'keystroke "n" using command down' \
+      -e 'delay 0.6' \
+      -e 'set the clipboard to recipientHandle' \
+      -e 'keystroke "v" using command down' \
+      -e 'delay 0.8' \
+      -e 'key code 36' \
+      -e 'delay 0.8' \
+      -e 'set the clipboard to messageText' \
+      -e 'keystroke "v" using command down' \
+      -e 'delay 0.4' \
+      -e 'key code 36' \
+      -e 'end tell' \
+      -e 'if priorClipboard is not missing value then set the clipboard to priorClipboard' \
+      -e 'return "sent-ui to " & recipientHandle' \
+      -e 'on error errMsg number errNum' \
+      -e 'try' \
+      -e 'if priorClipboard is not missing value then set the clipboard to priorClipboard' \
+      -e 'end try' \
+      -e 'error errMsg number errNum' \
+      -e 'end try' \
+      -e 'end run' \
+      -- "$recipient" "$message" 2>&1
+  )"
+  exit_code=$?
+  set -e
+
+  if [[ $exit_code -eq 0 ]]; then
+    print -- "$output"
+    return 0
+  fi
+
+  if ! print_service_help "$output" && ! print_permission_help "$output"; then
     [[ -n "$output" ]] && print -u2 -- "$output"
   fi
   return 1
+}
+
+send_message() {
+  local recipient="$1"
+  local message="$2"
+  local output=""
+
+  set +e
+  output="$(direct_send_message "$recipient" "$message" 2>&1)"
+  local direct_exit_code=$?
+  set -e
+
+  if [[ $direct_exit_code -eq 0 ]]; then
+    print -- "$output"
+    return 0
+  fi
+
+  if [[ "$output" == *"No signed-in iMessage service is available."* ]]; then
+    print_service_help "$output" >/dev/null
+    return 1
+  fi
+
+  if [[ "$output" == *"Not authorized to send Apple events to Messages"* || "$output" == *"(-1743)"* ]]; then
+    print_permission_help "$output" >/dev/null
+    return 1
+  fi
+
+  if [[ "$output" == *"Can’t get buddy"* || "$output" == *"Can't get buddy"* || "$output" == *"Can’t get participant"* || "$output" == *"Can't get participant"* ]]; then
+    ui_send_message "$recipient" "$message"
+    return $?
+  fi
+
+  ui_send_message "$recipient" "$message"
 }
 
 main() {

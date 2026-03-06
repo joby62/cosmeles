@@ -4,7 +4,7 @@ This repo includes a minimal AppleScript V1 notifier for Codex task completion:
 
 `/Users/lijiabo/Documents/New project/scripts/codex-imessage-notify.sh`
 
-It uses `osascript` plus macOS UI automation against `Messages` and `System Events`. This replaces the earlier `imsg/chat.db` idea and avoids `Full Disk Access`.
+It uses `osascript` against `Messages` directly first, and falls back to macOS UI automation only when direct recipient resolution fails. This replaces the earlier `imsg/chat.db` idea and avoids `Full Disk Access`.
 
 ## What V1 does
 
@@ -18,7 +18,7 @@ It does not watch Codex approval dialogs or app state. Approval reminders still 
 
 1. `Messages` must already be signed in to iMessage on this Mac.
 2. The app or terminal process running the script must be allowed to control `Messages`.
-3. The app or terminal process running the script must have Accessibility access so `System Events` can drive the UI.
+3. Accessibility access is only needed for the fallback UI automation path through `System Events`.
 
 On first use, macOS may prompt for both Automation and Accessibility permissions.
 
@@ -50,8 +50,8 @@ Run:
 If macOS prompts:
 
 - allow control of `Messages`
-- allow control of `System Events`
-- allow Accessibility access for the runner
+- allow control of `System Events` if the fallback path is used
+- allow Accessibility access for the runner if the fallback path is used
 
 If permissions were denied before, fix them in:
 
@@ -88,7 +88,7 @@ The default body is normalized to one line and includes:
 
 ## Notes
 
-- This V1 uses keyboard-driven UI automation. It is intentionally simple and is meant for one-way self-notifications.
+- This V1 now tries direct `Messages` AppleScript send first. Only unresolved recipients fall back to keyboard-driven UI automation.
 - Message text is normalized to a single line before sending. Keep the payload short.
 - If recipient resolution is inconsistent, test with the exact iMessage phone number or Apple ID email you use in `Messages`.
 
