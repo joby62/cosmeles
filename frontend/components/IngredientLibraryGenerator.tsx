@@ -36,6 +36,8 @@ export default function IngredientLibraryGenerator({
   const [activeJob, setActiveJob] = useState<IngredientLibraryBuildJob | null>(null);
   const [liveLogs, setLiveLogs] = useState<string[]>([]);
   const lastLogRef = useRef("");
+  const modelDeltaBufferRef = useRef("");
+  const modelDeltaIngredientRef = useRef("");
   const [preflightLoading, setPreflightLoading] = useState(false);
   const [preflightError, setPreflightError] = useState<string | null>(null);
   const [preflightResult, setPreflightResult] = useState<IngredientLibraryPreflightResponse | null>(null);
@@ -89,17 +91,46 @@ export default function IngredientLibraryGenerator({
     });
   }, []);
 
+  const flushModelDeltaLog = useCallback(
+    (updatedAt: string) => {
+      const merged = modelDeltaBufferRef.current.replace(/\s+/g, " ").trim();
+      if (!merged) return;
+      const ingredient = modelDeltaIngredientRef.current || "-";
+      appendLiveLog(`[${updatedAt}] 模型输出片段 | ${ingredient} | ${merged}`);
+      modelDeltaBufferRef.current = "";
+    },
+    [appendLiveLog],
+  );
+
   const applyActiveJob = useCallback(
     (job: IngredientLibraryBuildJob) => {
       setActiveJob(job);
       const stage = String(job.stage_label || job.stage || "处理中");
+      const stageKey = String(job.stage || "").trim().toLowerCase();
       const message = String(job.message || "").trim();
-      if (message) appendLiveLog(`[${job.updated_at}] ${stage} | ${message}`);
+      if (stageKey === "ingredient_model_delta") {
+        const ingredientId = String(job.current_ingredient_id || "").trim();
+        if (ingredientId && modelDeltaIngredientRef.current && modelDeltaIngredientRef.current !== ingredientId) {
+          flushModelDeltaLog(job.updated_at);
+        }
+        if (ingredientId) modelDeltaIngredientRef.current = ingredientId;
+        if (message) {
+          modelDeltaBufferRef.current = `${modelDeltaBufferRef.current}${message}`;
+          const compact = modelDeltaBufferRef.current.replace(/\s+/g, " ").trim();
+          const shouldFlush = /[。！？；，,:.\n]/.test(message) || compact.length >= 24;
+          if (shouldFlush) flushModelDeltaLog(job.updated_at);
+        }
+      } else {
+        flushModelDeltaLog(job.updated_at);
+        if (message) appendLiveLog(`[${job.updated_at}] ${stage} | ${message}`);
+      }
       if (job.status === "done" || job.status === "failed" || job.status === "cancelled") {
+        flushModelDeltaLog(job.updated_at);
+        modelDeltaIngredientRef.current = "";
         clearActiveJob();
       }
     },
-    [appendLiveLog, clearActiveJob],
+    [appendLiveLog, clearActiveJob, flushModelDeltaLog],
   );
 
   const loadJobs = useCallback(async () => {
@@ -299,6 +330,13 @@ export default function IngredientLibraryGenerator({
   const buildResult = activeJob?.result || null;
   const prettySummary = buildResult ? buildSummary(buildResult) : "";
   const sortedJobs = [...jobs].sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")));
+  const activeStageKey = String(activeJob?.stage || "").trim().toLowerCase();
+  const activeMessage = (() => {
+    if (!activeJob) return "等待创建任务";
+    const msg = String(activeJob.message || "").trim();
+    if (activeStageKey === "ingredient_model_delta") return "模型流式输出中…";
+    return msg || "处理中";
+  })();
 
   return (
     <section className="mt-8 rounded-[30px] border border-black/10 bg-gradient-to-br from-[#f8fbff] via-white to-[#f2f8f1] p-6">
@@ -465,7 +503,7 @@ export default function IngredientLibraryGenerator({
           </div>
         </div>
         <div className="mt-2 text-[12px] text-black/64">
-          {activeJob?.stage_label || activeJob?.stage || "待命"} · {activeJob?.message || "等待创建任务"}
+          {activeJob?.stage_label || activeJob?.stage || "待命"} · {activeMessage}
         </div>
         <div className="mt-3 h-2 overflow-hidden rounded-full bg-black/10">
           <div className="h-full rounded-full bg-black transition-all" style={{ width: `${Math.max(0, Math.min(100, progressValue))}%` }} />
