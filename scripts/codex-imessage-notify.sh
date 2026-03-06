@@ -107,7 +107,7 @@ EOF
     return 0
   fi
 
-  if [[ "$output" == *"Accessibility access for the script runner is not enabled."* || "$output" == *"UI element scripting is not enabled"* ]]; then
+  if [[ "$output" == *"not allowed assistive access"* || "$output" == *"(-25211)"* || "$output" == *"UI element scripting is not enabled"* ]]; then
     cat >&2 <<'EOF'
 UI automation is not enabled for this script runner.
 
@@ -122,6 +122,15 @@ EOF
 Messages did not become available for UI automation.
 
 Open Messages manually, confirm you are signed in to iMessage, then retry.
+EOF
+    return 0
+  fi
+
+  if [[ "$output" == *"Messages UI is not available."* ]]; then
+    cat >&2 <<'EOF'
+Messages launched, but its UI was not accessible yet.
+
+Bring Messages to the foreground once, confirm it is signed in to iMessage, then retry.
 EOF
     return 0
   fi
@@ -147,10 +156,13 @@ probe_messages_access() {
   output="$(
     run_osascript \
       -e 'tell application "Messages" to activate' \
-      -e 'delay 0.5' \
+      -e 'delay 0.8' \
       -e 'tell application "System Events"' \
-      -e 'if UI elements enabled is false then error "Accessibility access for the script runner is not enabled."' \
       -e 'if not (exists process "Messages") then error "Messages process is not available."' \
+      -e 'tell process "Messages"' \
+      -e 'set frontmost to true' \
+      -e 'if not (exists menu bar 1) then error "Messages UI is not available."' \
+      -e 'end tell' \
       -e 'end tell' 2>&1
   )"
   exit_code=$?
@@ -181,8 +193,11 @@ send_message() {
       -e 'tell application "Messages" to activate' \
       -e 'delay 0.8' \
       -e 'tell application "System Events"' \
-      -e 'if UI elements enabled is false then error "Accessibility access for the script runner is not enabled."' \
       -e 'if not (exists process "Messages") then error "Messages process is not available."' \
+      -e 'tell process "Messages"' \
+      -e 'set frontmost to true' \
+      -e 'if not (exists menu bar 1) then error "Messages UI is not available."' \
+      -e 'end tell' \
       -e 'keystroke "n" using command down' \
       -e 'delay 0.5' \
       -e 'keystroke recipientHandle' \

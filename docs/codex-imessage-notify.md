@@ -60,6 +60,14 @@ If permissions were denied before, fix them in:
 
 If a heavily sandboxed runner cannot reach Apple events at all, verify once from `Terminal.app` or `iTerm` first.
 
+Do not use this old probe as your decision point:
+
+```bash
+osascript -e 'tell application "System Events" to return UI elements enabled'
+```
+
+On current macOS versions it is not a reliable per-app Accessibility signal for this workflow. Use the script's own `--check` instead.
+
 ## Send a Test Message
 
 ```bash
