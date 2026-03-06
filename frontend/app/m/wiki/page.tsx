@@ -128,9 +128,13 @@ export default function MobileWikiPage() {
     };
   }, [active, normalizedQuery]);
 
-  const featured = useMemo(() => items[0], [items]);
-  const rest = useMemo(() => items.slice(1), [items]);
-  const featuredName = useMemo(() => (featured ? splitIngredientName(featured.ingredient_name) : null), [featured]);
+  const sortedItems = useMemo(() => {
+    return [...items].sort((a, b) => {
+      const countDiff = (b.source_count || 0) - (a.source_count || 0);
+      if (countDiff !== 0) return countDiff;
+      return a.ingredient_name.localeCompare(b.ingredient_name, "zh-Hans-CN");
+    });
+  }, [items]);
 
   return (
     <section className="m-wiki-page -mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[color:var(--m-wiki-canvas)] px-4 pb-36 pt-4 text-white">
@@ -210,9 +214,9 @@ export default function MobileWikiPage() {
           <p className="mt-1 text-[15px] leading-[1.5] text-white/66">{WIKI_MAP[active].summary}</p>
         </div>
 
-        {featured && featuredName ? (
+        {sortedItems[0] ? (
           <Link
-            href={`/m/wiki/${active}/${featured.ingredient_id}`}
+            href={`/m/wiki/${active}/${sortedItems[0].ingredient_id}`}
             className="m-wiki-hero-card m-pressable block overflow-hidden rounded-[32px] transition-transform active:scale-[0.996]"
           >
             <div className={`${theme.heroClass} relative h-[252px] w-full`}>
@@ -234,18 +238,24 @@ export default function MobileWikiPage() {
 
               <div className="absolute bottom-5 left-5 right-5">
                 <p className="m-wiki-kicker text-[13px] text-white/82">必备精选</p>
-                <h2 className={`mt-1 line-clamp-2 break-words font-semibold tracking-[-0.03em] text-white ${featuredTitleClass(featured.ingredient_name.length)}`}>
-                  {featuredName.main}
+                <h2
+                  className={`mt-1 line-clamp-2 break-words font-semibold tracking-[-0.03em] text-white ${featuredTitleClass(sortedItems[0].ingredient_name.length)}`}
+                >
+                  {splitIngredientName(sortedItems[0].ingredient_name).main}
                 </h2>
-                {featuredName.sub ? <p className="mt-1 line-clamp-1 text-[17px] leading-[1.1] font-semibold text-white/92">{featuredName.sub}</p> : null}
+                {splitIngredientName(sortedItems[0].ingredient_name).sub ? (
+                  <p className="mt-1 line-clamp-1 text-[17px] leading-[1.1] font-semibold text-white/92">
+                    {splitIngredientName(sortedItems[0].ingredient_name).sub}
+                  </p>
+                ) : null}
               </div>
             </div>
 
             <div className="flex items-center gap-3 border-t border-white/10 bg-black/34 px-4 py-3 backdrop-blur-2xl">
               <div className="min-w-0 flex-1">
                 <p className="m-wiki-kicker text-[11px] text-white/55">一句话重点</p>
-                <p className="mt-1 line-clamp-1 text-[15px] font-semibold text-white/90">{summaryFocus(featured.summary)}</p>
-                <p className="mt-1 text-[12px] text-white/60">来源样本 {featured.source_count} 条</p>
+                <p className="mt-1 line-clamp-1 text-[15px] font-semibold text-white/90">{summaryFocus(sortedItems[0].summary)}</p>
+                <p className="mt-1 text-[12px] text-white/60">来源样本 {sortedItems[0].source_count} 条</p>
               </div>
               <span className="inline-flex h-10 items-center rounded-full bg-white/18 px-4 text-[18px] font-semibold text-white">查看</span>
             </div>
@@ -254,36 +264,47 @@ export default function MobileWikiPage() {
       </section>
 
       <section className="mt-4 space-y-4">
-        {rest.map((item) => {
+        {sortedItems.slice(1).map((item) => {
           const name = splitIngredientName(item.ingredient_name);
           return (
             <Link
               key={item.ingredient_id}
               href={`/m/wiki/${active}/${item.ingredient_id}`}
-              className="m-wiki-hero-card m-pressable block overflow-hidden rounded-[28px] transition-transform active:scale-[0.997]"
+              className="m-wiki-hero-card m-pressable block overflow-hidden rounded-[32px] transition-transform active:scale-[0.996]"
             >
-              <div className={`${theme.heroClass} relative h-[164px] w-full`}>
-                <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.13)_0%,rgba(255,255,255,0)_28%,rgba(0,0,0,0.4)_100%)]" />
+              <div className={`${theme.heroClass} relative h-[252px] w-full`}>
+                <div className={`absolute inset-0 ${theme.hazeClass}`} />
+                <div className={`absolute right-[-42px] top-[-36px] h-[170px] w-[170px] rounded-full ${theme.accentClass} opacity-30 blur-3xl`} />
+                <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.16)_0%,rgba(255,255,255,0)_35%,rgba(0,0,0,0.42)_100%)]" />
+
                 <Image
                   src={`/m/categories/${active}.png`}
                   alt={WIKI_MAP[active].label}
-                  width={64}
-                  height={64}
-                  className="absolute right-4 top-3 h-12 w-12 rounded-2xl object-cover opacity-78 ring-1 ring-white/22"
+                  width={128}
+                  height={128}
+                  className="absolute right-6 top-8 h-[96px] w-[96px] rounded-[28px] object-cover opacity-85 shadow-[0_16px_36px_rgba(0,0,0,0.25)] ring-1 ring-white/25"
                 />
-                <div className="absolute left-4 top-4 rounded-full border border-white/30 bg-white/10 px-2.5 py-0.5 text-[11px] font-medium text-white/82 backdrop-blur-md">
+
+                <div className="absolute left-5 top-5 rounded-full border border-white/35 bg-white/10 px-2.5 py-0.5 text-[12px] font-medium text-white/86 backdrop-blur-lg">
                   {WIKI_MAP[active].label}
                 </div>
-                <div className="absolute bottom-3 left-4 right-4">
-                  <h3 className="line-clamp-2 break-words text-[26px] leading-[1.08] font-semibold tracking-[-0.02em] text-white">{name.main}</h3>
-                  {name.sub ? <p className="mt-0.5 line-clamp-1 text-[15px] leading-[1.15] font-medium text-white/90">{name.sub}</p> : null}
+
+                <div className="absolute bottom-5 left-5 right-5">
+                  <p className="m-wiki-kicker text-[13px] text-white/82">必备精选</p>
+                  <h2 className={`mt-1 line-clamp-2 break-words font-semibold tracking-[-0.03em] text-white ${featuredTitleClass(item.ingredient_name.length)}`}>
+                    {name.main}
+                  </h2>
+                  {name.sub ? <p className="mt-1 line-clamp-1 text-[17px] leading-[1.1] font-semibold text-white/92">{name.sub}</p> : null}
                 </div>
               </div>
 
-              <div className="px-4 py-3">
-                <p className="m-wiki-kicker text-[11px] text-white/54">一句话重点</p>
-                <p className="mt-1 line-clamp-1 text-[15px] font-semibold text-white/88">{summaryFocus(item.summary)}</p>
-                <p className="mt-1.5 text-[12px] text-white/56">来源样本 {item.source_count} 条</p>
+              <div className="flex items-center gap-3 border-t border-white/10 bg-black/34 px-4 py-3 backdrop-blur-2xl">
+                <div className="min-w-0 flex-1">
+                  <p className="m-wiki-kicker text-[11px] text-white/55">一句话重点</p>
+                  <p className="mt-1 line-clamp-1 text-[15px] font-semibold text-white/90">{summaryFocus(item.summary)}</p>
+                  <p className="mt-1 text-[12px] text-white/60">来源样本 {item.source_count} 条</p>
+                </div>
+                <span className="inline-flex h-10 items-center rounded-full bg-white/18 px-4 text-[18px] font-semibold text-white">查看</span>
               </div>
             </Link>
           );
@@ -301,7 +322,7 @@ export default function MobileWikiPage() {
           </div>
         )}
 
-        {!loading && !error && items.length === 0 && (
+        {!loading && !error && sortedItems.length === 0 && (
           <div className="m-wiki-card-soft rounded-[24px] px-4 py-5 text-[14px] text-white/65">
             当前分类暂无匹配成分，请先在后台构建成分库或更换关键词。
           </div>
