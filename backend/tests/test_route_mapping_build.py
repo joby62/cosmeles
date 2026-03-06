@@ -89,16 +89,16 @@ def _install_fake_route_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
                 "reason": "mock",
             },
             "secondary_route": {
-                "route_key": "volume-support",
-                "route_title": "蓬松支撑型",
+                "route_key": "moisture-balance",
+                "route_title": "水油平衡型",
                 "confidence": 70,
                 "reason": "mock",
             },
             "route_scores": [
                 {"route_key": "deep-oil-control", "route_title": "深层控油型", "confidence": 92, "reason": "mock"},
-                {"route_key": "volume-support", "route_title": "蓬松支撑型", "confidence": 70, "reason": "mock"},
+                {"route_key": "moisture-balance", "route_title": "水油平衡型", "confidence": 70, "reason": "mock"},
                 {"route_key": "gentle-soothing", "route_title": "温和舒缓型", "confidence": 54, "reason": "mock"},
-                {"route_key": "deep-repair", "route_title": "深度修护型", "confidence": 30, "reason": "mock"},
+                {"route_key": "anti-hair-loss", "route_title": "防脱强韧型", "confidence": 30, "reason": "mock"},
                 {"route_key": "anti-dandruff-itch", "route_title": "去屑止痒型", "confidence": 20, "reason": "mock"},
             ],
             "evidence": {
@@ -166,7 +166,7 @@ def test_route_mapping_build_and_fetch_detail(test_client, monkeypatch: pytest.M
     assert payload["product_id"] == product_id
     assert payload["category"] == "shampoo"
     assert payload["primary_route"]["route_key"] == "deep-oil-control"
-    assert payload["secondary_route"]["route_key"] == "volume-support"
+    assert payload["secondary_route"]["route_key"] == "moisture-balance"
     assert len(payload["route_scores"]) == 5
 
 

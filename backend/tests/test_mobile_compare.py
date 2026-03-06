@@ -108,8 +108,8 @@ def _set_shampoo_featured_slots(client, *, product_id: str) -> None:
         "deep-oil-control",
         "anti-dandruff-itch",
         "gentle-soothing",
-        "deep-repair",
-        "volume-support",
+        "anti-hair-loss",
+        "moisture-balance",
     ):
         _set_featured_slot(client, category="shampoo", target_type_key=target_type_key, product_id=product_id)
 

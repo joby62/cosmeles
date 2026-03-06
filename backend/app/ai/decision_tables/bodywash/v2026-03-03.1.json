@@ -1,6 +1,14 @@
 {
   "rules_version": "2026-03-03.1",
   "category": "bodywash",
+  "categories": [
+    "rescue",
+    "purge",
+    "polish",
+    "glow",
+    "shield",
+    "vibe"
+  ],
   "questions": [
     {
       "key": "q1",
@@ -28,8 +36,7 @@
         "B": "缺油干涩",
         "C": "角质堆积（鸡皮/厚茧）",
         "D": "状态正常（无明显痛点）"
-      },
-      "required_when": "q2 == 'B'"
+      }
     },
     {
       "key": "q4",
@@ -37,8 +44,7 @@
       "options": {
         "A": "清爽干脆",
         "B": "柔滑滋润"
-      },
-      "required_when": "q2 == 'B'"
+      }
     },
     {
       "key": "q5",
@@ -46,8 +52,55 @@
       "options": {
         "A": "极致纯净",
         "B": "情绪留香"
-      },
-      "required_when": "q2 == 'B'"
+      }
+    }
+  ],
+  "scoring_matrix": {
+    "q1": {
+      "A": [5, -10, -5, 0, 10, 0],
+      "B": [0, 5, 0, 10, -5, 5],
+      "C": [0, 10, 5, 5, -10, 5],
+      "D": [5, 0, 0, 0, 5, 0]
+    },
+    "q2": {
+      "A": [15, 0, 0, 0, 0, 0],
+      "B": [0, 5, 5, 5, 0, 5]
+    },
+    "q3": {
+      "A": [0, 20, 10, 0, -20, 5],
+      "B": [10, -20, -10, 0, 20, 0],
+      "C": [0, 10, 20, 0, -10, 0],
+      "D": [0, -5, -5, 10, 0, 10]
+    },
+    "q4": {
+      "A": [0, 5, 5, 5, -5, 5],
+      "B": [0, 0, 0, 0, 5, 5]
+    },
+    "q5": {
+      "A": [5, 0, 0, 0, 0, 0],
+      "B": [-5, 0, 0, 5, 0, 5]
+    }
+  },
+  "veto_masks": [
+    {
+      "trigger": "q2 == 'A'",
+      "mask": [1, 0, 0, 0, 1, 0],
+      "note": "病理防线：极度敏感肌强制清零所有刺激项，仅保留舒缓型与脂类补充沐浴油"
+    },
+    {
+      "trigger": "q5 == 'A'",
+      "mask": [1, 0, 0, 1, 1, 0],
+      "note": "孕妇/绝对纯净防线：强制清零刺激性酸类（水杨酸/果酸）及香氛型产品，守住母婴安全红线"
+    },
+    {
+      "trigger": "q3 == 'B'",
+      "mask": [1, 0, 1, 1, 1, 1],
+      "note": "成分排斥防线：大干皮严禁使用水杨酸控油型"
+    },
+    {
+      "trigger": "q3 == 'A'",
+      "mask": [1, 1, 1, 1, 0, 1],
+      "note": "成分排斥防线：大油田严禁使用重度脂类油膏"
     }
   ],
   "route_candidates": [
@@ -74,38 +127,6 @@
     {
       "route_key": "vibe",
       "route_title": "轻盈香氛平衡型"
-    }
-  ],
-  "route_mapping_rules_priority": [
-    {
-      "priority": 1,
-      "when_expr": "(q2 == 'A') OR (q5 == 'A')",
-      "route_key": "rescue"
-    },
-    {
-      "priority": 2,
-      "when_expr": "q3 == 'C'",
-      "route_key": "polish"
-    },
-    {
-      "priority": 3,
-      "when_expr": "q3 == 'A'",
-      "route_key": "purge"
-    },
-    {
-      "priority": 4,
-      "when_expr": "(q3 == 'B') OR (q1 == 'A') OR (q1 == 'D' AND q4 == 'B')",
-      "route_key": "shield"
-    },
-    {
-      "priority": 5,
-      "when_expr": "(q1 IN ['B','C']) AND (q3 == 'D') AND (q2 == 'B')",
-      "route_key": "glow"
-    },
-    {
-      "priority": 6,
-      "when_expr": "ELSE",
-      "route_key": "vibe"
     }
   ]
 }

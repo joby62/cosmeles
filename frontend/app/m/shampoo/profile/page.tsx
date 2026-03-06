@@ -2,7 +2,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import {
   isReadyShampooResult,
-  isShampooFastPath,
   normalizeShampooSignals,
   shampooChoiceLabel,
   toSignalSearchParams,
@@ -11,7 +10,7 @@ import {
 
 type Search = Record<string, string | string[] | undefined>;
 type StepKey = keyof ShampooSignals;
-type Option = { value: "A" | "B" | "C"; label: string; sub: string };
+type Option = { value: "A" | "B" | "C" | "D"; label: string; sub: string };
 
 const STEPS: Array<{ key: StepKey; title: string; note: string; options: Option[] }> = [
   {
@@ -27,11 +26,12 @@ const STEPS: Array<{ key: StepKey; title: string; note: string; options: Option[
   {
     key: "q2",
     title: "你现在有没有明显头皮困扰？",
-    note: "如果有头屑痒或发红刺痛，我们会直接给你结果。",
+    note: "选最符合你当前阶段的核心痛点。",
     options: [
-      { value: "A", label: "A. 有头屑且发痒", sub: "会走去屑快路径，直接出结果" },
-      { value: "B", label: "B. 头皮发红/刺痛/长痘", sub: "会走舒缓快路径，直接出结果" },
-      { value: "C", label: "C. 无特殊感觉", sub: "继续做发质细化判断" },
+      { value: "A", label: "A. 有头屑且发痒（真菌）", sub: "优先走去屑止痒方向" },
+      { value: "B", label: "B. 头皮发红/刺痛/长痘（敏感）", sub: "强约束屏障与温和方向" },
+      { value: "C", label: "C. 掉发明显/发根脆弱（脱发）", sub: "强化头皮强韧与防脱方向" },
+      { value: "D", label: "D. 无特殊感觉（健康）", sub: "回到常规平衡优化路线" },
     ],
   },
   {
@@ -50,13 +50,9 @@ function valueFromQuery(v: string | string[] | undefined): string | undefined {
   return Array.isArray(v) ? v[0] : v;
 }
 
-function buildNextHref(signals: ShampooSignals, key: StepKey, value: "A" | "B" | "C", nextStep: number): string {
+function buildNextHref(signals: ShampooSignals, key: StepKey, value: "A" | "B" | "C" | "D", nextStep: number): string {
   const merged: ShampooSignals = { ...signals, [key]: value };
   const qp = toSignalSearchParams(merged);
-
-  if (key === "q2" && merged.q1 && isShampooFastPath(merged)) {
-    return `/m/shampoo/result?${qp.toString()}`;
-  }
 
   if (isReadyShampooResult(merged)) {
     return `/m/shampoo/resolve?${qp.toString()}`;
@@ -82,10 +78,6 @@ export default async function ShampooProfilePage({
 
   if (signals.q1 && !signals.q2 && parsedStep > 2) {
     redirect(`/m/shampoo/profile?${toSignalSearchParams({ q1: signals.q1 }).toString()}&step=2`);
-  }
-
-  if (signals.q1 && signals.q2 && isShampooFastPath(signals)) {
-    redirect(`/m/shampoo/result?${toSignalSearchParams(signals).toString()}`);
   }
 
   if (isReadyShampooResult(signals)) {

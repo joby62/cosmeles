@@ -25,23 +25,9 @@ function parseAnswers(raw: Search): Record<string, string> | null {
   const isQ4 = (v: string | null) => v === "A" || v === "B";
   const isQ5 = (v: string | null) => v === "A" || v === "B";
 
-  if (!isQ1(q1) || !isQ2(q2)) return null;
+  if (!isQ1(q1) || !isQ2(q2) || !isQ3(q3) || !isQ4(q4) || !isQ5(q5)) return null;
 
-  const out: Record<string, string> = { q1, q2 };
-  if (q2 === "B") {
-    if (!isQ3(q3) || !isQ4(q4) || !isQ5(q5)) return null;
-    out.q3 = q3;
-    out.q4 = q4;
-    out.q5 = q5;
-  } else {
-    if (q3 && !isQ3(q3)) return null;
-    if (q4 && !isQ4(q4)) return null;
-    if (q5 && !isQ5(q5)) return null;
-    if (q3) out.q3 = q3;
-    if (q4) out.q4 = q4;
-    if (q5) out.q5 = q5;
-  }
-  return out;
+  return { q1, q2, q3, q4, q5 };
 }
 
 export default async function BodyWashResultPage({

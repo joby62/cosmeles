@@ -17,14 +17,11 @@ function parseAnswers(raw: Search): Record<string, string> | null {
   const q2 = getValue(raw, "q2");
   const q3 = getValue(raw, "q3");
   const isABC = (v: string | null) => v === "A" || v === "B" || v === "C";
+  const isABCD = (v: string | null) => v === "A" || v === "B" || v === "C" || v === "D";
 
-  if (!isABC(q1) || !isABC(q2)) return null;
-  if (q2 === "C" && !isABC(q3)) return null;
-  if (q3 && !isABC(q3)) return null;
+  if (!isABC(q1) || !isABCD(q2) || !isABC(q3)) return null;
 
-  const out: Record<string, string> = { q1, q2 };
-  if (q3) out.q3 = q3;
-  return out;
+  return { q1, q2, q3 };
 }
 
 export default async function ShampooResultPage({

@@ -1,34 +1,76 @@
 {
   "rules_version": "2026-03-03.1",
   "category": "shampoo",
+  "categories": [
+    "deep-oil-control",
+    "anti-dandruff-itch",
+    "gentle-soothing",
+    "anti-hair-loss",
+    "moisture-balance"
+  ],
   "questions": [
     {
       "key": "q1",
-      "title": "出油节奏",
+      "title": "头皮出油节奏",
       "options": {
-        "A": "一天不洗就塌/油",
-        "B": "2-3天洗一次正好",
-        "C": "3天以上不洗也不油"
+        "A": "一天不洗就塌/油 (重度)",
+        "B": "2-3天洗一次正好 (中度)",
+        "C": "3天以上不洗也不油 (干性)"
       }
     },
     {
       "key": "q2",
-      "title": "头皮困扰",
+      "title": "头皮核心痛点",
       "options": {
-        "A": "有头屑且发痒",
-        "B": "头皮发红/刺痛/长痘",
-        "C": "无特殊感觉"
+        "A": "有头屑且发痒 (真菌)",
+        "B": "头皮发红/刺痛/长痘 (敏感)",
+        "C": "掉发明显/发根脆弱 (脱发)",
+        "D": "无特殊感觉 (健康)"
       }
     },
     {
       "key": "q3",
-      "title": "发丝状态",
+      "title": "发丝状态参考",
       "options": {
         "A": "频繁染烫/干枯易断",
         "B": "细软塌/贴头皮",
         "C": "原生发/健康"
-      },
-      "required_when": "q2 == 'C'"
+      }
+    }
+  ],
+  "scoring_matrix": {
+    "q1": {
+      "A": [15, 5, -10, -15, -15],
+      "B": [-5, 0, 5, 0, 5],
+      "C": [-15, -5, 10, 0, 15]
+    },
+    "q2": {
+      "A": [0, 30, 0, 0, -10],
+      "B": [-20, -15, 30, -10, 5],
+      "C": [5, 0, 5, 30, 0],
+      "D": [2, -5, -5, -5, 5]
+    },
+    "q3": {
+      "A": [-5, 0, 5, 0, 8],
+      "B": [5, 0, 0, 5, -5],
+      "C": [0, 0, 0, 0, 0]
+    }
+  },
+  "veto_masks": [
+    {
+      "trigger": "q2 == 'B'",
+      "mask": [0, 0, 1, 0, 1],
+      "note": "敏感防线：长痘/红肿期禁止使用强去油、强去屑及扩张血管的防脱成分"
+    },
+    {
+      "trigger": "q2 == 'A'",
+      "mask": [1, 1, 1, 1, 0],
+      "note": "真菌防线：真菌感染期禁止使用高保湿平衡型产品，避免养活菌群"
+    },
+    {
+      "trigger": "q1 == 'C'",
+      "mask": [0, 1, 1, 1, 1],
+      "note": "干皮脱脂防线：干性头皮禁止使用重度控油产品"
     }
   ],
   "route_candidates": [
@@ -45,120 +87,12 @@
       "route_title": "温和舒缓型"
     },
     {
-      "route_key": "deep-repair",
-      "route_title": "深度修护型"
+      "route_key": "anti-hair-loss",
+      "route_title": "防脱强韧型"
     },
     {
-      "route_key": "volume-support",
-      "route_title": "蓬松支撑型"
-    }
-  ],
-  "route_mapping_rules": [
-    {
-      "priority": 1,
-      "when": {
-        "q2": "A"
-      },
-      "route_key": "fast-anti-dandruff",
-      "maps_to": "anti-dandruff-itch"
-    },
-    {
-      "priority": 2,
-      "when": {
-        "q2": "B"
-      },
-      "route_key": "fast-sensitive-soothe",
-      "maps_to": "gentle-soothing"
-    },
-    {
-      "priority": 3,
-      "when": {
-        "q1": "A",
-        "q2": "C",
-        "q3": "A"
-      },
-      "route_key": "oil-repair-balance",
-      "maps_to": "deep-repair"
-    },
-    {
-      "priority": 4,
-      "when": {
-        "q1": "A",
-        "q2": "C",
-        "q3": "B"
-      },
-      "route_key": "oil-lightweight-volume",
-      "maps_to": "volume-support"
-    },
-    {
-      "priority": 5,
-      "when": {
-        "q1": "A",
-        "q2": "C",
-        "q3": "C"
-      },
-      "route_key": "oil-control-clean",
-      "maps_to": "deep-oil-control"
-    },
-    {
-      "priority": 6,
-      "when": {
-        "q1": "B",
-        "q2": "C",
-        "q3": "A"
-      },
-      "route_key": "balance-repair",
-      "maps_to": "deep-repair"
-    },
-    {
-      "priority": 7,
-      "when": {
-        "q1": "B",
-        "q2": "C",
-        "q3": "B"
-      },
-      "route_key": "balance-lightweight",
-      "maps_to": "volume-support"
-    },
-    {
-      "priority": 8,
-      "when": {
-        "q1": "B",
-        "q2": "C",
-        "q3": "C"
-      },
-      "route_key": "balance-simple",
-      "maps_to": "gentle-soothing"
-    },
-    {
-      "priority": 9,
-      "when": {
-        "q1": "C",
-        "q2": "C",
-        "q3": "A"
-      },
-      "route_key": "moisture-repair",
-      "maps_to": "deep-repair"
-    },
-    {
-      "priority": 10,
-      "when": {
-        "q1": "C",
-        "q2": "C",
-        "q3": "B"
-      },
-      "route_key": "moisture-lightweight",
-      "maps_to": "volume-support"
-    },
-    {
-      "priority": 11,
-      "when": {
-        "q1": "C",
-        "q2": "C",
-        "q3": "C"
-      },
-      "route_key": "moisture-gentle",
-      "maps_to": "gentle-soothing"
+      "route_key": "moisture-balance",
+      "route_title": "水油平衡型"
     }
   ]
 }

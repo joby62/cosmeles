@@ -15,9 +15,9 @@ export type BodyWashSignals = {
 export type ReadyBodyWashSignals = BodyWashSignals & {
   q1: Q1EnvSignal;
   q2: Q2ToleranceSignal;
-  q3?: Q3SkinSignal;
-  q4?: Q4FinishSignal;
-  q5?: Q5SpecialSignal;
+  q3: Q3SkinSignal;
+  q4: Q4FinishSignal;
+  q5: Q5SpecialSignal;
 };
 
 export type BodyWashRouteKey = "rescue" | "purge" | "polish" | "glow" | "shield" | "vibe";
@@ -72,14 +72,8 @@ export function normalizeBodyWashSignals(raw: Record<string, string | string[] |
   };
 }
 
-export function isBodyWashFastPath(s: BodyWashSignals): boolean {
-  return s.q2 === "A";
-}
-
 export function isReadyBodyWashResult(s: BodyWashSignals): s is ReadyBodyWashSignals {
-  if (!s.q1 || !s.q2) return false;
-  if (s.q2 === "A") return true;
-  return Boolean(s.q3 && s.q4 && s.q5);
+  return Boolean(s.q1 && s.q2 && s.q3 && s.q4 && s.q5);
 }
 
 export function toBodyWashSearchParams(s: BodyWashSignals): URLSearchParams {
@@ -101,21 +95,6 @@ export function bodyWashChoiceLabel(
   if (key === "q3") return q3Labels[value as Q3SkinSignal];
   if (key === "q4") return q4Labels[value as Q4FinishSignal];
   return q5Labels[value as Q5SpecialSignal];
-}
-
-export function resolveBodyWashRouteKey(s: ReadyBodyWashSignals): BodyWashRouteKey {
-  if (s.q2 === "A" || s.q5 === "A") return "rescue";
-
-  if (s.q3 === "C") return "polish";
-  if (s.q3 === "A") return "purge";
-
-  if (s.q3 === "B") return "shield";
-  if (s.q1 === "A") return "shield";
-  if (s.q1 === "D" && s.q4 === "B") return "shield";
-
-  if ((s.q1 === "B" || s.q1 === "C") && s.q3 === "D" && s.q2 === "B") return "glow";
-
-  return "vibe";
 }
 
 function isQ1(v?: string): v is Q1EnvSignal {

@@ -73,10 +73,6 @@ function buildNextHref(signals: BodyWashSignals, key: StepKey, value: OptionValu
   const merged: BodyWashSignals = { ...signals, [key]: value };
   const qp = toBodyWashSearchParams(merged);
 
-  if (key === "q2" && merged.q1 && merged.q2 === "A") {
-    return `/m/bodywash/resolve?${qp.toString()}`;
-  }
-
   if (isReadyBodyWashResult(merged)) {
     return `/m/bodywash/resolve?${qp.toString()}`;
   }
@@ -103,11 +99,7 @@ export default async function BodyWashProfilePage({
     redirect(`/m/bodywash/profile?${toBodyWashSearchParams({ q1: signals.q1 }).toString()}&step=2`);
   }
 
-  if (signals.q1 && signals.q2 === "A") {
-    redirect(`/m/bodywash/resolve?${toBodyWashSearchParams(signals).toString()}`);
-  }
-
-  if (signals.q1 && signals.q2 === "B" && !signals.q3 && parsedStep > 3) {
+  if (signals.q1 && signals.q2 && !signals.q3 && parsedStep > 3) {
     redirect(`/m/bodywash/profile?${toBodyWashSearchParams({ q1: signals.q1, q2: signals.q2 }).toString()}&step=3`);
   }
 

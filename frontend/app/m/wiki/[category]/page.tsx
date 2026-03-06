@@ -68,15 +68,15 @@ const SHAMPOO_FOCUS_MAP: Record<string, ShampooFocus> = {
     hint: "你本次结果优先看“低刺激清洁 + 屏障修护”。",
     ingredients: ["APG（烷基糖苷）", "氨基酸表活", "红没药醇", "积雪草提取物", "泛醇（B5）"],
   },
-  "deep-repair": {
-    title: "深度修护型",
-    hint: "你本次结果优先看“结构修护 + 补脂封片”。",
-    ingredients: ["水解角蛋白", "18-MEA", "聚季铵盐-10", "神经酰胺", "植物油脂"],
+  "anti-hair-loss": {
+    title: "防脱强韧型",
+    hint: "你本次结果优先看“发根强韧 + 头皮微循环支持”。",
+    ingredients: ["咖啡因", "生物素", "烟酰胺", "锌 PCA", "多肽复配"],
   },
-  "volume-support": {
-    title: "蓬松支撑型",
-    hint: "你本次结果优先看“无硅减负 + 发根支撑”。",
-    ingredients: ["咖啡因", "水解小麦蛋白", "海盐", "生物素", "无硅油体系"],
+  "moisture-balance": {
+    title: "水油平衡型",
+    hint: "你本次结果优先看“保湿舒适 + 轻负担维稳”。",
+    ingredients: ["泛醇（B5）", "神经酰胺", "甜菜碱", "甘油", "温和表活体系"],
   },
 };
 
