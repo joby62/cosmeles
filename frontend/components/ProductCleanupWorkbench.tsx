@@ -197,7 +197,7 @@ export default function ProductCleanupWorkbench({ initialProducts }: { initialPr
           Stage E · 清理维护
         </span>
       </div>
-      <h2 className="mt-3 text-[28px] font-semibold tracking-[-0.02em] text-black/90">手动清理台</h2>
+      <h2 className="mt-3 text-[28px] font-semibold tracking-[-0.02em] text-black/90">产品清理台</h2>
       <p className="mt-2 text-[14px] text-black/65">
         支持定时清理无 product 引用的 images 与 doubao_runs，也支持手动勾选无效产品直接删除。
       </p>

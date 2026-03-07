@@ -24,8 +24,10 @@ const ACTIVE_JOB_STORAGE_KEY = "ingredient-library-active-job-id";
 
 export default function IngredientLibraryGenerator({
   initialProducts,
+  showCleanupConsole = true,
 }: {
   initialProducts: Product[];
+  showCleanupConsole?: boolean;
 }) {
   const router = useRouter();
   const [jobError, setJobError] = useState<string | null>(null);
@@ -221,13 +223,15 @@ export default function IngredientLibraryGenerator({
     if (bootstrapLoadedRef.current) return;
     bootstrapLoadedRef.current = true;
     void loadJobs();
-    void loadIngredientItems();
+    if (showCleanupConsole) {
+      void loadIngredientItems();
+    }
     const raw = window.localStorage.getItem(ACTIVE_JOB_STORAGE_KEY);
     if (raw) {
       const normalized = raw.trim();
       if (normalized) setActiveJobId(normalized);
     }
-  }, [loadJobs, loadIngredientItems]);
+  }, [loadJobs, loadIngredientItems, showCleanupConsole]);
 
   useEffect(() => {
     if (preflightBootstrapLoadedRef.current) return;
@@ -250,7 +254,9 @@ export default function IngredientLibraryGenerator({
         applyActiveJob(job);
         if (job.status === "done" || job.status === "failed" || job.status === "cancelled") {
           void loadJobs();
-          void loadIngredientItems();
+          if (showCleanupConsole) {
+            void loadIngredientItems();
+          }
           return;
         }
       } catch (err) {
@@ -268,7 +274,7 @@ export default function IngredientLibraryGenerator({
       cancelled = true;
       if (timer) window.clearTimeout(timer);
     };
-  }, [activeJobId, applyActiveJob, loadJobs, loadIngredientItems]);
+  }, [activeJobId, applyActiveJob, loadJobs, loadIngredientItems, showCleanupConsole]);
 
   async function startBuildJob() {
     if (activeRunning) return;
@@ -512,13 +518,15 @@ export default function IngredientLibraryGenerator({
           type="button"
           onClick={() => {
             void loadJobs();
-            void loadIngredientItems();
+            if (showCleanupConsole) {
+              void loadIngredientItems();
+            }
             void runPreflight();
           }}
-          disabled={jobsLoading || itemsLoading}
+          disabled={jobsLoading || (showCleanupConsole && itemsLoading)}
           className="inline-flex h-10 items-center justify-center rounded-full border border-black/14 bg-white px-5 text-[13px] font-semibold text-black/78 disabled:opacity-45"
         >
-          {jobsLoading || itemsLoading ? "刷新中..." : "刷新任务与成分"}
+          {jobsLoading || (showCleanupConsole && itemsLoading) ? "刷新中..." : "刷新任务与成分"}
         </button>
       </div>
 
@@ -591,6 +599,7 @@ export default function IngredientLibraryGenerator({
         </div>
       </div>
 
+      {showCleanupConsole ? (
       <div className="mt-6 rounded-2xl border border-black/10 bg-white p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-[20px] font-semibold tracking-[-0.02em] text-black/88">成分清理控制台</h3>
@@ -692,6 +701,7 @@ export default function IngredientLibraryGenerator({
           {itemsLoading ? <div className="text-[12px] text-black/52">加载中...</div> : null}
         </div>
       </div>
+      ) : null}
     </section>
   );
 }

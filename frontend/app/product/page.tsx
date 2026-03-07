@@ -9,6 +9,7 @@ import ProductIngestWorkbench from "@/components/ProductIngestWorkbench";
 import ProductDedupManager from "@/components/ProductDedupManager";
 import ProductCleanupWorkbench from "@/components/ProductCleanupWorkbench";
 import IngredientLibraryGenerator from "@/components/IngredientLibraryGenerator";
+import IngredientCleanupWorkbench from "@/components/IngredientCleanupWorkbench";
 import ProductRouteMappingGenerator from "@/components/ProductRouteMappingGenerator";
 import ProductCatalogManager from "@/components/ProductCatalogManager";
 
@@ -134,7 +135,7 @@ export default async function ProductManagementPage() {
 
       <ProductIngestWorkbench />
       <ProductDedupManager initialProducts={products} />
-      <IngredientLibraryGenerator initialProducts={products} />
+      <IngredientLibraryGenerator initialProducts={products} showCleanupConsole={false} />
       <ProductRouteMappingGenerator initialProducts={products} />
       <ProductCatalogManager
         initialProducts={products}
@@ -142,6 +143,7 @@ export default async function ProductManagementPage() {
         initialFeaturedSlots={featuredSlots.items}
       />
       <ProductCleanupWorkbench initialProducts={products} />
+      <IngredientCleanupWorkbench initialProducts={products} initialRouteMappings={routeMappings.items} />
     </main>
   );
 }
