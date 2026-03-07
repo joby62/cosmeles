@@ -129,7 +129,7 @@ CATEGORY_LABELS_ZH: dict[str, str] = {
     "lotion": "润肤霜",
     "cleanser": "洗面奶",
 }
-ROUTE_MAPPED_CATEGORIES = {"shampoo", "bodywash"}
+ROUTE_MAPPED_CATEGORIES = set(ROUTE_MAPPING_SUPPORTED_CATEGORIES)
 CATEGORY_LEVEL_TARGET_KEY = "__category__"
 
 CATEGORY_ALIASES: dict[str, str] = {
@@ -4139,11 +4139,7 @@ def _selection_target_type_key(category: str, route_key: str) -> str | None:
         if normalized_category in VALID_CATEGORIES:
             return CATEGORY_LEVEL_TARGET_KEY
         return None
-    if normalized_category == "shampoo":
-        return normalized_route_key or None
-    if normalized_category == "bodywash":
-        return normalized_route_key or None
-    return None
+    return normalized_route_key or None
 
 
 def _pick_featured_product_row(

@@ -1,0 +1,157 @@
+{
+  "category": "conditioner",
+  "categories": [
+    "c-color-lock",
+    "c-airy-light",
+    "c-structure-rebuild",
+    "c-smooth-frizz",
+    "c-basic-hydrate"
+  ],
+  "questions": [
+    {
+      "key": "c_q1",
+      "title": "发丝受损史",
+      "options": {
+        "A": "频繁漂/染/烫 (干枯空洞)",
+        "B": "偶尔染烫/经常使用热工具 (轻度受损)",
+        "C": "原生发/几乎不折腾 (健康)"
+      }
+    },
+    {
+      "key": "c_q2",
+      "title": "发丝物理形态",
+      "options": {
+        "A": "细软少/极易贴头皮",
+        "B": "粗硬/沙发/天生毛躁",
+        "C": "正常适中"
+      }
+    },
+    {
+      "key": "c_q3",
+      "title": "当前最渴望的视觉效果",
+      "options": {
+        "A": "刚染完，需要锁色/固色",
+        "B": "打结梳不开，需要极致顺滑",
+        "C": "发尾不干枯，保持自然蓬松就行"
+      }
+    }
+  ],
+  "scoring_matrix": {
+    "c_q1": {
+      "A": [
+        15,
+        -5,
+        20,
+        10,
+        -10
+      ],
+      "B": [
+        5,
+        5,
+        5,
+        5,
+        10
+      ],
+      "C": [
+        -15,
+        10,
+        -15,
+        -5,
+        15
+      ]
+    },
+    "c_q2": {
+      "A": [
+        0,
+        25,
+        5,
+        -20,
+        5
+      ],
+      "B": [
+        0,
+        -15,
+        10,
+        25,
+        -5
+      ],
+      "C": [
+        0,
+        5,
+        0,
+        5,
+        5
+      ]
+    },
+    "c_q3": {
+      "A": [
+        25,
+        0,
+        5,
+        0,
+        0
+      ],
+      "B": [
+        0,
+        -10,
+        5,
+        20,
+        5
+      ],
+      "C": [
+        0,
+        10,
+        0,
+        -5,
+        10
+      ]
+    }
+  },
+  "veto_masks": [
+    {
+      "trigger": "c_q2 == 'A'",
+      "mask": [
+        1,
+        1,
+        1,
+        0,
+        1
+      ],
+      "note": "质地防线：细软塌发质禁止使用重度柔顺产品，防贴头皮"
+    },
+    {
+      "trigger": "c_q1 == 'C'",
+      "mask": [
+        0,
+        1,
+        0,
+        1,
+        1
+      ],
+      "note": "过氧化/悖论防线：原生发禁止使用结构重塑型和锁色型产品，防发丝过载变硬"
+    }
+  ],
+  "rules_version": "2026-03-03.1",
+  "route_candidates": [
+    {
+      "route_key": "c-color-lock",
+      "route_title": "锁色固色型"
+    },
+    {
+      "route_key": "c-airy-light",
+      "route_title": "轻盈蓬松型"
+    },
+    {
+      "route_key": "c-structure-rebuild",
+      "route_title": "结构修护型"
+    },
+    {
+      "route_key": "c-smooth-frizz",
+      "route_title": "柔顺抗躁型"
+    },
+    {
+      "route_key": "c-basic-hydrate",
+      "route_title": "基础保湿型"
+    }
+  ]
+}

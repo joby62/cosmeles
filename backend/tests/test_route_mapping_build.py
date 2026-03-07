@@ -170,11 +170,11 @@ def test_route_mapping_build_and_fetch_detail(test_client, monkeypatch: pytest.M
     assert len(payload["route_scores"]) == 5
 
 
-def test_route_mapping_build_reject_unsupported_category(test_client):
+def test_route_mapping_build_reject_invalid_category(test_client):
     client, _ = test_client
     build_resp = client.post(
         "/api/products/route-mapping/build",
-        json={"category": "lotion"},
+        json={"category": "soap"},
     )
     assert build_resp.status_code == 400
-    assert "does not support category" in str(build_resp.json().get("detail"))
+    assert "Invalid category" in str(build_resp.json().get("detail"))

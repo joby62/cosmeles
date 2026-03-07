@@ -9,7 +9,7 @@ import {
 } from "@/lib/api";
 import { CATEGORY_CONFIG } from "@/lib/catalog";
 
-type RouteMappingCategory = "all" | "shampoo" | "bodywash";
+type RouteMappingCategory = "all" | "shampoo" | "bodywash" | "conditioner" | "lotion" | "cleanser";
 
 export default function ProductRouteMappingGenerator({
   initialProducts,
@@ -32,7 +32,7 @@ export default function ProductRouteMappingGenerator({
   const supportedProducts = useMemo(() => {
     return initialProducts.filter((item) => {
       const category = String(item.category || "").trim().toLowerCase();
-      return category === "shampoo" || category === "bodywash";
+      return category === "shampoo" || category === "bodywash" || category === "conditioner" || category === "lotion" || category === "cleanser";
     });
   }, [initialProducts]);
 
@@ -155,7 +155,7 @@ export default function ProductRouteMappingGenerator({
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        {(["all", "shampoo", "bodywash"] as RouteMappingCategory[]).map((item) => (
+        {(["all", "shampoo", "bodywash", "conditioner", "lotion", "cleanser"] as RouteMappingCategory[]).map((item) => (
           <button
             key={item}
             type="button"

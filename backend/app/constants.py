@@ -17,4 +17,7 @@ MOBILE_RULES_VERSION = "2026-03-03.1"
 ROUTE_MAPPING_SUPPORTED_CATEGORIES = {
     "shampoo",
     "bodywash",
+    "conditioner",
+    "lotion",
+    "cleanser",
 }

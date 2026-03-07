@@ -25,11 +25,17 @@ SUPPORTED_CAPABILITIES = {
     "doubao.mobile_compare_summary",
     "doubao.route_mapping_shampoo",
     "doubao.route_mapping_bodywash",
+    "doubao.route_mapping_conditioner",
+    "doubao.route_mapping_lotion",
+    "doubao.route_mapping_cleanser",
 }
 
 ROUTE_MAPPING_DECISION_TABLE_REL_PATHS = {
     "shampoo": "shampoo/v2026-03-03.1.json",
     "bodywash": "bodywash/v2026-03-03.1.json",
+    "conditioner": "conditioner/v2026-03-03.1.json",
+    "lotion": "lotion/v2026-03-03.1.json",
+    "cleanser": "cleanser/v2026-03-03.1.json",
 }
 MODEL_TIER_VALUES = {"mini", "lite", "pro"}
 
@@ -79,6 +85,12 @@ def execute_capability(
         return _cap_route_mapping("shampoo", input_payload, trace_id, event_callback=event_callback)
     if capability == "doubao.route_mapping_bodywash":
         return _cap_route_mapping("bodywash", input_payload, trace_id, event_callback=event_callback)
+    if capability == "doubao.route_mapping_conditioner":
+        return _cap_route_mapping("conditioner", input_payload, trace_id, event_callback=event_callback)
+    if capability == "doubao.route_mapping_lotion":
+        return _cap_route_mapping("lotion", input_payload, trace_id, event_callback=event_callback)
+    if capability == "doubao.route_mapping_cleanser":
+        return _cap_route_mapping("cleanser", input_payload, trace_id, event_callback=event_callback)
 
     raise AIServiceError(
         code="capability_not_supported",

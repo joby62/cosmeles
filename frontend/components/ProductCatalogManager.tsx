@@ -11,7 +11,7 @@ import type {
 import { clearProductFeaturedSlot, resolveImageUrl, setProductFeaturedSlot } from "@/lib/api";
 import { CATEGORY_CONFIG } from "@/lib/catalog";
 
-const ROUTE_MAPPED_CATEGORIES = new Set(["shampoo", "bodywash"]);
+const ROUTE_MAPPED_CATEGORIES = new Set(["shampoo", "bodywash", "conditioner", "lotion", "cleanser"]);
 const CATEGORY_LEVEL_TARGET_KEY = "__category__";
 
 export default function ProductCatalogManager({
@@ -142,7 +142,7 @@ export default function ProductCatalogManager({
       <div className="rounded-[24px] border border-black/10 bg-white p-4">
         <div className="text-[14px] font-semibold text-black/84">产品展示筛选与主推配置</div>
         <p className="mt-1 text-[12px] leading-[1.55] text-black/62">
-          洗发水/沐浴露支持二级子类筛选与子类主推；护发素/润肤露/洗面奶先按一级类目配置主推。mobile strict 模式下，未配置主推会直接报错。
+          五大品类都支持二级子类筛选与子类主推。mobile strict 模式下，未配置主推会直接报错。
         </p>
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -358,4 +358,3 @@ function formatError(err: unknown): string {
     return String(err);
   }
 }
-
