@@ -786,7 +786,7 @@ html[data-nav-open="1"] #app-main{
 }
 
 .m-choose-shell {
-  padding-bottom: 8px;
+  padding-bottom: calc(108px + env(safe-area-inset-bottom) + var(--m-chrome-bottom-inset));
 }
 
 .m-choose-title {
@@ -917,6 +917,14 @@ html[data-nav-open="1"] #app-main{
   padding: 16px;
 }
 
+.m-choose-action-dock {
+  position: sticky;
+  bottom: calc(80px + max(env(safe-area-inset-bottom), 0px) + var(--m-chrome-bottom-inset));
+  z-index: 18;
+  backdrop-filter: saturate(180%) blur(14px);
+  -webkit-backdrop-filter: saturate(180%) blur(14px);
+}
+
 .m-choose-action-title {
   font-size: 15px;
   font-weight: 610;
@@ -942,6 +950,10 @@ html[data-nav-open="1"] #app-main{
 
   .m-choose-stage-image {
     height: 154px;
+  }
+
+  .m-choose-action-dock {
+    bottom: calc(76px + max(env(safe-area-inset-bottom), 0px) + var(--m-chrome-bottom-inset));
   }
 }
 

@@ -1,5 +1,4 @@
 import Link from "next/link";
-import ConditionerRecentResultLink from "./recent-result-link";
 
 export default function ConditionerStart() {
   return (
@@ -16,9 +15,9 @@ export default function ConditionerStart() {
         <Link href="/m/conditioner/profile?step=1" className="m-profile-primary-btn inline-flex h-11 items-center justify-center px-5 text-[15px] font-semibold tracking-[-0.01em]">
           开始
         </Link>
-        <div>
-          <ConditionerRecentResultLink />
-        </div>
+        <Link href="/m/choose" className="m-profile-secondary-btn mt-3 inline-flex">
+          返回
+        </Link>
       </div>
     </div>
   );

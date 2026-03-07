@@ -2,13 +2,32 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { BODYWASH_PROFILE_DRAFT_KEY } from "@/lib/mobile/bodywashFlowStorage";
-import { CLEANSER_PROFILE_DRAFT_KEY } from "@/lib/mobile/cleanserFlowStorage";
-import { CONDITIONER_PROFILE_DRAFT_KEY } from "@/lib/mobile/conditionerFlowStorage";
-import { LOTION_PROFILE_DRAFT_KEY } from "@/lib/mobile/lotionFlowStorage";
-import { SHAMPOO_PROFILE_DRAFT_KEY } from "@/lib/mobile/shampooFlowStorage";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  BODYWASH_LAST_RESULT_QUERY_KEY,
+  BODYWASH_PROFILE_DRAFT_KEY,
+  normalizeBodyWashResultQueryString,
+} from "@/lib/mobile/bodywashFlowStorage";
+import {
+  CLEANSER_LAST_RESULT_QUERY_KEY,
+  CLEANSER_PROFILE_DRAFT_KEY,
+  normalizeCleanserResultQueryString,
+} from "@/lib/mobile/cleanserFlowStorage";
+import {
+  CONDITIONER_LAST_RESULT_QUERY_KEY,
+  CONDITIONER_PROFILE_DRAFT_KEY,
+  normalizeConditionerResultQueryString,
+} from "@/lib/mobile/conditionerFlowStorage";
+import {
+  LOTION_LAST_RESULT_QUERY_KEY,
+  LOTION_PROFILE_DRAFT_KEY,
+  normalizeLotionResultQueryString,
+} from "@/lib/mobile/lotionFlowStorage";
+import {
+  SHAMPOO_LAST_RESULT_QUERY_KEY,
+  SHAMPOO_PROFILE_DRAFT_KEY,
+  normalizeShampooResultQueryString,
+} from "@/lib/mobile/shampooFlowStorage";
 
 type CategoryKey = "shampoo" | "bodywash" | "conditioner" | "lotion" | "cleanser";
 
@@ -17,6 +36,7 @@ type CategoryMeta = {
   zh: string;
   image: string;
   startHref: string;
+  resultHref: string;
   profileHref: string;
   totalSteps: number;
   summary: string;
@@ -39,6 +59,7 @@ const CATS: CategoryMeta[] = [
     zh: "洗发水",
     image: "/m/categories/shampoo.png",
     startHref: "/m/shampoo/start",
+    resultHref: "/m/shampoo/result",
     profileHref: "/m/shampoo/profile",
     totalSteps: 3,
     summary: "3 步 · 约 30 秒",
@@ -50,6 +71,7 @@ const CATS: CategoryMeta[] = [
     zh: "沐浴露",
     image: "/m/categories/bodywash.png",
     startHref: "/m/bodywash/start",
+    resultHref: "/m/bodywash/result",
     profileHref: "/m/bodywash/profile",
     totalSteps: 5,
     summary: "5 步 · 约 45 秒",
@@ -61,6 +83,7 @@ const CATS: CategoryMeta[] = [
     zh: "护发素",
     image: "/m/categories/conditioner.png",
     startHref: "/m/conditioner/start",
+    resultHref: "/m/conditioner/result",
     profileHref: "/m/conditioner/profile",
     totalSteps: 3,
     summary: "3 步 · 约 30 秒",
@@ -72,6 +95,7 @@ const CATS: CategoryMeta[] = [
     zh: "润肤霜",
     image: "/m/categories/lotion.png",
     startHref: "/m/lotion/start",
+    resultHref: "/m/lotion/result",
     profileHref: "/m/lotion/profile",
     totalSteps: 5,
     summary: "5 步 · 约 45 秒",
@@ -83,6 +107,7 @@ const CATS: CategoryMeta[] = [
     zh: "洗面奶",
     image: "/m/categories/cleanser.png",
     startHref: "/m/cleanser/start",
+    resultHref: "/m/cleanser/result",
     profileHref: "/m/cleanser/profile",
     totalSteps: 5,
     summary: "5 步 · 约 45 秒",
@@ -95,6 +120,32 @@ const CAT_MAP: Record<CategoryKey, CategoryMeta> = CATS.reduce((acc, cat) => {
   acc[cat.key] = cat;
   return acc;
 }, {} as Record<CategoryKey, CategoryMeta>);
+
+const LAST_RESULT_QUERY_META: Record<
+  CategoryKey,
+  { key: string; normalize: (raw: string | null | undefined) => string | null }
+> = {
+  shampoo: {
+    key: SHAMPOO_LAST_RESULT_QUERY_KEY,
+    normalize: normalizeShampooResultQueryString,
+  },
+  bodywash: {
+    key: BODYWASH_LAST_RESULT_QUERY_KEY,
+    normalize: normalizeBodyWashResultQueryString,
+  },
+  conditioner: {
+    key: CONDITIONER_LAST_RESULT_QUERY_KEY,
+    normalize: normalizeConditionerResultQueryString,
+  },
+  lotion: {
+    key: LOTION_LAST_RESULT_QUERY_KEY,
+    normalize: normalizeLotionResultQueryString,
+  },
+  cleanser: {
+    key: CLEANSER_LAST_RESULT_QUERY_KEY,
+    normalize: normalizeCleanserResultQueryString,
+  },
+};
 
 function asString(v: unknown): string | undefined {
   return typeof v === "string" ? v : undefined;
@@ -222,15 +273,18 @@ function isCategoryKey(v: string | null): v is CategoryKey {
 }
 
 export default function MobileChoose() {
-  const router = useRouter();
   const [selectedKey, setSelectedKey] = useState<CategoryKey>("shampoo");
   const [drafts, setDrafts] = useState<Partial<Record<CategoryKey, DraftProgress>>>({});
+  const [recentResultHref, setRecentResultHref] = useState<Partial<Record<CategoryKey, string>>>({});
+  const railRef = useRef<HTMLDivElement | null>(null);
+  const cardRefs = useRef<Partial<Record<CategoryKey, HTMLButtonElement | null>>>({});
 
   useEffect(() => {
     if (typeof window === "undefined") return;
 
     const syncFromStorage = () => {
       const nextDrafts: Partial<Record<CategoryKey, DraftProgress>> = {};
+      const nextRecentResult: Partial<Record<CategoryKey, string>> = {};
 
       for (const cat of CATS) {
         const draftRaw = window.localStorage.getItem(cat.draftKey);
@@ -240,6 +294,15 @@ export default function MobileChoose() {
         } else if (draftRaw) {
           window.localStorage.removeItem(cat.draftKey);
         }
+
+        const recentMeta = LAST_RESULT_QUERY_META[cat.key];
+        const rawRecentQuery = window.localStorage.getItem(recentMeta.key);
+        const normalizedRecentQuery = recentMeta.normalize(rawRecentQuery);
+        if (normalizedRecentQuery) {
+          nextRecentResult[cat.key] = `${cat.resultHref}?${normalizedRecentQuery}`;
+        } else if (rawRecentQuery) {
+          window.localStorage.removeItem(recentMeta.key);
+        }
       }
 
       const storedSelected = window.localStorage.getItem(CHOOSE_SELECTED_CATEGORY_KEY);
@@ -248,6 +311,7 @@ export default function MobileChoose() {
 
       setSelectedKey((prev) => (prev === nextSelected ? prev : nextSelected));
       setDrafts(nextDrafts);
+      setRecentResultHref(nextRecentResult);
     };
 
     const rafId = window.requestAnimationFrame(syncFromStorage);
@@ -260,6 +324,55 @@ export default function MobileChoose() {
     };
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined" || !("IntersectionObserver" in window)) return;
+    const rail = railRef.current;
+    if (!rail) return;
+
+    const ratioByKey = new Map<CategoryKey, number>();
+    const pickMostVisible = () => {
+      let next: CategoryKey | null = null;
+      let bestRatio = 0;
+      for (const cat of CATS) {
+        const ratio = ratioByKey.get(cat.key) || 0;
+        if (ratio > bestRatio) {
+          bestRatio = ratio;
+          next = cat.key;
+        }
+      }
+      if (!next || bestRatio < 0.52) return;
+      setSelectedKey((prev) => {
+        if (prev === next) return prev;
+        window.localStorage.setItem(CHOOSE_SELECTED_CATEGORY_KEY, next);
+        return next;
+      });
+    };
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const key = (entry.target as HTMLElement).dataset.categoryKey as CategoryKey | undefined;
+          if (!key || !isCategoryKey(key)) continue;
+          ratioByKey.set(key, entry.intersectionRatio);
+        }
+        pickMostVisible();
+      },
+      {
+        root: rail,
+        threshold: [0.15, 0.35, 0.52, 0.68, 0.85],
+      },
+    );
+
+    for (const cat of CATS) {
+      const node = cardRefs.current[cat.key];
+      if (node) observer.observe(node);
+    }
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
   const onSelect = useCallback((key: CategoryKey) => {
     setSelectedKey(key);
     if (typeof window !== "undefined") {
@@ -269,16 +382,10 @@ export default function MobileChoose() {
 
   const selected = CAT_MAP[selectedKey];
   const selectedDraft = drafts[selected.key] || null;
+  const selectedRecentResultHref = recentResultHref[selected.key] || null;
   const fallbackDraft = useMemo(() => CATS.map((cat) => drafts[cat.key] || null).find(Boolean) || null, [drafts]);
   const continueDraft = selectedDraft || fallbackDraft;
   const continueCat = continueDraft ? CAT_MAP[continueDraft.key] : null;
-  const onBack = useCallback(() => {
-    if (typeof window !== "undefined" && window.history.length > 1) {
-      router.back();
-      return;
-    }
-    router.push("/m");
-  }, [router]);
 
   return (
     <div className="m-choose-shell">
@@ -296,7 +403,7 @@ export default function MobileChoose() {
         </Link>
       ) : null}
 
-      <div className="m-choose-rail">
+      <div className="m-choose-rail" ref={railRef}>
         {CATS.map((cat) => {
           const active = selected.key === cat.key;
           return (
@@ -305,6 +412,10 @@ export default function MobileChoose() {
               type="button"
               aria-pressed={active}
               onClick={() => onSelect(cat.key)}
+              data-category-key={cat.key}
+              ref={(node) => {
+                cardRefs.current[cat.key] = node;
+              }}
               className={`m-choose-stage m-pressable ${active ? "m-choose-stage-active" : ""}`}
             >
               <div className="m-choose-stage-image">
@@ -320,7 +431,7 @@ export default function MobileChoose() {
         })}
       </div>
 
-      <div className="m-choose-action">
+      <div className="m-choose-action m-choose-action-dock">
         <div className="m-choose-action-title">当前选择 · {selected.zh}</div>
         <div className="m-choose-action-note">{selected.detail}</div>
 
@@ -331,9 +442,15 @@ export default function MobileChoose() {
           >
             {selectedDraft ? `继续${selected.zh}测配` : `开始${selected.zh}测配`}
           </Link>
-          <button type="button" onClick={onBack} className="m-profile-secondary-btn">
-            返回
-          </button>
+          {selectedRecentResultHref ? (
+            <Link href={selectedRecentResultHref} className="m-profile-secondary-btn inline-flex">
+              查看最近结果
+            </Link>
+          ) : (
+            <button type="button" disabled className="m-profile-secondary-btn inline-flex opacity-45">
+              查看最近结果
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -1,5 +1,4 @@
 import Link from "next/link";
-import LotionRecentResultLink from "./recent-result-link";
 
 export default function LotionStart() {
   return (
@@ -14,9 +13,9 @@ export default function LotionStart() {
         <Link href="/m/lotion/profile?step=1" className="m-profile-primary-btn inline-flex h-11 items-center justify-center px-5 text-[15px] font-semibold tracking-[-0.01em]">
           开始判断
         </Link>
-        <div>
-          <LotionRecentResultLink />
-        </div>
+        <Link href="/m/choose" className="m-profile-secondary-btn mt-3 inline-flex">
+          返回
+        </Link>
       </div>
     </div>
   );
