@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from app.constants import ROUTE_MAPPING_SUPPORTED_CATEGORIES
+from app.constants import MOBILE_RULES_VERSION, ROUTE_MAPPING_SUPPORTED_CATEGORIES
 from app.ai.errors import AIServiceError
 from app.ai.prompts import load_prompt, render_prompt
 from app.services.doubao_openai_client import DoubaoOpenAIClient
@@ -30,13 +30,6 @@ SUPPORTED_CAPABILITIES = {
     "doubao.route_mapping_cleanser",
 }
 
-ROUTE_MAPPING_DECISION_TABLE_REL_PATHS = {
-    "shampoo": "shampoo/v2026-03-03.1.json",
-    "bodywash": "bodywash/v2026-03-03.1.json",
-    "conditioner": "conditioner/v2026-03-03.1.json",
-    "lotion": "lotion/v2026-03-03.1.json",
-    "cleanser": "cleanser/v2026-03-03.1.json",
-}
 MODEL_TIER_VALUES = {"mini", "lite", "pro"}
 
 
@@ -1246,13 +1239,13 @@ def _normalize_mobile_compare_summary_result(payload: dict[str, Any]) -> dict[st
 
 def _load_route_mapping_decision_table(category: str) -> dict[str, Any]:
     normalized_category = str(category or "").strip().lower()
-    rel = ROUTE_MAPPING_DECISION_TABLE_REL_PATHS.get(normalized_category)
-    if not rel:
+    if normalized_category not in ROUTE_MAPPING_SUPPORTED_CATEGORIES:
         raise AIServiceError(
             code="route_mapping_category_unsupported",
             message=f"route mapping does not support category '{normalized_category}'.",
             http_status=400,
         )
+    rel = f"{normalized_category}/v{MOBILE_RULES_VERSION}.json"
     path = Path(__file__).resolve().parent / "decision_tables" / rel
     if not path.exists():
         raise AIServiceError(
@@ -1282,11 +1275,24 @@ def _load_route_mapping_decision_table(category: str) -> dict[str, Any]:
             message=f"route mapping decision table route_candidates missing for category '{normalized_category}'.",
             http_status=500,
         )
-    rules_version = str(payload.get("rules_version") or "").strip()
-    if not rules_version:
+    table_category = str(payload.get("category") or "").strip().lower()
+    if table_category != normalized_category:
         raise AIServiceError(
             code="route_mapping_decision_table_invalid",
-            message=f"route mapping decision table rules_version missing for category '{normalized_category}'.",
+            message=(
+                "route mapping decision table category mismatch: "
+                f"expected '{normalized_category}', got '{table_category or '-'}'."
+            ),
+            http_status=500,
+        )
+    rules_version = str(payload.get("rules_version") or "").strip()
+    if rules_version != MOBILE_RULES_VERSION:
+        raise AIServiceError(
+            code="route_mapping_decision_table_invalid",
+            message=(
+                "route mapping decision table rules_version mismatch: "
+                f"expected '{MOBILE_RULES_VERSION}', got '{rules_version or '-'}'."
+            ),
             http_status=500,
         )
     return payload
