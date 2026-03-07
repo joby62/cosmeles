@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   BODYWASH_LAST_RESULT_QUERY_KEY,
   BODYWASH_PROFILE_DRAFT_KEY,
@@ -147,6 +147,19 @@ const LAST_RESULT_QUERY_META: Record<
   },
 };
 
+const DIAL_REPEAT = 5;
+const DIAL_MIDDLE_LOOP = Math.floor(DIAL_REPEAT / 2);
+
+const DIAL_ITEMS: Array<{ slot: number; loop: number; cat: CategoryMeta }> = Array.from(
+  { length: DIAL_REPEAT },
+  (_, loop) =>
+    CATS.map((cat, index) => ({
+      slot: loop * CATS.length + index,
+      loop,
+      cat,
+    })),
+).flat();
+
 function asString(v: unknown): string | undefined {
   return typeof v === "string" ? v : undefined;
 }
@@ -276,8 +289,81 @@ export default function MobileChoose() {
   const [selectedKey, setSelectedKey] = useState<CategoryKey>("shampoo");
   const [drafts, setDrafts] = useState<Partial<Record<CategoryKey, DraftProgress>>>({});
   const [recentResultHref, setRecentResultHref] = useState<Partial<Record<CategoryKey, string>>>({});
-  const railRef = useRef<HTMLDivElement | null>(null);
-  const cardRefs = useRef<Partial<Record<CategoryKey, HTMLButtonElement | null>>>({});
+  const dialRef = useRef<HTMLDivElement | null>(null);
+  const dialItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const dialReadyRef = useRef(false);
+  const scrollRafRef = useRef<number | null>(null);
+
+  const persistSelectedKey = useCallback((key: CategoryKey) => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(CHOOSE_SELECTED_CATEGORY_KEY, key);
+    }
+  }, []);
+
+  const centerDialSlot = useCallback((slot: number, behavior: ScrollBehavior) => {
+    const rail = dialRef.current;
+    const node = dialItemRefs.current[slot];
+    if (!rail || !node) return;
+    const left = node.offsetLeft - (rail.clientWidth - node.offsetWidth) / 2;
+    rail.scrollTo({ left, behavior });
+  }, []);
+
+  const slotToKey = useCallback((slot: number): CategoryKey => {
+    const normalized = ((slot % CATS.length) + CATS.length) % CATS.length;
+    return CATS[normalized]?.key || "shampoo";
+  }, []);
+
+  const pickCenteredSlot = useCallback((): number | null => {
+    const rail = dialRef.current;
+    if (!rail) return null;
+    const railRect = rail.getBoundingClientRect();
+    const centerX = railRect.left + railRect.width / 2;
+    let bestSlot = -1;
+    let bestDistance = Number.POSITIVE_INFINITY;
+
+    for (let index = 0; index < dialItemRefs.current.length; index += 1) {
+      const node = dialItemRefs.current[index];
+      if (!node) continue;
+      const rect = node.getBoundingClientRect();
+      const nodeCenter = rect.left + rect.width / 2;
+      const distance = Math.abs(nodeCenter - centerX);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestSlot = index;
+      }
+    }
+
+    return bestSlot >= 0 ? bestSlot : null;
+  }, []);
+
+  const moveSlotToMiddleLoop = useCallback(
+    (slot: number): number => {
+      const lowerBoundary = CATS.length;
+      const upperBoundary = CATS.length * (DIAL_REPEAT - 2) - 1;
+      if (slot >= lowerBoundary && slot <= upperBoundary) {
+        return slot;
+      }
+
+      const normalized = ((slot % CATS.length) + CATS.length) % CATS.length;
+      const middleSlot = DIAL_MIDDLE_LOOP * CATS.length + normalized;
+      centerDialSlot(middleSlot, "auto");
+      return middleSlot;
+    },
+    [centerDialSlot],
+  );
+
+  const selectBySlot = useCallback(
+    (slot: number) => {
+      const stableSlot = moveSlotToMiddleLoop(slot);
+      const key = slotToKey(stableSlot);
+      setSelectedKey((prev) => {
+        if (prev === key) return prev;
+        persistSelectedKey(key);
+        return key;
+      });
+    },
+    [moveSlotToMiddleLoop, persistSelectedKey, slotToKey],
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -325,133 +411,120 @@ export default function MobileChoose() {
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined" || !("IntersectionObserver" in window)) return;
-    const rail = railRef.current;
-    if (!rail) return;
+    if (typeof window === "undefined") return;
+    if (!dialRef.current || !dialItemRefs.current.length) return;
 
-    const ratioByKey = new Map<CategoryKey, number>();
-    const pickMostVisible = () => {
-      let next: CategoryKey | null = null;
-      let bestRatio = 0;
-      for (const cat of CATS) {
-        const ratio = ratioByKey.get(cat.key) || 0;
-        if (ratio > bestRatio) {
-          bestRatio = ratio;
-          next = cat.key;
-        }
-      }
-      if (!next || bestRatio < 0.52) return;
-      setSelectedKey((prev) => {
-        if (prev === next) return prev;
-        window.localStorage.setItem(CHOOSE_SELECTED_CATEGORY_KEY, next);
-        return next;
+    const selectedIndex = CATS.findIndex((cat) => cat.key === selectedKey);
+    if (selectedIndex < 0) return;
+
+    const targetSlot = DIAL_MIDDLE_LOOP * CATS.length + selectedIndex;
+
+    if (!dialReadyRef.current) {
+      const rafId = window.requestAnimationFrame(() => {
+        centerDialSlot(targetSlot, "auto");
+        dialReadyRef.current = true;
       });
-    };
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          const key = (entry.target as HTMLElement).dataset.categoryKey as CategoryKey | undefined;
-          if (!key || !isCategoryKey(key)) continue;
-          ratioByKey.set(key, entry.intersectionRatio);
-        }
-        pickMostVisible();
-      },
-      {
-        root: rail,
-        threshold: [0.15, 0.35, 0.52, 0.68, 0.85],
-      },
-    );
-
-    for (const cat of CATS) {
-      const node = cardRefs.current[cat.key];
-      if (node) observer.observe(node);
+      return () => {
+        window.cancelAnimationFrame(rafId);
+      };
     }
 
+    const centeredSlot = pickCenteredSlot();
+    if (centeredSlot === null) return;
+    if (slotToKey(centeredSlot) !== selectedKey) {
+      centerDialSlot(targetSlot, "auto");
+    }
+  }, [centerDialSlot, pickCenteredSlot, selectedKey, slotToKey]);
+
+  useEffect(() => {
     return () => {
-      observer.disconnect();
+      if (typeof window === "undefined") return;
+      if (scrollRafRef.current !== null) {
+        window.cancelAnimationFrame(scrollRafRef.current);
+      }
     };
   }, []);
 
-  const onSelect = useCallback((key: CategoryKey) => {
-    setSelectedKey(key);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(CHOOSE_SELECTED_CATEGORY_KEY, key);
+  const onDialScroll = useCallback(() => {
+    if (typeof window === "undefined") return;
+    if (scrollRafRef.current !== null) {
+      window.cancelAnimationFrame(scrollRafRef.current);
     }
-  }, []);
+    scrollRafRef.current = window.requestAnimationFrame(() => {
+      const slot = pickCenteredSlot();
+      if (slot === null) return;
+      selectBySlot(slot);
+    });
+  }, [pickCenteredSlot, selectBySlot]);
+
+  const onSelectDialItem = useCallback(
+    (slot: number, key: CategoryKey) => {
+      setSelectedKey((prev) => {
+        if (prev === key) return prev;
+        persistSelectedKey(key);
+        return key;
+      });
+      centerDialSlot(slot, "smooth");
+    },
+    [centerDialSlot, persistSelectedKey],
+  );
 
   const selected = CAT_MAP[selectedKey];
   const selectedDraft = drafts[selected.key] || null;
   const selectedRecentResultHref = recentResultHref[selected.key] || null;
-  const fallbackDraft = useMemo(() => CATS.map((cat) => drafts[cat.key] || null).find(Boolean) || null, [drafts]);
-  const continueDraft = selectedDraft || fallbackDraft;
-  const continueCat = continueDraft ? CAT_MAP[continueDraft.key] : null;
+  const recentEntryHref = selectedRecentResultHref || "/m/me?tab=selection";
 
   return (
     <div className="m-choose-shell">
-      <div className="m-profile-step-index">个性测配</div>
-      <h1 className="m-choose-title">选一个品类，30 秒拿到唯一答案。</h1>
-      <p className="m-choose-note">点选后直接进入对应品类，按问题一路完成即可。</p>
-
-      {continueDraft && continueCat ? (
-        <Link href={continueDraft.continueHref} className="m-choose-continue m-pressable">
-          <div className="m-choose-continue-kicker">继续上次测配</div>
-          <div className="m-choose-continue-title">{continueCat.zh}</div>
-          <p className="m-choose-continue-note">
-            已完成 {continueDraft.answered}/{continueDraft.total} 步，继续即可直接回到未完成题目。
-          </p>
+      <div className="m-choose-head">
+        <div className="m-profile-step-index">个性测评</div>
+        <Link href={recentEntryHref} className="m-choose-recent m-pressable">
+          最近结果
         </Link>
-      ) : null}
-
-      <div className="m-choose-rail" ref={railRef}>
-        {CATS.map((cat) => {
-          const active = selected.key === cat.key;
-          return (
-            <button
-              key={cat.key}
-              type="button"
-              aria-pressed={active}
-              onClick={() => onSelect(cat.key)}
-              data-category-key={cat.key}
-              ref={(node) => {
-                cardRefs.current[cat.key] = node;
-              }}
-              className={`m-choose-stage m-pressable ${active ? "m-choose-stage-active" : ""}`}
-            >
-              <div className="m-choose-stage-image">
-                <Image src={cat.image} alt={cat.zh} width={212} height={150} className="h-[136px] w-[212px] object-contain" />
-              </div>
-              <div className="mt-3 text-left">
-                <div className="m-choose-stage-title">{cat.zh}</div>
-                <div className="m-choose-stage-meta">{cat.summary}</div>
-                <div className="m-choose-stage-note">{cat.detail}</div>
-              </div>
-            </button>
-          );
-        })}
       </div>
 
-      <div className="m-choose-action m-choose-action-dock">
-        <div className="m-choose-action-title">当前选择 · {selected.zh}</div>
-        <div className="m-choose-action-note">{selected.detail}</div>
-
-        <div className="mt-4 flex flex-wrap gap-2.5">
-          <Link
-            href={selectedDraft ? selectedDraft.continueHref : selected.startHref}
-            className="m-profile-primary-btn inline-flex h-11 items-center justify-center px-5 text-[15px] font-semibold tracking-[-0.01em]"
-          >
-            {selectedDraft ? `继续${selected.zh}测配` : `开始${selected.zh}测配`}
-          </Link>
-          {selectedRecentResultHref ? (
-            <Link href={selectedRecentResultHref} className="m-profile-secondary-btn inline-flex">
-              查看最近结果
-            </Link>
-          ) : (
-            <button type="button" disabled className="m-profile-secondary-btn inline-flex opacity-45">
-              查看最近结果
-            </button>
-          )}
+      <div className="m-choose-dial-wrap">
+        <div className="m-choose-dial-label">全部品类</div>
+        <div className="m-choose-dial" ref={dialRef} onScroll={onDialScroll} role="tablist" aria-label="选择测评品类">
+          {DIAL_ITEMS.map((item) => {
+            const active = selected.key === item.cat.key;
+            return (
+              <button
+                key={`${item.loop}-${item.cat.key}`}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => onSelectDialItem(item.slot, item.cat.key)}
+                className={`m-choose-dial-item m-pressable ${active ? "m-choose-dial-item-active" : ""}`}
+                ref={(node) => {
+                  dialItemRefs.current[item.slot] = node;
+                }}
+              >
+                {item.cat.zh}
+              </button>
+            );
+          })}
         </div>
+      </div>
+
+      <article className="m-choose-focus-card">
+        <div className="m-choose-focus-image">
+          <Image src={selected.image} alt={selected.zh} width={224} height={160} className="h-[152px] w-[224px] object-contain" />
+        </div>
+        <div className="m-choose-focus-body">
+          <div className="m-choose-focus-title">{selected.zh}</div>
+          <div className="m-choose-focus-meta">{selected.summary}</div>
+          <p className="m-choose-focus-note">{selected.detail}</p>
+        </div>
+      </article>
+
+      <div className="m-choose-action-wrap">
+        <Link
+          href={selectedDraft ? selectedDraft.continueHref : selected.startHref}
+          className="m-profile-primary-btn m-choose-primary-btn inline-flex items-center justify-center"
+        >
+          {selectedDraft ? `继续${selected.zh}测配` : `开始${selected.zh}测配`}
+        </Link>
       </div>
     </div>
   );
