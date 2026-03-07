@@ -821,16 +821,57 @@ html[data-nav-open="1"] #app-main{
   color: var(--m-profile-meta);
 }
 
-.m-choose-dial {
+.m-choose-dial-shell {
+  position: relative;
   margin-top: 8px;
+}
+
+.m-choose-dial-shell::before,
+.m-choose-dial-shell::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  bottom: 10px;
+  width: 24px;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.m-choose-dial-shell::before {
+  left: 0;
+  background: linear-gradient(90deg, var(--m-bg), rgba(0,0,0,0));
+}
+
+.m-choose-dial-shell::after {
+  right: 0;
+  background: linear-gradient(270deg, var(--m-bg), rgba(0,0,0,0));
+}
+
+.m-choose-dial-center-line {
+  position: absolute;
+  left: 50%;
+  top: 7px;
+  bottom: 14px;
+  width: 2px;
+  border-radius: 999px;
+  transform: translateX(-50%);
+  background: rgba(10,132,255,0.52);
+  box-shadow: 0 0 10px rgba(10,132,255,0.32);
+  pointer-events: none;
+  z-index: 3;
+}
+
+.m-choose-dial {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  padding: 2px 0 6px;
+  scroll-snap-type: x proximity;
+  scroll-behavior: smooth;
+  padding: 2px 0 8px;
   -ms-overflow-style: none;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
 }
 
 .m-choose-dial::-webkit-scrollbar {
@@ -838,63 +879,108 @@ html[data-nav-open="1"] #app-main{
 }
 
 .m-choose-dial-item {
-  height: 38px;
-  min-width: 58px;
+  height: 40px;
+  min-width: 66px;
   flex: 0 0 auto;
   scroll-snap-align: center;
   border-radius: 999px;
   border: 1px solid var(--m-profile-summary-border);
-  padding: 0 12px;
+  padding: 0 14px;
   text-align: center;
   font-size: 14px;
-  font-weight: 560;
+  font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--m-profile-note);
   background: var(--m-profile-summary-bg);
+  transition:
+    transform var(--m-dur-fast) var(--m-ease),
+    background-color var(--m-dur-fast) var(--m-ease),
+    border-color var(--m-dur-fast) var(--m-ease),
+    box-shadow var(--m-dur-fast) var(--m-ease),
+    color var(--m-dur-fast) var(--m-ease);
 }
 
 .m-choose-dial-item-active {
   border-color: var(--m-profile-option-active-border);
   color: var(--m-nav-active-text);
   background: var(--m-nav-active-bg);
-  box-shadow: inset 0 0 0 1px var(--m-profile-option-active-border);
+  box-shadow: inset 0 0 0 1px var(--m-profile-option-active-border), 0 8px 18px rgba(10,132,255,0.16);
+  transform: translateY(-1px);
+}
+
+.m-choose-focus-rail {
+  margin-top: 14px;
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-behavior: smooth;
+  padding: 0 0 8px;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+}
+
+.m-choose-focus-rail::-webkit-scrollbar {
+  display: none;
 }
 
 .m-choose-focus-card {
-  margin-top: 14px;
-  border-radius: 30px;
+  width: min(88vw, 352px);
+  flex: 0 0 auto;
+  scroll-snap-align: center;
+  border-radius: 32px;
   border: 1px solid var(--m-choose-card-border);
-  background: var(--m-choose-card-bg);
-  padding: 14px;
+  background: linear-gradient(155deg, var(--m-choose-card-bg), rgba(118,154,215,0.14));
+  padding: 16px;
+  text-align: left;
   transition:
+    transform var(--m-dur-mid) var(--m-ease),
     border-color var(--m-dur-fast) var(--m-ease),
     box-shadow var(--m-dur-fast) var(--m-ease),
     background-color var(--m-dur-fast) var(--m-ease);
 }
 
-.m-choose-focus-image {
-  display: flex;
-  height: 184px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 24px;
-  background: var(--m-choose-image-bg);
+.m-choose-focus-card-active {
+  border-color: var(--m-profile-option-active-border);
+  box-shadow: var(--m-profile-option-active-shadow);
+  animation: mChooseCardFloat 3.6s ease-in-out infinite;
 }
 
-.m-choose-focus-body {
+@keyframes mChooseCardFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-1.5px); }
+}
+
+.m-choose-focus-kicker {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  border-radius: 999px;
+  border: 1px solid rgba(124,164,241,0.42);
+  background: rgba(231,241,255,0.86);
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: rgba(45,92,177,0.94);
+}
+
+.m-choose-focus-main {
   margin-top: 12px;
 }
 
 .m-choose-focus-title {
-  font-size: 22px;
+  font-size: 34px;
   line-height: 1.22;
-  font-weight: 630;
+  font-weight: 640;
   letter-spacing: -0.02em;
   color: var(--m-choose-card-text);
 }
 
 .m-choose-focus-meta {
-  margin-top: 3px;
+  margin-top: 6px;
   font-size: 14px;
   font-weight: 580;
   letter-spacing: 0.01em;
@@ -902,10 +988,31 @@ html[data-nav-open="1"] #app-main{
 }
 
 .m-choose-focus-note {
-  margin-top: 6px;
+  margin-top: 8px;
   font-size: 15px;
-  line-height: 1.45;
+  line-height: 1.5;
   color: var(--m-choose-card-note);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.m-choose-focus-image-shell {
+  margin-top: 14px;
+  border-radius: 24px;
+  border: 1px solid var(--m-choose-card-border);
+  background: rgba(255,255,255,0.5);
+  padding: 10px;
+}
+
+.m-choose-focus-image {
+  display: flex;
+  height: 170px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 18px;
+  background: var(--m-choose-image-bg);
 }
 
 .m-choose-action-wrap {
@@ -924,17 +1031,23 @@ html[data-nav-open="1"] #app-main{
 
 @media (max-width: 420px) {
   .m-choose-dial-item {
-    min-width: 54px;
+    min-width: 62px;
     padding: 0 10px;
     font-size: 13px;
   }
 
-  .m-choose-focus-image {
-    height: 172px;
+  .m-choose-focus-card {
+    width: min(90vw, 338px);
+    border-radius: 30px;
+    padding: 14px;
   }
 
   .m-choose-focus-title {
-    font-size: 20px;
+    font-size: 31px;
+  }
+
+  .m-choose-focus-image {
+    height: 156px;
   }
 
   .m-choose-primary-btn {
@@ -1143,6 +1256,10 @@ html[data-nav-open="1"] #app-main{
   .m-compare-check-selected {
     animation: none !important;
   }
+
+  .m-choose-focus-card-active {
+    animation: none !important;
+  }
 }
 
 /* Light-coded mobile pages: remap black tokens in dark mode */
@@ -1159,6 +1276,21 @@ html[data-nav-open="1"] #app-main{
   .m-shell [class*="bg-black/"] { background-color: rgba(255,255,255,0.1) !important; }
   .m-shell [class*="bg-white/"] { background-color: rgba(255,255,255,0.08) !important; }
   .m-shell .bg-white { background-color: rgba(22,28,41,0.9) !important; }
+
+  .m-shell .m-choose-dial-center-line {
+    background: rgba(114,182,255,0.8);
+    box-shadow: 0 0 12px rgba(114,182,255,0.36);
+  }
+
+  .m-shell .m-choose-focus-kicker {
+    border-color: rgba(112,168,250,0.52);
+    background: rgba(35,58,93,0.66);
+    color: rgba(195,224,255,0.96);
+  }
+
+  .m-shell .m-choose-focus-image-shell {
+    background: rgba(17,27,44,0.64);
+  }
 }
 
 /* Dark mode choose page: keep cards and labels readable */
