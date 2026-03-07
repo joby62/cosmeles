@@ -2,32 +2,13 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  BODYWASH_LAST_RESULT_QUERY_KEY,
-  BODYWASH_PROFILE_DRAFT_KEY,
-  normalizeBodyWashResultQueryString,
-} from "@/lib/mobile/bodywashFlowStorage";
-import {
-  CLEANSER_LAST_RESULT_QUERY_KEY,
-  CLEANSER_PROFILE_DRAFT_KEY,
-  normalizeCleanserResultQueryString,
-} from "@/lib/mobile/cleanserFlowStorage";
-import {
-  CONDITIONER_LAST_RESULT_QUERY_KEY,
-  CONDITIONER_PROFILE_DRAFT_KEY,
-  normalizeConditionerResultQueryString,
-} from "@/lib/mobile/conditionerFlowStorage";
-import {
-  LOTION_LAST_RESULT_QUERY_KEY,
-  LOTION_PROFILE_DRAFT_KEY,
-  normalizeLotionResultQueryString,
-} from "@/lib/mobile/lotionFlowStorage";
-import {
-  SHAMPOO_LAST_RESULT_QUERY_KEY,
-  SHAMPOO_PROFILE_DRAFT_KEY,
-  normalizeShampooResultQueryString,
-} from "@/lib/mobile/shampooFlowStorage";
+import { BODYWASH_PROFILE_DRAFT_KEY } from "@/lib/mobile/bodywashFlowStorage";
+import { CLEANSER_PROFILE_DRAFT_KEY } from "@/lib/mobile/cleanserFlowStorage";
+import { CONDITIONER_PROFILE_DRAFT_KEY } from "@/lib/mobile/conditionerFlowStorage";
+import { LOTION_PROFILE_DRAFT_KEY } from "@/lib/mobile/lotionFlowStorage";
+import { SHAMPOO_PROFILE_DRAFT_KEY } from "@/lib/mobile/shampooFlowStorage";
 
 type CategoryKey = "shampoo" | "bodywash" | "conditioner" | "lotion" | "cleanser";
 
@@ -37,13 +18,10 @@ type CategoryMeta = {
   image: string;
   startHref: string;
   profileHref: string;
-  resultHref: string;
   totalSteps: number;
   summary: string;
   detail: string;
   draftKey: string;
-  lastResultKey: string;
-  normalizeResultQuery: (raw: string | null | undefined) => string | null;
 };
 
 type DraftProgress = {
@@ -62,13 +40,10 @@ const CATS: CategoryMeta[] = [
     image: "/m/categories/shampoo.png",
     startHref: "/m/shampoo/start",
     profileHref: "/m/shampoo/profile",
-    resultHref: "/m/shampoo/result",
     totalSteps: 3,
     summary: "3 步 · 约 30 秒",
     detail: "先看出油节奏，再看头皮状态，最后锁定发丝需求。",
     draftKey: SHAMPOO_PROFILE_DRAFT_KEY,
-    lastResultKey: SHAMPOO_LAST_RESULT_QUERY_KEY,
-    normalizeResultQuery: normalizeShampooResultQueryString,
   },
   {
     key: "bodywash",
@@ -76,13 +51,10 @@ const CATS: CategoryMeta[] = [
     image: "/m/categories/bodywash.png",
     startHref: "/m/bodywash/start",
     profileHref: "/m/bodywash/profile",
-    resultHref: "/m/bodywash/result",
     totalSteps: 5,
     summary: "5 步 · 约 45 秒",
     detail: "环境、耐受、油脂角质、冲洗偏好、特殊限制逐层收敛。",
     draftKey: BODYWASH_PROFILE_DRAFT_KEY,
-    lastResultKey: BODYWASH_LAST_RESULT_QUERY_KEY,
-    normalizeResultQuery: normalizeBodyWashResultQueryString,
   },
   {
     key: "conditioner",
@@ -90,13 +62,10 @@ const CATS: CategoryMeta[] = [
     image: "/m/categories/conditioner.png",
     startHref: "/m/conditioner/start",
     profileHref: "/m/conditioner/profile",
-    resultHref: "/m/conditioner/result",
     totalSteps: 3,
     summary: "3 步 · 约 30 秒",
     detail: "受损程度、发丝形态、视觉效果三步得出唯一答案。",
     draftKey: CONDITIONER_PROFILE_DRAFT_KEY,
-    lastResultKey: CONDITIONER_LAST_RESULT_QUERY_KEY,
-    normalizeResultQuery: normalizeConditionerResultQueryString,
   },
   {
     key: "lotion",
@@ -104,13 +73,10 @@ const CATS: CategoryMeta[] = [
     image: "/m/categories/lotion.png",
     startHref: "/m/lotion/start",
     profileHref: "/m/lotion/profile",
-    resultHref: "/m/lotion/result",
     totalSteps: 5,
     summary: "5 步 · 约 45 秒",
     detail: "按环境、敏感度、痛点与质地偏好筛到单一路线。",
     draftKey: LOTION_PROFILE_DRAFT_KEY,
-    lastResultKey: LOTION_LAST_RESULT_QUERY_KEY,
-    normalizeResultQuery: normalizeLotionResultQueryString,
   },
   {
     key: "cleanser",
@@ -118,13 +84,10 @@ const CATS: CategoryMeta[] = [
     image: "/m/categories/cleanser.png",
     startHref: "/m/cleanser/start",
     profileHref: "/m/cleanser/profile",
-    resultHref: "/m/cleanser/result",
     totalSteps: 5,
     summary: "5 步 · 约 45 秒",
     detail: "出油、敏感、清洁负担、痛点与肤感偏好共同决策。",
     draftKey: CLEANSER_PROFILE_DRAFT_KEY,
-    lastResultKey: CLEANSER_LAST_RESULT_QUERY_KEY,
-    normalizeResultQuery: normalizeCleanserResultQueryString,
   },
 ];
 
@@ -259,16 +222,15 @@ function isCategoryKey(v: string | null): v is CategoryKey {
 }
 
 export default function MobileChoose() {
+  const router = useRouter();
   const [selectedKey, setSelectedKey] = useState<CategoryKey>("shampoo");
   const [drafts, setDrafts] = useState<Partial<Record<CategoryKey, DraftProgress>>>({});
-  const [recentResultQuery, setRecentResultQuery] = useState<Partial<Record<CategoryKey, string>>>({});
 
   useEffect(() => {
     if (typeof window === "undefined") return;
 
     const syncFromStorage = () => {
       const nextDrafts: Partial<Record<CategoryKey, DraftProgress>> = {};
-      const nextResults: Partial<Record<CategoryKey, string>> = {};
 
       for (const cat of CATS) {
         const draftRaw = window.localStorage.getItem(cat.draftKey);
@@ -278,14 +240,6 @@ export default function MobileChoose() {
         } else if (draftRaw) {
           window.localStorage.removeItem(cat.draftKey);
         }
-
-        const resultRaw = window.localStorage.getItem(cat.lastResultKey);
-        const normalized = cat.normalizeResultQuery(resultRaw);
-        if (normalized) {
-          nextResults[cat.key] = normalized;
-        } else if (resultRaw) {
-          window.localStorage.removeItem(cat.lastResultKey);
-        }
       }
 
       const storedSelected = window.localStorage.getItem(CHOOSE_SELECTED_CATEGORY_KEY);
@@ -294,7 +248,6 @@ export default function MobileChoose() {
 
       setSelectedKey((prev) => (prev === nextSelected ? prev : nextSelected));
       setDrafts(nextDrafts);
-      setRecentResultQuery(nextResults);
     };
 
     const rafId = window.requestAnimationFrame(syncFromStorage);
@@ -319,13 +272,19 @@ export default function MobileChoose() {
   const fallbackDraft = useMemo(() => CATS.map((cat) => drafts[cat.key] || null).find(Boolean) || null, [drafts]);
   const continueDraft = selectedDraft || fallbackDraft;
   const continueCat = continueDraft ? CAT_MAP[continueDraft.key] : null;
-  const selectedResultQuery = recentResultQuery[selected.key] || null;
+  const onBack = useCallback(() => {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+      return;
+    }
+    router.push("/m");
+  }, [router]);
 
   return (
     <div className="m-choose-shell">
       <div className="m-profile-step-index">个性测配</div>
       <h1 className="m-choose-title">选一个品类，30 秒拿到唯一答案。</h1>
-      <p className="m-choose-note">点选后进入该品类的 Apple 式一步一题流程，可随时上滑回看和修改。</p>
+      <p className="m-choose-note">点选后直接进入对应品类，按问题一路完成即可。</p>
 
       {continueDraft && continueCat ? (
         <Link href={continueDraft.continueHref} className="m-choose-continue m-pressable">
@@ -372,21 +331,10 @@ export default function MobileChoose() {
           >
             {selectedDraft ? `继续${selected.zh}测配` : `开始${selected.zh}测配`}
           </Link>
-          <Link
-            href={selected.startHref}
-            className="m-profile-secondary-btn"
-          >
-            {selectedDraft ? "重新开始" : "查看引导"}
-          </Link>
+          <button type="button" onClick={onBack} className="m-profile-secondary-btn">
+            返回
+          </button>
         </div>
-
-        {selectedResultQuery ? (
-          <div className="mt-3">
-            <Link href={`${selected.resultHref}?${selectedResultQuery}`} className="m-profile-secondary-btn">
-              查看最近结果
-            </Link>
-          </div>
-        ) : null}
       </div>
     </div>
   );

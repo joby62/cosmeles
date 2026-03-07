@@ -55,7 +55,17 @@ export default function MobileBottomNav() {
   const meActive = pathname.startsWith("/m/me") || pathname.startsWith("/m/bag");
 
   useEffect(() => {
-    if (typeof window === "undefined" || !window.visualViewport) return;
+    if (typeof window === "undefined") return;
+
+    const applyContentInset = (inset: number) => {
+      document.documentElement.style.setProperty("--m-chrome-bottom-inset", `${Math.max(0, inset)}px`);
+    };
+
+    if (!window.visualViewport) {
+      applyContentInset(0);
+      return;
+    }
+
     const viewport = window.visualViewport;
 
     const updateInset = () => {
@@ -65,6 +75,7 @@ export default function MobileBottomNav() {
       // Limit browser chrome offset to avoid accidental jumps to mid-screen.
       const nextInset = Math.min(96, rawInset);
       setChromeBottomInset((prev) => (Math.abs(prev - nextInset) < 1 ? prev : nextInset));
+      applyContentInset(nextInset);
     };
 
     updateInset();
@@ -80,6 +91,7 @@ export default function MobileBottomNav() {
       window.removeEventListener("resize", updateInset);
       window.removeEventListener("orientationchange", updateInset);
       window.removeEventListener("pageshow", updateInset);
+      applyContentInset(0);
     };
   }, []);
 

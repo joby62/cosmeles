@@ -14,7 +14,7 @@ export default function MobileLayout({ children }: { children: React.ReactNode }
         <MobileTopBar />
       </header>
 
-      <main className="mx-auto max-w-[680px] px-4 py-6 pb-28">{children}</main>
+      <main className="m-mobile-main mx-auto max-w-[680px] px-4 py-6">{children}</main>
       <MobileBottomNav />
     </div>
   );
