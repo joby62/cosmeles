@@ -21,6 +21,7 @@ const CATEGORY_ORDER: MobileSelectionCategory[] = ["shampoo", "bodywash", "condi
 const MAX_TOTAL_SELECTION = 3;
 const TOTAL_STEPS = 4;
 const ACTIVE_COMPARE_STORAGE_KEY = "mx_mobile_compare_active";
+const STALE_ACTIVE_SESSION_HINT = "上次对比记录已失效，已回到起始页。你可以重新开始，或先查看历史记录。";
 
 const WAITING_STAGE_ORDER = [
   "prepare",
@@ -373,7 +374,7 @@ export default function MobileComparePage() {
           setActiveCompareId(null);
           setActiveSession(null);
           setShowGuide(true);
-          setRunError(null);
+          setRunError(STALE_ACTIVE_SESSION_HINT);
           setRunning(false);
           return;
         }
@@ -473,7 +474,8 @@ export default function MobileComparePage() {
         return;
       }
       if (session.status === "failed") {
-        setRunError(String(session.error?.detail || "该任务已失败，可重置后重试。"));
+        const detail = String(session.error?.detail || "该任务已失败，可重置后重试。");
+        setRunError(humanizeCompareError(detail));
       } else {
         setRunError(null);
       }
@@ -1091,7 +1093,7 @@ export default function MobileComparePage() {
   }
 
   const hasActiveTask = Boolean(activeCompareId);
-  const isRestoring = restoringSession && hasActiveTask;
+  const isRestoring = restoringSession;
   const isRunningTask = running || activeSession?.status === "running";
   const isDoneTask = !isRunningTask && activeSession?.status === "done";
   const isFailedTask = !isRunningTask && activeSession?.status === "failed";
@@ -1174,7 +1176,7 @@ export default function MobileComparePage() {
 
         {isFailedTask ? (
           <div className="mt-4 rounded-[22px] border border-[#ff8f8f]/45 bg-[#ff5f5f]/10 px-4 py-3 text-[13px] text-[#b53a3a] dark:border-[#ff8f8f]/35 dark:bg-[#5a1f26]/45 dark:text-[#ffd1d1]">
-            {runError || activeSession?.error?.detail || "任务失败，请重置后重试。"}
+            {runError || humanizeCompareError(String(activeSession?.error?.detail || "")) || "任务失败，请重置后重试。"}
             {retryTargetLabels.length > 0 ? (
               <div className="mt-2 flex flex-wrap gap-1.5 text-[12px]">
                 {retryTargetLabels.map((label) => (
@@ -1231,6 +1233,11 @@ export default function MobileComparePage() {
   if (showGuide) {
     return (
       <section className="m-compare-page pb-10">
+        {runError ? (
+          <div className="mb-3 rounded-2xl border border-[#ff8f8f]/45 bg-[#ff5f5f]/10 px-4 py-3 text-[13px] text-[#b53a3a] dark:border-[#ff8f8f]/35 dark:bg-[#5a1f26]/45 dark:text-[#ffd1d1]">
+            {runError}
+          </div>
+        ) : null}
         <article className="relative overflow-hidden rounded-[30px] border border-black/10 bg-white/84 px-5 py-6 shadow-[0_16px_44px_rgba(23,52,98,0.1)] backdrop-blur-[14px]">
           <div className="pointer-events-none absolute -right-8 -top-10 h-40 w-40 rounded-full bg-[#6bb3ff]/40 blur-3xl" />
           <div className="pointer-events-none absolute -bottom-14 -left-8 h-44 w-44 rounded-full bg-[#7f8fff]/30 blur-3xl" />
@@ -1844,9 +1851,46 @@ function isMissingProductError(message: string): boolean {
   return /product\s+'[^']+'\s+not found/i.test(text);
 }
 
+function parseCompareErrorDetail(raw: string): string {
+  const text = String(raw || "").trim();
+  if (!text) return "";
+
+  const stripped = text.replace(/^(?:API|COMPARE_UPLOAD)\s+\d+\s*:\s*/i, "").trim();
+  if (!stripped) return "";
+
+  try {
+    const parsed = JSON.parse(stripped) as unknown;
+    if (typeof parsed === "string") return parsed.trim();
+    if (parsed && typeof parsed === "object") {
+      const payload = parsed as Record<string, unknown>;
+      if (typeof payload.detail === "string" && payload.detail.trim()) return payload.detail.trim();
+      if (payload.detail && typeof payload.detail === "object") {
+        const nested = payload.detail as Record<string, unknown>;
+        if (typeof nested.detail === "string" && nested.detail.trim()) return nested.detail.trim();
+      }
+      if (typeof payload.message === "string" && payload.message.trim()) return payload.message.trim();
+    }
+  } catch {
+    // Ignore parsing errors and keep stripped detail.
+  }
+
+  return stripped;
+}
+
 function humanizeCompareError(message: string): string {
-  if (isMissingProductError(message)) {
+  const detail = parseCompareErrorDetail(message);
+  if (!detail) return "对比暂时失败，请稍后再试。";
+  if (isMissingProductError(detail)) {
     return "检测到历史产品已失效，请重置后重新选择产品。";
   }
-  return message;
+  if (/COMPARE_RECOMMENDATION_NOT_FOUND/i.test(detail) || /has no historical recommendation/i.test(detail)) {
+    return "当前设备在该品类还没有历史首推，先完成一次个性测配后再来对比。";
+  }
+  if (/At least 2 products are required for compare/i.test(detail)) {
+    return "请先选择 2~3 款产品，再开始对比。";
+  }
+  if (/Compare session not found/i.test(detail)) {
+    return STALE_ACTIVE_SESSION_HINT;
+  }
+  return detail;
 }
