@@ -3,8 +3,6 @@
 set -euo pipefail
 
 PROGRAM_NAME="${0:t}"
-DEFAULT_PREFIX="${CODEX_NOTIFY_PREFIX:-[Codex]}"
-DEFAULT_SERVICE="${CODEX_NOTIFY_SERVICE:-imessage}"
 
 usage() {
   cat <<'EOF'
@@ -14,9 +12,11 @@ Usage:
   codex-imessage-notify.sh [--direct-only] [--to <phone-or-email>] [--service <imessage|auto>] [--prefix <text>] [message words...]
 
 Environment:
+  CODEX_NOTIFY_CONFIG_FILE  Optional. Defaults to ~/.config/codex/imessage-notify.env
   CODEX_NOTIFY_TO        Default recipient. Use an iMessage phone number or Apple ID email.
   CODEX_NOTIFY_SERVICE   Optional. Defaults to "imessage". "auto" maps to "imessage" in V1.
   CODEX_NOTIFY_PREFIX    Optional. Defaults to "[Codex]".
+  CODEX_NOTIFY_DIRECT_ONLY Optional. Set to 1 to disable UI fallback by default.
 
 Notes:
   AppleScript V1 sends via Messages directly first, then falls back to UI automation if needed.
@@ -37,6 +37,25 @@ fail() {
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || fail "missing required command: $1"
+}
+
+default_config_file() {
+  if [[ -n "${XDG_CONFIG_HOME:-}" ]]; then
+    print -- "${XDG_CONFIG_HOME}/codex/imessage-notify.env"
+  else
+    print -- "${HOME}/.config/codex/imessage-notify.env"
+  fi
+}
+
+load_private_config() {
+  local config_file="${CODEX_NOTIFY_CONFIG_FILE:-$(default_config_file)}"
+
+  if [[ ! -f "$config_file" ]]; then
+    return 0
+  fi
+
+  # shellcheck disable=SC1090
+  source "$config_file"
 }
 
 normalize_service() {
@@ -350,13 +369,14 @@ EOF
 
 main() {
   require_command osascript
+  load_private_config
 
   local recipient="${CODEX_NOTIFY_TO:-}"
-  local service="$DEFAULT_SERVICE"
-  local prefix="$DEFAULT_PREFIX"
+  local service="${CODEX_NOTIFY_SERVICE:-imessage}"
+  local prefix="${CODEX_NOTIFY_PREFIX:-[Codex]}"
   local message=""
   local mode="send"
-  local direct_only="0"
+  local direct_only="${CODEX_NOTIFY_DIRECT_ONLY:-0}"
 
   while [[ $# -gt 0 ]]; do
     case "$1" in

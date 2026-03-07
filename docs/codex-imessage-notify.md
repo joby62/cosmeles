@@ -24,7 +24,22 @@ On first use, macOS may prompt for both Automation and Accessibility permissions
 
 ## Setup
 
-Set the default recipient before calling the script:
+The script will automatically load a private config file from:
+
+`~/.config/codex/imessage-notify.env`
+
+You can override that path with `CODEX_NOTIFY_CONFIG_FILE`.
+
+The private file can contain:
+
+```bash
+CODEX_NOTIFY_TO="+8613812345678"
+CODEX_NOTIFY_DIRECT_ONLY=1
+CODEX_NOTIFY_PREFIX="[Codex]"
+CODEX_NOTIFY_SERVICE="imessage"
+```
+
+You can still export vars manually if needed:
 
 ```bash
 export CODEX_NOTIFY_TO="+8613812345678"
@@ -38,6 +53,7 @@ export CODEX_NOTIFY_PREFIX="[Codex]"
 ```
 
 `auto` currently maps to `imessage` in V1. `sms` is intentionally unsupported in this AppleScript version.
+`CODEX_NOTIFY_DIRECT_ONLY=1` is recommended once direct send is confirmed working.
 
 ## Health Check
 
@@ -71,7 +87,7 @@ On current macOS versions it is not a reliable per-app Accessibility signal for 
 ## Send a Test Message
 
 ```bash
-CODEX_NOTIFY_TO="+8613812345678" ./scripts/codex-imessage-notify.sh --message "test notification"
+./scripts/codex-imessage-notify.sh --message "test notification"
 ```
 
 If you want to diagnose direct iMessage resolution without any UI fallback, run:
@@ -83,7 +99,7 @@ If you want to diagnose direct iMessage resolution without any UI fallback, run:
 Or rely on the default message:
 
 ```bash
-CODEX_NOTIFY_TO="+8613812345678" ./scripts/codex-imessage-notify.sh
+./scripts/codex-imessage-notify.sh
 ```
 
 The default body is normalized to one line and includes:
@@ -104,5 +120,5 @@ The default body is normalized to one line and includes:
 For V1, Codex should call this script at the end of a task:
 
 ```bash
-CODEX_NOTIFY_TO="+8613812345678" ./scripts/codex-imessage-notify.sh --message "Task finished"
+./scripts/codex-imessage-notify.sh --message "Task finished"
 ```
