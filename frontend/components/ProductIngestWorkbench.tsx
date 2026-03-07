@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import {
   cancelUploadIngestJob,
   createUploadIngestJob,
@@ -551,7 +552,14 @@ export default function ProductIngestWorkbench() {
                             onClick={() => setPreviewModal({ src: job.temp_preview_url as string, title: `${job.file_name || "upload"} · 主图` })}
                             className="overflow-hidden rounded-lg border border-black/10 bg-white text-left"
                           >
-                            <img src={job.temp_preview_url} alt={`${job.file_name || "upload"} 主图`} className="h-20 w-full object-cover" />
+                            <Image
+                              src={job.temp_preview_url}
+                              alt={`${job.file_name || "upload"} 主图`}
+                              width={320}
+                              height={160}
+                              unoptimized
+                              className="h-20 w-full object-cover"
+                            />
                             <div className="px-2 py-1 text-[11px] text-black/64">主图（点击放大）</div>
                           </button>
                         ) : null}
@@ -563,9 +571,12 @@ export default function ProductIngestWorkbench() {
                             }
                             className="overflow-hidden rounded-lg border border-black/10 bg-white text-left"
                           >
-                            <img
+                            <Image
                               src={job.supplement_temp_preview_url}
                               alt={`${job.file_name || "upload"} 补图`}
+                              width={320}
+                              height={160}
+                              unoptimized
                               className="h-20 w-full object-cover"
                             />
                             <div className="px-2 py-1 text-[11px] text-black/64">补图（点击放大）</div>
@@ -700,7 +711,14 @@ export default function ProductIngestWorkbench() {
               </button>
             </div>
             <div className="max-h-[calc(90vh-56px)] overflow-auto bg-black/5 p-3">
-              <img src={previewModal.src} alt={previewModal.title} className="mx-auto max-h-[78vh] w-auto max-w-full rounded-lg bg-white shadow-sm" />
+              <Image
+                src={previewModal.src}
+                alt={previewModal.title}
+                width={1920}
+                height={1920}
+                unoptimized
+                className="mx-auto h-auto max-h-[78vh] w-auto max-w-full rounded-lg bg-white shadow-sm"
+              />
             </div>
           </div>
         </div>
