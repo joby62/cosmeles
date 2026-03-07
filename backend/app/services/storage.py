@@ -106,6 +106,7 @@ def convert_temp_upload_to_storage_image(
     *,
     image_id: str,
     subdir: str | None = None,
+    delete_source: bool = True,
 ) -> str:
     ensure_dirs()
     temp_abs = _resolve_rel_path(temp_rel_path)
@@ -126,7 +127,10 @@ def convert_temp_upload_to_storage_image(
     if source_ext in {".jpg", ".jpeg"}:
         if jpg_abs.exists():
             jpg_abs.unlink()
-        shutil.move(str(temp_abs), str(jpg_abs))
+        if delete_source:
+            shutil.move(str(temp_abs), str(jpg_abs))
+        else:
+            shutil.copy2(str(temp_abs), str(jpg_abs))
         source_bytes = jpg_abs.read_bytes()
         normalized = _decode_image_any_for_storage(content=source_bytes, source_ext=".jpg")
         webp_out = io.BytesIO()
@@ -142,7 +146,8 @@ def convert_temp_upload_to_storage_image(
     normalized.save(webp_out, format="WEBP", quality=82, method=6)
     jpg_abs.write_bytes(jpg_out.getvalue())
     webp_abs.write_bytes(webp_out.getvalue())
-    temp_abs.unlink(missing_ok=True)
+    if delete_source:
+        temp_abs.unlink(missing_ok=True)
     return webp_rel
 
 

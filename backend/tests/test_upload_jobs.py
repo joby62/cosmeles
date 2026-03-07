@@ -24,13 +24,20 @@ def _wait_upload_job_status(client, job_id: str, expected: set[str], timeout_sec
 
 
 def _install_fake_convert(monkeypatch: pytest.MonkeyPatch, storage_dir: Path) -> None:
-    def fake_convert(temp_rel_path: str, *, image_id: str, subdir: str | None = None) -> str:
+    def fake_convert(
+        temp_rel_path: str,
+        *,
+        image_id: str,
+        subdir: str | None = None,
+        delete_source: bool = True,
+    ) -> str:
         rel_suffix = f"/{subdir.strip('/')}" if subdir else ""
         webp_rel = f"images/webp{rel_suffix}/{image_id}.webp"
         jpg_rel = f"images/jpg{rel_suffix}/{image_id}.jpg"
         temp_abs = storage_dir / temp_rel_path
         payload = temp_abs.read_bytes() if temp_abs.exists() else b"img"
-        temp_abs.unlink(missing_ok=True)
+        if delete_source:
+            temp_abs.unlink(missing_ok=True)
 
         webp_abs = storage_dir / webp_rel
         jpg_abs = storage_dir / jpg_rel
@@ -173,6 +180,87 @@ def test_upload_job_can_run_with_initial_two_images(test_client, monkeypatch: py
     assert isinstance(stage1_paths, list)
     assert len(stage1_paths) == 2
     assert all(str(item).startswith("images/webp/tmp/") for item in stage1_paths)
+
+    tmp_dir = Path(storage_dir) / "tmp_uploads"
+    leftovers = list(tmp_dir.glob(f"{job_id}*"))
+    assert leftovers == []
+
+
+def test_upload_job_failed_can_retry_from_tmp_with_preview(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, storage_dir = test_client
+    _install_fake_convert(monkeypatch, storage_dir)
+    calls = {"stage1": 0}
+
+    def fake_stage1(image_rel: str, trace_id: str, image_paths=None, model_tier=None, event_callback=None):
+        _ = image_rel
+        _ = trace_id
+        _ = image_paths
+        _ = model_tier
+        _ = event_callback
+        calls["stage1"] += 1
+        if calls["stage1"] == 1:
+            raise RuntimeError("stage1 synthetic failure for retry")
+        return {
+            "vision_text": "【品牌】测试品牌\n【产品名】测试产品\n【成分表原文】水、甘油",
+            "model": "doubao-stage1-mini",
+            "artifact": f"doubao_runs/{trace_id}/stage1_vision.json",
+        }
+
+    def fake_stage2(*, trace_id: str, category: str | None, brand: str | None, name: str | None, model_tier: str | None, db, event_callback=None):
+        _ = category
+        _ = brand
+        _ = name
+        _ = model_tier
+        _ = db
+        _ = event_callback
+        return {
+            "id": trace_id,
+            "status": "ok",
+            "mode": "doubao_two_stage",
+            "category": "shampoo",
+            "image_path": f"images/webp/tmp/{trace_id}.webp",
+            "json_path": f"products/{trace_id}.json",
+            "doubao": {
+                "models": {"vision": "doubao-stage1-mini", "struct": "doubao-stage2-mini"},
+                "struct_text": "{\"ok\":true}",
+                "vision_text": "【品牌】测试品牌",
+                "artifacts": {
+                    "vision": f"doubao_runs/{trace_id}/stage1_vision.json",
+                    "struct": f"doubao_runs/{trace_id}/stage2_struct.json",
+                    "context": f"doubao_runs/{trace_id}/stage1_context.json",
+                },
+            },
+        }
+
+    monkeypatch.setattr(ingest_routes, "_invoke_stage1_analyzer", fake_stage1)
+    monkeypatch.setattr(ingest_routes, "_finalize_stage2", fake_stage2)
+
+    created = client.post(
+        "/api/upload/jobs",
+        files={"image": ("sample-retry.png", VALID_TEST_IMAGE_BYTES, "image/png")},
+    )
+    assert created.status_code == 200
+    job_id = created.json()["job_id"]
+
+    failed = _wait_upload_job_status(client, job_id=job_id, expected={"failed"})
+    assert failed["status"] == "failed"
+    assert failed["can_retry"] is True
+    preview_url = str(failed.get("temp_preview_url") or "")
+    assert preview_url
+
+    preview = client.get(preview_url)
+    assert preview.status_code == 200
+    assert preview.content
+
+    retried = client.post(f"/api/upload/jobs/{job_id}/retry")
+    assert retried.status_code == 200
+    body = retried.json()
+    assert body["status"] in {"queued", "running"}
+
+    done = _wait_upload_job_status(client, job_id=job_id, expected={"done"})
+    assert done["status"] == "done"
+    assert done.get("error") is None
+    assert done.get("temp_preview_url") is None
 
     tmp_dir = Path(storage_dir) / "tmp_uploads"
     leftovers = list(tmp_dir.glob(f"{job_id}*"))

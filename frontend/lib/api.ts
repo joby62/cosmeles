@@ -1578,6 +1578,9 @@ export type UploadIngestJob = {
   percent: number;
   image_path?: string | null;
   image_paths: string[];
+  temp_preview_url?: string | null;
+  supplement_temp_preview_url?: string | null;
+  can_retry: boolean;
   category_override?: string | null;
   brand_override?: string | null;
   name_override?: string | null;
@@ -1772,6 +1775,12 @@ export async function cancelUploadIngestJob(jobId: string): Promise<UploadIngest
   const value = jobId.trim();
   if (!value) throw new Error("jobId is required.");
   return apiFetch<UploadIngestJobCancelResponse>(`/api/upload/jobs/${encodeURIComponent(value)}/cancel`, { method: "POST" });
+}
+
+export async function retryUploadIngestJob(jobId: string): Promise<UploadIngestJob> {
+  const value = jobId.trim();
+  if (!value) throw new Error("jobId is required.");
+  return apiFetch<UploadIngestJob>(`/api/upload/jobs/${encodeURIComponent(value)}/retry`, { method: "POST" });
 }
 
 export async function resumeUploadIngestJob(input: {

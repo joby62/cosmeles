@@ -7,6 +7,7 @@ import {
   createUploadIngestJob,
   ingestProduct,
   listUploadIngestJobs,
+  retryUploadIngestJob,
   resumeUploadIngestJob,
   UploadIngestJob,
 } from "@/lib/api";
@@ -33,6 +34,11 @@ type ResumeDraft = {
   brand: string;
   name: string;
 };
+
+type PreviewModalState = {
+  src: string;
+  title: string;
+} | null;
 
 type IngestResultLike = {
   id?: string;
@@ -95,6 +101,8 @@ export default function ProductIngestWorkbench() {
   const [jobsLoading, setJobsLoading] = useState(false);
   const [resumingJobId, setResumingJobId] = useState<string | null>(null);
   const [cancellingJobId, setCancellingJobId] = useState<string | null>(null);
+  const [retryingJobId, setRetryingJobId] = useState<string | null>(null);
+  const [previewModal, setPreviewModal] = useState<PreviewModalState>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<IngestResultLike | null>(null);
@@ -271,6 +279,19 @@ export default function ProductIngestWorkbench() {
       setError(formatError(err));
     } finally {
       setResumingJobId(null);
+    }
+  }
+
+  async function retryJob(jobId: string) {
+    setRetryingJobId(jobId);
+    setError(null);
+    try {
+      await retryUploadIngestJob(jobId);
+      await refreshJobs();
+    } catch (err) {
+      setError(formatError(err));
+    } finally {
+      setRetryingJobId(null);
     }
   }
 
@@ -499,6 +520,17 @@ export default function ProductIngestWorkbench() {
                       </button>
                     ) : null}
 
+                    {!running && job.can_retry ? (
+                      <button
+                        type="button"
+                        onClick={() => void retryJob(job.job_id)}
+                        disabled={retryingJobId === job.job_id}
+                        className="inline-flex h-8 items-center justify-center rounded-full border border-[#3151d8]/30 bg-[#eef2ff] px-3 text-[12px] font-semibold text-[#3151d8] disabled:opacity-45"
+                      >
+                        {retryingJobId === job.job_id ? "重试中..." : "失败重试"}
+                      </button>
+                    ) : null}
+
                     {resultObj?.id ? (
                       <Link
                         href={`/product/${resultObj.id}`}
@@ -508,6 +540,40 @@ export default function ProductIngestWorkbench() {
                       </Link>
                     ) : null}
                   </div>
+
+                  {job.temp_preview_url || job.supplement_temp_preview_url ? (
+                    <div className="mt-2 rounded-xl border border-black/10 bg-black/[0.02] p-2.5">
+                      <div className="text-[11px] font-medium text-black/62">暂存区图片（任务成功后自动删除）</div>
+                      <div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-4">
+                        {job.temp_preview_url ? (
+                          <button
+                            type="button"
+                            onClick={() => setPreviewModal({ src: job.temp_preview_url as string, title: `${job.file_name || "upload"} · 主图` })}
+                            className="overflow-hidden rounded-lg border border-black/10 bg-white text-left"
+                          >
+                            <img src={job.temp_preview_url} alt={`${job.file_name || "upload"} 主图`} className="h-20 w-full object-cover" />
+                            <div className="px-2 py-1 text-[11px] text-black/64">主图（点击放大）</div>
+                          </button>
+                        ) : null}
+                        {job.supplement_temp_preview_url ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setPreviewModal({ src: job.supplement_temp_preview_url as string, title: `${job.file_name || "upload"} · 补图` })
+                            }
+                            className="overflow-hidden rounded-lg border border-black/10 bg-white text-left"
+                          >
+                            <img
+                              src={job.supplement_temp_preview_url}
+                              alt={`${job.file_name || "upload"} 补图`}
+                              className="h-20 w-full object-cover"
+                            />
+                            <div className="px-2 py-1 text-[11px] text-black/64">补图（点击放大）</div>
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
 
                   {job.status === "waiting_more" ? (
                     <div className="mt-2 rounded-xl border border-[#f3c178]/40 bg-[#fff8ef] p-2.5">
@@ -611,6 +677,34 @@ export default function ProductIngestWorkbench() {
           </div>
         ) : null}
       </form>
+
+      {previewModal ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4"
+          onClick={() => setPreviewModal(null)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className="max-h-[90vh] w-full max-w-5xl overflow-hidden rounded-2xl bg-white"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-black/8 px-4 py-3">
+              <div className="truncate text-[13px] font-medium text-black/82">{previewModal.title}</div>
+              <button
+                type="button"
+                onClick={() => setPreviewModal(null)}
+                className="inline-flex h-8 items-center justify-center rounded-full border border-black/12 bg-white px-3 text-[12px] font-semibold text-black/72"
+              >
+                关闭
+              </button>
+            </div>
+            <div className="max-h-[calc(90vh-56px)] overflow-auto bg-black/5 p-3">
+              <img src={previewModal.src} alt={previewModal.title} className="mx-auto max-h-[78vh] w-auto max-w-full rounded-lg bg-white shadow-sm" />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

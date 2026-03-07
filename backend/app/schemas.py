@@ -312,6 +312,9 @@ class UploadIngestJobView(BaseModel):
     percent: int = Field(default=0, ge=0, le=100)
     image_path: Optional[str] = None
     image_paths: List[str] = []
+    temp_preview_url: Optional[str] = None
+    supplement_temp_preview_url: Optional[str] = None
+    can_retry: bool = False
     category_override: Optional[str] = None
     brand_override: Optional[str] = None
     name_override: Optional[str] = None
