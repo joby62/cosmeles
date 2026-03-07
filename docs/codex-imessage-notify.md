@@ -45,6 +45,15 @@ You can still export vars manually if needed:
 export CODEX_NOTIFY_TO="+8613812345678"
 ```
 
+For convenience, you can also install a global wrapper command:
+
+```bash
+notify-codex --message "Codex task finished"
+```
+
+This command simply forwards to the repo script and uses the same private config file.
+After first installation, open a new terminal or run `source ~/.zshrc`.
+
 Optional:
 
 ```bash
@@ -122,3 +131,5 @@ For V1, Codex should call this script at the end of a task:
 ```bash
 ./scripts/codex-imessage-notify.sh --message "Task finished"
 ```
+
+This repo also includes an [AGENTS.md](/Users/lijiabo/Documents/New project/AGENTS.md) note telling future Codex runs in this workspace to call `notify-codex` after substantive implementation work.
