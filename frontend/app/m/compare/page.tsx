@@ -21,6 +21,7 @@ const CATEGORY_ORDER: MobileSelectionCategory[] = ["shampoo", "bodywash", "condi
 const MAX_TOTAL_SELECTION = 3;
 const TOTAL_STEPS = 4;
 const ACTIVE_COMPARE_STORAGE_KEY = "mx_mobile_compare_active";
+const ACTIVE_COMPARE_DRAFT_STORAGE_KEY = "mx_mobile_compare_draft";
 const STALE_ACTIVE_SESSION_HINT = "上次对比记录已失效，已回到起始页。你可以重新开始，或先查看历史记录。";
 
 const WAITING_STAGE_ORDER = [
@@ -36,6 +37,7 @@ const WAITING_STAGE_ORDER = [
 type WaitingStage = (typeof WAITING_STAGE_ORDER)[number];
 
 type CompareStep = 1 | 2 | 3 | 4;
+type HistoryCategoryFilter = "all" | MobileSelectionCategory;
 
 const WAITING_STAGE_LABEL: Record<WaitingStage, string> = {
   prepare: "准备对比任务",
@@ -69,6 +71,21 @@ type StoredActiveCompare = {
   started_at: string;
 };
 
+type StoredCompareDraft = {
+  step: number;
+  category: MobileSelectionCategory | string;
+  selected_product_ids: string[];
+  brand: string;
+  name: string;
+  updated_at: string;
+};
+
+function normalizeSelectionCategory(raw: unknown): MobileSelectionCategory | null {
+  const normalized = String(raw || "").trim().toLowerCase() as MobileSelectionCategory;
+  if (!CATEGORY_ORDER.includes(normalized)) return null;
+  return normalized;
+}
+
 export default function MobileComparePage() {
   const router = useRouter();
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
@@ -100,9 +117,11 @@ export default function MobileComparePage() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [historyItems, setHistoryItems] = useState<MobileCompareSession[]>([]);
+  const [historyCategory, setHistoryCategory] = useState<HistoryCategoryFilter>("all");
   const [activeCompareId, setActiveCompareId] = useState<string | null>(null);
   const [activeSession, setActiveSession] = useState<MobileCompareSession | null>(null);
   const [restoringSession, setRestoringSession] = useState(true);
+  const [pendingDraft, setPendingDraft] = useState<StoredCompareDraft | null>(null);
   const activeCompareIdRef = useRef<string | null>(null);
 
   const recommendationReady = Boolean(bootstrap?.recommendation?.exists);
@@ -212,6 +231,16 @@ export default function MobileComparePage() {
     window.localStorage.removeItem(ACTIVE_COMPARE_STORAGE_KEY);
   }, []);
 
+  const rememberCompareDraft = useCallback((draft: StoredCompareDraft) => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(ACTIVE_COMPARE_DRAFT_STORAGE_KEY, JSON.stringify(draft));
+  }, []);
+
+  const clearCompareDraft = useCallback(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.removeItem(ACTIVE_COMPARE_DRAFT_STORAGE_KEY);
+  }, []);
+
   useEffect(() => {
     activeCompareIdRef.current = activeCompareId;
   }, [activeCompareId]);
@@ -250,15 +279,19 @@ export default function MobileComparePage() {
     try {
       setHistoryLoading(true);
       setHistoryError(null);
-      const sessions = await listMobileCompareSessions({ limit: 50, offset: 0 });
-      setHistoryItems(sessions);
+      const sessions = await listMobileCompareSessions({
+        limit: 50,
+        offset: 0,
+        category: historyCategory === "all" ? undefined : historyCategory,
+      });
+      setHistoryItems(sessions.filter((session) => session.status === "done"));
     } catch (err) {
       setHistoryError(err instanceof Error ? err.message : String(err));
       setHistoryItems([]);
     } finally {
       setHistoryLoading(false);
     }
-  }, []);
+  }, [historyCategory]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -272,27 +305,94 @@ export default function MobileComparePage() {
       setRestoringSession(false);
       return;
     }
-    const raw = window.localStorage.getItem(ACTIVE_COMPARE_STORAGE_KEY);
-    if (!raw) {
-      setRestoringSession(false);
-      return;
-    }
-    try {
-      const parsed = JSON.parse(raw) as StoredActiveCompare;
-      const compareId = String(parsed?.compare_id || "").trim();
-      if (!compareId) {
+    const activeRaw = window.localStorage.getItem(ACTIVE_COMPARE_STORAGE_KEY);
+    let restoredActive = false;
+
+    if (activeRaw) {
+      try {
+        const parsed = JSON.parse(activeRaw) as StoredActiveCompare;
+        const compareId = String(parsed?.compare_id || "").trim();
+        if (compareId) {
+          setActiveCompareId(compareId);
+          setShowGuide(false);
+          restoredActive = true;
+        } else {
+          window.localStorage.removeItem(ACTIVE_COMPARE_STORAGE_KEY);
+        }
+      } catch {
         window.localStorage.removeItem(ACTIVE_COMPARE_STORAGE_KEY);
-        setRestoringSession(false);
-        return;
       }
-      setActiveCompareId(compareId);
-      setShowGuide(false);
-    } catch {
-      window.localStorage.removeItem(ACTIVE_COMPARE_STORAGE_KEY);
-    } finally {
-      setRestoringSession(false);
     }
+
+    if (!restoredActive) {
+      const draftRaw = window.localStorage.getItem(ACTIVE_COMPARE_DRAFT_STORAGE_KEY);
+      if (draftRaw) {
+        try {
+          const parsed = JSON.parse(draftRaw) as StoredCompareDraft;
+          const draftCategory = normalizeSelectionCategory(parsed?.category);
+          const draftStepValue = Number(parsed?.step);
+          const draftStep = Number.isFinite(draftStepValue)
+            ? (Math.max(1, Math.min(TOTAL_STEPS, Math.round(draftStepValue))) as CompareStep)
+            : 1;
+          const selectedIds = Array.isArray(parsed?.selected_product_ids)
+            ? Array.from(
+                new Set(
+                  parsed.selected_product_ids
+                    .map((item) => String(item || "").trim())
+                    .filter(Boolean),
+                ),
+              ).slice(0, MAX_TOTAL_SELECTION)
+            : [];
+          const restoredDraft: StoredCompareDraft = {
+            step: draftStep,
+            category: draftCategory || "shampoo",
+            selected_product_ids: selectedIds,
+            brand: String(parsed?.brand || ""),
+            name: String(parsed?.name || ""),
+            updated_at: String(parsed?.updated_at || ""),
+          };
+          setPendingDraft(restoredDraft);
+          setShowGuide(false);
+          setStep(draftStep);
+          setBrand(restoredDraft.brand);
+          setName(restoredDraft.name);
+          if (draftCategory) {
+            setCategory(draftCategory);
+            setHistoryCategory(draftCategory);
+          }
+        } catch {
+          window.localStorage.removeItem(ACTIVE_COMPARE_DRAFT_STORAGE_KEY);
+        }
+      }
+    }
+
+    setRestoringSession(false);
   }, []);
+
+  useEffect(() => {
+    if (!pendingDraft || bootstrapLoading) return;
+    const draftCategory = normalizeSelectionCategory(pendingDraft.category);
+    if (draftCategory && draftCategory !== category) return;
+
+    const selectedIds = Array.from(
+      new Set(
+        pendingDraft.selected_product_ids
+          .map((item) => String(item || "").trim())
+          .filter(Boolean),
+      ),
+    ).slice(0, MAX_TOTAL_SELECTION);
+    const draftStepValue = Number(pendingDraft.step);
+    const draftStep = Number.isFinite(draftStepValue)
+      ? (Math.max(1, Math.min(TOTAL_STEPS, Math.round(draftStepValue))) as CompareStep)
+      : 1;
+
+    setSelectedProductIds(selectedIds);
+    setStep(draftStep);
+    setBrand(String(pendingDraft.brand || ""));
+    setName(String(pendingDraft.name || ""));
+    setShowGuide(false);
+    setPendingDraft(null);
+  }, [bootstrapLoading, category, pendingDraft]);
 
   useEffect(() => {
     let cancelled = false;
@@ -434,10 +534,59 @@ export default function MobileComparePage() {
     };
   }, [selectionNotice]);
 
+  useEffect(() => {
+    if (!historyOpen) return;
+    void loadHistory();
+  }, [historyOpen, loadHistory]);
+
+  useEffect(() => {
+    const hasDraftSignal =
+      !showGuide &&
+      !activeCompareId &&
+      !running &&
+      (step > 1 ||
+        selectedProductIds.length > 0 ||
+        Boolean(brand.trim()) ||
+        Boolean(name.trim()) ||
+        category !== "shampoo");
+
+    if (!hasDraftSignal) {
+      clearCompareDraft();
+      return;
+    }
+
+    const selectedIds = Array.from(
+      new Set(
+        selectedProductIds
+          .map((item) => String(item || "").trim())
+          .filter(Boolean),
+      ),
+    ).slice(0, MAX_TOTAL_SELECTION);
+
+    rememberCompareDraft({
+      step,
+      category,
+      selected_product_ids: selectedIds,
+      brand,
+      name,
+      updated_at: new Date().toISOString(),
+    });
+  }, [
+    activeCompareId,
+    brand,
+    category,
+    clearCompareDraft,
+    name,
+    rememberCompareDraft,
+    running,
+    selectedProductIds,
+    showGuide,
+    step,
+  ]);
+
   const openHistoryPanel = useCallback(() => {
     setHistoryOpen(true);
-    void loadHistory();
-  }, [loadHistory]);
+  }, []);
 
   const resetCompareFlow = useCallback(() => {
     setActiveCompareId(null);
@@ -454,8 +603,9 @@ export default function MobileComparePage() {
     setStep(1);
     setShowGuide(true);
     clearActiveCompare();
+    clearCompareDraft();
     void safeTrack("compare_reset_to_intro", { category });
-  }, [category, clearActiveCompare]);
+  }, [category, clearActiveCompare, clearCompareDraft]);
 
   const handleHistorySessionAction = useCallback(
     (session: MobileCompareSession) => {
@@ -469,6 +619,7 @@ export default function MobileComparePage() {
       setActiveSession(session);
       setShowGuide(false);
       rememberActiveCompare(compareId, session.category);
+      clearCompareDraft();
       if (session.status === "done") {
         router.push(`/m/compare/result/${encodeURIComponent(compareId)}`);
         return;
@@ -480,7 +631,7 @@ export default function MobileComparePage() {
         setRunError(null);
       }
     },
-    [rememberActiveCompare, router],
+    [clearCompareDraft, rememberActiveCompare, router],
   );
 
   const notifySelectionLimit = useCallback(() => {
@@ -514,6 +665,7 @@ export default function MobileComparePage() {
     setActiveCompareId(null);
     activeCompareIdRef.current = null;
     clearActiveCompare();
+    clearCompareDraft();
     setLastProgressUpdateAt(Date.now());
 
     try {
@@ -1107,8 +1259,10 @@ export default function MobileComparePage() {
       loading={historyLoading}
       error={historyError}
       items={historyItems}
+      categoryFilter={historyCategory}
       onClose={() => setHistoryOpen(false)}
       onSelect={handleHistorySessionAction}
+      onCategoryChange={setHistoryCategory}
       onRefresh={() => {
         void loadHistory();
       }}
@@ -1350,17 +1504,26 @@ function CompareHistorySheet({
   loading,
   error,
   items,
+  categoryFilter,
   onClose,
   onSelect,
+  onCategoryChange,
   onRefresh,
 }: {
   loading: boolean;
   error: string | null;
   items: MobileCompareSession[];
+  categoryFilter: HistoryCategoryFilter;
   onClose: () => void;
   onSelect: (session: MobileCompareSession) => void;
+  onCategoryChange: (value: HistoryCategoryFilter) => void;
   onRefresh: () => void;
 }) {
+  const categoryFilters: Array<{ key: HistoryCategoryFilter; label: string }> = [
+    { key: "all", label: "全部品类" },
+    ...CATEGORY_ORDER.map((item) => ({ key: item, label: CATEGORY_LABEL_ZH[item] })),
+  ];
+
   return (
     <div className="fixed inset-0 z-[72] flex items-end bg-[rgba(5,9,16,0.48)] px-4 pb-[calc(92px+env(safe-area-inset-bottom))] backdrop-blur-[2px]" onClick={onClose}>
       <div
@@ -1389,8 +1552,31 @@ function CompareHistorySheet({
             </button>
           </div>
         </div>
+        <div className="border-b border-black/8 px-3 py-2">
+          <div className="overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="flex min-w-max gap-2">
+              {categoryFilters.map((item) => {
+                const active = item.key === categoryFilter;
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => onCategoryChange(item.key)}
+                    className={`inline-flex h-8 items-center rounded-full border px-3 text-[12px] font-medium ${
+                      active
+                        ? "border-[#0a84ff]/45 bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] text-white shadow-[0_8px_20px_rgba(0,113,227,0.2)]"
+                        : "border-black/12 bg-white/72 text-black/70 active:bg-black/[0.03]"
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
 
-        <div className="max-h-[calc(70vh-64px)] overflow-y-auto p-3">
+        <div className="max-h-[calc(70vh-108px)] overflow-y-auto p-3">
           {loading ? (
             <div className="rounded-2xl border border-black/10 bg-[rgba(255,255,255,0.84)] px-4 py-4 text-[13px] text-black/58 dark:border-[rgba(117,152,209,0.3)] dark:bg-[rgba(29,43,66,0.82)] dark:text-[rgba(219,231,250,0.8)]">正在读取历史记录...</div>
           ) : null}
@@ -1398,18 +1584,15 @@ function CompareHistorySheet({
             <div className="rounded-2xl border border-[#ff8f8f]/45 bg-[#ff5f5f]/10 px-4 py-4 text-[13px] text-[#b53a3a] dark:border-[#ff8f8f]/35 dark:bg-[#5a1f26]/45 dark:text-[#ffd1d1]">{error}</div>
           ) : null}
           {!loading && !error && items.length === 0 ? (
-            <div className="rounded-2xl border border-black/10 bg-[rgba(255,255,255,0.84)] px-4 py-4 text-[13px] text-black/58 dark:border-[rgba(117,152,209,0.3)] dark:bg-[rgba(29,43,66,0.82)] dark:text-[rgba(219,231,250,0.8)]">还没有历史对比记录。</div>
+            <div className="rounded-2xl border border-black/10 bg-[rgba(255,255,255,0.84)] px-4 py-4 text-[13px] text-black/58 dark:border-[rgba(117,152,209,0.3)] dark:bg-[rgba(29,43,66,0.82)] dark:text-[rgba(219,231,250,0.8)]">还没有已完成的对比记录。</div>
           ) : null}
           {!loading && !error ? (
             <div className="space-y-2">
               {items.map((item) => {
-                const statusLabel = item.status === "done" ? "已完成" : item.status === "failed" ? "失败" : "进行中";
-                const statusTone =
-                  item.status === "done"
-                    ? "border-[#b7d4ff] bg-[#ebf4ff] text-[#2e61be] dark:border-[#6c97df]/45 dark:bg-[#233c66]/70 dark:text-[#bad8ff]"
-                    : item.status === "failed"
-                      ? "border-[#ffb9b9] bg-[#ffecec] text-[#b23b3b] dark:border-[#ff9b9b]/45 dark:bg-[#5a2429]/55 dark:text-[#ffd0d0]"
-                      : "border-[#ffd79e] bg-[#fff6e8] text-[#96631a] dark:border-[#f0bf70]/42 dark:bg-[#5b461f]/50 dark:text-[#ffdba5]";
+                const statusLabel = "已完成";
+                const statusTone = "border-[#b7d4ff] bg-[#ebf4ff] text-[#2e61be] dark:border-[#6c97df]/45 dark:bg-[#233c66]/70 dark:text-[#bad8ff]";
+                const normalizedCategory = normalizeSelectionCategory(item.category);
+                const categoryLabel = normalizedCategory ? CATEGORY_LABEL_ZH[normalizedCategory] : String(item.category || "").trim() || "未知品类";
                 return (
                   <article key={item.compare_id} className="rounded-2xl border border-black/10 bg-[rgba(255,255,255,0.86)] px-3 py-3 dark:border-[rgba(112,147,205,0.28)] dark:bg-[rgba(30,44,67,0.84)]">
                     <div className="flex items-start justify-between gap-2">
@@ -1418,7 +1601,7 @@ function CompareHistorySheet({
                           {item.result?.headline || item.message || "对比记录"}
                         </div>
                         <div className="mt-1 text-[12px] text-black/52">
-                          {String(item.category || "").toUpperCase()} · {formatHistoryTime(item.updated_at || item.created_at)}
+                          {categoryLabel} · {formatHistoryTime(item.updated_at || item.created_at)}
                         </div>
                       </div>
                       <span className={`inline-flex h-7 shrink-0 items-center rounded-full border px-2.5 text-[11px] font-semibold ${statusTone}`}>
@@ -1431,7 +1614,7 @@ function CompareHistorySheet({
                         onClick={() => onSelect(item)}
                         className="inline-flex h-9 items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-4 text-[13px] font-semibold text-white"
                       >
-                        {item.status === "done" ? "查看结果" : item.status === "failed" ? "查看详情" : "恢复进度"}
+                        查看结果
                       </button>
                     </div>
                   </article>
