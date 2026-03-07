@@ -43,7 +43,7 @@ type CategoryBucket = {
 };
 
 const PAGE_LIMIT = 500;
-const MAX_SCAN_PAGES = 40;
+const MAX_SCAN_PAGES = 2000;
 
 export default function IngredientCleanupWorkbench({
   initialProducts,
@@ -66,6 +66,7 @@ export default function IngredientCleanupWorkbench({
   const [deleting, setDeleting] = useState(false);
   const [deleteSummary, setDeleteSummary] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [exportingCsv, setExportingCsv] = useState(false);
 
   const productById = useMemo(() => {
     const map = new Map<string, Product>();
@@ -102,6 +103,11 @@ export default function IngredientCleanupWorkbench({
         if (items.length === 0) break;
         offset += items.length;
         page += 1;
+      }
+      if (offset < total) {
+        throw new Error(
+          `[stage=ingredient_cleanup_load_all] ingredient pages exceeded limit ${MAX_SCAN_PAGES}, loaded=${offset}, total=${total}`,
+        );
       }
       setAllIngredients(dedupeIngredients(rows));
     } catch (err) {
@@ -325,6 +331,40 @@ export default function IngredientCleanupWorkbench({
     }
   }
 
+  async function exportAllCsv() {
+    if (allIngredients.length === 0) {
+      setError("[stage=ingredient_cleanup_export] no ingredients loaded to export.");
+      return;
+    }
+    setExportingCsv(true);
+    setError(null);
+    try {
+      const csv = buildFullIngredientCsv(allIngredients, routeByProductId);
+      const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8;" });
+      const href = window.URL.createObjectURL(blob);
+      const now = new Date();
+      const stamp = [
+        now.getFullYear(),
+        String(now.getMonth() + 1).padStart(2, "0"),
+        String(now.getDate()).padStart(2, "0"),
+        String(now.getHours()).padStart(2, "0"),
+        String(now.getMinutes()).padStart(2, "0"),
+        String(now.getSeconds()).padStart(2, "0"),
+      ].join("");
+      const anchor = document.createElement("a");
+      anchor.href = href;
+      anchor.download = `ingredient_cleanup_full_${stamp}.csv`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(href);
+    } catch (err) {
+      setError(formatErrorDetail(err));
+    } finally {
+      setExportingCsv(false);
+    }
+  }
+
   return (
     <section className="mt-8 rounded-[30px] border border-black/10 bg-white p-6">
       <div className="flex flex-wrap items-center gap-2">
@@ -351,6 +391,15 @@ export default function IngredientCleanupWorkbench({
             className="inline-flex h-9 items-center justify-center rounded-full border border-black/14 bg-white px-4 text-[12px] font-semibold text-black/78"
           >
             {showDetails ? "隐藏成分明细" : "显示成分明细"}
+          </button>
+          <button
+            type="button"
+            onClick={() => void exportAllCsv()}
+            disabled={loading || exportingCsv || allIngredients.length === 0}
+            className="inline-flex h-9 items-center justify-center rounded-full border border-black/14 bg-white px-4 text-[12px] font-semibold text-black/78 disabled:opacity-45"
+            title="导出全量成分 CSV（不受当前摘要/筛选影响）"
+          >
+            {exportingCsv ? "导出中..." : "导出全量 CSV"}
           </button>
           <span className="text-[12px] text-black/58">成分总数 {allIngredients.length} 条</span>
         </div>
@@ -571,4 +620,64 @@ function formatErrorDetail(err: unknown): string {
   } catch {
     return String(err);
   }
+}
+
+function buildFullIngredientCsv(
+  items: IngredientLibraryListItem[],
+  routeByProductId: Map<string, ProductRouteMappingIndexItem>,
+): string {
+  const headers = [
+    "category",
+    "ingredient_id",
+    "ingredient_name_cn",
+    "ingredient_name_en",
+    "ingredient_name_display",
+    "source_count",
+    "source_product_count",
+    "source_trace_ids",
+    "mapped_subtype_keys",
+    "mapped_subtype_titles",
+    "summary",
+    "generated_at",
+    "storage_path",
+  ];
+  const lines = [headers.map(csvEscape).join(",")];
+  for (const item of items) {
+    const sourceIds = uniqueTraceIds(item.source_trace_ids);
+    const subtypeKeys = new Set<string>();
+    const subtypeTitles = new Set<string>();
+    for (const sourceId of sourceIds) {
+      const mapping = routeByProductId.get(sourceId);
+      if (!mapping) continue;
+      const key = String(mapping.primary_route_key || "").trim();
+      const title = String(mapping.primary_route_title || "").trim();
+      if (key) subtypeKeys.add(key);
+      if (title) subtypeTitles.add(title);
+    }
+    const row = [
+      String(item.category || ""),
+      String(item.ingredient_id || ""),
+      String(item.ingredient_name || ""),
+      String(item.ingredient_name_en || ""),
+      ingredientDisplayName(item),
+      String(item.source_count || 0),
+      String(sourceIds.length),
+      sourceIds.join("|"),
+      Array.from(subtypeKeys).sort().join("|"),
+      Array.from(subtypeTitles).sort().join("|"),
+      String(item.summary || ""),
+      String(item.generated_at || ""),
+      String(item.storage_path || ""),
+    ];
+    lines.push(row.map(csvEscape).join(","));
+  }
+  return lines.join("\n");
+}
+
+function csvEscape(value: string): string {
+  const text = String(value ?? "");
+  if (text.includes(",") || text.includes("\"") || text.includes("\n") || text.includes("\r")) {
+    return `"${text.replace(/"/g, "\"\"")}"`;
+  }
+  return text;
 }
