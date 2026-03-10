@@ -880,59 +880,28 @@ html[data-nav-open="1"] #app-main{
 }
 
 .m-choose-dial-shell {
-  position: relative;
   margin-top: 8px;
 }
 
-.m-choose-dial-shell::before,
-.m-choose-dial-shell::after {
-  content: "";
-  position: absolute;
-  top: 4px;
-  bottom: 10px;
-  width: 24px;
-  pointer-events: none;
-  z-index: 2;
-}
-
-.m-choose-dial-shell::before {
-  left: 0;
-  background: linear-gradient(90deg, var(--m-bg), rgba(0,0,0,0));
-}
-
-.m-choose-dial-shell::after {
-  right: 0;
-  background: linear-gradient(270deg, var(--m-bg), rgba(0,0,0,0));
-}
-
 .m-choose-dial {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
-  overflow-x: auto;
-  scroll-snap-type: x proximity;
   padding: 2px 0 8px;
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
-  touch-action: pan-x;
-}
-
-.m-choose-dial::-webkit-scrollbar {
-  display: none;
 }
 
 .m-choose-dial-item {
   height: 40px;
-  min-width: 66px;
-  flex: 0 0 auto;
-  scroll-snap-align: center;
+  width: 100%;
+  min-width: 0;
   border-radius: 999px;
   border: 1px solid var(--m-profile-summary-border);
-  padding: 0 14px;
+  padding: 0 6px;
   text-align: center;
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 590;
   letter-spacing: -0.01em;
+  white-space: nowrap;
   color: var(--m-profile-note);
   background: var(--m-profile-summary-bg);
   transition:
@@ -1081,9 +1050,9 @@ html[data-nav-open="1"] #app-main{
   }
 
   .m-choose-dial-item {
-    min-width: 62px;
-    padding: 0 10px;
-    font-size: 13px;
+    height: 38px;
+    padding: 0 4px;
+    font-size: 12px;
   }
 
   .m-choose-focus-card {

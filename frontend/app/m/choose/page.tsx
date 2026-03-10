@@ -147,18 +147,29 @@ const LAST_RESULT_QUERY_META: Record<
   },
 };
 
-const DIAL_REPEAT = 5;
-const DIAL_MIDDLE_LOOP = Math.floor(DIAL_REPEAT / 2);
+const CAT_INDEX_MAP: Record<CategoryKey, number> = CATS.reduce((acc, cat, index) => {
+  acc[cat.key] = index;
+  return acc;
+}, {} as Record<CategoryKey, number>);
 
-const DIAL_ITEMS: Array<{ slot: number; loop: number; cat: CategoryMeta }> = Array.from(
-  { length: DIAL_REPEAT },
-  (_, loop) =>
-    CATS.map((cat, index) => ({
-      slot: loop * CATS.length + index,
-      loop,
-      cat,
-    })),
-).flat();
+const FIRST_CAT = CATS[0] as CategoryMeta;
+const LAST_CAT = CATS[CATS.length - 1] as CategoryMeta;
+
+const CARD_ITEMS: Array<{ id: string; cat: CategoryMeta; realIndex: number; clone: "head" | "body" | "tail" }> = [
+  { id: `clone-head-${LAST_CAT.key}`, cat: LAST_CAT, realIndex: CATS.length - 1, clone: "head" },
+  ...CATS.map((cat, index) => ({
+    id: `real-${cat.key}`,
+    cat,
+    realIndex: index,
+    clone: "body" as const,
+  })),
+  { id: `clone-tail-${FIRST_CAT.key}`, cat: FIRST_CAT, realIndex: 0, clone: "tail" },
+];
+
+const CARD_FIRST_REAL_INDEX = 1;
+const CARD_LAST_REAL_INDEX = CATS.length;
+const CARD_HEAD_CLONE_INDEX = 0;
+const CARD_TAIL_CLONE_INDEX = CARD_ITEMS.length - 1;
 
 function asString(v: unknown): string | undefined {
   return typeof v === "string" ? v : undefined;
@@ -290,12 +301,11 @@ export default function MobileChoose() {
   const [drafts, setDrafts] = useState<Partial<Record<CategoryKey, DraftProgress>>>({});
   const [recentResultHref, setRecentResultHref] = useState<Partial<Record<CategoryKey, string>>>({});
   const [railsReady, setRailsReady] = useState(false);
-  const dialRef = useRef<HTMLDivElement | null>(null);
   const cardRailRef = useRef<HTMLDivElement | null>(null);
-  const dialItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const cardItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const dialScrollRafRef = useRef<number | null>(null);
   const cardScrollRafRef = useRef<number | null>(null);
+  const cardSettleTimerRef = useRef<number | null>(null);
+  const activeCardIndexRef = useRef<number>(CARD_FIRST_REAL_INDEX);
   const autoCycleTimerRef = useRef<number | null>(null);
   const autoCycleStoppedRef = useRef(false);
   const lastHapticAtRef = useRef(0);
@@ -315,6 +325,14 @@ export default function MobileChoose() {
     }
   }, []);
 
+  const clearCardSettleTimer = useCallback(() => {
+    if (typeof window === "undefined") return;
+    if (cardSettleTimerRef.current !== null) {
+      window.clearTimeout(cardSettleTimerRef.current);
+      cardSettleTimerRef.current = null;
+    }
+  }, []);
+
   const pulseSelectionHaptic = useCallback(() => {
     if (typeof window === "undefined") return;
     const now = Date.now();
@@ -325,107 +343,91 @@ export default function MobileChoose() {
     }
   }, []);
 
-  const centerRailSlot = useCallback(
-    (rail: HTMLDivElement | null, items: Array<HTMLElement | null>, slot: number, behavior: ScrollBehavior) => {
-      const node = items[slot];
-      if (!rail || !node) return;
-      const left = node.offsetLeft - (rail.clientWidth - node.offsetWidth) / 2;
-      rail.scrollTo({ left, behavior });
-    },
-    [],
-  );
-
-  const centerDialSlot = useCallback((slot: number, behavior: ScrollBehavior) => {
-    centerRailSlot(dialRef.current, dialItemRefs.current, slot, behavior);
-  }, [centerRailSlot]);
-
-  const alignCardSlot = useCallback((slot: number, behavior: ScrollBehavior) => {
+  const alignCardIndex = useCallback((slot: number, behavior: ScrollBehavior) => {
     const rail = cardRailRef.current;
     const node = cardItemRefs.current[slot];
     if (!rail || !node) return;
     rail.scrollTo({ left: node.offsetLeft, behavior });
   }, []);
 
-  const slotToKey = useCallback((slot: number): CategoryKey => {
-    const normalized = ((slot % CATS.length) + CATS.length) % CATS.length;
-    return CATS[normalized]?.key || "shampoo";
+  const keyToRealCardIndex = useCallback((key: CategoryKey): number => {
+    const index = CAT_INDEX_MAP[key];
+    return Number.isFinite(index) ? index + 1 : CARD_FIRST_REAL_INDEX;
   }, []);
 
-  const keyToMiddleSlot = useCallback((key: CategoryKey): number => {
-    const index = CATS.findIndex((cat) => cat.key === key);
-    const safeIndex = index >= 0 ? index : 0;
-    return DIAL_MIDDLE_LOOP * CATS.length + safeIndex;
+  const normalizeCardIndex = useCallback((index: number): number => {
+    if (index <= CARD_HEAD_CLONE_INDEX) return CARD_LAST_REAL_INDEX;
+    if (index >= CARD_TAIL_CLONE_INDEX) return CARD_FIRST_REAL_INDEX;
+    return index;
   }, []);
 
-  const pickCenteredRailSlot = useCallback((rail: HTMLDivElement | null, items: Array<HTMLElement | null>): number | null => {
+  const pickNearestCardIndex = useCallback((): number | null => {
+    const rail = cardRailRef.current;
     if (!rail) return null;
-    const railRect = rail.getBoundingClientRect();
-    const centerX = railRect.left + railRect.width / 2;
-    let bestSlot = -1;
+    const targetLeft = rail.scrollLeft;
+    let bestIndex = -1;
     let bestDistance = Number.POSITIVE_INFINITY;
-
-    for (let index = 0; index < items.length; index += 1) {
-      const node = items[index];
+    for (let index = 0; index < cardItemRefs.current.length; index += 1) {
+      const node = cardItemRefs.current[index];
       if (!node) continue;
-      const rect = node.getBoundingClientRect();
-      const nodeCenter = rect.left + rect.width / 2;
-      const distance = Math.abs(nodeCenter - centerX);
+      const distance = Math.abs(node.offsetLeft - targetLeft);
       if (distance < bestDistance) {
         bestDistance = distance;
-        bestSlot = index;
+        bestIndex = index;
       }
     }
-
-    return bestSlot >= 0 ? bestSlot : null;
+    return bestIndex >= 0 ? bestIndex : null;
   }, []);
 
-  const pickCenteredDialSlot = useCallback(() => {
-    return pickCenteredRailSlot(dialRef.current, dialItemRefs.current);
-  }, [pickCenteredRailSlot]);
-
-  const pickCenteredCardSlot = useCallback(() => {
-    return pickCenteredRailSlot(cardRailRef.current, cardItemRefs.current);
-  }, [pickCenteredRailSlot]);
-
-  const stabilizeSlot = useCallback(
-    (slot: number, source: "dial" | "card"): number => {
-      const lowerBoundary = CATS.length;
-      const upperBoundary = CATS.length * (DIAL_REPEAT - 2) - 1;
-      if (slot >= lowerBoundary && slot <= upperBoundary) {
-        return slot;
-      }
-
-      const normalized = ((slot % CATS.length) + CATS.length) % CATS.length;
-      const middleSlot = DIAL_MIDDLE_LOOP * CATS.length + normalized;
-      if (source === "dial") {
-        centerDialSlot(middleSlot, "auto");
-      } else {
-        alignCardSlot(middleSlot, "auto");
-      }
-      return middleSlot;
+  const applySelectedKey = useCallback(
+    (key: CategoryKey, withHaptic: boolean) => {
+      setSelectedKey((prev) => {
+        if (prev === key) return prev;
+        persistSelectedKey(key);
+        if (withHaptic) {
+          pulseSelectionHaptic();
+        }
+        return key;
+      });
     },
-    [alignCardSlot, centerDialSlot],
+    [persistSelectedKey, pulseSelectionHaptic],
   );
 
-  const selectBySlot = useCallback(
-    (slot: number, source: "dial" | "card") => {
-      const stableSlot = stabilizeSlot(slot, source);
-      const key = slotToKey(stableSlot);
-      const changed = key !== selectedKey;
-      if (changed) {
-        setSelectedKey(key);
-        persistSelectedKey(key);
-        pulseSelectionHaptic();
+  const settleCardRail = useCallback(() => {
+    const nearestIndex = pickNearestCardIndex();
+    if (nearestIndex === null) return;
+    activeCardIndexRef.current = nearestIndex;
+    const normalizedIndex = normalizeCardIndex(nearestIndex);
+    if (normalizedIndex !== nearestIndex) {
+      alignCardIndex(normalizedIndex, "auto");
+      activeCardIndexRef.current = normalizedIndex;
+    }
+    const key = CARD_ITEMS[normalizedIndex]?.cat.key || "shampoo";
+    applySelectedKey(key, autoCycleStoppedRef.current);
+  }, [alignCardIndex, applySelectedKey, normalizeCardIndex, pickNearestCardIndex]);
+
+  const scheduleCardSettle = useCallback(() => {
+    if (typeof window === "undefined") return;
+    clearCardSettleTimer();
+    cardSettleTimerRef.current = window.setTimeout(() => {
+      settleCardRail();
+    }, 88);
+  }, [clearCardSettleTimer, settleCardRail]);
+
+  const scrollToCategory = useCallback(
+    (key: CategoryKey, behavior: ScrollBehavior) => {
+      const baseIndex = keyToRealCardIndex(key);
+      const currentIndex = activeCardIndexRef.current;
+      let targetIndex = baseIndex;
+      if (currentIndex === CARD_LAST_REAL_INDEX && baseIndex === CARD_FIRST_REAL_INDEX) {
+        targetIndex = CARD_TAIL_CLONE_INDEX;
+      } else if (currentIndex === CARD_FIRST_REAL_INDEX && baseIndex === CARD_LAST_REAL_INDEX) {
+        targetIndex = CARD_HEAD_CLONE_INDEX;
       }
-      if (changed) {
-        if (source === "dial") {
-          alignCardSlot(stableSlot, "auto");
-        } else {
-          centerDialSlot(stableSlot, "auto");
-        }
-      }
+      activeCardIndexRef.current = targetIndex;
+      alignCardIndex(targetIndex, behavior);
     },
-    [alignCardSlot, centerDialSlot, persistSelectedKey, pulseSelectionHaptic, selectedKey, slotToKey, stabilizeSlot],
+    [alignCardIndex, keyToRealCardIndex],
   );
 
   useEffect(() => {
@@ -460,6 +462,7 @@ export default function MobileChoose() {
 
       setSelectedKey((prev) => (prev === nextSelected ? prev : nextSelected));
       setRailsReady(false);
+      autoCycleStoppedRef.current = false;
       setDrafts(nextDrafts);
       setRecentResultHref(nextRecentResult);
     };
@@ -476,32 +479,21 @@ export default function MobileChoose() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (!dialRef.current || !cardRailRef.current) return;
-    if (!dialItemRefs.current.length || !cardItemRefs.current.length) return;
-
-    const targetSlot = keyToMiddleSlot(selectedKey);
+    if (!cardRailRef.current) return;
+    if (!cardItemRefs.current.length) return;
+    const targetIndex = keyToRealCardIndex(selectedKey);
 
     if (!railsReady) {
       const rafId = window.requestAnimationFrame(() => {
-        centerDialSlot(targetSlot, "auto");
-        alignCardSlot(targetSlot, "auto");
+        alignCardIndex(targetIndex, "auto");
+        activeCardIndexRef.current = targetIndex;
         setRailsReady(true);
       });
       return () => {
         window.cancelAnimationFrame(rafId);
       };
     }
-
-    const centeredDialSlot = pickCenteredDialSlot();
-    const centeredCardSlot = pickCenteredCardSlot();
-
-    if (centeredDialSlot === null || slotToKey(centeredDialSlot) !== selectedKey) {
-      centerDialSlot(targetSlot, "auto");
-    }
-    if (centeredCardSlot === null || slotToKey(centeredCardSlot) !== selectedKey) {
-      alignCardSlot(targetSlot, "auto");
-    }
-  }, [alignCardSlot, centerDialSlot, keyToMiddleSlot, pickCenteredCardSlot, pickCenteredDialSlot, railsReady, selectedKey, slotToKey]);
+  }, [alignCardIndex, keyToRealCardIndex, railsReady, selectedKey]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -512,15 +504,15 @@ export default function MobileChoose() {
 
     autoCycleTimerRef.current = window.setInterval(() => {
       if (autoCycleStoppedRef.current) return;
-      const currentIndex = CATS.findIndex((cat) => cat.key === selectedKey);
-      const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % CATS.length : 0;
-      const next = CATS[nextIndex];
-      if (!next) return;
-      const nextSlot = keyToMiddleSlot(next.key);
-      setSelectedKey(next.key);
-      persistSelectedKey(next.key);
-      centerDialSlot(nextSlot, "smooth");
-      alignCardSlot(nextSlot, "smooth");
+      const normalizedCurrent = normalizeCardIndex(activeCardIndexRef.current);
+      let nextIndex = normalizedCurrent + 1;
+      if (nextIndex > CARD_TAIL_CLONE_INDEX) {
+        nextIndex = CARD_FIRST_REAL_INDEX;
+      }
+      const nextKey = CARD_ITEMS[nextIndex]?.cat.key || FIRST_CAT.key;
+      activeCardIndexRef.current = nextIndex;
+      applySelectedKey(nextKey, false);
+      alignCardIndex(nextIndex, "smooth");
     }, 2600);
 
     return () => {
@@ -529,34 +521,20 @@ export default function MobileChoose() {
         autoCycleTimerRef.current = null;
       }
     };
-  }, [alignCardSlot, centerDialSlot, keyToMiddleSlot, persistSelectedKey, railsReady, selectedKey]);
+  }, [alignCardIndex, applySelectedKey, normalizeCardIndex, railsReady]);
 
   useEffect(() => {
     return () => {
       if (typeof window === "undefined") return;
-      if (dialScrollRafRef.current !== null) {
-        window.cancelAnimationFrame(dialScrollRafRef.current);
-      }
       if (cardScrollRafRef.current !== null) {
         window.cancelAnimationFrame(cardScrollRafRef.current);
       }
       if (autoCycleTimerRef.current !== null) {
         window.clearInterval(autoCycleTimerRef.current);
       }
+      clearCardSettleTimer();
     };
-  }, []);
-
-  const onDialScroll = useCallback(() => {
-    if (typeof window === "undefined") return;
-    if (dialScrollRafRef.current !== null) {
-      window.cancelAnimationFrame(dialScrollRafRef.current);
-    }
-    dialScrollRafRef.current = window.requestAnimationFrame(() => {
-      const slot = pickCenteredDialSlot();
-      if (slot === null) return;
-      selectBySlot(slot, "dial");
-    });
-  }, [pickCenteredDialSlot, selectBySlot]);
+  }, [clearCardSettleTimer]);
 
   const onCardScroll = useCallback(() => {
     if (typeof window === "undefined") return;
@@ -564,38 +542,31 @@ export default function MobileChoose() {
       window.cancelAnimationFrame(cardScrollRafRef.current);
     }
     cardScrollRafRef.current = window.requestAnimationFrame(() => {
-      const slot = pickCenteredCardSlot();
-      if (slot === null) return;
-      selectBySlot(slot, "card");
+      const nearestIndex = pickNearestCardIndex();
+      if (nearestIndex === null) return;
+      activeCardIndexRef.current = nearestIndex;
+      const key = CARD_ITEMS[nearestIndex]?.cat.key || "shampoo";
+      applySelectedKey(key, autoCycleStoppedRef.current);
+      scheduleCardSettle();
     });
-  }, [pickCenteredCardSlot, selectBySlot]);
+  }, [applySelectedKey, pickNearestCardIndex, scheduleCardSettle]);
 
-  const onSelectDialItem = useCallback(
-    (slot: number, key: CategoryKey) => {
+  const onSelectTag = useCallback(
+    (key: CategoryKey) => {
       stopAutoCycle();
-      if (key !== selectedKey) {
-        setSelectedKey(key);
-        persistSelectedKey(key);
-        pulseSelectionHaptic();
-      }
-      centerDialSlot(slot, "auto");
-      alignCardSlot(slot, "auto");
+      applySelectedKey(key, true);
+      scrollToCategory(key, "smooth");
     },
-    [alignCardSlot, centerDialSlot, persistSelectedKey, pulseSelectionHaptic, selectedKey, stopAutoCycle],
+    [applySelectedKey, scrollToCategory, stopAutoCycle],
   );
 
   const onSelectCardItem = useCallback(
-    (slot: number, key: CategoryKey) => {
+    (key: CategoryKey) => {
       stopAutoCycle();
-      if (key !== selectedKey) {
-        setSelectedKey(key);
-        persistSelectedKey(key);
-        pulseSelectionHaptic();
-      }
-      alignCardSlot(slot, "auto");
-      centerDialSlot(slot, "auto");
+      applySelectedKey(key, true);
+      scrollToCategory(key, "smooth");
     },
-    [alignCardSlot, centerDialSlot, persistSelectedKey, pulseSelectionHaptic, selectedKey, stopAutoCycle],
+    [applySelectedKey, scrollToCategory, stopAutoCycle],
   );
 
   const selected = CAT_MAP[selectedKey];
@@ -615,28 +586,19 @@ export default function MobileChoose() {
       <div className="m-choose-dial-wrap">
         <div className="m-choose-dial-label">全部品类</div>
         <div className="m-choose-dial-shell">
-          <div
-            className="m-choose-dial"
-            ref={dialRef}
-            onScroll={onDialScroll}
-            role="tablist"
-            aria-label="选择测评品类"
-          >
-            {DIAL_ITEMS.map((item) => {
-              const active = selected.key === item.cat.key;
+          <div className="m-choose-dial" role="tablist" aria-label="选择测配品类">
+            {CATS.map((cat) => {
+              const active = selected.key === cat.key;
               return (
                 <button
-                  key={`${item.loop}-${item.cat.key}`}
+                  key={cat.key}
                   type="button"
                   role="tab"
                   aria-selected={active}
-                  onClick={() => onSelectDialItem(item.slot, item.cat.key)}
+                  onClick={() => onSelectTag(cat.key)}
                   className={`m-choose-dial-item m-pressable ${active ? "m-choose-dial-item-active" : ""}`}
-                  ref={(node) => {
-                    dialItemRefs.current[item.slot] = node;
-                  }}
                 >
-                  {item.cat.zh}
+                  {cat.zh}
                 </button>
               );
             })}
@@ -650,18 +612,18 @@ export default function MobileChoose() {
         onScroll={onCardScroll}
         aria-label="滑动选择品类卡片"
       >
-        {DIAL_ITEMS.map((item) => {
+        {CARD_ITEMS.map((item, index) => {
           const cat = item.cat;
           const active = selected.key === cat.key;
           return (
             <button
-              key={`focus-${item.loop}-${cat.key}`}
+              key={item.id}
               type="button"
               aria-pressed={active}
-              onClick={() => onSelectCardItem(item.slot, cat.key)}
+              onClick={() => onSelectCardItem(cat.key)}
               className={`m-choose-focus-card m-pressable ${active ? "m-choose-focus-card-active" : ""}`}
               ref={(node) => {
-                cardItemRefs.current[item.slot] = node;
+                cardItemRefs.current[index] = node;
               }}
             >
               <div className="m-choose-focus-main">
