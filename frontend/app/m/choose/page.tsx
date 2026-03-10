@@ -609,7 +609,6 @@ export default function MobileChoose() {
       </div>
 
       <div className="m-choose-dial-wrap">
-        <div className="m-choose-dial-label">全部品类</div>
         <div className="m-choose-dial-shell">
           <div className="m-choose-dial" role="tablist" aria-label="选择测配品类">
             {CATS.map((cat) => {
@@ -673,7 +672,7 @@ export default function MobileChoose() {
               href={selectedDraft ? selectedDraft.continueHref : selected.startHref}
               className="m-profile-primary-btn m-choose-primary-btn inline-flex items-center justify-center"
             >
-              {selectedDraft ? `继续${selected.zh}测配` : `开始${selected.zh}测配`}
+              {selectedDraft ? "继续测配" : "开始测配"}
             </Link>
           </div>
         </div>
