@@ -618,6 +618,7 @@ function renderUploadJobActions({
   onCancel: (jobId: string) => Promise<UploadIngestJob | null>;
 }) {
   const running = job.status === "queued" || job.status === "running" || job.status === "cancelling";
+  const resultId = getIngestResultId(job.result);
   return (
     <>
       {running ? (
@@ -631,9 +632,9 @@ function renderUploadJobActions({
         </button>
       ) : null}
 
-      {job.result && typeof job.result === "object" && (job.result as IngestResultLike).id ? (
+      {resultId ? (
         <Link
-          href={`/product/${(job.result as IngestResultLike).id}`}
+          href={`/product/${resultId}`}
           className="inline-flex h-8 items-center rounded-full border border-black/14 bg-white px-3 text-[12px] font-semibold text-black/78"
         >
           查看详情
@@ -660,10 +661,11 @@ function renderUploadJobBody({
   canResume: boolean;
   jobLoading: boolean;
 }) {
+  const resultId = getIngestResultId(job.result);
   return (
     <div className="space-y-2">
       <div className="text-[12px] text-black/58">
-        stage: {job.stage || "-"} · 入库ID: {typeof job.result === "object" ? (job.result as IngestResultLike).id || "-" : "-"}
+        stage: {job.stage || "-"} · 入库ID: {resultId || "-"}
       </div>
 
       {job.temp_preview_url || job.supplement_temp_preview_url ? (
@@ -788,6 +790,12 @@ function buildIngestResultSummary(result: IngestResultLike): string {
     lines.push(`落盘(context)：${result.doubao.artifacts?.context || "-"}`);
   }
   return lines.join("\n");
+}
+
+function getIngestResultId(value: unknown): string | null {
+  if (!value || typeof value !== "object") return null;
+  const id = (value as IngestResultLike).id;
+  return typeof id === "string" && id.trim() ? id.trim() : null;
 }
 
 function formatError(err: unknown): string {
