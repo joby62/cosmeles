@@ -1087,6 +1087,7 @@ export type MobileCompareBootstrapResponse = {
   recommendation: {
     exists: boolean;
     session_id?: string | null;
+    route_key?: string | null;
     route_title?: string | null;
     product?: Product | null;
   };

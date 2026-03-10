@@ -1251,6 +1251,7 @@ class MobileCompareProfileBootstrap(BaseModel):
 class MobileCompareRecommendationBootstrap(BaseModel):
     exists: bool = False
     session_id: Optional[str] = None
+    route_key: Optional[str] = None
     route_title: Optional[str] = None
     product: Optional[ProductCard] = None
 

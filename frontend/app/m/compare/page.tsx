@@ -63,6 +63,47 @@ const CATEGORY_LABEL_ZH: Record<MobileSelectionCategory, string> = {
   cleanser: "洗面奶",
 };
 
+const COMPARE_BASELINE_RATIONALES: Record<MobileSelectionCategory, Record<string, string>> = {
+  shampoo: {
+    "deep-oil-control": "这次会更看重控油效率、清爽度和发根蓬松感。",
+    "anti-dandruff-itch": "这次会优先看去屑稳定性、止痒边界和头皮舒适度。",
+    "gentle-soothing": "这次会先避开刺激，再看温和清洁和头皮安定感。",
+    "anti-hair-loss": "这次会更看重头皮友好度、强韧支撑和长期可持续用。",
+    "moisture-balance": "这次会重点看清洁后不拔干，兼顾头皮与发丝平衡。",
+  },
+  bodywash: {
+    rescue: "这次会优先看舒缓修护，尽量把紧绷、泛红和粗糙感压下来。",
+    purge: "这次会更看重净痘控油，同时避免把皮肤越洗越躁。",
+    polish: "这次会优先看平滑更新感，关注鸡皮和粗糙是否更容易被照顾。",
+    glow: "这次会把亮肤通透度放前面，同时兼顾温和清洁。",
+    shield: "这次会更看重洗后不干、不痒，给屏障留出恢复空间。",
+    vibe: "这次会优先保留轻盈香感，同时兼顾日常清洁和肤感平衡。",
+  },
+  conditioner: {
+    "c-color-lock": "这次会更看重锁色稳定度，让染后发色和光泽掉得更慢。",
+    "c-airy-light": "这次会优先保持轻盈蓬松，避免顺滑感换来塌软。",
+    "c-structure-rebuild": "这次会更看重受损修护和发丝支撑感，不只是一时顺滑。",
+    "c-smooth-frizz": "这次会优先压住毛躁和炸发，让发丝更整齐好打理。",
+    "c-basic-hydrate": "这次会先补足基础保湿，让发尾柔软但不过分厚重。",
+  },
+  lotion: {
+    light_hydrate: "这次会优先看清爽补水和日常续航，不让肤感变黏。",
+    heavy_repair: "这次会更看重干裂修护和长效包裹感，先把不适降下来。",
+    bha_clear: "这次会优先处理闭口和小痘，同时注意别把皮肤逼得更干。",
+    aha_renew: "这次会更看重角质更新和平滑度，观察粗糙暗沉是否改善。",
+    glow_bright: "这次会把提亮通透感放前面，同时守住基础保湿。",
+    vibe_fragrance: "这次会优先保留留香体验，同时兼顾肤感和日常耐受。",
+  },
+  cleanser: {
+    apg_soothing: "这次会先稳住敏感和泛红，再看洗后舒适度。",
+    pure_amino: "这次会优先保证温和清洁，尽量洗净但不带走舒适感。",
+    soap_amino_blend: "这次会更看重清洁力和轻盈感，适合更需要洗净反馈的时候。",
+    bha_clearing: "这次会优先看净肤和疏通感，同时避免清洁后过度紧绷。",
+    clay_purifying: "这次会更看重吸附净化和出油管理，帮助皮肤维持清爽。",
+    enzyme_polishing: "这次会优先看抛光和平滑度，让肤感更细致通透。",
+  },
+};
+
 type StoredActiveCompare = {
   compare_id: string;
   category: MobileSelectionCategory | string;
@@ -179,7 +220,12 @@ export default function MobileComparePage() {
       : profileBasis === "latest"
         ? "来源：该品类最近一次确认"
         : "来源：最近一次可用个人选项";
+  const recommendationRouteKey = String(bootstrap?.recommendation?.route_key || "").trim() || null;
   const recommendationRouteTitle = String(bootstrap?.recommendation?.route_title || "").trim() || null;
+  const recommendationHeadline = useMemo(
+    () => describeCompareBaseline(category, recommendationRouteKey),
+    [category, recommendationRouteKey],
+  );
   const recommendationProductTitle = useMemo(
     () => formatCompareProductTitle(bootstrap?.recommendation?.product || null),
     [bootstrap?.recommendation?.product],
@@ -990,6 +1036,7 @@ export default function MobileComparePage() {
           recommendationReady={recommendationReady}
           categoryLabel={currentCategoryLabel}
           routeTitle={recommendationRouteTitle}
+          headline={recommendationHeadline}
           productTitle={recommendationProductTitle}
           profileBasisHint={profileBasisHint}
           lastCompletedLabel={profileLastCompletedLabel}
@@ -1275,6 +1322,7 @@ export default function MobileComparePage() {
             recommendationReady={recommendationReady}
             categoryLabel={currentCategoryLabel}
             routeTitle={recommendationRouteTitle}
+            headline={recommendationHeadline}
             productTitle={recommendationProductTitle}
             profileBasisHint={profileBasisHint}
             lastCompletedLabel={profileLastCompletedLabel}
@@ -1682,6 +1730,15 @@ function formatCompareProfileCompletedAt(raw: string | null): string | null {
   return `最近确认：${new Intl.DateTimeFormat("zh-CN", options).format(date)}`;
 }
 
+function describeCompareBaseline(category: MobileSelectionCategory, routeKey: string | null): string {
+  const fallbackLabel = CATEGORY_LABEL_ZH[category];
+  if (!routeKey) return `这次会沿用你最近确认的${fallbackLabel}偏好来判断。`;
+  return (
+    COMPARE_BASELINE_RATIONALES[category][routeKey] ||
+    `这次会沿用你最近确认的${fallbackLabel}偏好来判断。`
+  );
+}
+
 type ProductBadge = "recommendation_primary" | "most_used_primary" | "most_used_secondary";
 
 type OrderedProductLibraryItem = {
@@ -1724,6 +1781,7 @@ function CompareRecommendationSummaryCard({
   recommendationReady,
   categoryLabel,
   routeTitle,
+  headline,
   productTitle,
   profileBasisHint,
   lastCompletedLabel,
@@ -1738,6 +1796,7 @@ function CompareRecommendationSummaryCard({
   recommendationReady: boolean;
   categoryLabel: string;
   routeTitle: string | null;
+  headline: string;
   productTitle: string | null;
   profileBasisHint: string;
   lastCompletedLabel: string | null;
@@ -1773,9 +1832,8 @@ function CompareRecommendationSummaryCard({
     <section className={`m-compare-recommend-card mt-4 ${compact ? "m-compare-recommend-card-compact" : ""}`}>
       <div className="m-compare-recommend-kicker">本次分析基线</div>
       <div className="m-compare-recommend-title mt-3">{routeTitle || `${categoryLabel}历史首推`}</div>
-      <div className="m-compare-recommend-note mt-2">
-        {productTitle ? `对应推荐产品：${productTitle}` : "本次会沿用这条历史首推路径做判断。"}
-      </div>
+      <p className="m-compare-recommend-headline mt-3">{headline}</p>
+      <div className="m-compare-recommend-note mt-3">{productTitle ? `历史主推产品：${productTitle}` : "后面会沿用这条历史首推作为比对基线。"}</div>
 
       <div className="m-compare-recommend-meta mt-4 flex flex-wrap gap-2">
         <span className="m-compare-recommend-meta-chip">当前品类：{categoryLabel}</span>

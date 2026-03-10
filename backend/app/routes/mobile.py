@@ -1370,6 +1370,7 @@ def mobile_compare_bootstrap(
         recommendation = MobileCompareRecommendationBootstrap(
             exists=True,
             session_id=resolved.session_id,
+            route_key=resolved.route.key,
             route_title=resolved.route.title,
             product=resolved.recommended_product,
         )

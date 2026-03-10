@@ -705,6 +705,7 @@ def test_mobile_compare_bootstrap_uses_latest_session_even_if_older_is_pinned(te
     body = bootstrap.json()
     assert body["profile"]["basis"] == "latest"
     assert body["recommendation"]["session_id"] == latest_session_id
+    assert body["recommendation"]["route_key"] == latest.json()["route"]["key"]
 
 
 def test_mobile_compare_sessions_reindex_backfills_from_session_file(test_client):
