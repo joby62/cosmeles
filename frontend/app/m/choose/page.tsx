@@ -597,7 +597,7 @@ export default function MobileChoose() {
   const selected = CAT_MAP[selectedKey];
   const selectedDraft = drafts[selected.key] || null;
   const selectedRecentResultHref = recentResultHref[selected.key] || null;
-  const recentEntryHref = selectedRecentResultHref || "/m/me?tab=selection";
+  const recentEntryHref = selectedRecentResultHref || "/m/me/history?tab=selection";
 
   return (
     <div className="m-choose-shell" onPointerDownCapture={stopAutoCycle} onTouchStartCapture={stopAutoCycle} onWheelCapture={stopAutoCycle}>

@@ -15,8 +15,11 @@ function getSectionLabel(pathname: string | null): string {
   if (pathname.startsWith("/m/lotion")) return "润肤霜";
   if (pathname.startsWith("/m/cleanser")) return "洗面奶";
   if (pathname.startsWith("/m/compare")) return "横向对比";
+  if (pathname.startsWith("/m/me/history")) return "历史";
+  if (pathname.startsWith("/m/me/use")) return "在用";
+  if (pathname.startsWith("/m/me/bag")) return "购物袋";
   if (pathname.startsWith("/m/bag")) return "购物袋";
-  if (pathname.startsWith("/m/me")) return "我的";
+  if (pathname.startsWith("/m/me")) return "在用";
   return "予选";
 }
 

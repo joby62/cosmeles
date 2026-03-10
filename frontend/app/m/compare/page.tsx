@@ -554,7 +554,7 @@ export default function MobileComparePage() {
   ]);
 
   const goCompareHistory = useCallback(() => {
-    router.push("/m/me?tab=compare");
+    router.push("/m/me/history?tab=compare");
   }, [router]);
 
   const resetCompareFlow = useCallback(() => {
