@@ -5,6 +5,7 @@ import TopNav from "@/components/TopNav";
 
 export default function DesktopTopNavGate() {
   const pathname = usePathname();
-  if (pathname?.startsWith("/m")) return null;
+  const isMobileShell = pathname === "/m" || pathname?.startsWith("/m/");
+  if (isMobileShell) return null;
   return <TopNav />;
 }
