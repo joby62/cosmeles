@@ -1099,6 +1099,11 @@ class MobileWikiProductDetailResponse(BaseModel):
     item: MobileWikiProductDetailItem
 
 
+class MobileWikiProductAnalysisResponse(BaseModel):
+    status: str
+    item: ProductAnalysisStoredResult
+
+
 class MobileBagUpsertRequest(BaseModel):
     product_id: str
     quantity: int = Field(default=1, ge=1, le=99)

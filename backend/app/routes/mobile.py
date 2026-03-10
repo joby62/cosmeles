@@ -28,6 +28,7 @@ from app.db.models import (
     MobileSelectionSession,
     ProductFeaturedSlot,
     ProductIndex,
+    ProductAnalysisIndex,
     ProductRouteMappingIndex,
 )
 from app.db.session import get_db
@@ -76,11 +77,13 @@ from app.schemas import (
     MobileWikiIngredientRef,
     MobileWikiProductDetailItem,
     MobileWikiProductDetailResponse,
+    MobileWikiProductAnalysisResponse,
     MobileWikiProductItem,
     MobileWikiProductListResponse,
     MobileWikiSubtypeFacet,
     ProductDoc,
     ProductCard,
+    ProductAnalysisStoredResult,
 )
 from app.services.doubao_pipeline_service import DoubaoPipelineService
 from app.services.matrix_decision import (
@@ -95,6 +98,7 @@ from app.services.storage import (
     new_id,
     now_iso,
     preferred_image_rel_path,
+    product_analysis_rel_path,
     remove_rel_dir,
     save_doubao_artifact,
     save_image,
@@ -1101,6 +1105,44 @@ def get_mobile_wiki_product_detail(
             is_featured=item.is_featured,
         ),
     )
+
+
+@router.get("/wiki/products/{product_id}/analysis", response_model=MobileWikiProductAnalysisResponse)
+def get_mobile_wiki_product_analysis(
+    product_id: str,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    _, owner_id, owner_cookie_new = _resolve_owner(request)
+    pid = str(product_id or "").strip()
+    if not pid:
+        raise HTTPException(status_code=400, detail="product_id is required.")
+
+    rec = db.get(ProductAnalysisIndex, pid)
+    if rec is None or str(rec.status or "").strip().lower() != "ready":
+        raise HTTPException(status_code=404, detail=f"Product analysis not found for product '{pid}'.")
+
+    storage_path = str(rec.storage_path or "").strip() or product_analysis_rel_path(str(rec.category or ""), pid)
+    if not exists_rel_path(storage_path):
+        raise HTTPException(status_code=404, detail=f"Product analysis file missing for product '{pid}'.")
+
+    try:
+        raw_doc = load_json(storage_path)
+        item = ProductAnalysisStoredResult.model_validate(
+            {
+                **raw_doc,
+                "storage_path": storage_path,
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Invalid product analysis for '{pid}': {exc}") from exc
+
+    if owner_cookie_new:
+        _set_owner_cookie(response, owner_id, request)
+    return MobileWikiProductAnalysisResponse(status="ok", item=item)
 
 
 @router.get("/bag/items", response_model=MobileBagListResponse)

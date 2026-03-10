@@ -1,6 +1,7 @@
 import {
   fetchAIMetricsSummary,
   fetchAllProducts,
+  fetchProductAnalysisIndex,
   fetchProductFeaturedSlots,
   fetchProductRouteMappingIndex,
 } from "@/lib/api";
@@ -11,6 +12,7 @@ import ProductCleanupWorkbench from "@/components/ProductCleanupWorkbench";
 import IngredientLibraryGenerator from "@/components/IngredientLibraryGenerator";
 import IngredientCleanupWorkbench from "@/components/IngredientCleanupWorkbench";
 import ProductRouteMappingGenerator from "@/components/ProductRouteMappingGenerator";
+import ProductAnalysisGenerator from "@/components/ProductAnalysisGenerator";
 import ProductCatalogManager from "@/components/ProductCatalogManager";
 
 function categoryLabel(category?: string | null): string {
@@ -55,6 +57,12 @@ export default async function ProductManagementPage() {
     loadWarnings,
     { status: "error", category: null, total: 0, items: [] },
   );
+  const analysisIndex = await loadWithWarning(
+    fetchProductAnalysisIndex(),
+    "product_analysis_index",
+    loadWarnings,
+    { status: "error", category: null, total: 0, items: [] },
+  );
   const featuredSlots = await loadWithWarning(
     fetchProductFeaturedSlots(),
     "featured_slots",
@@ -92,7 +100,7 @@ export default async function ProductManagementPage() {
           <div className="text-[12px] font-semibold tracking-[0.12em] text-black/46">PRODUCT MANAGEMENT</div>
           <h1 className="mt-2 text-[44px] font-semibold tracking-[-0.03em] text-black/90">产品管理</h1>
           <p className="mt-3 max-w-[760px] text-[16px] leading-[1.6] text-black/62">
-            一个页面串行完成：上传解析、重合度去重、成分分析、类型映射、成分库生成与主推配置，不再分散到独立上传页或桌面对比页。
+            一个页面串行完成：上传解析、重合度去重、成分分析、类型映射、成分库生成、产品增强分析与主推配置，不再分散到独立上传页或桌面对比页。
           </p>
           <div className="mt-6 flex flex-wrap items-center gap-2.5">
             <span className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-[12px] font-medium text-black/72">
@@ -112,6 +120,9 @@ export default async function ProductManagementPage() {
             </span>
             <span className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-[12px] text-black/66">
               Stage E 成分库生成
+            </span>
+            <span className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-[12px] text-black/66">
+              Stage F 产品增强分析
             </span>
             {categoryStats.map(([key, count]) => (
               <span key={key} className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-[12px] text-black/66">
@@ -137,6 +148,7 @@ export default async function ProductManagementPage() {
       <ProductDedupManager initialProducts={products} />
       <IngredientLibraryGenerator initialProducts={products} showCleanupConsole={false} />
       <ProductRouteMappingGenerator initialProducts={products} />
+      <ProductAnalysisGenerator initialProducts={products} initialAnalysisIndex={analysisIndex.items} />
       <ProductCatalogManager
         initialProducts={products}
         initialRouteMappings={routeMappings.items}

@@ -227,6 +227,13 @@ def test_product_analysis_build_and_fetch_detail(test_client, monkeypatch: pytes
     assert payload["profile"]["route_key"] == "deep-oil-control"
     assert payload["profile"]["diagnostics"]["oil_control_support"]["score"] == 4
 
+    mobile_detail = client.get(f"/api/mobile/wiki/products/{product_id}/analysis")
+    assert mobile_detail.status_code == 200
+    mobile_payload = mobile_detail.json()["item"]
+    assert mobile_payload["product_id"] == product_id
+    assert mobile_payload["profile"]["headline"] == "典型控油清洁型洗发水"
+    assert mobile_payload["profile"]["subtype_fit_verdict"] == "strong_fit"
+
     index_resp = client.get("/api/products/analysis/index", params={"category": "shampoo"})
     assert index_resp.status_code == 200
     index_body = index_resp.json()

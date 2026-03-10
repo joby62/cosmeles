@@ -419,6 +419,229 @@ export type ProductRouteMappingIndexListResponse = {
   items: ProductRouteMappingIndexItem[];
 };
 
+export type ProductAnalysisSubtypeFitVerdict =
+  | "strong_fit"
+  | "fit_with_limits"
+  | "weak_fit"
+  | "mismatch";
+
+export type ProductAnalysisMissingCode =
+  | "route_support_missing"
+  | "evidence_too_sparse"
+  | "active_strength_unclear"
+  | "ingredient_order_unclear"
+  | "formula_signal_conflict"
+  | "ingredient_library_absent"
+  | "summary_signal_too_weak";
+
+export type ProductAnalysisKeyIngredient = {
+  ingredient_name_cn: string;
+  ingredient_name_en: string;
+  rank: number;
+  role: string;
+  impact: string;
+};
+
+export type ProductAnalysisEvidenceItem = {
+  ingredient_name_cn: string;
+  ingredient_name_en: string;
+  rank: number;
+  impact: string;
+};
+
+export type ProductAnalysisEvidence = {
+  positive: ProductAnalysisEvidenceItem[];
+  counter: ProductAnalysisEvidenceItem[];
+  missing_codes: ProductAnalysisMissingCode[];
+};
+
+export type ProductAnalysisDiagnosticScore = {
+  score: number;
+  reason: string;
+};
+
+export type ShampooProductAnalysisDiagnostics = {
+  cleanse_intensity: ProductAnalysisDiagnosticScore;
+  oil_control_support: ProductAnalysisDiagnosticScore;
+  dandruff_itch_support: ProductAnalysisDiagnosticScore;
+  scalp_soothing_support: ProductAnalysisDiagnosticScore;
+  hair_strengthening_support: ProductAnalysisDiagnosticScore;
+  moisture_balance_support: ProductAnalysisDiagnosticScore;
+  daily_use_friendliness: ProductAnalysisDiagnosticScore;
+  residue_weight: ProductAnalysisDiagnosticScore;
+};
+
+export type BodywashProductAnalysisDiagnostics = {
+  cleanse_intensity: ProductAnalysisDiagnosticScore;
+  barrier_repair_support: ProductAnalysisDiagnosticScore;
+  body_acne_support: ProductAnalysisDiagnosticScore;
+  keratin_softening_support: ProductAnalysisDiagnosticScore;
+  brightening_support: ProductAnalysisDiagnosticScore;
+  fragrance_presence: ProductAnalysisDiagnosticScore;
+  rinse_afterfeel_nourishment: ProductAnalysisDiagnosticScore;
+};
+
+export type ConditionerProductAnalysisDiagnostics = {
+  detangling_support: ProductAnalysisDiagnosticScore;
+  anti_frizz_support: ProductAnalysisDiagnosticScore;
+  airy_light_support: ProductAnalysisDiagnosticScore;
+  repair_density: ProductAnalysisDiagnosticScore;
+  color_lock_support: ProductAnalysisDiagnosticScore;
+  basic_hydration_support: ProductAnalysisDiagnosticScore;
+  fine_hair_burden: ProductAnalysisDiagnosticScore;
+};
+
+export type LotionProductAnalysisDiagnostics = {
+  light_hydration_support: ProductAnalysisDiagnosticScore;
+  heavy_repair_support: ProductAnalysisDiagnosticScore;
+  body_acne_support: ProductAnalysisDiagnosticScore;
+  aha_renew_support: ProductAnalysisDiagnosticScore;
+  brightening_support: ProductAnalysisDiagnosticScore;
+  fragrance_presence: ProductAnalysisDiagnosticScore;
+  occlusive_weight: ProductAnalysisDiagnosticScore;
+};
+
+export type CleanserProductAnalysisDiagnostics = {
+  apg_support: ProductAnalysisDiagnosticScore;
+  amino_support: ProductAnalysisDiagnosticScore;
+  soap_blend_strength: ProductAnalysisDiagnosticScore;
+  bha_support: ProductAnalysisDiagnosticScore;
+  clay_support: ProductAnalysisDiagnosticScore;
+  enzyme_support: ProductAnalysisDiagnosticScore;
+  barrier_friendliness: ProductAnalysisDiagnosticScore;
+  makeup_residue_support: ProductAnalysisDiagnosticScore;
+};
+
+export type ProductAnalysisProfileBase = {
+  schema_version: string;
+  category: "shampoo" | "bodywash" | "conditioner" | "lotion" | "cleanser";
+  route_key: string;
+  route_title: string;
+  headline: string;
+  positioning_summary: string;
+  subtype_fit_verdict: ProductAnalysisSubtypeFitVerdict;
+  subtype_fit_reason: string;
+  best_for: string[];
+  not_ideal_for: string[];
+  usage_tips: string[];
+  watchouts: string[];
+  key_ingredients: ProductAnalysisKeyIngredient[];
+  evidence: ProductAnalysisEvidence;
+  confidence: number;
+  confidence_reason: string;
+  needs_review: boolean;
+};
+
+export type ShampooProductAnalysisProfile = ProductAnalysisProfileBase & {
+  schema_version: "product_profile_shampoo.v1";
+  category: "shampoo";
+  diagnostics: ShampooProductAnalysisDiagnostics;
+};
+
+export type BodywashProductAnalysisProfile = ProductAnalysisProfileBase & {
+  schema_version: "product_profile_bodywash.v1";
+  category: "bodywash";
+  diagnostics: BodywashProductAnalysisDiagnostics;
+};
+
+export type ConditionerProductAnalysisProfile = ProductAnalysisProfileBase & {
+  schema_version: "product_profile_conditioner.v1";
+  category: "conditioner";
+  diagnostics: ConditionerProductAnalysisDiagnostics;
+};
+
+export type LotionProductAnalysisProfile = ProductAnalysisProfileBase & {
+  schema_version: "product_profile_lotion.v1";
+  category: "lotion";
+  diagnostics: LotionProductAnalysisDiagnostics;
+};
+
+export type CleanserProductAnalysisProfile = ProductAnalysisProfileBase & {
+  schema_version: "product_profile_cleanser.v1";
+  category: "cleanser";
+  diagnostics: CleanserProductAnalysisDiagnostics;
+};
+
+export type ProductAnalysisProfile =
+  | ShampooProductAnalysisProfile
+  | BodywashProductAnalysisProfile
+  | ConditionerProductAnalysisProfile
+  | LotionProductAnalysisProfile
+  | CleanserProductAnalysisProfile;
+
+export type ProductAnalysisStoredResult = {
+  product_id: string;
+  category: "shampoo" | "bodywash" | "conditioner" | "lotion" | "cleanser";
+  rules_version: string;
+  fingerprint: string;
+  generated_at: string;
+  prompt_key: string;
+  prompt_version: string;
+  model: string;
+  profile: ProductAnalysisProfile;
+  storage_path: string;
+};
+
+export type ProductAnalysisBuildRequest = {
+  category?: string;
+  force_regenerate?: boolean;
+  only_unanalyzed?: boolean;
+};
+
+export type ProductAnalysisBuildItem = {
+  product_id: string;
+  category: string;
+  status: "created" | "updated" | "skipped" | "failed";
+  route_key?: string | null;
+  route_title?: string | null;
+  headline?: string | null;
+  subtype_fit_verdict?: ProductAnalysisSubtypeFitVerdict | null;
+  confidence?: number | null;
+  needs_review?: boolean | null;
+  storage_path?: string | null;
+  model?: string | null;
+  error?: string | null;
+};
+
+export type ProductAnalysisBuildResponse = {
+  status: string;
+  scanned_products: number;
+  submitted_to_model: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+  items: ProductAnalysisBuildItem[];
+  failures: string[];
+};
+
+export type ProductAnalysisDetailResponse = {
+  status: string;
+  item: ProductAnalysisStoredResult;
+};
+
+export type ProductAnalysisIndexItem = {
+  product_id: string;
+  category: string;
+  status: string;
+  route_key: string;
+  route_title: string;
+  headline: string;
+  subtype_fit_verdict?: ProductAnalysisSubtypeFitVerdict | null;
+  confidence: number;
+  needs_review: boolean;
+  schema_version: string;
+  rules_version: string;
+  last_generated_at?: string | null;
+};
+
+export type ProductAnalysisIndexListResponse = {
+  status: string;
+  category?: string | null;
+  total: number;
+  items: ProductAnalysisIndexItem[];
+};
+
 export type ProductFeaturedSlotItem = {
   category: string;
   target_type_key: string;
@@ -707,6 +930,11 @@ export type MobileWikiProductDetailResponse = {
       reason?: string | null;
     }>;
   };
+};
+
+export type MobileWikiProductAnalysisResponse = {
+  status: string;
+  item: ProductAnalysisStoredResult;
 };
 
 export type MobileBagItem = {
@@ -1304,6 +1532,41 @@ export async function fetchProductRouteMappingIndex(params?: {
   return apiFetch<ProductRouteMappingIndexListResponse>(path);
 }
 
+export async function buildProductAnalysisStream(
+  payload: ProductAnalysisBuildRequest,
+  onEvent: (event: SSEEvent) => void,
+): Promise<ProductAnalysisBuildResponse> {
+  return postSSE<ProductAnalysisBuildResponse>(
+    "/api/products/analysis/build/stream",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+      headers: { "content-type": "application/json" },
+    },
+    onEvent,
+  );
+}
+
+export async function fetchProductAnalysis(
+  productId: string,
+): Promise<ProductAnalysisDetailResponse> {
+  const value = productId.trim();
+  if (!value) throw new Error("productId is required.");
+  return apiFetch<ProductAnalysisDetailResponse>(
+    `/api/products/${encodeURIComponent(value)}/analysis`,
+  );
+}
+
+export async function fetchProductAnalysisIndex(params?: {
+  category?: string;
+}): Promise<ProductAnalysisIndexListResponse> {
+  const search = new URLSearchParams();
+  if (params?.category) search.set("category", params.category);
+  const query = search.toString();
+  const path = query ? `/api/products/analysis/index?${query}` : "/api/products/analysis/index";
+  return apiFetch<ProductAnalysisIndexListResponse>(path);
+}
+
 export async function fetchProductFeaturedSlots(params?: {
   category?: string;
 }): Promise<ProductFeaturedSlotListResponse> {
@@ -1513,6 +1776,12 @@ export async function fetchMobileWikiProductDetail(productId: string): Promise<M
   const value = productId.trim();
   if (!value) throw new Error("productId is required.");
   return apiFetch<MobileWikiProductDetailResponse>(`/api/mobile/wiki/products/${encodeURIComponent(value)}`);
+}
+
+export async function fetchMobileWikiProductAnalysis(productId: string): Promise<MobileWikiProductAnalysisResponse> {
+  const value = productId.trim();
+  if (!value) throw new Error("productId is required.");
+  return apiFetch<MobileWikiProductAnalysisResponse>(`/api/mobile/wiki/products/${encodeURIComponent(value)}/analysis`);
 }
 
 export async function fetchMobileBagItems(params?: {
