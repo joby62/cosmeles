@@ -77,7 +77,7 @@ export default function ProductDedupManager({
   } = useProductWorkbenchJobs<ProductDedupSuggestRequest, ProductDedupSuggestResponse>({
     storageKey: ACTIVE_JOB_STORAGE_KEY,
     listLimit: 30,
-    parseResult: parseDedupResult,
+    parseResult: (job) => parseDedupResult(job.result as Record<string, unknown> | undefined),
     service: jobService,
   });
 

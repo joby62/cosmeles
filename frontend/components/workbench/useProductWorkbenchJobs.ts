@@ -5,8 +5,23 @@ import { ProductWorkbenchJob, ProductWorkbenchJobCancelResponse } from "@/lib/ap
 
 type ProductWorkbenchJobStatus = ProductWorkbenchJob["status"];
 
-type ProductWorkbenchJobListParams = {
-  status?: ProductWorkbenchJobStatus;
+export type WorkbenchJobLike = {
+  status: string;
+  job_id: string;
+  stage?: string | null;
+  stage_label?: string | null;
+  message?: string | null;
+  percent?: number | null;
+  current_index?: number | null;
+  current_total?: number | null;
+  result?: unknown;
+  error?: { detail?: string | null } | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type ProductWorkbenchJobListParams<TStatus extends string = ProductWorkbenchJobStatus> = {
+  status?: TStatus;
   offset?: number;
   limit?: number;
 };
@@ -14,60 +29,160 @@ type ProductWorkbenchJobListParams = {
 const ACTIVE_JOB_STATUSES: ProductWorkbenchJobStatus[] = ["queued", "running", "cancelling"];
 const TERMINAL_JOB_STATUSES: ProductWorkbenchJobStatus[] = ["done", "failed", "cancelled"];
 
-export type ProductWorkbenchJobService<TCreatePayload> = {
-  listJobs: (params?: ProductWorkbenchJobListParams) => Promise<ProductWorkbenchJob[]>;
-  fetchJob: (jobId: string) => Promise<ProductWorkbenchJob>;
-  createJob: (payload: TCreatePayload) => Promise<ProductWorkbenchJob>;
-  cancelJob: (jobId: string) => Promise<ProductWorkbenchJobCancelResponse>;
-  retryJob: (jobId: string) => Promise<ProductWorkbenchJob>;
+export type WorkbenchLiveTextState = {
+  text: string;
+  meta: Record<string, unknown>;
 };
 
-type UseProductWorkbenchJobsOptions<TCreatePayload, TResult> = {
+export type ProductWorkbenchJobService<
+  TCreatePayload,
+  TJob extends WorkbenchJobLike = ProductWorkbenchJob,
+  TCancelResponse = ProductWorkbenchJobCancelResponse,
+  TResumePayload = never,
+> = {
+  listJobs: (params?: ProductWorkbenchJobListParams<TJob["status"] & string>) => Promise<TJob[]>;
+  fetchJob: (jobId: string) => Promise<TJob>;
+  createJob: (payload: TCreatePayload) => Promise<TJob>;
+  cancelJob: (jobId: string) => Promise<TCancelResponse>;
+  retryJob?: (jobId: string) => Promise<TJob>;
+  resumeJob?: (payload: TResumePayload) => Promise<TJob>;
+};
+
+type UseProductWorkbenchJobsOptions<
+  TCreatePayload,
+  TResult,
+  TJob extends WorkbenchJobLike = ProductWorkbenchJob,
+  TCancelResponse = ProductWorkbenchJobCancelResponse,
+  TResumePayload = never,
+> = {
   storageKey: string;
-  service: ProductWorkbenchJobService<TCreatePayload>;
-  parseResult: (value: Record<string, unknown> | undefined) => TResult | null;
+  service: ProductWorkbenchJobService<TCreatePayload, TJob, TCancelResponse, TResumePayload>;
+  parseResult: (job: TJob) => TResult | null;
   listLimit?: number;
   listPollIntervalMs?: number;
   activePollIntervalMs?: number;
+  isRunningJob?: (job: TJob) => boolean;
+  isTerminalJob?: (job: TJob) => boolean;
+  shouldKeepActiveJob?: (job: TJob) => boolean;
+  extractCancelledJob?: (response: TCancelResponse) => TJob;
+  assembleLiveText?: (job: TJob | null, previous: WorkbenchLiveTextState) => WorkbenchLiveTextState;
+  formatCountersText?: (job: TJob | null) => string | null;
+  formatPrettyText?: (context: {
+    result: TResult | null;
+    resultJobId: string | null;
+    activeJob: TJob | null;
+    jobs: TJob[];
+  }) => string;
 };
 
-export type UseProductWorkbenchJobsState<TCreatePayload, TResult> = {
+export type UseProductWorkbenchJobsState<
+  TCreatePayload,
+  TResult,
+  TJob extends WorkbenchJobLike = ProductWorkbenchJob,
+  TResumePayload = never,
+> = {
   jobLoading: boolean;
   jobsLoading: boolean;
   errorMessage: string | null;
   setErrorMessage: (value: string | null) => void;
-  jobs: ProductWorkbenchJob[];
-  sortedJobs: ProductWorkbenchJob[];
-  activeJob: ProductWorkbenchJob | null;
+  jobs: TJob[];
+  sortedJobs: TJob[];
+  activeJob: TJob | null;
   activeRunning: boolean;
   progressValue: number;
+  countersText: string | null;
   liveText: string;
+  prettyText: string;
   result: TResult | null;
   resultJobId: string | null;
   refreshJobs: () => Promise<void>;
-  startJob: (payload: TCreatePayload) => Promise<ProductWorkbenchJob | null>;
-  cancelActiveJob: () => Promise<ProductWorkbenchJob | null>;
-  retryJob: (jobId: string) => Promise<ProductWorkbenchJob | null>;
-  selectJob: (job: ProductWorkbenchJob) => void;
+  startJob: (payload: TCreatePayload) => Promise<TJob | null>;
+  startJobs: (payloads: TCreatePayload[]) => Promise<{ jobs: TJob[]; errors: string[] }>;
+  cancelJob: (jobId: string) => Promise<TJob | null>;
+  cancelActiveJob: () => Promise<TJob | null>;
+  retryJob: (jobId: string) => Promise<TJob | null>;
+  resumeJob?: (payload: TResumePayload) => Promise<TJob | null>;
+  selectJob: (job: TJob) => void;
   clearResult: () => void;
 };
 
-export function useProductWorkbenchJobs<TCreatePayload, TResult>({
+export function createEmptyLiveTextState(): WorkbenchLiveTextState {
+  return { text: "", meta: {} };
+}
+
+function defaultIsRunningJob(job: WorkbenchJobLike): boolean {
+  return ACTIVE_JOB_STATUSES.includes(job.status as ProductWorkbenchJobStatus);
+}
+
+function defaultIsTerminalJob(job: WorkbenchJobLike): boolean {
+  return TERMINAL_JOB_STATUSES.includes(job.status as ProductWorkbenchJobStatus);
+}
+
+function defaultShouldKeepActiveJob(job: WorkbenchJobLike): boolean {
+  return !defaultIsTerminalJob(job);
+}
+
+function defaultExtractCancelledJob<TJob extends WorkbenchJobLike, TCancelResponse>(response: TCancelResponse): TJob {
+  if (response && typeof response === "object" && "job" in response) {
+    return (response as { job: TJob }).job;
+  }
+  return response as unknown as TJob;
+}
+
+function defaultAssembleLiveText<TJob extends WorkbenchJobLike>(
+  job: TJob | null,
+  previous: WorkbenchLiveTextState,
+): WorkbenchLiveTextState {
+  if (!job) return createEmptyLiveTextState();
+  if ("logs" in job && Array.isArray((job as { logs?: unknown }).logs)) {
+    return {
+      text: ((job as { logs: string[] }).logs || []).join("\n"),
+      meta: { jobId: job.job_id },
+    };
+  }
+  const message = String(job.message || "").trim();
+  if (!message) {
+    if (String(previous.meta.jobId || "") === job.job_id) return previous;
+    return { text: "", meta: { jobId: job.job_id } };
+  }
+  return { text: message, meta: { jobId: job.job_id } };
+}
+
+export function useProductWorkbenchJobs<
+  TCreatePayload,
+  TResult,
+  TJob extends WorkbenchJobLike = ProductWorkbenchJob,
+  TCancelResponse = ProductWorkbenchJobCancelResponse,
+  TResumePayload = never,
+>({
   storageKey,
   service,
   parseResult,
   listLimit = 30,
   listPollIntervalMs = 2800,
   activePollIntervalMs = 2200,
-}: UseProductWorkbenchJobsOptions<TCreatePayload, TResult>): UseProductWorkbenchJobsState<TCreatePayload, TResult> {
+  isRunningJob = defaultIsRunningJob as (job: TJob) => boolean,
+  isTerminalJob = defaultIsTerminalJob as (job: TJob) => boolean,
+  shouldKeepActiveJob = defaultShouldKeepActiveJob as (job: TJob) => boolean,
+  extractCancelledJob = defaultExtractCancelledJob as (response: TCancelResponse) => TJob,
+  assembleLiveText = defaultAssembleLiveText as (job: TJob | null, previous: WorkbenchLiveTextState) => WorkbenchLiveTextState,
+  formatCountersText,
+  formatPrettyText,
+}: UseProductWorkbenchJobsOptions<TCreatePayload, TResult, TJob, TCancelResponse, TResumePayload>): UseProductWorkbenchJobsState<
+  TCreatePayload,
+  TResult,
+  TJob,
+  TResumePayload
+> {
   const [jobLoading, setJobLoading] = useState(false);
   const [jobsLoading, setJobsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [jobs, setJobs] = useState<ProductWorkbenchJob[]>([]);
+  const [jobs, setJobs] = useState<TJob[]>([]);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
-  const [activeJob, setActiveJob] = useState<ProductWorkbenchJob | null>(null);
+  const [activeJob, setActiveJob] = useState<TJob | null>(null);
   const [result, setResult] = useState<TResult | null>(null);
   const [resultJobId, setResultJobId] = useState<string | null>(null);
+  const [liveTextState, setLiveTextState] = useState<WorkbenchLiveTextState>(createEmptyLiveTextState);
   const resultSignatureRef = useRef<string | null>(null);
 
   const rememberActiveJob = useCallback(
@@ -85,7 +200,7 @@ export function useProductWorkbenchJobs<TCreatePayload, TResult>({
     setActiveJobId(null);
   }, [storageKey]);
 
-  const applyParsedResult = useCallback((job: ProductWorkbenchJob, parsed: TResult | null) => {
+  const applyParsedResult = useCallback((job: TJob, parsed: TResult | null) => {
     if (!parsed) return;
     const signature = `${job.job_id}:${job.updated_at}:${job.status}`;
     if (resultSignatureRef.current === signature) return;
@@ -106,12 +221,14 @@ export function useProductWorkbenchJobs<TCreatePayload, TResult>({
       const rows = await service.listJobs({ limit: listLimit, offset: 0 });
       setJobs(rows);
       if (!activeJobId) {
-        const running = rows.find((item) => ACTIVE_JOB_STATUSES.includes(item.status));
+        const running = rows.find((item) => shouldKeepActiveJob(item));
         if (running) rememberActiveJob(running.job_id);
       }
-      const latestDone = rows.find((item) => item.status === "done" && item.result && typeof item.result === "object");
+      const latestDone = [...rows]
+        .sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")))
+        .find((item) => parseResult(item) !== null);
       if (latestDone) {
-        const parsed = parseResult(latestDone.result as Record<string, unknown>);
+        const parsed = parseResult(latestDone);
         applyParsedResult(latestDone, parsed);
       }
     } catch (err) {
@@ -120,7 +237,7 @@ export function useProductWorkbenchJobs<TCreatePayload, TResult>({
     } finally {
       setJobsLoading(false);
     }
-  }, [activeJobId, applyParsedResult, listLimit, parseResult, rememberActiveJob, service]);
+  }, [activeJobId, applyParsedResult, listLimit, parseResult, rememberActiveJob, service, shouldKeepActiveJob]);
 
   useEffect(() => {
     const raw = window.localStorage.getItem(storageKey);
@@ -148,11 +265,9 @@ export function useProductWorkbenchJobs<TCreatePayload, TResult>({
         const job = await service.fetchJob(activeJobId);
         if (cancelled) return;
         setActiveJob(job);
-        if (job.result && typeof job.result === "object") {
-          const parsed = parseResult(job.result as Record<string, unknown>);
-          applyParsedResult(job, parsed);
-        }
-        if (TERMINAL_JOB_STATUSES.includes(job.status)) {
+        const parsed = parseResult(job);
+        applyParsedResult(job, parsed);
+        if (isTerminalJob(job)) {
           clearActiveJob();
           void loadJobs();
           return;
@@ -172,53 +287,93 @@ export function useProductWorkbenchJobs<TCreatePayload, TResult>({
       cancelled = true;
       if (timer != null) window.clearTimeout(timer);
     };
-  }, [activeJobId, activePollIntervalMs, applyParsedResult, clearActiveJob, loadJobs, parseResult, service]);
+  }, [activeJobId, activePollIntervalMs, applyParsedResult, clearActiveJob, isTerminalJob, loadJobs, parseResult, service]);
 
-  const startJob = useCallback(
-    async (payload: TCreatePayload): Promise<ProductWorkbenchJob | null> => {
+  useEffect(() => {
+    setLiveTextState(createEmptyLiveTextState());
+  }, [activeJob?.job_id]);
+
+  useEffect(() => {
+    setLiveTextState((previous) => assembleLiveText(activeJob, previous));
+  }, [activeJob, assembleLiveText]);
+
+  const startJobs = useCallback(
+    async (payloads: TCreatePayload[]): Promise<{ jobs: TJob[]; errors: string[] }> => {
       setJobLoading(true);
       setErrorMessage(null);
+      const createdJobs: TJob[] = [];
+      const errors: string[] = [];
       try {
-        const job = await service.createJob(payload);
-        setActiveJob(job);
-        rememberActiveJob(job.job_id);
+        for (const payload of payloads) {
+          try {
+            const job = await service.createJob(payload);
+            createdJobs.push(job);
+            setActiveJob(job);
+            if (shouldKeepActiveJob(job)) {
+              rememberActiveJob(job.job_id);
+            }
+          } catch (err) {
+            errors.push(formatErrorDetail(err));
+          }
+        }
         await loadJobs();
-        return job;
-      } catch (err) {
-        setErrorMessage(formatErrorDetail(err));
-        return null;
+        if (errors.length > 0) {
+          setErrorMessage(errors[errors.length - 1]);
+        }
+        return { jobs: createdJobs, errors };
       } finally {
         setJobLoading(false);
       }
     },
-    [loadJobs, rememberActiveJob, service],
+    [loadJobs, rememberActiveJob, service, shouldKeepActiveJob],
   );
 
-  const cancelActiveJob = useCallback(async (): Promise<ProductWorkbenchJob | null> => {
-    if (!activeJob) return null;
+  const startJob = useCallback(
+    async (payload: TCreatePayload): Promise<TJob | null> => {
+      const { jobs: createdJobs } = await startJobs([payload]);
+      return createdJobs[0] || null;
+    },
+    [startJobs],
+  );
+
+  const cancelJob = useCallback(async (jobId: string): Promise<TJob | null> => {
+    const value = String(jobId || "").trim();
+    if (!value) return null;
     setJobLoading(true);
     setErrorMessage(null);
     try {
-      const resp = await service.cancelJob(activeJob.job_id);
-      setActiveJob(resp.job);
+      const resp = await service.cancelJob(value);
+      const job = extractCancelledJob(resp);
+      if (activeJob?.job_id === value || activeJobId === value) {
+        setActiveJob(job);
+      }
       await loadJobs();
-      return resp.job;
+      return job;
     } catch (err) {
       setErrorMessage(formatErrorDetail(err));
       return null;
     } finally {
       setJobLoading(false);
     }
-  }, [activeJob, loadJobs, service]);
+  }, [activeJob?.job_id, activeJobId, extractCancelledJob, loadJobs, service]);
+
+  const cancelActiveJob = useCallback(async (): Promise<TJob | null> => {
+    if (!activeJob) return null;
+    return cancelJob(activeJob.job_id);
+  }, [activeJob, cancelJob]);
 
   const retryJob = useCallback(
-    async (jobId: string): Promise<ProductWorkbenchJob | null> => {
+    async (jobId: string): Promise<TJob | null> => {
+      if (!service.retryJob) {
+        setErrorMessage("当前任务类型不支持重试。");
+        return null;
+      }
       setJobLoading(true);
       setErrorMessage(null);
       try {
         const job = await service.retryJob(jobId);
         setActiveJob(job);
-        rememberActiveJob(job.job_id);
+        if (shouldKeepActiveJob(job)) rememberActiveJob(job.job_id);
         await loadJobs();
         return job;
       } catch (err) {
@@ -228,17 +383,43 @@ export function useProductWorkbenchJobs<TCreatePayload, TResult>({
         setJobLoading(false);
       }
     },
-    [loadJobs, rememberActiveJob, service],
+    [loadJobs, rememberActiveJob, service, shouldKeepActiveJob],
+  );
+
+  const resumeJob = useCallback(
+    async (payload: TResumePayload): Promise<TJob | null> => {
+      if (!service.resumeJob) {
+        setErrorMessage("当前任务类型不支持继续。");
+        return null;
+      }
+      setJobLoading(true);
+      setErrorMessage(null);
+      try {
+        const job = await service.resumeJob(payload);
+        setActiveJob(job);
+        if (shouldKeepActiveJob(job)) rememberActiveJob(job.job_id);
+        await loadJobs();
+        return job;
+      } catch (err) {
+        setErrorMessage(formatErrorDetail(err));
+        return null;
+      } finally {
+        setJobLoading(false);
+      }
+    },
+    [loadJobs, rememberActiveJob, service, shouldKeepActiveJob],
   );
 
   const selectJob = useCallback(
-    (job: ProductWorkbenchJob) => {
+    (job: TJob) => {
       setActiveJob(job);
-      if (ACTIVE_JOB_STATUSES.includes(job.status)) {
+      const parsed = parseResult(job);
+      applyParsedResult(job, parsed);
+      if (shouldKeepActiveJob(job)) {
         rememberActiveJob(job.job_id);
       }
     },
-    [rememberActiveJob],
+    [applyParsedResult, parseResult, rememberActiveJob, shouldKeepActiveJob],
   );
 
   const refreshJobs = useCallback(async () => {
@@ -249,9 +430,20 @@ export function useProductWorkbenchJobs<TCreatePayload, TResult>({
     () => [...jobs].sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || ""))),
     [jobs],
   );
-  const activeRunning = Boolean(activeJob && ACTIVE_JOB_STATUSES.includes(activeJob.status));
+  const activeRunning = Boolean(activeJob && isRunningJob(activeJob));
   const progressValue = Math.max(0, Math.min(100, Number(activeJob?.percent || 0)));
-  const liveText = activeJob?.logs?.join("\n") || "";
+  const liveText = liveTextState.text;
+  const countersText = useMemo(() => formatCountersText?.(activeJob) || null, [activeJob, formatCountersText]);
+  const prettyText = useMemo(
+    () =>
+      formatPrettyText?.({
+        result,
+        resultJobId,
+        activeJob,
+        jobs: sortedJobs,
+      }) || "",
+    [activeJob, formatPrettyText, result, resultJobId, sortedJobs],
+  );
 
   return {
     jobLoading,
@@ -263,13 +455,18 @@ export function useProductWorkbenchJobs<TCreatePayload, TResult>({
     activeJob,
     activeRunning,
     progressValue,
+    countersText,
     liveText,
+    prettyText,
     result,
     resultJobId,
     refreshJobs,
     startJob,
+    startJobs,
+    cancelJob,
     cancelActiveJob,
     retryJob,
+    resumeJob: service.resumeJob ? resumeJob : undefined,
     selectJob,
     clearResult,
   };

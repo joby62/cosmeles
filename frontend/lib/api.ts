@@ -219,6 +219,7 @@ export type IngredientLibraryBuildJob = {
   category?: string | null;
   force_regenerate: boolean;
   max_sources_per_ingredient: number;
+  normalization_packages: string[];
   stage?: string | null;
   stage_label?: string | null;
   message?: string | null;
@@ -1439,6 +1440,14 @@ export async function cancelIngredientLibraryBuildJob(jobId: string): Promise<In
     `/api/products/ingredients/library/jobs/${encodeURIComponent(value)}/cancel`,
     { method: "POST" },
   );
+}
+
+export async function retryIngredientLibraryBuildJob(jobId: string): Promise<IngredientLibraryBuildJob> {
+  const value = jobId.trim();
+  if (!value) throw new Error("jobId is required.");
+  return apiFetch<IngredientLibraryBuildJob>(`/api/products/ingredients/library/jobs/${encodeURIComponent(value)}/retry`, {
+    method: "POST",
+  });
 }
 
 export async function deleteIngredientLibraryBatch(

@@ -86,6 +86,7 @@ class IngredientLibraryBuildJob(Base):
     category: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     force_regenerate: Mapped[bool] = mapped_column(Boolean, default=False)
     max_sources_per_ingredient: Mapped[int] = mapped_column(Integer, default=8)
+    normalization_packages_json: Mapped[str] = mapped_column(Text, default="[]")
 
     stage: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     stage_label: Mapped[str | None] = mapped_column(String(256), nullable=True)

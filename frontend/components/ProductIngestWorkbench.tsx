@@ -1,17 +1,27 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import ProductWorkbenchJobConsole from "@/components/workbench/ProductWorkbenchJobConsole";
+import {
+  WorkbenchLiveTextState,
+  createEmptyLiveTextState,
+  useProductWorkbenchJobs,
+} from "@/components/workbench/useProductWorkbenchJobs";
 import {
   cancelUploadIngestJob,
   createUploadIngestJob,
+  fetchUploadIngestJob,
   ingestProduct,
   listUploadIngestJobs,
-  retryUploadIngestJob,
   resumeUploadIngestJob,
+  retryUploadIngestJob,
   UploadIngestJob,
+  UploadIngestJobCancelResponse,
 } from "@/lib/api";
+
+const ACTIVE_JOB_STORAGE_KEY = "upload-ingest-active-job-id";
 
 const CATEGORIES = [
   { value: "shampoo", label: "洗发水" },
@@ -57,6 +67,9 @@ type IngestResultLike = {
   } | null;
 };
 
+type UploadCreatePayload = Parameters<typeof createUploadIngestJob>[0];
+type UploadResumePayload = Parameters<typeof resumeUploadIngestJob>[0];
+
 const EMPTY_DRAFT: ResumeDraft = {
   image: null,
   category: "",
@@ -97,33 +110,70 @@ export default function ProductIngestWorkbench() {
   const [jsonText, setJsonText] = useState("");
   const [images, setImages] = useState<File[]>([]);
   const [pairAsSingleProduct, setPairAsSingleProduct] = useState(false);
-
   const [submitting, setSubmitting] = useState(false);
-  const [jobsLoading, setJobsLoading] = useState(false);
-  const [resumingJobId, setResumingJobId] = useState<string | null>(null);
-  const [cancellingJobId, setCancellingJobId] = useState<string | null>(null);
-  const [retryingJobId, setRetryingJobId] = useState<string | null>(null);
   const [previewModal, setPreviewModal] = useState<PreviewModalState>(null);
-
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<IngestResultLike | null>(null);
-  const [uploadJobs, setUploadJobs] = useState<UploadIngestJob[]>([]);
   const [resumeDrafts, setResumeDrafts] = useState<Record<string, ResumeDraft>>({});
+  const [manualResult, setManualResult] = useState<IngestResultLike | null>(null);
+
+  const jobService = useMemo(
+    () => ({
+      listJobs: listUploadIngestJobs,
+      fetchJob: fetchUploadIngestJob,
+      createJob: createUploadIngestJob,
+      cancelJob: cancelUploadIngestJob,
+      retryJob: retryUploadIngestJob,
+      resumeJob: resumeUploadIngestJob,
+    }),
+    [],
+  );
+
+  const {
+    jobLoading,
+    jobsLoading,
+    errorMessage,
+    setErrorMessage,
+    sortedJobs,
+    activeJob,
+    activeRunning,
+    progressValue,
+    liveText,
+    prettyText,
+    result,
+    refreshJobs,
+    startJobs,
+    cancelJob,
+    retryJob,
+    resumeJob,
+    selectJob,
+  } = useProductWorkbenchJobs<
+    UploadCreatePayload,
+    IngestResultLike,
+    UploadIngestJob,
+    UploadIngestJobCancelResponse,
+    UploadResumePayload
+  >({
+    storageKey: ACTIVE_JOB_STORAGE_KEY,
+    listLimit: 60,
+    listPollIntervalMs: 2200,
+    activePollIntervalMs: 2200,
+    service: jobService,
+    parseResult: parseUploadResult,
+    isRunningJob: (job) => job.status === "queued" || job.status === "running" || job.status === "cancelling",
+    isTerminalJob: (job) => job.status === "done" || job.status === "failed" || job.status === "cancelled",
+    shouldKeepActiveJob: (job) => job.status !== "done" && job.status !== "failed" && job.status !== "cancelled",
+    assembleLiveText: assembleUploadLiveText,
+    formatPrettyText: ({ activeJob: current }) => buildUploadPrettyText(current),
+  });
 
   const canSubmit = useMemo(() => {
-    if (submitting) return false;
+    if (submitting || jobLoading) return false;
     if (images.length === 0) return false;
     if (!useJsonOverride && source === "doubao" && pairAsSingleProduct) {
       return images.length >= 2 && images.length % 2 === 0;
     }
     if (useJsonOverride) return !!jsonText.trim();
     return true;
-  }, [images.length, jsonText, pairAsSingleProduct, source, submitting, useJsonOverride]);
-
-  const sortedJobs = useMemo(
-    () => [...uploadJobs].sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || ""))),
-    [uploadJobs],
-  );
+  }, [images.length, jsonText, jobLoading, pairAsSingleProduct, source, submitting, useJsonOverride]);
 
   const latestModels = useMemo(() => {
     for (const item of sortedJobs) {
@@ -137,32 +187,6 @@ export default function ProductIngestWorkbench() {
     return { stage1: null as string | null, stage2: null as string | null };
   }, [sortedJobs]);
 
-  const refreshJobs = useCallback(async () => {
-    setJobsLoading(true);
-    try {
-      const rows = await listUploadIngestJobs({ limit: 60, offset: 0 });
-      setUploadJobs(rows);
-      const latestDone = rows
-        .filter((item) => item.status === "done" && item.result && typeof item.result === "object")
-        .sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")))[0];
-      if (latestDone && latestDone.result && typeof latestDone.result === "object") {
-        setResult(latestDone.result as IngestResultLike);
-      }
-    } catch (err) {
-      setError(formatError(err));
-    } finally {
-      setJobsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void refreshJobs();
-    const timer = window.setInterval(() => {
-      void refreshJobs();
-    }, 2200);
-    return () => window.clearInterval(timer);
-  }, [refreshJobs]);
-
   function updateResumeDraft(jobId: string, patch: Partial<ResumeDraft>) {
     setResumeDrafts((prev) => ({
       ...prev,
@@ -173,63 +197,37 @@ export default function ProductIngestWorkbench() {
     }));
   }
 
-  async function onSubmit(e: FormEvent) {
-    e.preventDefault();
+  async function onSubmit(event: FormEvent) {
+    event.preventDefault();
     if (!canSubmit) return;
 
-    setSubmitting(true);
-    setError(null);
+    setErrorMessage(null);
 
-    try {
-      if (source === "doubao" && !useJsonOverride) {
-        let ok = 0;
-        let fail = 0;
-        if (pairAsSingleProduct) {
-          if (images.length % 2 !== 0) {
-            setError("双图同品模式要求图片数量为偶数（每 2 张图组成 1 个任务）。");
-            return;
-          }
-          const pairCount = Math.floor(images.length / 2);
-          for (let i = 0; i < images.length; i += 2) {
-            try {
-              await createUploadIngestJob({
-                image: images[i],
-                supplementImage: images[i + 1],
-                stage1ModelTier,
-                stage2ModelTier,
-              });
-              ok += 1;
-            } catch (err) {
-              fail += 1;
-              setError(formatError(err));
-            }
-          }
-          await refreshJobs();
-          if (fail > 0) {
-            setError(`任务创建完成：${ok}/${pairCount} 成功，${fail} 失败。`);
-          }
-          return;
-        }
-        for (const image of images) {
-          try {
-            await createUploadIngestJob({
-              image,
-              stage1ModelTier,
-              stage2ModelTier,
-            });
-            ok += 1;
-          } catch (err) {
-            fail += 1;
-            setError(formatError(err));
-          }
-        }
-        await refreshJobs();
-        if (fail > 0) {
-          setError(`任务创建完成：${ok}/${images.length} 成功，${fail} 失败。`);
-        }
+    if (source === "doubao" && !useJsonOverride) {
+      setManualResult(null);
+      if (pairAsSingleProduct && images.length % 2 !== 0) {
+        setErrorMessage("双图同品模式要求图片数量为偶数（每 2 张图组成 1 个任务）。");
         return;
       }
 
+      const payloads = pairAsSingleProduct
+        ? buildPairPayloads(images, stage1ModelTier, stage2ModelTier)
+        : images.map((image) => ({
+            image,
+            stage1ModelTier,
+            stage2ModelTier,
+          }));
+      const total = payloads.length;
+      const { jobs: createdJobs, errors } = await startJobs(payloads);
+      if (errors.length > 0) {
+        setErrorMessage(buildCreateBatchError(createdJobs.length, total, errors));
+      }
+      return;
+    }
+
+    setSubmitting(true);
+    setManualResult(null);
+    try {
       const ingestResult = await ingestProduct({
         image: images[0] || undefined,
         category: useJsonOverride ? category : undefined,
@@ -240,59 +238,27 @@ export default function ProductIngestWorkbench() {
         stage1ModelTier,
         stage2ModelTier,
       });
-      setResult(ingestResult);
+      setManualResult(ingestResult);
       await refreshJobs();
     } catch (err) {
-      setError(formatError(err));
+      setErrorMessage(formatError(err));
     } finally {
       setSubmitting(false);
     }
   }
 
-  async function cancelJob(jobId: string) {
-    setCancellingJobId(jobId);
-    setError(null);
-    try {
-      await cancelUploadIngestJob(jobId);
-      await refreshJobs();
-    } catch (err) {
-      setError(formatError(err));
-    } finally {
-      setCancellingJobId(null);
-    }
-  }
-
-  async function resumeJob(job: UploadIngestJob) {
+  async function handleResumeJob(job: UploadIngestJob) {
+    if (!resumeJob) return;
     const draft = resumeDrafts[job.job_id] || EMPTY_DRAFT;
-    setResumingJobId(job.job_id);
-    setError(null);
-    try {
-      await resumeUploadIngestJob({
-        jobId: job.job_id,
-        image: draft.image,
-        category: draft.category.trim() || undefined,
-        brand: draft.brand.trim() || undefined,
-        name: draft.name.trim() || undefined,
-      });
+    const resumed = await resumeJob({
+      jobId: job.job_id,
+      image: draft.image,
+      category: draft.category.trim() || undefined,
+      brand: draft.brand.trim() || undefined,
+      name: draft.name.trim() || undefined,
+    });
+    if (resumed) {
       setResumeDrafts((prev) => ({ ...prev, [job.job_id]: EMPTY_DRAFT }));
-      await refreshJobs();
-    } catch (err) {
-      setError(formatError(err));
-    } finally {
-      setResumingJobId(null);
-    }
-  }
-
-  async function retryJob(jobId: string) {
-    setRetryingJobId(jobId);
-    setError(null);
-    try {
-      await retryUploadIngestJob(jobId);
-      await refreshJobs();
-    } catch (err) {
-      setError(formatError(err));
-    } finally {
-      setRetryingJobId(null);
     }
   }
 
@@ -321,7 +287,7 @@ export default function ProductIngestWorkbench() {
 
       <h2 className="mt-3 text-[30px] font-semibold tracking-[-0.02em] text-black/90">产品上传台</h2>
       <p className="mt-2 text-[14px] leading-[1.6] text-black/65">
-        上传先落盘到暂存区，再统一转换 webp/jpg，随后进入 Stage1/Stage2。支持终止任务、孤儿任务自动收敛、刷新后恢复进度。
+        上传先落盘到暂存区，再统一转换 webp/jpg，随后进入 Stage1/Stage2。支持终止任务、补拍续跑、失败重试与刷新恢复。
       </p>
 
       <form onSubmit={onSubmit} className="mt-5 space-y-5 rounded-[24px] border border-black/10 bg-white p-5">
@@ -330,7 +296,7 @@ export default function ProductIngestWorkbench() {
             <span className="text-[13px] font-semibold text-black/72">来源模式</span>
             <select
               value={source}
-              onChange={(e) => setSource(e.target.value as "manual" | "doubao" | "auto")}
+              onChange={(event) => setSource(event.target.value as "manual" | "doubao" | "auto")}
               className="h-11 rounded-xl border border-black/12 bg-white px-3 text-[14px] text-black/86 outline-none focus:border-black/35"
             >
               <option value="doubao">doubao（后台任务）</option>
@@ -343,7 +309,7 @@ export default function ProductIngestWorkbench() {
             <span className="text-[13px] font-semibold text-black/72">Stage1 模型档位</span>
             <select
               value={stage1ModelTier}
-              onChange={(e) => setStage1ModelTier(e.target.value as ModelTier)}
+              onChange={(event) => setStage1ModelTier(event.target.value as ModelTier)}
               className="h-11 rounded-xl border border-black/12 bg-white px-3 text-[14px] text-black/86 outline-none focus:border-black/35"
             >
               {MODEL_TIERS.map((item) => (
@@ -358,7 +324,7 @@ export default function ProductIngestWorkbench() {
             <span className="text-[13px] font-semibold text-black/72">Stage2 模型档位</span>
             <select
               value={stage2ModelTier}
-              onChange={(e) => setStage2ModelTier(e.target.value as ModelTier)}
+              onChange={(event) => setStage2ModelTier(event.target.value as ModelTier)}
               className="h-11 rounded-xl border border-black/12 bg-white px-3 text-[14px] text-black/86 outline-none focus:border-black/35"
             >
               {MODEL_TIERS.map((item) => (
@@ -376,12 +342,12 @@ export default function ProductIngestWorkbench() {
             type="file"
             accept="image/*"
             multiple={!useJsonOverride}
-            onChange={(e) => setImages(Array.from(e.target.files || []))}
+            onChange={(event) => setImages(Array.from(event.target.files || []))}
             className="h-11 rounded-xl border border-black/12 bg-white px-3 py-2 text-[13px] text-black/76 file:mr-3 file:rounded-lg file:border-0 file:bg-black/6 file:px-2.5 file:py-1.5 file:text-[12px] file:font-medium"
           />
           {images.length > 0 ? (
             <div className="rounded-xl border border-black/8 bg-black/[0.02] px-3 py-2 text-[12px] text-black/66">
-              已选 {images.length} 张{pairAsSingleProduct ? `（预计创建 ${Math.floor(images.length / 2)} 个双图任务）` : ""}：{images.map((f) => f.name).join("、")}
+              已选 {images.length} 张{pairAsSingleProduct ? `（预计创建 ${Math.floor(images.length / 2)} 个双图任务）` : ""}：{images.map((file) => file.name).join("、")}
             </div>
           ) : null}
           {!useJsonOverride && source === "doubao" ? (
@@ -389,20 +355,20 @@ export default function ProductIngestWorkbench() {
               <input
                 type="checkbox"
                 checked={pairAsSingleProduct}
-                onChange={(e) => setPairAsSingleProduct(e.target.checked)}
+                onChange={(event) => setPairAsSingleProduct(event.target.checked)}
                 className="h-4 w-4 rounded border border-black/25"
               />
               双图同品分析（每 2 张图作为同一产品，直接进入双图 Stage1）
             </label>
           ) : null}
-          <div className="text-[12px] text-black/52">状态覆盖：上传中、转换中、Stage1、Stage2、待补拍/补录。</div>
+          <div className="text-[12px] text-black/52">状态覆盖：queued / uploading / converting / stage1 / stage2 / waiting_more / cancelling / cancelled / done / failed。</div>
         </label>
 
         <label className="flex items-center gap-3 rounded-xl border border-black/10 bg-black/[0.02] px-3 py-2.5 text-[13px] text-black/78">
           <input
             type="checkbox"
             checked={useJsonOverride}
-            onChange={(e) => setUseJsonOverride(e.target.checked)}
+            onChange={(event) => setUseJsonOverride(event.target.checked)}
             className="h-4 w-4 rounded border border-black/25"
           />
           <span className="font-medium">使用 JSON 覆盖（才会提交品类/品牌/产品名）</span>
@@ -415,7 +381,7 @@ export default function ProductIngestWorkbench() {
                 <span className="text-[13px] font-semibold text-black/72">品类</span>
                 <select
                   value={category}
-                  onChange={(e) => setCategory(e.target.value)}
+                  onChange={(event) => setCategory(event.target.value)}
                   className="h-11 rounded-xl border border-black/12 bg-white px-3 text-[14px] text-black/86 outline-none focus:border-black/35"
                 >
                   {CATEGORIES.map((item) => (
@@ -430,7 +396,7 @@ export default function ProductIngestWorkbench() {
                 <span className="text-[13px] font-semibold text-black/72">品牌（可选）</span>
                 <input
                   value={brand}
-                  onChange={(e) => setBrand(e.target.value)}
+                  onChange={(event) => setBrand(event.target.value)}
                   className="h-11 rounded-xl border border-black/12 bg-white px-3 text-[14px] text-black/86 outline-none placeholder:text-black/30 focus:border-black/35"
                   placeholder="如：CeraVe"
                 />
@@ -441,7 +407,7 @@ export default function ProductIngestWorkbench() {
               <span className="text-[13px] font-semibold text-black/72">产品名（可选）</span>
               <input
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(event) => setName(event.target.value)}
                 className="h-11 rounded-xl border border-black/12 bg-white px-3 text-[14px] text-black/86 outline-none placeholder:text-black/30 focus:border-black/35"
                 placeholder="如：温和保湿沐浴露"
               />
@@ -451,7 +417,7 @@ export default function ProductIngestWorkbench() {
               <span className="text-[13px] font-semibold text-black/72">产品 JSON（必填）</span>
               <textarea
                 value={jsonText}
-                onChange={(e) => setJsonText(e.target.value)}
+                onChange={(event) => setJsonText(event.target.value)}
                 className="min-h-[220px] rounded-2xl border border-black/12 bg-white px-3 py-2.5 text-[13px] leading-[1.6] text-black/82 outline-none placeholder:text-black/30 focus:border-black/35"
                 placeholder={SAMPLE_JSON}
               />
@@ -465,7 +431,7 @@ export default function ProductIngestWorkbench() {
             disabled={!canSubmit}
             className="inline-flex h-11 items-center justify-center rounded-full bg-black px-6 text-[15px] font-semibold text-white disabled:cursor-not-allowed disabled:bg-black/25"
           >
-            {submitting ? "提交中..." : "上传到后端"}
+            {submitting || jobLoading ? "提交中..." : "上传到后端"}
           </button>
           <button
             type="button"
@@ -477,214 +443,51 @@ export default function ProductIngestWorkbench() {
           </button>
         </div>
 
-        {error ? <p className="text-[13px] leading-[1.5] text-[#b42318]">{error}</p> : null}
+        {errorMessage ? <p className="whitespace-pre-wrap text-[13px] leading-[1.5] text-[#b42318]">{errorMessage}</p> : null}
 
-        <div className="rounded-2xl border border-[#8ea3ff]/30 bg-[#eef2ff] p-4">
-          <div className="flex items-center justify-between text-[13px]">
-            <span className="font-semibold text-black/82">后台任务进度</span>
-            <span className="text-black/58">共 {sortedJobs.length} 条</span>
-          </div>
-          <div className="mt-3 space-y-3">
-            {sortedJobs.map((job) => {
-              const resultObj = job.result && typeof job.result === "object" ? (job.result as IngestResultLike) : null;
-              const draft = resumeDrafts[job.job_id] || EMPTY_DRAFT;
-              const running = job.status === "queued" || job.status === "running" || job.status === "cancelling";
-              return (
-                <article key={job.job_id} className="rounded-xl border border-black/10 bg-white p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="truncate text-[13px] font-medium text-black/82">{job.file_name || "upload"}</div>
-                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${statusClassName(job)}`}>
-                      {statusLabel(job)}
-                    </span>
-                  </div>
+        <ProductWorkbenchJobConsole
+          activeJob={activeJob}
+          activeRunning={activeRunning}
+          progressValue={progressValue}
+          countersText={buildUploadCountersText(activeJob)}
+          liveText={liveText}
+          prettyText={prettyText}
+          jobs={sortedJobs}
+          jobLoading={jobLoading}
+          onSelectJob={selectJob}
+          onRetryJob={(jobId) => {
+            void retryJob(jobId);
+          }}
+          canRetryJob={(job) => Boolean(job.can_retry)}
+          waitingLogText="等待 Stage 文本..."
+          waitingPrettyText="等待格式化结果..."
+          emptyHistoryText="暂无上传任务。"
+          liveTitle="实时文本"
+          prettyTitle="格式化文本"
+          renderActiveMeta={(job) => renderUploadActiveMeta(job)}
+          renderJobActions={(job) =>
+            renderUploadJobActions({
+              job,
+              jobLoading,
+              onCancel: cancelJob,
+            })
+          }
+          renderJobBody={(job) =>
+            renderUploadJobBody({
+              job,
+              draft: resumeDrafts[job.job_id] || EMPTY_DRAFT,
+              onChangeDraft: updateResumeDraft,
+              onPreview: setPreviewModal,
+              onResume: handleResumeJob,
+              canResume: Boolean(resumeJob),
+              jobLoading,
+            })
+          }
+        />
 
-                  <div className="mt-1 text-[12px] text-black/58">
-                    job_id: {job.job_id} | stage: {job.stage || "-"} | 入库ID: {resultObj?.id || "-"}
-                  </div>
-
-                  <div className="mt-2 text-[12px] text-black/64">{job.stage_label || job.stage || "处理中"} · {job.message || "-"}</div>
-                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-black/10">
-                    <div className="h-full rounded-full bg-black transition-all" style={{ width: `${Math.max(0, Math.min(100, Number(job.percent || 0)))}%` }} />
-                  </div>
-
-                  {job.error ? <div className="mt-2 text-[12px] text-[#b42318]">{job.error.detail}</div> : null}
-
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    {running ? (
-                      <button
-                        type="button"
-                        onClick={() => void cancelJob(job.job_id)}
-                        disabled={job.status === "cancelling" || cancellingJobId === job.job_id}
-                        className="inline-flex h-8 items-center justify-center rounded-full border border-[#ef4444]/40 bg-[#fff5f5] px-3 text-[12px] font-semibold text-[#b42318] disabled:opacity-45"
-                      >
-                        {job.status === "cancelling" || cancellingJobId === job.job_id ? "取消中..." : "终止任务"}
-                      </button>
-                    ) : null}
-
-                    {!running && job.can_retry ? (
-                      <button
-                        type="button"
-                        onClick={() => void retryJob(job.job_id)}
-                        disabled={retryingJobId === job.job_id}
-                        className="inline-flex h-8 items-center justify-center rounded-full border border-[#3151d8]/30 bg-[#eef2ff] px-3 text-[12px] font-semibold text-[#3151d8] disabled:opacity-45"
-                      >
-                        {retryingJobId === job.job_id ? "重试中..." : "失败重试"}
-                      </button>
-                    ) : null}
-
-                    {resultObj?.id ? (
-                      <Link
-                        href={`/product/${resultObj.id}`}
-                        className="inline-flex h-8 items-center rounded-full border border-black/14 bg-white px-3 text-[12px] font-semibold text-black/78"
-                      >
-                        查看详情
-                      </Link>
-                    ) : null}
-                  </div>
-
-                  {job.temp_preview_url || job.supplement_temp_preview_url ? (
-                    <div className="mt-2 rounded-xl border border-black/10 bg-black/[0.02] p-2.5">
-                      <div className="text-[11px] font-medium text-black/62">暂存区图片（任务成功后自动删除）</div>
-                      <div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-4">
-                        {job.temp_preview_url ? (
-                          <button
-                            type="button"
-                            onClick={() => setPreviewModal({ src: job.temp_preview_url as string, title: `${job.file_name || "upload"} · 主图` })}
-                            className="overflow-hidden rounded-lg border border-black/10 bg-white text-left"
-                          >
-                            <Image
-                              src={job.temp_preview_url}
-                              alt={`${job.file_name || "upload"} 主图`}
-                              width={320}
-                              height={160}
-                              unoptimized
-                              className="h-20 w-full object-cover"
-                            />
-                            <div className="px-2 py-1 text-[11px] text-black/64">主图（点击放大）</div>
-                          </button>
-                        ) : null}
-                        {job.supplement_temp_preview_url ? (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setPreviewModal({ src: job.supplement_temp_preview_url as string, title: `${job.file_name || "upload"} · 补图` })
-                            }
-                            className="overflow-hidden rounded-lg border border-black/10 bg-white text-left"
-                          >
-                            <Image
-                              src={job.supplement_temp_preview_url}
-                              alt={`${job.file_name || "upload"} 补图`}
-                              width={320}
-                              height={160}
-                              unoptimized
-                              className="h-20 w-full object-cover"
-                            />
-                            <div className="px-2 py-1 text-[11px] text-black/64">补图（点击放大）</div>
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {job.status === "waiting_more" ? (
-                    <div className="mt-2 rounded-xl border border-[#f3c178]/40 bg-[#fff8ef] p-2.5">
-                      <div className="text-[12px] font-semibold text-[#9b5a00]">待补拍/补录：{(job.missing_fields || []).map((field) => missingFieldLabel(field)).join("、") || "关键信息"}</div>
-                      <div className="mt-1 text-[12px] text-black/66">建议：{job.required_view || "补拍另一面"}</div>
-
-                      <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-3">
-                        <select
-                          value={draft.category}
-                          onChange={(e) => updateResumeDraft(job.job_id, { category: e.target.value })}
-                          className="h-9 rounded-lg border border-black/12 bg-white px-2.5 text-[12px]"
-                        >
-                          <option value="">补录类别（可选）</option>
-                          {CATEGORIES.map((item) => (
-                            <option key={`${job.job_id}-${item.value}`} value={item.value}>
-                              {item.label}
-                            </option>
-                          ))}
-                        </select>
-                        <input
-                          value={draft.brand}
-                          onChange={(e) => updateResumeDraft(job.job_id, { brand: e.target.value })}
-                          placeholder="补录品牌（可选）"
-                          className="h-9 rounded-lg border border-black/12 bg-white px-2.5 text-[12px]"
-                        />
-                        <input
-                          value={draft.name}
-                          onChange={(e) => updateResumeDraft(job.job_id, { name: e.target.value })}
-                          placeholder="补录产品名（可选）"
-                          className="h-9 rounded-lg border border-black/12 bg-white px-2.5 text-[12px]"
-                        />
-                      </div>
-
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={(event) => updateResumeDraft(job.job_id, { image: event.target.files?.[0] || null })}
-                          className="h-8 rounded-lg border border-black/12 bg-white px-2 text-[12px] text-black/76 file:mr-2 file:rounded file:border-0 file:bg-black/6 file:px-2 file:py-1 file:text-[11px]"
-                        />
-                        <button
-                          type="button"
-                          disabled={resumingJobId === job.job_id}
-                          onClick={() => void resumeJob(job)}
-                          className="inline-flex h-8 items-center justify-center rounded-full bg-black px-3 text-[12px] font-semibold text-white disabled:bg-black/25"
-                        >
-                          {resumingJobId === job.job_id ? "继续处理中..." : "继续分析"}
-                        </button>
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {job.stage1_text ? (
-                    <details className="mt-2">
-                      <summary className="cursor-pointer text-[12px] font-medium text-black/76">Stage1 实时文本（美化）</summary>
-                      <div className="mt-2 rounded-xl border border-black/10 bg-[#fbfcff] p-2.5">
-                        {toVisionSections(job.stage1_text).map((section, idx) => (
-                          <div key={`${section.title}-${idx}`} className="mb-2 last:mb-0">
-                            <div className="text-[11px] font-semibold text-[#3151d8]">{section.title}</div>
-                            <pre className="mt-0.5 whitespace-pre-wrap text-[12px] leading-[1.55] text-black/74">{section.body || "未识别"}</pre>
-                          </div>
-                        ))}
-                      </div>
-                    </details>
-                  ) : null}
-
-                  {job.stage2_text ? (
-                    <details className="mt-2">
-                      <summary className="cursor-pointer text-[12px] font-medium text-black/76">Stage2 实时文本（格式化）</summary>
-                      <pre className="mt-2 max-h-72 overflow-auto rounded-xl border border-black/10 bg-[#f8fafc] p-2.5 text-[12px] leading-[1.55] text-black/74 whitespace-pre-wrap">
-                        {toPrettyStructText(job.stage2_text)}
-                      </pre>
-                    </details>
-                  ) : null}
-                </article>
-              );
-            })}
-            {sortedJobs.length === 0 ? <div className="text-[12px] text-black/52">暂无上传任务。</div> : null}
-          </div>
-        </div>
-
-        {result ? (
+        {manualResult || result ? (
           <div className="rounded-2xl border border-black/10 bg-black/[0.03] px-4 py-3.5 text-[13px] leading-[1.65] text-black/76">
-            <div>状态：{result.status || "-"}</div>
-            <div>入库 ID：{result.id || "-"}</div>
-            <div>模式：{result.mode || "-"}</div>
-            <div>品类：{result.category || "-"}</div>
-            <div>图片：{result.image_path || "-"}</div>
-            <div>JSON：{result.json_path || "-"}</div>
-            {result.doubao ? (
-              <>
-                <div className="mt-2 border-t border-black/8 pt-2">Doubao 流程：{result.doubao.pipeline_mode || "-"}</div>
-                <div>
-                  模型：vision={result.doubao.models?.vision || "-"} / struct={result.doubao.models?.struct || "-"}
-                </div>
-                <div>落盘(阶段1)：{result.doubao.artifacts?.vision || "-"}</div>
-                <div>落盘(阶段2)：{result.doubao.artifacts?.struct || "-"}</div>
-                <div>落盘(context)：{result.doubao.artifacts?.context || "-"}</div>
-              </>
-            ) : null}
+            <pre className="whitespace-pre-wrap">{buildIngestResultSummary((manualResult || result) as IngestResultLike)}</pre>
           </div>
         ) : null}
       </form>
@@ -727,6 +530,266 @@ export default function ProductIngestWorkbench() {
   );
 }
 
+function buildPairPayloads(
+  images: File[],
+  stage1ModelTier: ModelTier,
+  stage2ModelTier: ModelTier,
+): UploadCreatePayload[] {
+  const payloads: UploadCreatePayload[] = [];
+  for (let index = 0; index < images.length; index += 2) {
+    payloads.push({
+      image: images[index],
+      supplementImage: images[index + 1],
+      stage1ModelTier,
+      stage2ModelTier,
+    });
+  }
+  return payloads;
+}
+
+function parseUploadResult(job: UploadIngestJob): IngestResultLike | null {
+  if (!job.result || typeof job.result !== "object") return null;
+  return job.result as IngestResultLike;
+}
+
+function assembleUploadLiveText(job: UploadIngestJob | null): WorkbenchLiveTextState {
+  if (!job) return createEmptyLiveTextState();
+  const sections: string[] = [];
+  if (job.stage1_text) sections.push(`【Stage1】\n${job.stage1_text.trim()}`);
+  if (job.stage2_text) sections.push(`【Stage2】\n${job.stage2_text.trim()}`);
+  if (job.error?.detail) sections.push(`【错误】\n${job.error.detail}`);
+  if (sections.length === 0) {
+    const fallback = [job.stage_label || job.stage || "待命", job.message || ""].filter(Boolean).join(" | ");
+    if (fallback) sections.push(fallback);
+  }
+  return {
+    text: sections.join("\n\n"),
+    meta: { jobId: job.job_id },
+  };
+}
+
+function buildUploadPrettyText(job: UploadIngestJob | null): string {
+  if (!job) return "";
+  const blocks: string[] = [];
+  if (job.stage1_text) {
+    const stage1 = toVisionSections(job.stage1_text)
+      .map((section) => `【${section.title}】\n${section.body || "未识别"}`)
+      .join("\n\n");
+    blocks.push(`Stage1\n${stage1}`);
+  }
+  if (job.stage2_text) {
+    blocks.push(`Stage2\n${toPrettyStructText(job.stage2_text)}`);
+  }
+  if (job.status === "waiting_more") {
+    blocks.push(`待补拍/补录\n${(job.missing_fields || []).map((field) => missingFieldLabel(field)).join("、") || "关键信息"}`);
+  }
+  return blocks.join("\n\n");
+}
+
+function buildUploadCountersText(job: UploadIngestJob | null): string | null {
+  if (!job) return null;
+  const imageCount = Array.isArray(job.image_paths) ? job.image_paths.length : 0;
+  const fields = (job.missing_fields || []).map((field) => missingFieldLabel(field)).join("、");
+  const parts = [
+    imageCount > 0 ? `已转存图片 ${imageCount}` : null,
+    job.stage1_model_tier ? `Stage1 档位 ${job.stage1_model_tier}` : null,
+    job.stage2_model_tier ? `Stage2 档位 ${job.stage2_model_tier}` : null,
+    fields ? `待补字段 ${fields}` : null,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : null;
+}
+
+function renderUploadActiveMeta(job: UploadIngestJob) {
+  return (
+    <div className="space-y-1 text-[12px] text-black/58">
+      {job.required_view ? <div>建议补拍：{job.required_view}</div> : null}
+      {(job.temp_preview_url || job.supplement_temp_preview_url) && <div>暂存预览已保留，可在历史任务中放大查看。</div>}
+    </div>
+  );
+}
+
+function renderUploadJobActions({
+  job,
+  jobLoading,
+  onCancel,
+}: {
+  job: UploadIngestJob;
+  jobLoading: boolean;
+  onCancel: (jobId: string) => Promise<UploadIngestJob | null>;
+}) {
+  const running = job.status === "queued" || job.status === "running" || job.status === "cancelling";
+  return (
+    <>
+      {running ? (
+        <button
+          type="button"
+          onClick={() => void onCancel(job.job_id)}
+          disabled={jobLoading || job.status === "cancelling"}
+          className="inline-flex h-8 items-center justify-center rounded-full border border-[#ef4444]/40 bg-[#fff5f5] px-3 text-[12px] font-semibold text-[#b42318] disabled:opacity-45"
+        >
+          {job.status === "cancelling" ? "取消中..." : "终止任务"}
+        </button>
+      ) : null}
+
+      {job.result && typeof job.result === "object" && (job.result as IngestResultLike).id ? (
+        <Link
+          href={`/product/${(job.result as IngestResultLike).id}`}
+          className="inline-flex h-8 items-center rounded-full border border-black/14 bg-white px-3 text-[12px] font-semibold text-black/78"
+        >
+          查看详情
+        </Link>
+      ) : null}
+    </>
+  );
+}
+
+function renderUploadJobBody({
+  job,
+  draft,
+  onChangeDraft,
+  onPreview,
+  onResume,
+  canResume,
+  jobLoading,
+}: {
+  job: UploadIngestJob;
+  draft: ResumeDraft;
+  onChangeDraft: (jobId: string, patch: Partial<ResumeDraft>) => void;
+  onPreview: (value: PreviewModalState) => void;
+  onResume: (job: UploadIngestJob) => void;
+  canResume: boolean;
+  jobLoading: boolean;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="text-[12px] text-black/58">
+        stage: {job.stage || "-"} · 入库ID: {typeof job.result === "object" ? (job.result as IngestResultLike).id || "-" : "-"}
+      </div>
+
+      {job.temp_preview_url || job.supplement_temp_preview_url ? (
+        <div className="rounded-xl border border-black/10 bg-black/[0.02] p-2.5">
+          <div className="text-[11px] font-medium text-black/62">暂存区图片（任务成功后自动删除）</div>
+          <div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-4">
+            {job.temp_preview_url ? (
+              <button
+                type="button"
+                onClick={() => onPreview({ src: job.temp_preview_url as string, title: `${job.file_name || "upload"} · 主图` })}
+                className="overflow-hidden rounded-lg border border-black/10 bg-white text-left"
+              >
+                <Image
+                  src={job.temp_preview_url}
+                  alt={`${job.file_name || "upload"} 主图`}
+                  width={320}
+                  height={160}
+                  unoptimized
+                  className="h-20 w-full object-cover"
+                />
+                <div className="px-2 py-1 text-[11px] text-black/64">主图（点击放大）</div>
+              </button>
+            ) : null}
+            {job.supplement_temp_preview_url ? (
+              <button
+                type="button"
+                onClick={() => onPreview({ src: job.supplement_temp_preview_url as string, title: `${job.file_name || "upload"} · 补图` })}
+                className="overflow-hidden rounded-lg border border-black/10 bg-white text-left"
+              >
+                <Image
+                  src={job.supplement_temp_preview_url}
+                  alt={`${job.file_name || "upload"} 补图`}
+                  width={320}
+                  height={160}
+                  unoptimized
+                  className="h-20 w-full object-cover"
+                />
+                <div className="px-2 py-1 text-[11px] text-black/64">补图（点击放大）</div>
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {job.status === "waiting_more" ? (
+        <div className="rounded-xl border border-[#f3c178]/40 bg-[#fff8ef] p-2.5">
+          <div className="text-[12px] font-semibold text-[#9b5a00]">待补拍/补录：{(job.missing_fields || []).map((field) => missingFieldLabel(field)).join("、") || "关键信息"}</div>
+          <div className="mt-1 text-[12px] text-black/66">建议：{job.required_view || "补拍另一面"}</div>
+
+          <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-3">
+            <select
+              value={draft.category}
+              onChange={(event) => onChangeDraft(job.job_id, { category: event.target.value })}
+              className="h-9 rounded-lg border border-black/12 bg-white px-2.5 text-[12px]"
+            >
+              <option value="">补录类别（可选）</option>
+              {CATEGORIES.map((item) => (
+                <option key={`${job.job_id}-${item.value}`} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+            <input
+              value={draft.brand}
+              onChange={(event) => onChangeDraft(job.job_id, { brand: event.target.value })}
+              placeholder="补录品牌（可选）"
+              className="h-9 rounded-lg border border-black/12 bg-white px-2.5 text-[12px]"
+            />
+            <input
+              value={draft.name}
+              onChange={(event) => onChangeDraft(job.job_id, { name: event.target.value })}
+              placeholder="补录产品名（可选）"
+              className="h-9 rounded-lg border border-black/12 bg-white px-2.5 text-[12px]"
+            />
+          </div>
+
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(event) => onChangeDraft(job.job_id, { image: event.target.files?.[0] || null })}
+              className="h-8 rounded-lg border border-black/12 bg-white px-2 text-[12px] text-black/76 file:mr-2 file:rounded file:border-0 file:bg-black/6 file:px-2 file:py-1 file:text-[11px]"
+            />
+            <button
+              type="button"
+              disabled={!canResume || jobLoading}
+              onClick={() => onResume(job)}
+              className="inline-flex h-8 items-center justify-center rounded-full bg-black px-3 text-[12px] font-semibold text-white disabled:bg-black/25"
+            >
+              {jobLoading ? "继续处理中..." : "继续分析"}
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function buildCreateBatchError(successCount: number, total: number, errors: string[]): string {
+  const lines = [`任务创建完成：${successCount}/${total} 成功，${errors.length} 失败。`];
+  for (const item of errors.slice(0, 3)) {
+    lines.push(item);
+  }
+  return lines.join("\n");
+}
+
+function buildIngestResultSummary(result: IngestResultLike): string {
+  const lines = [
+    `状态：${result.status || "-"}`,
+    `入库 ID：${result.id || "-"}`,
+    `模式：${result.mode || "-"}`,
+    `品类：${result.category || "-"}`,
+    `图片：${result.image_path || "-"}`,
+    `JSON：${result.json_path || "-"}`,
+  ];
+  if (result.doubao) {
+    lines.push("");
+    lines.push(`Doubao 流程：${result.doubao.pipeline_mode || "-"}`);
+    lines.push(`模型：vision=${result.doubao.models?.vision || "-"} / struct=${result.doubao.models?.struct || "-"}`);
+    lines.push(`落盘(阶段1)：${result.doubao.artifacts?.vision || "-"}`);
+    lines.push(`落盘(阶段2)：${result.doubao.artifacts?.struct || "-"}`);
+    lines.push(`落盘(context)：${result.doubao.artifacts?.context || "-"}`);
+  }
+  return lines.join("\n");
+}
+
 function formatError(err: unknown): string {
   if (err instanceof Error && err.message) return err.message;
   if (typeof err === "string") return err;
@@ -735,35 +798,6 @@ function formatError(err: unknown): string {
   } catch {
     return String(err);
   }
-}
-
-function statusLabel(job: UploadIngestJob): string {
-  if (job.status === "done") return "成功";
-  if (job.status === "failed") return "失败";
-  if (job.status === "cancelled") return "已取消";
-  if (job.status === "cancelling") return "取消中";
-  if (job.status === "waiting_more") return "待补拍";
-  if (job.status === "queued") return "排队中";
-  const stage = String(job.stage || "").toLowerCase();
-  if (stage === "queued") return "排队中";
-  if (stage === "uploading") return "上传中";
-  if (stage === "converting") return "转换中";
-  if (stage === "stage1") return "Stage1";
-  if (stage === "stage2") return "Stage2";
-  return "进行中";
-}
-
-function statusClassName(job: UploadIngestJob): string {
-  if (job.status === "done") return "bg-[#e7f6ec] text-[#027a48]";
-  if (job.status === "failed") return "bg-[#fdebec] text-[#b42318]";
-  if (job.status === "cancelled" || job.status === "cancelling") return "bg-[#ffeceb] text-[#b42318]";
-  if (job.status === "waiting_more") return "bg-[#fff4e6] text-[#9b5a00]";
-  if (job.status === "queued") return "bg-[#eef2ff] text-[#3151d8]";
-  const stage = String(job.stage || "").toLowerCase();
-  if (stage === "queued" || stage === "uploading" || stage === "converting" || stage === "stage1" || stage === "stage2") {
-    return "bg-[#eef2ff] text-[#3151d8]";
-  }
-  return "bg-black/6 text-black/60";
 }
 
 function missingFieldLabel(field: string): string {

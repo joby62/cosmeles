@@ -57,7 +57,7 @@ export default function ProductRouteMappingGenerator({
   } = useProductWorkbenchJobs<ProductRouteMappingBuildRequest, ProductRouteMappingBuildResponse>({
     storageKey: ACTIVE_JOB_STORAGE_KEY,
     listLimit: 40,
-    parseResult: parseRouteMappingResult,
+    parseResult: (job) => parseRouteMappingResult(job.result as Record<string, unknown> | undefined),
     service: jobService,
   });
 

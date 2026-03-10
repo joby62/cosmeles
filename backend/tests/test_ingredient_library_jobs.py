@@ -129,6 +129,64 @@ def test_ingredient_library_background_job_can_cancel(test_client, monkeypatch: 
     assert final["cancel_requested"] is True
 
 
+def test_ingredient_library_background_job_failed_can_retry_with_same_packages(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, _ = test_client
+    calls: list[list[str]] = []
+
+    def fake_build(payload, db, event_callback=None, stop_checker=None):
+        _ = db
+        _ = stop_checker
+        calls.append(list(payload.normalization_packages or []))
+        if event_callback:
+            event_callback(
+                {
+                    "step": "ingredient_build_start",
+                    "scanned_products": 3,
+                    "unique_ingredients": 2,
+                    "text": "start",
+                }
+            )
+        if len(calls) == 1:
+            raise RuntimeError("synthetic ingredient retry failure")
+        return IngredientLibraryBuildResponse(
+            status="ok",
+            scanned_products=3,
+            unique_ingredients=2,
+            backfilled_from_storage=0,
+            submitted_to_model=2,
+            created=2,
+            updated=0,
+            skipped=0,
+            failed=0,
+            items=[],
+            failures=[],
+        )
+
+    monkeypatch.setattr(products_routes, "_build_ingredient_library_impl", fake_build)
+
+    created = client.post("/api/products/ingredients/library/jobs", json={"normalization_packages": ["unicode_nfkc", "whitespace_fold"]})
+    assert created.status_code == 200
+    job_id = created.json()["job_id"]
+    assert created.json()["normalization_packages"] == ["unicode_nfkc", "whitespace_fold"]
+
+    failed = _wait_for_job_status(client, job_id=job_id, expected={"failed"})
+    assert failed["status"] == "failed"
+    assert failed["normalization_packages"] == ["unicode_nfkc", "whitespace_fold"]
+
+    retried = client.post(f"/api/products/ingredients/library/jobs/{job_id}/retry")
+    assert retried.status_code == 200
+    assert retried.json()["status"] in {"queued", "running"}
+    assert retried.json()["normalization_packages"] == ["unicode_nfkc", "whitespace_fold"]
+
+    done = _wait_for_job_status(client, job_id=job_id, expected={"done"})
+    assert done["status"] == "done"
+    assert done["normalization_packages"] == ["unicode_nfkc", "whitespace_fold"]
+    assert calls == [
+        ["unicode_nfkc", "whitespace_fold"],
+        ["unicode_nfkc", "whitespace_fold"],
+    ]
+
+
 def test_ingredient_library_orphan_running_job_is_failed_with_context(test_client, monkeypatch: pytest.MonkeyPatch):
     client, _ = test_client
 

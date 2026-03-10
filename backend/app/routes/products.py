@@ -14,7 +14,7 @@ from typing import Any, Callable
 
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func
+from sqlalchemy import inspect, select, func, text
 from sqlalchemy.exc import OperationalError
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import sessionmaker
@@ -514,6 +514,7 @@ def create_ingredient_library_build_job(
         category=normalized_category,
         force_regenerate=bool(payload.force_regenerate),
         max_sources_per_ingredient=int(payload.max_sources_per_ingredient),
+        normalization_packages_json=json.dumps(normalized_packages, ensure_ascii=False),
         stage="queued",
         stage_label=_ingredient_build_stage_label("queued"),
         message="任务已创建，等待执行。",
@@ -541,23 +542,7 @@ def create_ingredient_library_build_job(
     db.add(rec)
     db.commit()
     db.refresh(rec)
-
-    SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=db.get_bind())
-
-    def worker() -> None:
-        local_db = SessionMaker()
-        try:
-            build_payload = IngredientLibraryBuildRequest(
-                category=normalized_category,
-                force_regenerate=bool(payload.force_regenerate),
-                max_sources_per_ingredient=int(payload.max_sources_per_ingredient),
-                normalization_packages=normalized_packages,
-            )
-            _run_ingredient_library_build_job(job_id=rec.job_id, payload=build_payload, db=local_db)
-        finally:
-            local_db.close()
-
-    threading.Thread(target=worker, daemon=True).start()
+    _submit_ingredient_build_job(bind=db.get_bind(), job_id=rec.job_id)
     return _to_ingredient_build_job_view(rec)
 
 
@@ -639,6 +624,48 @@ def cancel_ingredient_library_build_job(job_id: str, db: Session = Depends(get_d
         ) from exc
     db.refresh(rec)
     return IngredientLibraryBuildJobCancelResponse(status="ok", job=_to_ingredient_build_job_view(rec))
+
+
+@router.post("/products/ingredients/library/jobs/{job_id}/retry", response_model=IngredientLibraryBuildJobView)
+def retry_ingredient_library_build_job(job_id: str, db: Session = Depends(get_db)):
+    _ensure_ingredient_build_job_table(db)
+    rec = db.get(IngredientLibraryBuildJob, job_id)
+    if rec is None:
+        raise HTTPException(status_code=404, detail=f"Ingredient build job '{job_id}' not found.")
+
+    status = str(rec.status or "").strip().lower()
+    if status not in {"failed", "cancelled"}:
+        raise HTTPException(status_code=409, detail=f"Only failed/cancelled job can retry. current_status={status}.")
+
+    now = now_iso()
+    rec.status = "queued"
+    rec.stage = "queued"
+    rec.stage_label = _ingredient_build_stage_label("queued")
+    rec.message = "重试任务已入队，等待执行。"
+    rec.percent = 0
+    rec.current_index = None
+    rec.current_total = None
+    rec.current_ingredient_id = None
+    rec.current_ingredient_name = None
+    rec.scanned_products = 0
+    rec.unique_ingredients = 0
+    rec.backfilled_from_storage = 0
+    rec.submitted_to_model = 0
+    rec.created_count = 0
+    rec.updated_count = 0
+    rec.skipped_count = 0
+    rec.failed_count = 0
+    rec.cancel_requested = False
+    rec.result_json = None
+    rec.error_json = None
+    rec.started_at = None
+    rec.finished_at = None
+    rec.updated_at = now
+    db.add(rec)
+    db.commit()
+    db.refresh(rec)
+    _submit_ingredient_build_job(bind=db.get_bind(), job_id=rec.job_id)
+    return _to_ingredient_build_job_view(rec)
 
 
 @router.post("/products/ingredients/library/batch-delete", response_model=IngredientLibraryBatchDeleteResponse)
@@ -2013,6 +2040,41 @@ def _run_ingredient_library_build_job(
         )
 
 
+def _submit_ingredient_build_job(*, bind: Any, job_id: str) -> None:
+    SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=bind)
+
+    def worker() -> None:
+        local_db = SessionMaker()
+        try:
+            rec = local_db.get(IngredientLibraryBuildJob, job_id)
+            if rec is None:
+                return
+            build_payload = IngredientLibraryBuildRequest(
+                category=str(rec.category or "").strip() or None,
+                force_regenerate=bool(rec.force_regenerate),
+                max_sources_per_ingredient=int(rec.max_sources_per_ingredient or 8),
+                normalization_packages=_ingredient_build_job_packages(rec),
+            )
+            _run_ingredient_library_build_job(job_id=job_id, payload=build_payload, db=local_db)
+        finally:
+            local_db.close()
+
+    threading.Thread(target=worker, daemon=True).start()
+
+
+def _ingredient_build_job_packages(rec: IngredientLibraryBuildJob) -> list[str]:
+    raw = str(rec.normalization_packages_json or "").strip()
+    if not raw:
+        return _default_ingredient_normalization_packages()
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return _default_ingredient_normalization_packages()
+    if not isinstance(parsed, list):
+        return _default_ingredient_normalization_packages()
+    return _normalize_ingredient_normalization_packages([str(item) for item in parsed])
+
+
 def _reconcile_ingredient_build_job_state(
     *,
     db: Session,
@@ -2339,6 +2401,7 @@ def _to_ingredient_build_job_view(rec: IngredientLibraryBuildJob) -> IngredientL
         category=str(rec.category or "").strip() or None,
         force_regenerate=bool(rec.force_regenerate),
         max_sources_per_ingredient=int(rec.max_sources_per_ingredient or 8),
+        normalization_packages=_ingredient_build_job_packages(rec),
         stage=str(rec.stage or "").strip() or None,
         stage_label=str(rec.stage_label or "").strip() or None,
         message=str(rec.message or "").strip() or None,
@@ -6332,6 +6395,15 @@ def _ensure_ingredient_alias_tables(db: Session) -> None:
 def _ensure_ingredient_build_job_table(db: Session) -> None:
     bind = db.get_bind()
     IngredientLibraryBuildJob.__table__.create(bind=bind, checkfirst=True)
+    inspector = inspect(bind)
+    columns = {item["name"] for item in inspector.get_columns("ingredient_library_build_jobs")}
+    statements: list[str] = []
+    if "normalization_packages_json" not in columns:
+        statements.append("ALTER TABLE ingredient_library_build_jobs ADD COLUMN normalization_packages_json TEXT NOT NULL DEFAULT '[]'")
+    if statements:
+        with bind.begin() as conn:
+            for stmt in statements:
+                conn.execute(text(stmt))
 
 
 def _ensure_product_route_mapping_index_table(db: Session) -> None:

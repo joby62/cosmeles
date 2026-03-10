@@ -318,6 +318,7 @@ class IngredientLibraryBuildJobView(BaseModel):
     category: Optional[str] = None
     force_regenerate: bool = False
     max_sources_per_ingredient: int = 8
+    normalization_packages: List[str] = []
     stage: Optional[str] = None
     stage_label: Optional[str] = None
     message: Optional[str] = None
