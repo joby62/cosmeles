@@ -766,20 +766,9 @@ def retry_upload_ingest_job(job_id: str, db: Session = Depends(get_db)):
     if status not in {"failed", "cancelled"}:
         raise HTTPException(status_code=409, detail=f"Only failed/cancelled job can retry. current_status={status}.")
 
-    primary_temp = str(rec.temp_upload_path or "").strip()
-    if not primary_temp:
-        raise HTTPException(status_code=409, detail="[stage=upload_job_retry_prepare] temp_upload_path missing; cannot retry from tmp images.")
-    if not exists_rel_path(primary_temp):
-        raise HTTPException(
-            status_code=404,
-            detail=f"[stage=upload_job_retry_prepare] primary temp image missing: {primary_temp}",
-        )
-    supplement_temp = str(rec.supplement_temp_upload_path or "").strip()
-    if supplement_temp and not exists_rel_path(supplement_temp):
-        raise HTTPException(
-            status_code=404,
-            detail=f"[stage=upload_job_retry_prepare] supplement temp image missing: {supplement_temp}",
-        )
+    retry_block = _get_upload_job_retry_block(rec)
+    if retry_block is not None:
+        raise HTTPException(status_code=retry_block["http_status"], detail=retry_block["detail"])
 
     now = now_iso()
     rec.status = "queued"
@@ -863,6 +852,10 @@ async def resume_upload_ingest_job(
     status = str(rec.status or "").strip().lower()
     if status != "waiting_more":
         raise HTTPException(status_code=409, detail=f"Only waiting_more job can resume. current_status={status}.")
+
+    resume_block = _get_upload_job_resume_block(rec)
+    if resume_block is not None:
+        raise HTTPException(status_code=resume_block["http_status"], detail=resume_block["detail"])
 
     if image and file:
         raise HTTPException(status_code=400, detail="Please provide only one file field: image or file.")
@@ -1787,6 +1780,50 @@ def _upload_ingest_job_orphan_reason(*, rec: UploadIngestJob, now_utc: datetime)
     return None
 
 
+def _get_upload_job_retry_block(rec: UploadIngestJob) -> dict[str, Any] | None:
+    primary_temp = str(rec.temp_upload_path or "").strip()
+    if not primary_temp:
+        return {
+            "http_status": 409,
+            "detail": "[stage=upload_job_retry_prepare] temp_upload_path missing; upload temp context lost, cannot retry.",
+        }
+    if not exists_rel_path(primary_temp):
+        return {
+            "http_status": 404,
+            "detail": f"[stage=upload_job_retry_prepare] primary temp image missing: {primary_temp}. upload temp context lost, cannot retry.",
+        }
+
+    supplement_temp = str(rec.supplement_temp_upload_path or "").strip()
+    if supplement_temp and not exists_rel_path(supplement_temp):
+        return {
+            "http_status": 404,
+            "detail": f"[stage=upload_job_retry_prepare] supplement temp image missing: {supplement_temp}. upload temp context lost, cannot retry.",
+        }
+    return None
+
+
+def _get_upload_job_resume_block(rec: UploadIngestJob) -> dict[str, Any] | None:
+    primary_temp = str(rec.temp_upload_path or "").strip()
+    if not primary_temp:
+        return {
+            "http_status": 409,
+            "detail": "[stage=upload_job_resume_prepare] temp_upload_path missing; waiting_more context lost, cannot resume. Please create a new upload job.",
+        }
+    if not exists_rel_path(primary_temp):
+        return {
+            "http_status": 404,
+            "detail": f"[stage=upload_job_resume_prepare] primary temp image missing: {primary_temp}. waiting_more context lost, cannot resume. Please create a new upload job.",
+        }
+
+    context_rel = f"doubao_runs/{rec.job_id}/stage1_context.json"
+    if not exists_rel_path(context_rel):
+        return {
+            "http_status": 404,
+            "detail": f"[stage=upload_job_resume_prepare] stage1 context missing: {context_rel}. waiting_more context lost, cannot resume. Please create a new upload job.",
+        }
+    return None
+
+
 def _to_upload_ingest_job_view(rec: UploadIngestJob) -> UploadIngestJobView:
     result = _safe_json_dict(rec.result_json) if str(rec.result_json or "").strip() else None
     models = _safe_json_dict(rec.models_json) if str(rec.models_json or "").strip() else None
@@ -1806,6 +1843,9 @@ def _to_upload_ingest_job_view(rec: UploadIngestJob) -> UploadIngestJobView:
     has_primary_temp = bool(primary_temp and exists_rel_path(primary_temp))
     has_supplement_temp = bool(supplement_temp and exists_rel_path(supplement_temp))
     status = str(rec.status or "queued").strip().lower() or "queued"
+    retry_block = _get_upload_job_retry_block(rec) if status in {"failed", "cancelled"} else None
+    resume_block = _get_upload_job_resume_block(rec) if status == "waiting_more" else None
+    artifact_context_detail = resume_block["detail"] if resume_block is not None else (retry_block["detail"] if retry_block is not None else None)
 
     return UploadIngestJobView(
         status=status,
@@ -1818,9 +1858,14 @@ def _to_upload_ingest_job_view(rec: UploadIngestJob) -> UploadIngestJobView:
         percent=max(0, min(100, int(rec.percent or 0))),
         image_path=str(rec.image_path or "").strip() or None,
         image_paths=[str(item or "").strip() for item in image_paths_raw if str(item or "").strip()],
+        has_primary_temp_preview=has_primary_temp,
+        has_supplement_temp_preview=has_supplement_temp,
         temp_preview_url=f"/api/upload/jobs/{rec.job_id}/preview?slot=primary" if has_primary_temp else None,
         supplement_temp_preview_url=f"/api/upload/jobs/{rec.job_id}/preview?slot=supplement" if has_supplement_temp else None,
-        can_retry=bool(status in {"failed", "cancelled"} and has_primary_temp),
+        can_retry=bool(status in {"failed", "cancelled"} and retry_block is None),
+        can_resume=bool(status == "waiting_more" and resume_block is None),
+        artifact_context_lost=bool(artifact_context_detail),
+        artifact_context_detail=artifact_context_detail,
         category_override=str(rec.category_override or "").strip() or None,
         brand_override=str(rec.brand_override or "").strip() or None,
         name_override=str(rec.name_override or "").strip() or None,

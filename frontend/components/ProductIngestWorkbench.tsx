@@ -480,6 +480,16 @@ export default function ProductIngestWorkbench() {
             liveTitle: "实时文本",
             prettyTitle: "格式化文本",
             renderActiveMeta: (job) => renderUploadActiveMeta(job),
+            renderActiveBody: (job) =>
+              renderUploadJobBody({
+                job,
+                draft: resumeDrafts[job.job_id] || EMPTY_DRAFT,
+                onChangeDraft: updateResumeDraft,
+                onPreview: setPreviewModal,
+                onResume: handleResumeJob,
+                canResume: Boolean(resumeJob) && Boolean(job.can_resume),
+                jobLoading,
+              }),
             renderJobActions: (job) => renderUploadJobLinks(job),
             renderJobBody: (job) =>
               renderUploadJobBody({
@@ -488,7 +498,7 @@ export default function ProductIngestWorkbench() {
                 onChangeDraft: updateResumeDraft,
                 onPreview: setPreviewModal,
                 onResume: handleResumeJob,
-                canResume: Boolean(resumeJob),
+                canResume: Boolean(resumeJob) && Boolean(job.can_resume),
                 jobLoading,
               }),
           }}
@@ -612,7 +622,12 @@ function renderUploadActiveMeta(job: UploadIngestJob) {
   return (
     <div className="space-y-1 text-[12px] text-black/58">
       {job.required_view ? <div>建议补拍：{job.required_view}</div> : null}
-      {(job.temp_preview_url || job.supplement_temp_preview_url) && <div>暂存预览已保留，可在历史任务中放大查看。</div>}
+      {job.artifact_context_lost ? (
+        <div className="text-[#b42318]">上传暂存上下文已丢失，详见下方阻断原因。</div>
+      ) : null}
+      {(job.temp_preview_url || job.supplement_temp_preview_url) && !job.artifact_context_lost ? (
+        <div>暂存预览已保留，可在当前任务或历史任务中放大查看。</div>
+      ) : null}
     </div>
   );
 }
@@ -655,6 +670,7 @@ function renderUploadJobBody({
   jobLoading: boolean;
 }) {
   const resultId = getIngestResultId(job.result);
+  const actionBlockedDetail = job.artifact_context_lost ? job.artifact_context_detail || "上传暂存上下文已丢失，当前任务不可继续。" : null;
   return (
     <div className="space-y-2">
       <div className="text-[12px] text-black/58">
@@ -703,7 +719,14 @@ function renderUploadJobBody({
         </div>
       ) : null}
 
-      {job.status === "waiting_more" ? (
+      {actionBlockedDetail ? (
+        <div className="rounded-xl border border-[#ef4444]/30 bg-[#fff5f5] p-2.5">
+          <div className="text-[12px] font-semibold text-[#b42318]">当前任务上下文已失效</div>
+          <div className="mt-1 whitespace-pre-wrap text-[12px] leading-[1.55] text-[#b42318]">{actionBlockedDetail}</div>
+        </div>
+      ) : null}
+
+      {job.status === "waiting_more" && !actionBlockedDetail ? (
         <div className="rounded-xl border border-[#f3c178]/40 bg-[#fff8ef] p-2.5">
           <div className="text-[12px] font-semibold text-[#9b5a00]">待补拍/补录：{(job.missing_fields || []).map((field) => missingFieldLabel(field)).join("、") || "关键信息"}</div>
           <div className="mt-1 text-[12px] text-black/66">建议：{job.required_view || "补拍另一面"}</div>

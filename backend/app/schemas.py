@@ -360,9 +360,14 @@ class UploadIngestJobView(BaseModel):
     percent: int = Field(default=0, ge=0, le=100)
     image_path: Optional[str] = None
     image_paths: List[str] = []
+    has_primary_temp_preview: bool = False
+    has_supplement_temp_preview: bool = False
     temp_preview_url: Optional[str] = None
     supplement_temp_preview_url: Optional[str] = None
     can_retry: bool = False
+    can_resume: bool = False
+    artifact_context_lost: bool = False
+    artifact_context_detail: Optional[str] = None
     category_override: Optional[str] = None
     brand_override: Optional[str] = None
     name_override: Optional[str] = None

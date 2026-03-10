@@ -2142,9 +2142,14 @@ export type UploadIngestJob = {
   percent: number;
   image_path?: string | null;
   image_paths: string[];
+  has_primary_temp_preview: boolean;
+  has_supplement_temp_preview: boolean;
   temp_preview_url?: string | null;
   supplement_temp_preview_url?: string | null;
   can_retry: boolean;
+  can_resume: boolean;
+  artifact_context_lost: boolean;
+  artifact_context_detail?: string | null;
   category_override?: string | null;
   brand_override?: string | null;
   name_override?: string | null;

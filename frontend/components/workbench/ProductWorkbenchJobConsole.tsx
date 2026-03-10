@@ -27,6 +27,7 @@ export type ProductWorkbenchJobConsoleProps<TJob extends WorkbenchJobLike = Prod
   prettyTitle?: string;
   formatActiveMessage?: (job: TJob | null) => string;
   renderActiveMeta?: (job: TJob) => ReactNode;
+  renderActiveBody?: (job: TJob) => ReactNode;
   renderJobActions?: (job: TJob) => ReactNode;
   renderJobBody?: (job: TJob) => ReactNode;
 };
@@ -54,6 +55,7 @@ export default function ProductWorkbenchJobConsole<TJob extends WorkbenchJobLike
   prettyTitle = "最终美化文本",
   formatActiveMessage,
   renderActiveMeta,
+  renderActiveBody,
   renderJobActions,
   renderJobBody,
 }: ProductWorkbenchJobConsoleProps<TJob>) {
@@ -79,6 +81,7 @@ export default function ProductWorkbenchJobConsole<TJob extends WorkbenchJobLike
         {activeJob && countersText ? <div className="mt-2 text-[12px] text-black/58">{countersText}</div> : null}
         {activeJob?.error?.detail ? <div className="mt-2 text-[12px] text-[#b42318]">{activeJob.error.detail}</div> : null}
         {activeJob && renderActiveMeta ? <div className="mt-2">{renderActiveMeta(activeJob)}</div> : null}
+        {activeJob && renderActiveBody ? <div className="mt-3">{renderActiveBody(activeJob)}</div> : null}
       </div>
 
       {(liveText || prettyText || activeRunning) && (
@@ -144,7 +147,7 @@ export default function ProductWorkbenchJobConsole<TJob extends WorkbenchJobLike
                   </div>
                 ) : null}
                 {renderJobActions ? <div className="mt-2 flex flex-wrap items-center gap-2">{renderJobActions(job)}</div> : null}
-                {renderJobBody ? <div className="mt-2">{renderJobBody(job)}</div> : null}
+                {renderJobBody && (!activeJob || !renderActiveBody || activeJob.job_id !== job.job_id) ? <div className="mt-2">{renderJobBody(job)}</div> : null}
               </div>
             );
           })}
