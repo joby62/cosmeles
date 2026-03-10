@@ -56,6 +56,8 @@ class Settings(BaseSettings):
     max_upload_bytes: int = 8 * 1024 * 1024  # 8MB
     # 上传分析后台任务并发上限（2C4G 推荐 2）
     upload_ingest_max_concurrency: int = 2
+    # 产品工作台后台任务并发上限（2C4G 推荐 1）
+    product_workbench_max_concurrency: int = 1
 
     # === Pydantic v2 配置 ===
     model_config = SettingsConfigDict(

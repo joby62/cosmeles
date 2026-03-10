@@ -1,21 +1,26 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Product,
   ProductDedupSuggestResponse,
-  SSEEvent,
+  ProductWorkbenchJob,
+  cancelProductDedupJob,
+  createProductDedupJob,
   deleteProductsBatch,
+  fetchProductDedupJob,
+  listProductDedupJobs,
   resolveImageUrl,
-  suggestProductDuplicatesStream,
+  retryProductDedupJob,
 } from "@/lib/api";
 import { CATEGORY_CONFIG } from "@/lib/catalog";
 
 const AUTO_SELECT_CONFIDENCE_GT = 95;
 const MIN_CONFIDENCE_FOR_API = AUTO_SELECT_CONFIDENCE_GT + 1;
+const ACTIVE_JOB_STORAGE_KEY = "dedup-active-job-id";
 const MODEL_TIER_OPTIONS: Array<{ value: ModelTier; label: string }> = [
   { value: "mini", label: "Mini" },
   { value: "lite", label: "Lite" },
@@ -33,17 +38,18 @@ export default function ProductDedupManager({
   const router = useRouter();
   const [selectedCategory, setSelectedCategory] = useState<string>("");
   const [selectedModelTier, setSelectedModelTier] = useState<ModelTier>("pro");
-  const [scanning, setScanning] = useState(false);
+
+  const [jobLoading, setJobLoading] = useState(false);
+  const [jobsLoading, setJobsLoading] = useState(false);
+  const [jobs, setJobs] = useState<ProductWorkbenchJob[]>([]);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [activeJob, setActiveJob] = useState<ProductWorkbenchJob | null>(null);
+
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<ProductDedupSuggestResponse | null>(null);
   const [selectedRemoveIds, setSelectedRemoveIds] = useState<string[]>([]);
   const [deleteSummary, setDeleteSummary] = useState<string | null>(null);
-  const [streamRawText, setStreamRawText] = useState("");
-  const [streamPrettyText, setStreamPrettyText] = useState("");
-  const [progressHint, setProgressHint] = useState<string>("");
-  const streamQueueRef = useRef<string[]>([]);
-  const streamTimerRef = useRef<number | null>(null);
 
   const categoryStats = useMemo(() => {
     const map = new Map<string, number>();
@@ -53,6 +59,11 @@ export default function ProductDedupManager({
     }
     return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
   }, [initialProducts]);
+
+  const sortedJobs = useMemo(
+    () => [...jobs].sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || ""))),
+    [jobs],
+  );
 
   const productMap = useMemo(() => {
     const map = new Map<string, Product>();
@@ -65,89 +76,154 @@ export default function ProductDedupManager({
     return new Set((report?.suggestions || []).map((item) => item.keep_id));
   }, [report?.suggestions]);
 
-  useEffect(() => {
-    return () => {
-      stopRawTextDrainer();
-      streamQueueRef.current = [];
-    };
+  const activeRunning = activeJob?.status === "queued" || activeJob?.status === "running" || activeJob?.status === "cancelling";
+  const progressValue = Math.max(0, Math.min(100, Number(activeJob?.percent || 0)));
+  const streamRawText = activeJob?.logs?.join("\n") || "";
+  const streamPrettyText = report ? buildPrettySummary(report) : "";
+
+  const rememberActiveJob = useCallback((jobId: string) => {
+    const value = String(jobId || "").trim();
+    if (!value) return;
+    window.localStorage.setItem(ACTIVE_JOB_STORAGE_KEY, value);
+    setActiveJobId(value);
   }, []);
 
+  const clearActiveJob = useCallback(() => {
+    window.localStorage.removeItem(ACTIVE_JOB_STORAGE_KEY);
+    setActiveJobId(null);
+  }, []);
+
+  const loadJobs = useCallback(async () => {
+    setJobsLoading(true);
+    try {
+      const rows = await listProductDedupJobs({ limit: 30, offset: 0 });
+      setJobs(rows);
+      if (!activeJobId) {
+        const running = rows.find((item) => item.status === "queued" || item.status === "running" || item.status === "cancelling");
+        if (running) rememberActiveJob(running.job_id);
+      }
+      const latestDone = rows.find((item) => item.status === "done" && item.result && typeof item.result === "object");
+      const parsed = parseDedupResult(latestDone?.result as Record<string, unknown> | undefined);
+      if (parsed) {
+        setReport(parsed);
+        setSelectedRemoveIds(Array.from(new Set(parsed.suggestions.flatMap((item) => item.remove_ids))));
+      }
+    } catch (err) {
+      setError(formatErrorDetail(err));
+      setJobs([]);
+    } finally {
+      setJobsLoading(false);
+    }
+  }, [activeJobId, rememberActiveJob]);
+
+  useEffect(() => {
+    const raw = window.localStorage.getItem(ACTIVE_JOB_STORAGE_KEY);
+    if (raw && raw.trim()) setActiveJobId(raw.trim());
+    void loadJobs();
+  }, [loadJobs]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      void loadJobs();
+    }, 2800);
+    return () => window.clearInterval(timer);
+  }, [loadJobs]);
+
+  useEffect(() => {
+    if (!activeJobId) {
+      setActiveJob(null);
+      return;
+    }
+    let cancelled = false;
+    let timer: number | null = null;
+
+    const pull = async () => {
+      try {
+        const job = await fetchProductDedupJob(activeJobId);
+        if (cancelled) return;
+        setActiveJob(job);
+        const parsed = parseDedupResult(job.result as Record<string, unknown> | undefined);
+        if (parsed) {
+          setReport(parsed);
+          setSelectedRemoveIds(Array.from(new Set(parsed.suggestions.flatMap((item) => item.remove_ids))));
+        }
+        if (job.status === "done" || job.status === "failed" || job.status === "cancelled") {
+          clearActiveJob();
+          void loadJobs();
+          return;
+        }
+      } catch (err) {
+        if (cancelled) return;
+        setError(formatErrorDetail(err));
+      }
+      if (cancelled) return;
+      timer = window.setTimeout(() => {
+        void pull();
+      }, 2200);
+    };
+
+    void pull();
+    return () => {
+      cancelled = true;
+      if (timer != null) window.clearTimeout(timer);
+    };
+  }, [activeJobId, clearActiveJob, loadJobs]);
+
   async function runDedupScan() {
-    setScanning(true);
+    if (activeRunning) return;
+    setJobLoading(true);
     setError(null);
     setDeleteSummary(null);
     setReport(null);
     setSelectedRemoveIds([]);
-    setStreamRawText("");
-    setStreamPrettyText("");
-    setProgressHint("准备开始同品类两两分析...");
-    streamQueueRef.current = [];
-    stopRawTextDrainer();
 
     try {
       const maxScanProducts = Math.max(1, Math.min(500, initialProducts.length || 1));
-      const result = await suggestProductDuplicatesStream(
-        {
-          category: selectedCategory || undefined,
-          model_tier: selectedModelTier,
-          max_scan_products: maxScanProducts,
-          compare_batch_size: 1,
-          min_confidence: MIN_CONFIDENCE_FOR_API,
-        },
-        (event) => onStreamEvent(event),
-      );
-
-      setReport(result);
-      setSelectedRemoveIds(Array.from(new Set(result.suggestions.flatMap((item) => item.remove_ids))));
-      setStreamPrettyText(buildPrettySummary(result));
-      setStreamRawText((prev) => (prev.trim() ? prev : collectAnalysisText(result)));
-      setProgressHint(
-        result.suggestions.length > 0
-          ? `分析完成：发现 ${result.suggestions.length} 组高重合，已自动勾选待删除 trace_id。`
-          : `分析完成：未命中 >${AUTO_SELECT_CONFIDENCE_GT}% 的两两重合项。`,
-      );
+      const job = await createProductDedupJob({
+        category: selectedCategory || undefined,
+        model_tier: selectedModelTier,
+        max_scan_products: maxScanProducts,
+        compare_batch_size: 1,
+        min_confidence: MIN_CONFIDENCE_FOR_API,
+      });
+      setActiveJob(job);
+      rememberActiveJob(job.job_id);
+      await loadJobs();
     } catch (err) {
       setError(formatErrorDetail(err));
     } finally {
-      setScanning(false);
+      setJobLoading(false);
     }
   }
 
-  function onStreamEvent(event: SSEEvent) {
-    if (event.event !== "progress") return;
-    const step = String(event.data.step || "");
-    const text = String(event.data.text || "");
-    if (text) enqueueRawDelta(`${text}\n`);
-    if (step) setProgressHint(formatProgressHint(event.data));
+  async function cancelActiveJob() {
+    if (!activeJob) return;
+    setJobLoading(true);
+    setError(null);
+    try {
+      const resp = await cancelProductDedupJob(activeJob.job_id);
+      setActiveJob(resp.job);
+      await loadJobs();
+    } catch (err) {
+      setError(formatErrorDetail(err));
+    } finally {
+      setJobLoading(false);
+    }
   }
 
-  function enqueueRawDelta(chunk: string) {
-    const value = String(chunk || "");
-    if (!value) return;
-    streamQueueRef.current.push(value);
-    if (streamTimerRef.current != null) return;
-    streamTimerRef.current = window.setInterval(() => {
-      const queue = streamQueueRef.current;
-      if (queue.length === 0) {
-        stopRawTextDrainer();
-        return;
-      }
-      const head = queue[0];
-      if (!head) {
-        queue.shift();
-        return;
-      }
-      const nextChar = head[0];
-      queue[0] = head.slice(1);
-      if (!queue[0]) queue.shift();
-      setStreamRawText((prev) => prev + nextChar);
-    }, 16);
-  }
-
-  function stopRawTextDrainer() {
-    if (streamTimerRef.current == null) return;
-    window.clearInterval(streamTimerRef.current);
-    streamTimerRef.current = null;
+  async function retryJob(jobId: string) {
+    setJobLoading(true);
+    setError(null);
+    try {
+      const job = await retryProductDedupJob(jobId);
+      setActiveJob(job);
+      rememberActiveJob(job.job_id);
+      await loadJobs();
+    } catch (err) {
+      setError(formatErrorDetail(err));
+    } finally {
+      setJobLoading(false);
+    }
   }
 
   function toggleRemove(productId: string, checked: boolean) {
@@ -177,6 +253,7 @@ export default function ProductDedupManager({
       setSelectedRemoveIds([]);
       setReport(null);
       router.refresh();
+      await loadJobs();
     } catch (err) {
       setError(formatErrorDetail(err));
     } finally {
@@ -193,7 +270,7 @@ export default function ProductDedupManager({
           </Link>
         ) : null}
         <span className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/62">
-          Stage B · AI 重合度检测（流式）
+          Stage B · AI 重合度检测（后台任务）
         </span>
         <span className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/62">
           模型档位：{selectedModelTier.toUpperCase()}
@@ -205,7 +282,7 @@ export default function ProductDedupManager({
 
       <h2 className="mt-3 text-[30px] font-semibold tracking-[-0.02em] text-black/90">AI 重合度清理台</h2>
       <p className="mt-2 text-[14px] leading-[1.6] text-black/65">
-        一次性扫描同品类产品，两两调用豆包判断重合度。命中置信度 {">"}{AUTO_SELECT_CONFIDENCE_GT}% 的 trace_id 会自动勾选到待删除清单，你审核后再确认删除。
+        一次性扫描同品类产品，两两调用豆包判断重合度。命中置信度 {">"}{AUTO_SELECT_CONFIDENCE_GT}% 的 trace_id 自动勾选待删除清单，刷新后可恢复任务进度。
       </p>
 
       <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-[260px_220px_1fr]">
@@ -215,7 +292,7 @@ export default function ProductDedupManager({
             value={selectedCategory}
             onChange={(e) => setSelectedCategory(e.target.value)}
             className="h-10 rounded-xl border border-black/12 bg-white px-3 text-[13px] outline-none focus:border-black/35"
-            disabled={scanning}
+            disabled={activeRunning}
           >
             <option value="">全部品类（系统按品类分别两两分析）</option>
             {categoryStats.map(([category, count]) => (
@@ -231,7 +308,7 @@ export default function ProductDedupManager({
             value={selectedModelTier}
             onChange={(e) => setSelectedModelTier(e.target.value as ModelTier)}
             className="h-10 rounded-xl border border-black/12 bg-white px-3 text-[13px] outline-none focus:border-black/35"
-            disabled={scanning}
+            disabled={activeRunning}
           >
             {MODEL_TIER_OPTIONS.map((item) => (
               <option key={item.value} value={item.value}>
@@ -249,15 +326,31 @@ export default function ProductDedupManager({
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <button
           type="button"
-          onClick={runDedupScan}
-          disabled={scanning}
+          onClick={() => void runDedupScan()}
+          disabled={activeRunning || jobLoading}
           className="inline-flex h-10 items-center justify-center rounded-full bg-black px-5 text-[13px] font-semibold text-white disabled:bg-black/25"
         >
-          {scanning ? "豆包分析中..." : "开始同品类两两分析"}
+          {jobLoading && !activeRunning ? "提交中..." : "开始同品类两两分析（后台）"}
         </button>
         <button
           type="button"
-          onClick={confirmDelete}
+          onClick={() => void cancelActiveJob()}
+          disabled={jobLoading || !activeRunning || !activeJob}
+          className="inline-flex h-10 items-center justify-center rounded-full border border-[#ef4444]/40 bg-[#fff5f5] px-5 text-[13px] font-semibold text-[#b42318] disabled:opacity-45"
+        >
+          终止当前任务
+        </button>
+        <button
+          type="button"
+          onClick={() => void loadJobs()}
+          disabled={jobsLoading}
+          className="inline-flex h-10 items-center justify-center rounded-full border border-black/14 bg-white px-5 text-[13px] font-semibold text-black/78 disabled:opacity-45"
+        >
+          {jobsLoading ? "刷新中..." : "刷新任务"}
+        </button>
+        <button
+          type="button"
+          onClick={() => void confirmDelete()}
           disabled={deleting || selectedRemoveIds.length === 0}
           className="inline-flex h-10 items-center justify-center rounded-full border border-[#ef4444]/40 bg-[#fff5f5] px-5 text-[13px] font-semibold text-[#b42318] disabled:opacity-50"
         >
@@ -265,26 +358,91 @@ export default function ProductDedupManager({
         </button>
       </div>
 
-      {progressHint ? <div className="mt-3 text-[12px] text-black/64">{progressHint}</div> : null}
+      <div className="mt-3 text-[12px] text-black/64">{formatJobHint(activeJob)}</div>
       {error ? <div className="mt-2 text-[13px] text-[#b42318]">{error}</div> : null}
       {deleteSummary ? <div className="mt-2 text-[13px] text-[#116a3f]">{deleteSummary}</div> : null}
 
-      {(streamRawText || streamPrettyText || scanning) && (
+      <div className="mt-4 rounded-2xl border border-black/10 bg-white p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="text-[13px] font-semibold text-black/82">当前任务</div>
+          <div className="text-[12px] text-black/58">
+            {activeJob ? `${activeJob.job_id} · ${activeJob.status}` : "暂无运行任务"}
+          </div>
+        </div>
+        <div className="mt-2 text-[12px] text-black/64">
+          {activeJob?.stage_label || activeJob?.stage || "待命"} · {activeJob?.message || "等待创建任务"}
+        </div>
+        <div className="mt-3 h-2 overflow-hidden rounded-full bg-black/10">
+          <div className="h-full rounded-full bg-black transition-all" style={{ width: `${progressValue}%` }} />
+        </div>
+        <div className="mt-2 text-[12px] text-black/58">
+          进度 {progressValue}% · {activeJob?.current_index || 0}/{activeJob?.current_total || 0}
+        </div>
+        {activeJob ? (
+          <div className="mt-2 text-[12px] text-black/58">
+            scanned {activeJob.counters.scanned_products} · compared {activeJob.counters.compared_pairs} · suggestions {activeJob.counters.suggestions} · failed {activeJob.counters.failed}
+          </div>
+        ) : null}
+      </div>
+
+      {(streamRawText || streamPrettyText || activeRunning) && (
         <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
           <div className="rounded-xl border border-black/10 bg-[#fbfcff] p-2.5">
             <div className="text-[11px] font-semibold text-[#3151d8]">实时文本</div>
             <pre className="mt-1 max-h-52 overflow-auto whitespace-pre-wrap text-[12px] leading-[1.55] text-black/74">
-              {streamRawText || (scanning ? "等待模型输出..." : "-")}
+              {streamRawText || (activeRunning ? "等待任务日志..." : "-")}
             </pre>
           </div>
           <div className="rounded-xl border border-black/10 bg-white p-2.5">
             <div className="text-[11px] font-semibold text-[#3151d8]">最终美化文本</div>
             <pre className="mt-1 max-h-52 overflow-auto whitespace-pre-wrap text-[12px] leading-[1.55] text-black/74">
-              {streamPrettyText || (scanning ? "分析中..." : "-")}
+              {streamPrettyText || (activeRunning ? "分析中..." : "-")}
             </pre>
           </div>
         </div>
       )}
+
+      <div className="mt-4 rounded-2xl border border-black/10 bg-[#f8fafc] p-4">
+        <div className="text-[13px] font-semibold text-black/82">最近任务</div>
+        <div className="mt-3 max-h-[220px] space-y-2 overflow-auto pr-1">
+          {sortedJobs.map((job) => {
+            const canRetry = job.status === "failed" || job.status === "cancelled";
+            return (
+              <div key={job.job_id} className="rounded-xl border border-black/10 bg-white px-3 py-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveJob(job);
+                    if (job.status === "running" || job.status === "queued" || job.status === "cancelling") {
+                      rememberActiveJob(job.job_id);
+                    }
+                  }}
+                  className="w-full text-left"
+                >
+                  <div className="truncate text-[12px] font-semibold text-black/78">
+                    {job.job_id} · {job.status} · {job.percent}%
+                  </div>
+                  <div className="mt-0.5 truncate text-[12px] text-black/58">{job.stage_label || job.stage || "-"} · {job.message || "-"}</div>
+                  <div className="mt-0.5 text-[11px] text-black/48">updated_at: {job.updated_at}</div>
+                </button>
+                {canRetry ? (
+                  <div className="mt-2">
+                    <button
+                      type="button"
+                      onClick={() => void retryJob(job.job_id)}
+                      disabled={jobLoading}
+                      className="inline-flex h-8 items-center justify-center rounded-full border border-[#3151d8]/30 bg-[#eef2ff] px-3 text-[12px] font-semibold text-[#3151d8] disabled:opacity-45"
+                    >
+                      失败重试
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+          {sortedJobs.length === 0 ? <div className="text-[12px] text-black/52">暂无历史任务。</div> : null}
+        </div>
+      </div>
 
       {report ? (
         <div className="mt-5 space-y-4">
@@ -376,56 +534,29 @@ function categoryLabel(category?: string | null): string {
   return CATEGORY_CONFIG[key]?.zh || category;
 }
 
-function formatProgressHint(data: Record<string, unknown>): string {
-  const step = String(data.step || "");
-  if (step === "dedup_scan_start") {
-    const scannedProducts = Number(data.scanned_products || 0);
-    return `已开始：待扫描 ${scannedProducts} 条产品。`;
-  }
-  if (step === "dedup_category_start") {
-    const category = String(data.category || "-");
-    const products = Number(data.products || 0);
-    return `正在分析品类 ${categoryLabel(category)}，共 ${products} 条。`;
-  }
-  if (step === "dedup_anchor_start") {
-    const anchorIndex = Number(data.anchor_index || 0);
-    const anchorTotal = Number(data.anchor_total || 0);
-    const anchorId = String(data.anchor_id || "-");
-    return `锚点进度 ${anchorIndex}/${anchorTotal}，trace_id: ${anchorId}`;
-  }
-  if (step === "dedup_anchor_done") {
-    const anchorId = String(data.anchor_id || "-");
-    const hits = Number(data.high_conf_pairs || 0);
-    return `锚点完成：${anchorId}，高置信命中 ${hits} 对。`;
-  }
-  if (step === "dedup_pair_result") {
-    const duplicate = Boolean(data.duplicate);
-    const confidence = Number(data.confidence || 0);
-    const keepId = String(data.keep_id || "-");
-    const removeId = String(data.remove_id || "-");
-    if (duplicate) return `命中重复：keep=${keepId} remove=${removeId} confidence=${confidence}`;
-    return "当前两两判定：不重复。";
-  }
-  if (step === "dedup_pair_error") {
-    return "当前两两判定失败，已继续后续任务。";
-  }
-  if (step === "dedup_scan_done") {
-    const suggestions = Number(data.suggestions || 0);
-    return `分析结束：命中 ${suggestions} 组。`;
-  }
-  if (step === "dedup_model_event") {
-    return "模型执行中...";
-  }
-  return "豆包分析中...";
+function parseDedupResult(value: Record<string, unknown> | undefined): ProductDedupSuggestResponse | null {
+  if (!value || typeof value !== "object") return null;
+  const status = String(value.status || "").trim();
+  if (!status) return null;
+  return {
+    status,
+    scanned_products: Number(value.scanned_products || 0),
+    requested_model_tier: (value.requested_model_tier as "mini" | "lite" | "pro" | null | undefined) || null,
+    model: (value.model as string | null | undefined) || null,
+    suggestions: Array.isArray(value.suggestions) ? (value.suggestions as ProductDedupSuggestResponse["suggestions"]) : [],
+    involved_products: Array.isArray(value.involved_products) ? (value.involved_products as Product[]) : [],
+    failures: Array.isArray(value.failures) ? (value.failures as string[]) : [],
+  };
 }
 
-function collectAnalysisText(report: ProductDedupSuggestResponse): string {
-  const out: string[] = [];
-  for (const item of report.suggestions) {
-    const text = String(item.analysis_text || "").trim();
-    if (text && !out.includes(text)) out.push(text);
-  }
-  return out.join("\n\n");
+function formatJobHint(job: ProductWorkbenchJob | null): string {
+  if (!job) return "待命：可创建新的重合度扫描任务。";
+  if (job.status === "queued") return "任务排队中，等待执行。";
+  if (job.status === "running") return "任务运行中，刷新页面后可恢复。";
+  if (job.status === "cancelling") return "已收到取消请求，当前处理单元结束后停止。";
+  if (job.status === "cancelled") return "任务已取消，可按需重试。";
+  if (job.status === "failed") return "任务失败，可查看日志定位并重试。";
+  return "任务已完成。";
 }
 
 function buildPrettySummary(report: ProductDedupSuggestResponse): string {

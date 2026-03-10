@@ -52,6 +52,52 @@ export type ProductDedupSuggestResponse = {
   failures: string[];
 };
 
+export type ProductWorkbenchJobError = {
+  code: string;
+  detail: string;
+  http_status: number;
+};
+
+export type ProductWorkbenchJobCounters = {
+  scanned_products: number;
+  submitted_to_model: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+  compared_pairs: number;
+  suggestions: number;
+};
+
+export type ProductWorkbenchJob = {
+  status: "queued" | "running" | "cancelling" | "cancelled" | "done" | "failed";
+  job_id: string;
+  job_type: "route_mapping_build" | "dedup_suggest";
+  params: Record<string, unknown>;
+  stage?: string | null;
+  stage_label?: string | null;
+  message?: string | null;
+  percent: number;
+  current_index?: number | null;
+  current_total?: number | null;
+  current_item_id?: string | null;
+  current_item_name?: string | null;
+  counters: ProductWorkbenchJobCounters;
+  logs: string[];
+  result?: Record<string, unknown> | null;
+  error?: ProductWorkbenchJobError | null;
+  cancel_requested: boolean;
+  created_at: string;
+  updated_at: string;
+  started_at?: string | null;
+  finished_at?: string | null;
+};
+
+export type ProductWorkbenchJobCancelResponse = {
+  status: string;
+  job: ProductWorkbenchJob;
+};
+
 export type IngredientLibraryBuildRequest = {
   category?: string;
   force_regenerate?: boolean;
@@ -1031,6 +1077,49 @@ export async function suggestProductDuplicatesStream(
   );
 }
 
+export async function createProductDedupJob(payload: ProductDedupSuggestRequest): Promise<ProductWorkbenchJob> {
+  return apiFetch<ProductWorkbenchJob>("/api/products/dedup/jobs", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchProductDedupJob(jobId: string): Promise<ProductWorkbenchJob> {
+  const value = jobId.trim();
+  if (!value) throw new Error("jobId is required.");
+  return apiFetch<ProductWorkbenchJob>(`/api/products/dedup/jobs/${encodeURIComponent(value)}`);
+}
+
+export async function listProductDedupJobs(params?: {
+  status?: "queued" | "running" | "cancelling" | "cancelled" | "done" | "failed";
+  offset?: number;
+  limit?: number;
+}): Promise<ProductWorkbenchJob[]> {
+  const search = new URLSearchParams();
+  if (params?.status) search.set("status", params.status);
+  if (typeof params?.offset === "number") search.set("offset", String(params.offset));
+  if (typeof params?.limit === "number") search.set("limit", String(params.limit));
+  const query = search.toString();
+  const path = query ? `/api/products/dedup/jobs?${query}` : "/api/products/dedup/jobs";
+  return apiFetch<ProductWorkbenchJob[]>(path);
+}
+
+export async function cancelProductDedupJob(jobId: string): Promise<ProductWorkbenchJobCancelResponse> {
+  const value = jobId.trim();
+  if (!value) throw new Error("jobId is required.");
+  return apiFetch<ProductWorkbenchJobCancelResponse>(`/api/products/dedup/jobs/${encodeURIComponent(value)}/cancel`, {
+    method: "POST",
+  });
+}
+
+export async function retryProductDedupJob(jobId: string): Promise<ProductWorkbenchJob> {
+  const value = jobId.trim();
+  if (!value) throw new Error("jobId is required.");
+  return apiFetch<ProductWorkbenchJob>(`/api/products/dedup/jobs/${encodeURIComponent(value)}/retry`, {
+    method: "POST",
+  });
+}
+
 export async function fetchIngredientLibrary(params?: {
   category?: string;
   q?: string;
@@ -1145,6 +1234,53 @@ export async function buildProductRouteMappingStream(
       headers: { "content-type": "application/json" },
     },
     onEvent,
+  );
+}
+
+export async function createProductRouteMappingJob(
+  payload: ProductRouteMappingBuildRequest,
+): Promise<ProductWorkbenchJob> {
+  return apiFetch<ProductWorkbenchJob>("/api/products/route-mapping/jobs", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchProductRouteMappingJob(jobId: string): Promise<ProductWorkbenchJob> {
+  const value = jobId.trim();
+  if (!value) throw new Error("jobId is required.");
+  return apiFetch<ProductWorkbenchJob>(`/api/products/route-mapping/jobs/${encodeURIComponent(value)}`);
+}
+
+export async function listProductRouteMappingJobs(params?: {
+  status?: "queued" | "running" | "cancelling" | "cancelled" | "done" | "failed";
+  offset?: number;
+  limit?: number;
+}): Promise<ProductWorkbenchJob[]> {
+  const search = new URLSearchParams();
+  if (params?.status) search.set("status", params.status);
+  if (typeof params?.offset === "number") search.set("offset", String(params.offset));
+  if (typeof params?.limit === "number") search.set("limit", String(params.limit));
+  const query = search.toString();
+  const path = query ? `/api/products/route-mapping/jobs?${query}` : "/api/products/route-mapping/jobs";
+  return apiFetch<ProductWorkbenchJob[]>(path);
+}
+
+export async function cancelProductRouteMappingJob(jobId: string): Promise<ProductWorkbenchJobCancelResponse> {
+  const value = jobId.trim();
+  if (!value) throw new Error("jobId is required.");
+  return apiFetch<ProductWorkbenchJobCancelResponse>(
+    `/api/products/route-mapping/jobs/${encodeURIComponent(value)}/cancel`,
+    { method: "POST" },
+  );
+}
+
+export async function retryProductRouteMappingJob(jobId: string): Promise<ProductWorkbenchJob> {
+  const value = jobId.trim();
+  if (!value) throw new Error("jobId is required.");
+  return apiFetch<ProductWorkbenchJob>(
+    `/api/products/route-mapping/jobs/${encodeURIComponent(value)}/retry`,
+    { method: "POST" },
   );
 }
 

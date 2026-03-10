@@ -158,6 +158,40 @@ class UploadIngestJob(Base):
     finished_at: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
 
 
+class ProductWorkbenchJob(Base):
+    __tablename__ = "product_workbench_jobs"
+    __table_args__ = (
+        Index("ix_product_workbench_jobs_scope", "job_type", "status", "updated_at"),
+    )
+
+    job_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    job_type: Mapped[str] = mapped_column(String(48), index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True, default="queued")
+
+    params_json: Mapped[str] = mapped_column(Text, default="{}")
+
+    stage: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    stage_label: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    percent: Mapped[int] = mapped_column(Integer, default=0)
+    current_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    current_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    current_item_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    current_item_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+
+    counters_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    logs_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+
+    created_at: Mapped[str] = mapped_column(String(32), index=True)
+    updated_at: Mapped[str] = mapped_column(String(32), index=True)
+    started_at: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    finished_at: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+
+
 class AIJob(Base):
     __tablename__ = "ai_jobs"
 

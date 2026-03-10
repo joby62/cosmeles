@@ -1,33 +1,37 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Product,
   ProductRouteMappingBuildResponse,
-  SSEEvent,
-  buildProductRouteMappingStream,
+  ProductWorkbenchJob,
+  cancelProductRouteMappingJob,
+  createProductRouteMappingJob,
+  fetchProductRouteMappingJob,
+  listProductRouteMappingJobs,
+  retryProductRouteMappingJob,
 } from "@/lib/api";
 import { CATEGORY_CONFIG } from "@/lib/catalog";
 
 type RouteMappingCategory = "all" | "shampoo" | "bodywash" | "conditioner" | "lotion" | "cleanser";
+
+const ACTIVE_JOB_STORAGE_KEY = "route-mapping-active-job-id";
 
 export default function ProductRouteMappingGenerator({
   initialProducts,
 }: {
   initialProducts: Product[];
 }) {
-  const [building, setBuilding] = useState(false);
+  const [jobLoading, setJobLoading] = useState(false);
+  const [jobsLoading, setJobsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [progressHint, setProgressHint] = useState("");
-  const [rawText, setRawText] = useState("");
-  const [prettyText, setPrettyText] = useState("");
+  const [jobs, setJobs] = useState<ProductWorkbenchJob[]>([]);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [activeJob, setActiveJob] = useState<ProductWorkbenchJob | null>(null);
   const [result, setResult] = useState<ProductRouteMappingBuildResponse | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<RouteMappingCategory>("all");
   const [forceRegenerate, setForceRegenerate] = useState(false);
   const [onlyUnmapped, setOnlyUnmapped] = useState(false);
-
-  const queueRef = useRef<string[]>([]);
-  const timerRef = useRef<number | null>(null);
 
   const supportedProducts = useMemo(() => {
     return initialProducts.filter((item) => {
@@ -45,93 +49,155 @@ export default function ProductRouteMappingGenerator({
     return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
   }, [supportedProducts]);
 
-  useEffect(() => {
-    return () => {
-      stopDrainer();
-      queueRef.current = [];
-    };
+  const sortedJobs = useMemo(
+    () => [...jobs].sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || ""))),
+    [jobs],
+  );
+
+  const activeRunning = activeJob?.status === "queued" || activeJob?.status === "running" || activeJob?.status === "cancelling";
+  const progressValue = Math.max(0, Math.min(100, Number(activeJob?.percent || 0)));
+  const liveText = activeJob?.logs?.join("\n") || "";
+  const prettyText = result ? buildSummary(result) : "";
+
+  const rememberActiveJob = useCallback((jobId: string) => {
+    const value = String(jobId || "").trim();
+    if (!value) return;
+    window.localStorage.setItem(ACTIVE_JOB_STORAGE_KEY, value);
+    setActiveJobId(value);
   }, []);
 
-  async function startBuild() {
-    setBuilding(true);
-    setError(null);
-    setResult(null);
-    setProgressHint("准备扫描产品并建立类型映射...");
-    setRawText("");
-    setPrettyText("");
-    queueRef.current = [];
-    stopDrainer();
+  const clearActiveJob = useCallback(() => {
+    window.localStorage.removeItem(ACTIVE_JOB_STORAGE_KEY);
+    setActiveJobId(null);
+  }, []);
 
+  const loadJobs = useCallback(async () => {
+    setJobsLoading(true);
     try {
-      const payload = {
+      const rows = await listProductRouteMappingJobs({ limit: 40, offset: 0 });
+      setJobs(rows);
+      if (!activeJobId) {
+        const running = rows.find((item) => item.status === "queued" || item.status === "running" || item.status === "cancelling");
+        if (running) rememberActiveJob(running.job_id);
+      }
+      const latestDone = rows.find((item) => item.status === "done" && item.result && typeof item.result === "object");
+      const parsed = parseRouteMappingResult(latestDone?.result as Record<string, unknown> | undefined);
+      if (parsed) setResult(parsed);
+    } catch (err) {
+      setError(formatErrorDetail(err));
+      setJobs([]);
+    } finally {
+      setJobsLoading(false);
+    }
+  }, [activeJobId, rememberActiveJob]);
+
+  useEffect(() => {
+    const raw = window.localStorage.getItem(ACTIVE_JOB_STORAGE_KEY);
+    if (raw && raw.trim()) {
+      setActiveJobId(raw.trim());
+    }
+    void loadJobs();
+  }, [loadJobs]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      void loadJobs();
+    }, 2800);
+    return () => window.clearInterval(timer);
+  }, [loadJobs]);
+
+  useEffect(() => {
+    if (!activeJobId) {
+      setActiveJob(null);
+      return;
+    }
+    let cancelled = false;
+    let timer: number | null = null;
+
+    const pull = async () => {
+      try {
+        const job = await fetchProductRouteMappingJob(activeJobId);
+        if (cancelled) return;
+        setActiveJob(job);
+        const parsed = parseRouteMappingResult(job.result as Record<string, unknown> | undefined);
+        if (parsed) setResult(parsed);
+        if (job.status === "done" || job.status === "failed" || job.status === "cancelled") {
+          clearActiveJob();
+          void loadJobs();
+          return;
+        }
+      } catch (err) {
+        if (cancelled) return;
+        setError(formatErrorDetail(err));
+      }
+      if (cancelled) return;
+      timer = window.setTimeout(() => {
+        void pull();
+      }, 2200);
+    };
+
+    void pull();
+    return () => {
+      cancelled = true;
+      if (timer != null) window.clearTimeout(timer);
+    };
+  }, [activeJobId, clearActiveJob, loadJobs]);
+
+  async function startBuild() {
+    if (activeRunning) return;
+    setJobLoading(true);
+    setError(null);
+    try {
+      const job = await createProductRouteMappingJob({
         category: selectedCategory === "all" ? undefined : selectedCategory,
         force_regenerate: forceRegenerate,
         only_unmapped: onlyUnmapped,
-      };
-      const res = await buildProductRouteMappingStream(payload, (event) => onStreamEvent(event));
-      setResult(res);
-      setPrettyText(buildSummary(res));
-      setProgressHint(`完成：created=${res.created} updated=${res.updated} skipped=${res.skipped} failed=${res.failed}`);
-      if (!rawText.trim()) {
-        const failLine = res.failures.slice(0, 20).join("\n");
-        if (failLine) enqueueText(`\n失败明细:\n${failLine}`);
-      }
+      });
+      setActiveJob(job);
+      rememberActiveJob(job.job_id);
+      await loadJobs();
     } catch (err) {
       setError(formatErrorDetail(err));
     } finally {
-      setBuilding(false);
+      setJobLoading(false);
     }
   }
 
-  function onStreamEvent(event: SSEEvent) {
-    if (event.event !== "progress") return;
-    const step = String(event.data.step || "");
-    const text = String(event.data.text || "");
-    const delta = String(event.data.delta || "");
-
-    if (step === "route_mapping_model_delta" && delta) {
-      enqueueText(delta);
-    } else if (text) {
-      enqueueText(`${text}\n`);
+  async function cancelActiveJob() {
+    if (!activeJob) return;
+    setJobLoading(true);
+    setError(null);
+    try {
+      const resp = await cancelProductRouteMappingJob(activeJob.job_id);
+      setActiveJob(resp.job);
+      await loadJobs();
+    } catch (err) {
+      setError(formatErrorDetail(err));
+    } finally {
+      setJobLoading(false);
     }
-    setProgressHint(formatProgressHint(event.data));
   }
 
-  function enqueueText(value: string) {
-    const chunk = String(value || "");
-    if (!chunk) return;
-    queueRef.current.push(chunk);
-    if (timerRef.current != null) return;
-
-    timerRef.current = window.setInterval(() => {
-      const queue = queueRef.current;
-      if (queue.length === 0) {
-        stopDrainer();
-        return;
-      }
-      const head = queue[0];
-      if (!head) {
-        queue.shift();
-        return;
-      }
-      const nextChar = head[0];
-      queue[0] = head.slice(1);
-      if (!queue[0]) queue.shift();
-      setRawText((prev) => prev + nextChar);
-    }, 16);
-  }
-
-  function stopDrainer() {
-    if (timerRef.current == null) return;
-    window.clearInterval(timerRef.current);
-    timerRef.current = null;
+  async function retryJob(jobId: string) {
+    setJobLoading(true);
+    setError(null);
+    try {
+      const job = await retryProductRouteMappingJob(jobId);
+      setActiveJob(job);
+      rememberActiveJob(job.job_id);
+      await loadJobs();
+    } catch (err) {
+      setError(formatErrorDetail(err));
+    } finally {
+      setJobLoading(false);
+    }
   }
 
   return (
     <section className="mt-8 rounded-[30px] border border-black/10 bg-gradient-to-br from-[#f7fbff] via-white to-[#f2f8f2] p-6">
       <div className="flex flex-wrap items-center gap-2">
         <span className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/62">
-          Stage D · 产品类型映射（流式）
+          Stage D · 产品类型映射（后台任务）
         </span>
         <span className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/62">
           类型映射模型固定：Doubao Pro
@@ -140,7 +206,7 @@ export default function ProductRouteMappingGenerator({
 
       <h2 className="mt-3 text-[30px] font-semibold tracking-[-0.02em] text-black/90">产品类型映射台</h2>
       <p className="mt-2 text-[14px] leading-[1.6] text-black/65">
-        按决策模型对单品做类型映射，输出主类/次类与全量置信度，用于 mobile 端按分类结果精准选品。
+        按决策模型对单品做类型映射，后台执行可取消、可重试、可刷新恢复，输出主类/次类与全量置信度用于 mobile 端精准选品。
       </p>
 
       <div className="mt-4 flex flex-wrap items-center gap-2.5">
@@ -160,7 +226,7 @@ export default function ProductRouteMappingGenerator({
             key={item}
             type="button"
             onClick={() => setSelectedCategory(item)}
-            disabled={building}
+            disabled={activeRunning || jobLoading}
             className={`rounded-full border px-3 py-1 text-[12px] ${
               selectedCategory === item
                 ? "border-black bg-black text-white"
@@ -178,7 +244,7 @@ export default function ProductRouteMappingGenerator({
             type="checkbox"
             checked={forceRegenerate}
             onChange={(event) => setForceRegenerate(event.target.checked)}
-            disabled={building}
+            disabled={activeRunning || jobLoading}
           />
           强制重跑（忽略已有指纹）
         </label>
@@ -187,7 +253,7 @@ export default function ProductRouteMappingGenerator({
             type="checkbox"
             checked={onlyUnmapped}
             onChange={(event) => setOnlyUnmapped(event.target.checked)}
-            disabled={building}
+            disabled={activeRunning || jobLoading}
           />
           仅处理未映射产品
         </label>
@@ -196,39 +262,114 @@ export default function ProductRouteMappingGenerator({
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <button
           type="button"
-          onClick={startBuild}
-          disabled={building || supportedProducts.length === 0}
+          onClick={() => void startBuild()}
+          disabled={jobLoading || activeRunning || supportedProducts.length === 0}
           className="inline-flex h-10 items-center justify-center rounded-full bg-black px-5 text-[13px] font-semibold text-white disabled:bg-black/25"
         >
-          {building ? "豆包映射中..." : "一键构建类型映射"}
+          {jobLoading && !activeRunning ? "提交中..." : "一键构建类型映射（后台）"}
+        </button>
+        <button
+          type="button"
+          onClick={() => void cancelActiveJob()}
+          disabled={jobLoading || !activeRunning || !activeJob}
+          className="inline-flex h-10 items-center justify-center rounded-full border border-[#ef4444]/40 bg-[#fff5f5] px-5 text-[13px] font-semibold text-[#b42318] disabled:opacity-45"
+        >
+          中止当前任务
+        </button>
+        <button
+          type="button"
+          onClick={() => void loadJobs()}
+          disabled={jobsLoading}
+          className="inline-flex h-10 items-center justify-center rounded-full border border-black/14 bg-white px-5 text-[13px] font-semibold text-black/78 disabled:opacity-45"
+        >
+          {jobsLoading ? "刷新中..." : "刷新任务"}
         </button>
       </div>
 
-      {progressHint ? <div className="mt-3 text-[12px] text-black/64">{progressHint}</div> : null}
+      <div className="mt-3 text-[12px] text-black/64">{formatJobHint(activeJob)}</div>
       {error ? <div className="mt-2 text-[13px] text-[#b42318]">{error}</div> : null}
 
-      {(rawText || prettyText || building) && (
+      <div className="mt-4 rounded-2xl border border-black/10 bg-white p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="text-[13px] font-semibold text-black/82">当前任务</div>
+          <div className="text-[12px] text-black/58">
+            {activeJob ? `${activeJob.job_id} · ${activeJob.status}` : "暂无运行任务"}
+          </div>
+        </div>
+        <div className="mt-2 text-[12px] text-black/64">
+          {activeJob?.stage_label || activeJob?.stage || "待命"} · {activeJob?.message || "等待创建任务"}
+        </div>
+        <div className="mt-3 h-2 overflow-hidden rounded-full bg-black/10">
+          <div className="h-full rounded-full bg-black transition-all" style={{ width: `${progressValue}%` }} />
+        </div>
+        <div className="mt-2 text-[12px] text-black/58">
+          进度 {progressValue}% · {activeJob?.current_index || 0}/{activeJob?.current_total || 0}
+        </div>
+        {activeJob ? (
+          <div className="mt-2 text-[12px] text-black/58">
+            scanned {activeJob.counters.scanned_products} · submitted {activeJob.counters.submitted_to_model} · created {activeJob.counters.created} · updated {activeJob.counters.updated} · skipped {activeJob.counters.skipped} · failed {activeJob.counters.failed}
+          </div>
+        ) : null}
+      </div>
+
+      {(liveText || prettyText || activeRunning) && (
         <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
           <div className="rounded-xl border border-black/10 bg-[#fbfcff] p-2.5">
             <div className="text-[11px] font-semibold text-[#3151d8]">实时文本</div>
             <pre className="mt-1 max-h-56 overflow-auto whitespace-pre-wrap text-[12px] leading-[1.55] text-black/74">
-              {rawText || (building ? "等待模型输出..." : "-")}
+              {liveText || (activeRunning ? "等待任务日志..." : "-")}
             </pre>
           </div>
           <div className="rounded-xl border border-black/10 bg-white p-2.5">
             <div className="text-[11px] font-semibold text-[#3151d8]">最终美化文本</div>
             <pre className="mt-1 max-h-56 overflow-auto whitespace-pre-wrap text-[12px] leading-[1.55] text-black/74">
-              {prettyText || (building ? "分析中..." : "-")}
+              {prettyText || (activeRunning ? "分析中..." : "-")}
             </pre>
           </div>
         </div>
       )}
 
-      {result ? (
-        <div className="mt-4 rounded-2xl border border-black/10 bg-white px-4 py-3 text-[13px] text-black/70">
-          状态：{result.status}；扫描产品 {result.scanned_products} 条；提交模型 {result.submitted_to_model} 条。
+      <div className="mt-4 rounded-2xl border border-black/10 bg-[#f8fafc] p-4">
+        <div className="text-[13px] font-semibold text-black/82">最近任务</div>
+        <div className="mt-3 max-h-[220px] space-y-2 overflow-auto pr-1">
+          {sortedJobs.map((job) => {
+            const canRetry = job.status === "failed" || job.status === "cancelled";
+            return (
+              <div key={job.job_id} className="rounded-xl border border-black/10 bg-white px-3 py-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveJob(job);
+                    if (job.status === "running" || job.status === "queued" || job.status === "cancelling") {
+                      rememberActiveJob(job.job_id);
+                    }
+                  }}
+                  className="w-full text-left"
+                >
+                  <div className="truncate text-[12px] font-semibold text-black/78">
+                    {job.job_id} · {job.status} · {job.percent}%
+                  </div>
+                  <div className="mt-0.5 truncate text-[12px] text-black/58">{job.stage_label || job.stage || "-"} · {job.message || "-"}</div>
+                  <div className="mt-0.5 text-[11px] text-black/48">updated_at: {job.updated_at}</div>
+                </button>
+                {canRetry ? (
+                  <div className="mt-2">
+                    <button
+                      type="button"
+                      onClick={() => void retryJob(job.job_id)}
+                      disabled={jobLoading}
+                      className="inline-flex h-8 items-center justify-center rounded-full border border-[#3151d8]/30 bg-[#eef2ff] px-3 text-[12px] font-semibold text-[#3151d8] disabled:opacity-45"
+                    >
+                      失败重试
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+          {sortedJobs.length === 0 ? <div className="text-[12px] text-black/52">暂无历史任务。</div> : null}
         </div>
-      ) : null}
+      </div>
     </section>
   );
 }
@@ -239,30 +380,31 @@ function categoryLabel(category?: string | null): string {
   return CATEGORY_CONFIG[key]?.zh || category;
 }
 
-function formatProgressHint(data: Record<string, unknown>): string {
-  const step = String(data.step || "");
-  if (step === "route_mapping_build_start") {
-    return `已启动：扫描产品 ${Number(data.scanned_products || 0)} 条。`;
-  }
-  if (step === "route_mapping_start") {
-    return `映射中：${String(data.category || "-")} / ${String(data.product_id || "-")} (${Number(data.index || 0)}/${Number(data.total || 0)})`;
-  }
-  if (step === "route_mapping_done") {
-    return `完成：${String(data.product_id || "-")}（${String(data.status || "created")}）`;
-  }
-  if (step === "route_mapping_skip") {
-    return String(data.text || "已跳过已有映射。");
-  }
-  if (step === "route_mapping_error") {
-    return "部分映射失败，已继续后续任务。";
-  }
-  if (step === "route_mapping_model_step") {
-    return "模型执行中...";
-  }
-  if (step === "route_mapping_build_done") {
-    return String(data.text || "产品类型映射构建完成。");
-  }
-  return "豆包映射中...";
+function parseRouteMappingResult(value: Record<string, unknown> | undefined): ProductRouteMappingBuildResponse | null {
+  if (!value || typeof value !== "object") return null;
+  const status = String(value.status || "").trim();
+  if (!status) return null;
+  return {
+    status,
+    scanned_products: Number(value.scanned_products || 0),
+    submitted_to_model: Number(value.submitted_to_model || 0),
+    created: Number(value.created || 0),
+    updated: Number(value.updated || 0),
+    skipped: Number(value.skipped || 0),
+    failed: Number(value.failed || 0),
+    items: Array.isArray(value.items) ? (value.items as ProductRouteMappingBuildResponse["items"]) : [],
+    failures: Array.isArray(value.failures) ? (value.failures as string[]) : [],
+  };
+}
+
+function formatJobHint(job: ProductWorkbenchJob | null): string {
+  if (!job) return "待命：可创建新的类型映射任务。";
+  if (job.status === "queued") return "任务排队中，等待执行。";
+  if (job.status === "running") return "任务运行中，刷新页面后可恢复。";
+  if (job.status === "cancelling") return "已收到取消请求，当前处理单元结束后停止。";
+  if (job.status === "cancelled") return "任务已取消，可按需重试。";
+  if (job.status === "failed") return "任务失败，可查看日志定位并重试。";
+  return "任务已完成。";
 }
 
 function buildSummary(result: ProductRouteMappingBuildResponse): string {

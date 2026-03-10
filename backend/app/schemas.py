@@ -151,6 +151,52 @@ class ProductDedupSuggestResponse(BaseModel):
     failures: List[str] = []
 
 
+class ProductWorkbenchJobError(BaseModel):
+    code: str = ""
+    detail: str = ""
+    http_status: int = 500
+
+
+class ProductWorkbenchJobCounters(BaseModel):
+    scanned_products: int = 0
+    submitted_to_model: int = 0
+    created: int = 0
+    updated: int = 0
+    skipped: int = 0
+    failed: int = 0
+    compared_pairs: int = 0
+    suggestions: int = 0
+
+
+class ProductWorkbenchJobView(BaseModel):
+    status: Literal["queued", "running", "cancelling", "cancelled", "done", "failed"] = "queued"
+    job_id: str
+    job_type: Literal["route_mapping_build", "dedup_suggest"]
+    params: dict[str, Any] = Field(default_factory=dict)
+    stage: Optional[str] = None
+    stage_label: Optional[str] = None
+    message: Optional[str] = None
+    percent: int = Field(default=0, ge=0, le=100)
+    current_index: Optional[int] = None
+    current_total: Optional[int] = None
+    current_item_id: Optional[str] = None
+    current_item_name: Optional[str] = None
+    counters: ProductWorkbenchJobCounters = Field(default_factory=ProductWorkbenchJobCounters)
+    logs: List[str] = []
+    result: Optional[dict[str, Any]] = None
+    error: Optional[ProductWorkbenchJobError] = None
+    cancel_requested: bool = False
+    created_at: str
+    updated_at: str
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+
+
+class ProductWorkbenchJobCancelResponse(BaseModel):
+    status: str
+    job: ProductWorkbenchJobView
+
+
 class IngredientLibraryBuildRequest(BaseModel):
     category: Optional[str] = None
     force_regenerate: bool = False

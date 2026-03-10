@@ -6,6 +6,7 @@ import re
 import io
 import zipfile
 import unicodedata
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from collections import defaultdict
@@ -28,6 +29,7 @@ from app.db.models import (
     IngredientLibraryAlias,
     IngredientLibraryRedirect,
     IngredientLibraryBuildJob,
+    ProductWorkbenchJob,
     ProductRouteMappingIndex,
     ProductFeaturedSlot,
     MobileSelectionSession,
@@ -69,6 +71,10 @@ from app.schemas import (
     ProductDedupSuggestRequest,
     ProductDedupSuggestResponse,
     ProductDedupSuggestion,
+    ProductWorkbenchJobView,
+    ProductWorkbenchJobCancelResponse,
+    ProductWorkbenchJobCounters,
+    ProductWorkbenchJobError,
     ProductBatchDeleteRequest,
     ProductBatchDeleteResponse,
     OrphanStorageCleanupRequest,
@@ -113,6 +119,15 @@ INGREDIENT_SOURCE_COOCCURRENCE_TOP_N = 15
 INGREDIENT_BUILD_JOB_HEARTBEAT_SECONDS = 2
 INGREDIENT_BUILD_JOB_STALE_SECONDS = max(60 * 30, INGREDIENT_BUILD_JOB_HEARTBEAT_SECONDS * 300)
 INGREDIENT_BUILD_JOB_PROCESS_STARTED_AT = datetime.now(timezone.utc)
+PRODUCT_WORKBENCH_MAX_CONCURRENCY = max(1, min(2, int(getattr(settings, "product_workbench_max_concurrency", 1))))
+PRODUCT_WORKBENCH_EXECUTOR = ThreadPoolExecutor(
+    max_workers=PRODUCT_WORKBENCH_MAX_CONCURRENCY,
+    thread_name_prefix="product-workbench-job",
+)
+PRODUCT_WORKBENCH_JOB_HEARTBEAT_SECONDS = 2
+PRODUCT_WORKBENCH_JOB_STALE_SECONDS = max(60 * 30, PRODUCT_WORKBENCH_JOB_HEARTBEAT_SECONDS * 300)
+PRODUCT_WORKBENCH_JOB_PROCESS_STARTED_AT = datetime.now(timezone.utc)
+PRODUCT_WORKBENCH_LOG_LIMIT = 240
 INGREDIENT_NORMALIZATION_PACKAGE_VERSION = "v2026-03-06.1"
 INGREDIENT_NORMALIZATION_PACKAGES: tuple[dict[str, Any], ...] = (
     {
@@ -173,6 +188,10 @@ INGREDIENT_PUNCTUATION_FOLD_TABLE = str.maketrans(
 
 
 class IngredientLibraryBuildCancelledError(RuntimeError):
+    pass
+
+
+class ProductWorkbenchJobCancelledError(RuntimeError):
     pass
 
 @router.get("/products", response_model=list[ProductCard])
@@ -374,6 +393,47 @@ def suggest_product_duplicates_stream(payload: ProductDedupSuggestRequest, db: S
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post("/products/dedup/jobs", response_model=ProductWorkbenchJobView)
+def create_product_dedup_job(payload: ProductDedupSuggestRequest, db: Session = Depends(get_db)):
+    return _create_product_workbench_job(
+        db=db,
+        job_type="dedup_suggest",
+        params=payload.model_dump(),
+        queued_message=f"任务已创建，等待执行（并发上限 {PRODUCT_WORKBENCH_MAX_CONCURRENCY}）。",
+    )
+
+
+@router.get("/products/dedup/jobs", response_model=list[ProductWorkbenchJobView])
+def list_product_dedup_jobs(
+    status: str | None = Query(None),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(30, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    return _list_product_workbench_jobs(
+        db=db,
+        job_type="dedup_suggest",
+        status=status,
+        offset=offset,
+        limit=limit,
+    )
+
+
+@router.get("/products/dedup/jobs/{job_id}", response_model=ProductWorkbenchJobView)
+def get_product_dedup_job(job_id: str, db: Session = Depends(get_db)):
+    return _get_product_workbench_job(db=db, job_id=job_id, expected_job_type="dedup_suggest")
+
+
+@router.post("/products/dedup/jobs/{job_id}/cancel", response_model=ProductWorkbenchJobCancelResponse)
+def cancel_product_dedup_job(job_id: str, db: Session = Depends(get_db)):
+    return _cancel_product_workbench_job(db=db, job_id=job_id, expected_job_type="dedup_suggest")
+
+
+@router.post("/products/dedup/jobs/{job_id}/retry", response_model=ProductWorkbenchJobView)
+def retry_product_dedup_job(job_id: str, db: Session = Depends(get_db)):
+    return _retry_product_workbench_job(db=db, job_id=job_id, expected_job_type="dedup_suggest")
 
 
 @router.post("/products/ingredients/library/build", response_model=IngredientLibraryBuildResponse)
@@ -755,6 +815,47 @@ def build_product_route_mapping_stream(payload: ProductRouteMappingBuildRequest,
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post("/products/route-mapping/jobs", response_model=ProductWorkbenchJobView)
+def create_product_route_mapping_job(payload: ProductRouteMappingBuildRequest, db: Session = Depends(get_db)):
+    return _create_product_workbench_job(
+        db=db,
+        job_type="route_mapping_build",
+        params=payload.model_dump(),
+        queued_message=f"任务已创建，等待执行（并发上限 {PRODUCT_WORKBENCH_MAX_CONCURRENCY}）。",
+    )
+
+
+@router.get("/products/route-mapping/jobs", response_model=list[ProductWorkbenchJobView])
+def list_product_route_mapping_jobs(
+    status: str | None = Query(None),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(30, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    return _list_product_workbench_jobs(
+        db=db,
+        job_type="route_mapping_build",
+        status=status,
+        offset=offset,
+        limit=limit,
+    )
+
+
+@router.get("/products/route-mapping/jobs/{job_id}", response_model=ProductWorkbenchJobView)
+def get_product_route_mapping_job(job_id: str, db: Session = Depends(get_db)):
+    return _get_product_workbench_job(db=db, job_id=job_id, expected_job_type="route_mapping_build")
+
+
+@router.post("/products/route-mapping/jobs/{job_id}/cancel", response_model=ProductWorkbenchJobCancelResponse)
+def cancel_product_route_mapping_job(job_id: str, db: Session = Depends(get_db)):
+    return _cancel_product_workbench_job(db=db, job_id=job_id, expected_job_type="route_mapping_build")
+
+
+@router.post("/products/route-mapping/jobs/{job_id}/retry", response_model=ProductWorkbenchJobView)
+def retry_product_route_mapping_job(job_id: str, db: Session = Depends(get_db)):
+    return _retry_product_workbench_job(db=db, job_id=job_id, expected_job_type="route_mapping_build")
 
 
 @router.get("/products/{product_id}/route-mapping", response_model=ProductRouteMappingDetailResponse)
@@ -2162,10 +2263,761 @@ def _safe_load_json_object(raw: str | None) -> dict[str, Any] | None:
     return parsed
 
 
+def _safe_load_json_list(raw: str | None) -> list[Any]:
+    text = str(raw or "").strip()
+    if not text:
+        return []
+    try:
+        parsed = json.loads(text)
+    except Exception:
+        return []
+    return parsed if isinstance(parsed, list) else []
+
+
+def _ensure_product_workbench_job_table(db: Session) -> None:
+    bind = db.get_bind()
+    ProductWorkbenchJob.__table__.create(bind=bind, checkfirst=True)
+
+
+def _create_product_workbench_job(
+    *,
+    db: Session,
+    job_type: str,
+    params: dict[str, Any],
+    queued_message: str,
+) -> ProductWorkbenchJobView:
+    _ensure_product_workbench_job_table(db)
+    _validate_product_workbench_job_type(job_type)
+    now = now_iso()
+    rec = ProductWorkbenchJob(
+        job_id=new_id(),
+        job_type=job_type,
+        status="queued",
+        params_json=json.dumps(params or {}, ensure_ascii=False),
+        stage="queued",
+        stage_label=_product_workbench_stage_label(job_type=job_type, stage="queued"),
+        message=str(queued_message or "").strip() or "任务已创建，等待执行。",
+        percent=0,
+        current_index=None,
+        current_total=None,
+        current_item_id=None,
+        current_item_name=None,
+        counters_json=json.dumps({}, ensure_ascii=False),
+        logs_json="[]",
+        result_json=None,
+        error_json=None,
+        cancel_requested=False,
+        created_at=now,
+        updated_at=now,
+        started_at=None,
+        finished_at=None,
+    )
+    db.add(rec)
+    db.commit()
+    db.refresh(rec)
+    _submit_product_workbench_job(bind=db.get_bind(), job_id=rec.job_id)
+    return _to_product_workbench_job_view(rec)
+
+
+def _list_product_workbench_jobs(
+    *,
+    db: Session,
+    job_type: str,
+    status: str | None,
+    offset: int,
+    limit: int,
+) -> list[ProductWorkbenchJobView]:
+    _ensure_product_workbench_job_table(db)
+    normalized_job_type = _validate_product_workbench_job_type(job_type)
+    normalized_status = _normalize_product_workbench_status(status)
+    stmt = select(ProductWorkbenchJob).where(ProductWorkbenchJob.job_type == normalized_job_type)
+    if normalized_status:
+        stmt = stmt.where(ProductWorkbenchJob.status == normalized_status)
+    rows = db.execute(stmt.order_by(ProductWorkbenchJob.updated_at.desc()).offset(offset).limit(limit)).scalars().all()
+    now_utc = datetime.now(timezone.utc)
+    views: list[ProductWorkbenchJobView] = []
+    for row in rows:
+        _reconcile_product_workbench_job_state(db=db, rec=row, now_utc=now_utc)
+        if normalized_status and str(row.status or "").strip().lower() != normalized_status:
+            continue
+        views.append(_to_product_workbench_job_view(row))
+    return views
+
+
+def _get_product_workbench_job(
+    *,
+    db: Session,
+    job_id: str,
+    expected_job_type: str,
+) -> ProductWorkbenchJobView:
+    _ensure_product_workbench_job_table(db)
+    normalized_job_type = _validate_product_workbench_job_type(expected_job_type)
+    value = str(job_id or "").strip()
+    if not value:
+        raise HTTPException(status_code=400, detail="job_id is required.")
+    rec = db.get(ProductWorkbenchJob, value)
+    if rec is None or str(rec.job_type or "").strip() != normalized_job_type:
+        raise HTTPException(status_code=404, detail=f"Product workbench job '{job_id}' not found.")
+    _reconcile_product_workbench_job_state(db=db, rec=rec, now_utc=datetime.now(timezone.utc))
+    return _to_product_workbench_job_view(rec)
+
+
+def _cancel_product_workbench_job(
+    *,
+    db: Session,
+    job_id: str,
+    expected_job_type: str,
+) -> ProductWorkbenchJobCancelResponse:
+    _ensure_product_workbench_job_table(db)
+    normalized_job_type = _validate_product_workbench_job_type(expected_job_type)
+    value = str(job_id or "").strip()
+    if not value:
+        raise HTTPException(status_code=400, detail="job_id is required.")
+    rec = db.get(ProductWorkbenchJob, value)
+    if rec is None or str(rec.job_type or "").strip() != normalized_job_type:
+        raise HTTPException(status_code=404, detail=f"Product workbench job '{job_id}' not found.")
+
+    status = str(rec.status or "").strip().lower()
+    if status in {"done", "failed", "cancelled"}:
+        return ProductWorkbenchJobCancelResponse(status="ok", job=_to_product_workbench_job_view(rec))
+
+    rec.cancel_requested = True
+    now = now_iso()
+    rec.updated_at = now
+    if status == "queued":
+        rec.status = "cancelled"
+        rec.stage = "cancelled"
+        rec.stage_label = _product_workbench_stage_label(job_type=normalized_job_type, stage="cancelled")
+        rec.message = "任务在启动前已取消。"
+        rec.percent = 0
+        rec.finished_at = now
+    else:
+        rec.status = "cancelling"
+        rec.stage = "cancelling"
+        rec.stage_label = _product_workbench_stage_label(job_type=normalized_job_type, stage="cancelling")
+        rec.message = "已收到取消请求，当前处理单元结束后停止。"
+    db.add(rec)
+    db.commit()
+    db.refresh(rec)
+    return ProductWorkbenchJobCancelResponse(status="ok", job=_to_product_workbench_job_view(rec))
+
+
+def _retry_product_workbench_job(
+    *,
+    db: Session,
+    job_id: str,
+    expected_job_type: str,
+) -> ProductWorkbenchJobView:
+    _ensure_product_workbench_job_table(db)
+    normalized_job_type = _validate_product_workbench_job_type(expected_job_type)
+    value = str(job_id or "").strip()
+    if not value:
+        raise HTTPException(status_code=400, detail="job_id is required.")
+    rec = db.get(ProductWorkbenchJob, value)
+    if rec is None or str(rec.job_type or "").strip() != normalized_job_type:
+        raise HTTPException(status_code=404, detail=f"Product workbench job '{job_id}' not found.")
+
+    status = str(rec.status or "").strip().lower()
+    if status not in {"failed", "cancelled"}:
+        raise HTTPException(status_code=409, detail=f"Only failed/cancelled job can retry. current_status={status}.")
+
+    now = now_iso()
+    rec.status = "queued"
+    rec.stage = "queued"
+    rec.stage_label = _product_workbench_stage_label(job_type=normalized_job_type, stage="queued")
+    rec.message = f"重试任务已入队，等待执行（并发上限 {PRODUCT_WORKBENCH_MAX_CONCURRENCY}）。"
+    rec.percent = 0
+    rec.current_index = None
+    rec.current_total = None
+    rec.current_item_id = None
+    rec.current_item_name = None
+    rec.counters_json = json.dumps({}, ensure_ascii=False)
+    rec.logs_json = "[]"
+    rec.result_json = None
+    rec.error_json = None
+    rec.cancel_requested = False
+    rec.started_at = None
+    rec.finished_at = None
+    rec.updated_at = now
+    db.add(rec)
+    db.commit()
+    db.refresh(rec)
+    _submit_product_workbench_job(bind=db.get_bind(), job_id=rec.job_id)
+    return _to_product_workbench_job_view(rec)
+
+
+def _submit_product_workbench_job(*, bind: Any, job_id: str) -> None:
+    SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=bind)
+
+    def worker() -> None:
+        local_db = SessionMaker()
+        try:
+            _run_product_workbench_job(job_id=job_id, db=local_db)
+        finally:
+            local_db.close()
+
+    try:
+        PRODUCT_WORKBENCH_EXECUTOR.submit(worker)
+    except Exception as e:
+        _mark_product_workbench_job_failed(
+            job_id=job_id,
+            bind=bind,
+            code="product_workbench_dispatch_failed",
+            detail=f"[stage=product_workbench_dispatch] executor submit failed: {e}",
+            http_status=500,
+        )
+
+
+def _run_product_workbench_job(*, job_id: str, db: Session) -> None:
+    _ensure_product_workbench_job_table(db)
+    rec = db.get(ProductWorkbenchJob, str(job_id or "").strip())
+    if rec is None:
+        return
+    job_type = _validate_product_workbench_job_type(str(rec.job_type or "").strip())
+    params = _safe_load_json_object(rec.params_json) or {}
+    SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=db.get_bind())
+
+    def should_cancel() -> bool:
+        local_db = SessionMaker()
+        try:
+            row = local_db.get(ProductWorkbenchJob, job_id)
+            return bool(row and row.cancel_requested)
+        finally:
+            local_db.close()
+
+    try:
+        if bool(rec.cancel_requested):
+            raise ProductWorkbenchJobCancelledError("job cancelled before execution.")
+        now = now_iso()
+        rec.status = "running"
+        rec.stage = "prepare"
+        rec.stage_label = _product_workbench_stage_label(job_type=job_type, stage="prepare")
+        rec.message = "任务启动，准备执行。"
+        rec.percent = max(1, int(rec.percent or 0))
+        rec.updated_at = now
+        if not str(rec.started_at or "").strip():
+            rec.started_at = now
+        rec.finished_at = None
+        db.add(rec)
+        db.commit()
+        db.refresh(rec)
+
+        if job_type == "route_mapping_build":
+            build_payload = ProductRouteMappingBuildRequest.model_validate(params)
+            result = _build_product_route_mapping_impl(
+                build_payload,
+                db=db,
+                event_callback=lambda payload: _apply_product_workbench_job_progress(
+                    bind=db.get_bind(),
+                    job_id=job_id,
+                    payload=payload,
+                ),
+                should_cancel=should_cancel,
+            )
+        elif job_type == "dedup_suggest":
+            dedup_payload = ProductDedupSuggestRequest.model_validate(params)
+            result = _suggest_product_duplicates_impl(
+                dedup_payload,
+                db=db,
+                event_callback=lambda payload: _apply_product_workbench_job_progress(
+                    bind=db.get_bind(),
+                    job_id=job_id,
+                    payload=payload,
+                ),
+                should_cancel=should_cancel,
+            )
+        else:  # pragma: no cover
+            raise HTTPException(status_code=400, detail=f"Unsupported product workbench job type: {job_type}.")
+
+        result_payload = result.model_dump()
+        if job_type == "route_mapping_build":
+            done_message = (
+                "任务完成："
+                f"scanned={int(result_payload.get('scanned_products') or 0)}，"
+                f"created={int(result_payload.get('created') or 0)}，"
+                f"updated={int(result_payload.get('updated') or 0)}，"
+                f"failed={int(result_payload.get('failed') or 0)}"
+            )
+        else:
+            done_message = (
+                "任务完成："
+                f"scanned={int(result_payload.get('scanned_products') or 0)}，"
+                f"suggestions={len(result_payload.get('suggestions') or [])}，"
+                f"failed={len(result_payload.get('failures') or [])}"
+            )
+        _mark_product_workbench_job_done(
+            job_id=job_id,
+            bind=db.get_bind(),
+            result=result_payload,
+            message=done_message,
+        )
+    except ProductWorkbenchJobCancelledError as e:
+        db.rollback()
+        _mark_product_workbench_job_cancelled(job_id=job_id, bind=db.get_bind(), message=str(e))
+    except HTTPException as e:
+        db.rollback()
+        _mark_product_workbench_job_failed(
+            job_id=job_id,
+            bind=db.get_bind(),
+            code="product_workbench_http_error",
+            detail=str(e.detail),
+            http_status=e.status_code,
+        )
+    except Exception as e:  # pragma: no cover
+        db.rollback()
+        _mark_product_workbench_job_failed(
+            job_id=job_id,
+            bind=db.get_bind(),
+            code="product_workbench_internal_error",
+            detail=str(e),
+            http_status=500,
+        )
+
+
+def _apply_product_workbench_job_progress(*, bind: Any, job_id: str, payload: dict[str, Any]) -> None:
+    SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=bind)
+    local_db = SessionMaker()
+    try:
+        rec = local_db.get(ProductWorkbenchJob, job_id)
+        if rec is None:
+            return
+        job_type = _validate_product_workbench_job_type(str(rec.job_type or "").strip())
+        now = now_iso()
+        step = str(payload.get("step") or "").strip().lower()
+        stage = step or str(rec.stage or "running").strip().lower()
+        stage_label = _product_workbench_stage_label(job_type=job_type, stage=stage)
+        text = str(payload.get("text") or payload.get("message") or "").strip()
+        if not text and step.endswith("_model_delta"):
+            text = str(payload.get("delta") or "").strip()
+
+        counters = _safe_load_json_object(rec.counters_json) or {}
+        _merge_product_workbench_counters(
+            job_type=job_type,
+            counters=counters,
+            payload=payload,
+        )
+        rec.counters_json = json.dumps(counters, ensure_ascii=False)
+
+        current_index, current_total, current_item_id, current_item_name = _product_workbench_progress_cursor(
+            job_type=job_type,
+            payload=payload,
+            prev_index=rec.current_index,
+            prev_total=rec.current_total,
+            prev_item_id=str(rec.current_item_id or "").strip() or None,
+            prev_item_name=str(rec.current_item_name or "").strip() or None,
+        )
+        rec.current_index = current_index
+        rec.current_total = current_total
+        rec.current_item_id = current_item_id
+        rec.current_item_name = current_item_name
+        rec.percent = _product_workbench_progress_percent(
+            job_type=job_type,
+            current=int(rec.percent or 0),
+            step=step,
+            index=current_index,
+            total=current_total,
+        )
+        rec.status = "running"
+        rec.stage = stage or "running"
+        rec.stage_label = stage_label
+        if text:
+            rec.message = text
+            logs = _safe_load_json_list(rec.logs_json)
+            line = f"[{now}] {stage_label} | {text}"
+            if not logs or str(logs[-1]) != line:
+                logs.append(line)
+                if len(logs) > PRODUCT_WORKBENCH_LOG_LIMIT:
+                    logs = logs[-PRODUCT_WORKBENCH_LOG_LIMIT:]
+                rec.logs_json = json.dumps(logs, ensure_ascii=False)
+        rec.updated_at = now
+        if not str(rec.started_at or "").strip():
+            rec.started_at = now
+        local_db.add(rec)
+        local_db.commit()
+    finally:
+        local_db.close()
+
+
+def _mark_product_workbench_job_done(
+    *,
+    job_id: str,
+    bind: Any,
+    result: dict[str, Any],
+    message: str,
+) -> None:
+    SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=bind)
+    local_db = SessionMaker()
+    try:
+        rec = local_db.get(ProductWorkbenchJob, job_id)
+        if rec is None:
+            return
+        now = now_iso()
+        job_type = _validate_product_workbench_job_type(str(rec.job_type or "").strip())
+        counters = _safe_load_json_object(rec.counters_json) or {}
+        if isinstance(result, dict):
+            _merge_product_workbench_counters(
+                job_type=job_type,
+                counters=counters,
+                payload=result,
+            )
+        rec.counters_json = json.dumps(counters, ensure_ascii=False)
+        rec.status = "done"
+        rec.stage = "done"
+        rec.stage_label = _product_workbench_stage_label(job_type=job_type, stage="done")
+        rec.message = str(message or "").strip() or "任务完成。"
+        rec.percent = 100
+        rec.result_json = json.dumps(result or {}, ensure_ascii=False)
+        rec.error_json = None
+        rec.finished_at = now
+        rec.updated_at = now
+        local_db.add(rec)
+        local_db.commit()
+    finally:
+        local_db.close()
+
+
+def _mark_product_workbench_job_cancelled(*, job_id: str, bind: Any, message: str) -> None:
+    SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=bind)
+    local_db = SessionMaker()
+    try:
+        rec = local_db.get(ProductWorkbenchJob, job_id)
+        if rec is None:
+            return
+        now = now_iso()
+        job_type = _validate_product_workbench_job_type(str(rec.job_type or "").strip())
+        rec.status = "cancelled"
+        rec.stage = "cancelled"
+        rec.stage_label = _product_workbench_stage_label(job_type=job_type, stage="cancelled")
+        rec.message = str(message or "任务已取消。")
+        rec.percent = max(0, min(99, int(rec.percent or 0)))
+        rec.finished_at = now
+        rec.updated_at = now
+        local_db.add(rec)
+        local_db.commit()
+    finally:
+        local_db.close()
+
+
+def _mark_product_workbench_job_failed(
+    *,
+    job_id: str,
+    bind: Any,
+    code: str,
+    detail: str,
+    http_status: int,
+) -> None:
+    SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=bind)
+    local_db = SessionMaker()
+    try:
+        rec = local_db.get(ProductWorkbenchJob, job_id)
+        if rec is None:
+            return
+        now = now_iso()
+        job_type = _validate_product_workbench_job_type(str(rec.job_type or "").strip())
+        rec.status = "failed"
+        rec.stage = "failed"
+        rec.stage_label = _product_workbench_stage_label(job_type=job_type, stage="failed")
+        rec.message = str(detail or "任务失败。")
+        rec.error_json = json.dumps(
+            {
+                "code": str(code or "product_workbench_failed"),
+                "detail": str(detail or "product workbench job failed."),
+                "http_status": int(http_status or 500),
+            },
+            ensure_ascii=False,
+        )
+        rec.finished_at = now
+        rec.updated_at = now
+        local_db.add(rec)
+        local_db.commit()
+    finally:
+        local_db.close()
+
+
+def _reconcile_product_workbench_job_state(*, db: Session, rec: ProductWorkbenchJob, now_utc: datetime) -> None:
+    status = str(rec.status or "").strip().lower()
+    if status not in {"queued", "running", "cancelling"}:
+        return
+    reason = _product_workbench_job_orphan_reason(rec=rec, now_utc=now_utc)
+    if reason is None:
+        return
+
+    now = now_iso()
+    job_type = _validate_product_workbench_job_type(str(rec.job_type or "").strip())
+    last_updated = str(rec.updated_at or "").strip() or "-"
+    active_stage = str(rec.stage or status or "unknown").strip() or "unknown"
+    if status == "cancelling" or bool(rec.cancel_requested):
+        rec.status = "cancelled"
+        rec.stage = "cancelled"
+        rec.stage_label = _product_workbench_stage_label(job_type=job_type, stage="cancelled")
+        rec.message = (
+            "任务已取消：检测到后台执行线程不存在，"
+            f"reason={reason}，stage={active_stage}，last_update={last_updated}。"
+        )
+        rec.error_json = None
+    else:
+        detail = (
+            "任务执行中断：检测到后台执行线程不存在，"
+            f"reason={reason}，stage={active_stage}，last_update={last_updated}。"
+        )
+        rec.status = "failed"
+        rec.stage = "failed"
+        rec.stage_label = _product_workbench_stage_label(job_type=job_type, stage="failed")
+        rec.message = detail
+        rec.error_json = json.dumps(
+            {
+                "code": "product_workbench_job_orphaned",
+                "detail": detail,
+                "http_status": 500,
+            },
+            ensure_ascii=False,
+        )
+    rec.finished_at = now
+    rec.updated_at = now
+    db.add(rec)
+    db.commit()
+    db.refresh(rec)
+
+
+def _product_workbench_job_orphan_reason(*, rec: ProductWorkbenchJob, now_utc: datetime) -> str | None:
+    status = str(rec.status or "").strip().lower()
+    updated_at = _parse_utc_datetime(str(rec.updated_at or "").strip())
+    created_at = _parse_utc_datetime(str(rec.created_at or "").strip())
+    started_at = _parse_utc_datetime(str(rec.started_at or "").strip())
+    last_update = updated_at or created_at
+    if last_update is None:
+        return None
+    process_anchor = created_at if status == "queued" else (started_at or created_at)
+    if process_anchor and process_anchor < PRODUCT_WORKBENCH_JOB_PROCESS_STARTED_AT:
+        return "service_restarted"
+    stale_seconds = max(0, int((now_utc - last_update).total_seconds()))
+    if stale_seconds >= PRODUCT_WORKBENCH_JOB_STALE_SECONDS:
+        return f"heartbeat_timeout_{stale_seconds}s"
+    return None
+
+
+def _to_product_workbench_job_view(rec: ProductWorkbenchJob) -> ProductWorkbenchJobView:
+    params_obj = _safe_load_json_object(rec.params_json) or {}
+    counters_obj = _safe_load_json_object(rec.counters_json) or {}
+    logs = [str(item or "") for item in _safe_load_json_list(rec.logs_json) if str(item or "").strip()]
+    result = _safe_load_json_object(rec.result_json)
+    error_raw = _safe_load_json_object(rec.error_json)
+    error_obj: ProductWorkbenchJobError | None = None
+    if error_raw is not None:
+        try:
+            error_obj = ProductWorkbenchJobError.model_validate(error_raw)
+        except Exception:
+            error_obj = ProductWorkbenchJobError(
+                code="product_workbench_error",
+                detail=str(error_raw),
+                http_status=500,
+            )
+    try:
+        counters = ProductWorkbenchJobCounters.model_validate(counters_obj)
+    except Exception:
+        counters = ProductWorkbenchJobCounters()
+    return ProductWorkbenchJobView(
+        status=str(rec.status or "queued").strip().lower() or "queued",
+        job_id=str(rec.job_id),
+        job_type=_validate_product_workbench_job_type(str(rec.job_type or "").strip()),
+        params=params_obj,
+        stage=str(rec.stage or "").strip() or None,
+        stage_label=str(rec.stage_label or "").strip() or None,
+        message=str(rec.message or "").strip() or None,
+        percent=max(0, min(100, int(rec.percent or 0))),
+        current_index=int(rec.current_index) if rec.current_index is not None else None,
+        current_total=int(rec.current_total) if rec.current_total is not None else None,
+        current_item_id=str(rec.current_item_id or "").strip() or None,
+        current_item_name=str(rec.current_item_name or "").strip() or None,
+        counters=counters,
+        logs=logs[-PRODUCT_WORKBENCH_LOG_LIMIT:],
+        result=result,
+        error=error_obj,
+        cancel_requested=bool(rec.cancel_requested),
+        created_at=str(rec.created_at or ""),
+        updated_at=str(rec.updated_at or ""),
+        started_at=str(rec.started_at or "").strip() or None,
+        finished_at=str(rec.finished_at or "").strip() or None,
+    )
+
+
+def _validate_product_workbench_job_type(job_type: str) -> str:
+    value = str(job_type or "").strip().lower()
+    if value not in {"route_mapping_build", "dedup_suggest"}:
+        raise HTTPException(status_code=400, detail=f"Invalid job_type: {job_type}.")
+    return value
+
+
+def _normalize_product_workbench_status(status: str | None) -> str | None:
+    value = str(status or "").strip().lower() or None
+    if value is None:
+        return None
+    if value not in {"queued", "running", "cancelling", "cancelled", "done", "failed"}:
+        raise HTTPException(status_code=400, detail=f"Invalid status: {value}.")
+    return value
+
+
+def _product_workbench_stage_label(*, job_type: str, stage: str) -> str:
+    key = str(stage or "").strip().lower()
+    common = {
+        "queued": "待执行",
+        "prepare": "准备中",
+        "running": "执行中",
+        "cancelling": "取消中",
+        "cancelled": "已取消",
+        "done": "已完成",
+        "failed": "失败",
+    }
+    if key in common:
+        return common[key]
+    if job_type == "route_mapping_build":
+        mapping = {
+            "route_mapping_build_start": "扫描产品",
+            "route_mapping_start": "映射中",
+            "route_mapping_model_step": "模型执行",
+            "route_mapping_model_delta": "模型输出",
+            "route_mapping_done": "单项完成",
+            "route_mapping_skip": "跳过未变化项",
+            "route_mapping_error": "单项失败",
+            "route_mapping_build_done": "任务完成",
+        }
+        return mapping.get(key, key or "处理中")
+    mapping = {
+        "dedup_scan_start": "扫描候选",
+        "dedup_category_start": "按品类分析",
+        "dedup_anchor_start": "锚点分析",
+        "dedup_model_event": "模型执行",
+        "dedup_model_delta": "模型输出",
+        "dedup_pair_result": "两两判定",
+        "dedup_pair_error": "两两失败",
+        "dedup_anchor_done": "锚点完成",
+        "dedup_scan_done": "任务完成",
+    }
+    return mapping.get(key, key or "处理中")
+
+
+def _product_workbench_progress_cursor(
+    *,
+    job_type: str,
+    payload: dict[str, Any],
+    prev_index: int | None,
+    prev_total: int | None,
+    prev_item_id: str | None,
+    prev_item_name: str | None,
+) -> tuple[int | None, int | None, str | None, str | None]:
+    if job_type == "route_mapping_build":
+        index_value = _safe_positive_int(payload.get("index"), fallback=prev_index or 0)
+        total_value = _safe_positive_int(payload.get("total"), fallback=prev_total or 0)
+        product_id = str(payload.get("product_id") or prev_item_id or "").strip() or None
+        category = str(payload.get("category") or prev_item_name or "").strip() or None
+        return (
+            index_value if index_value > 0 else None,
+            total_value if total_value > 0 else None,
+            product_id,
+            category,
+        )
+    index_value = _safe_positive_int(payload.get("anchor_index"), fallback=prev_index or 0)
+    total_value = _safe_positive_int(payload.get("anchor_total"), fallback=prev_total or 0)
+    anchor_id = str(payload.get("anchor_id") or prev_item_id or "").strip() or None
+    category = str(payload.get("category") or prev_item_name or "").strip() or None
+    return (
+        index_value if index_value > 0 else None,
+        total_value if total_value > 0 else None,
+        anchor_id,
+        category,
+    )
+
+
+def _merge_product_workbench_counters(
+    *,
+    job_type: str,
+    counters: dict[str, Any],
+    payload: dict[str, Any],
+) -> None:
+    def set_counter(name: str, value: Any) -> None:
+        counters[name] = max(0, int(value))
+
+    def inc_counter(name: str, delta: int = 1) -> None:
+        prev = _safe_positive_int(counters.get(name), fallback=0)
+        counters[name] = prev + max(0, int(delta))
+
+    step = str(payload.get("step") or "").strip().lower()
+    if job_type == "route_mapping_build":
+        if "scanned_products" in payload:
+            set_counter("scanned_products", _safe_positive_int(payload.get("scanned_products"), fallback=0))
+        if step == "route_mapping_done":
+            status = str(payload.get("status") or "").strip().lower()
+            if status in {"created", "updated", "skipped", "failed"}:
+                inc_counter(status)
+            if status in {"created", "updated"}:
+                inc_counter("submitted_to_model")
+        elif step == "route_mapping_skip":
+            inc_counter("skipped")
+        elif step == "route_mapping_error":
+            inc_counter("failed")
+        for key in ("submitted_to_model", "created", "updated", "skipped", "failed"):
+            if key in payload:
+                set_counter(key, _safe_positive_int(payload.get(key), fallback=0))
+        return
+
+    if "scanned_products" in payload:
+        set_counter("scanned_products", _safe_positive_int(payload.get("scanned_products"), fallback=0))
+    if step in {"dedup_pair_result", "dedup_pair_error"}:
+        inc_counter("compared_pairs")
+    if step == "dedup_pair_error":
+        inc_counter("failed")
+    if "suggestions" in payload:
+        suggestions_raw = payload.get("suggestions")
+        if isinstance(suggestions_raw, list):
+            set_counter("suggestions", len(suggestions_raw))
+        else:
+            set_counter("suggestions", _safe_positive_int(suggestions_raw, fallback=0))
+    if "failures" in payload:
+        failures_raw = payload.get("failures")
+        if isinstance(failures_raw, list):
+            set_counter("failed", len(failures_raw))
+        else:
+            set_counter("failed", _safe_positive_int(failures_raw, fallback=0))
+
+
+def _product_workbench_progress_percent(
+    *,
+    job_type: str,
+    current: int,
+    step: str,
+    index: int | None,
+    total: int | None,
+) -> int:
+    value = max(0, min(100, int(current)))
+    if step in {"queued", "prepare"}:
+        return max(value, 1)
+    if job_type == "route_mapping_build":
+        if step == "route_mapping_build_start":
+            return max(value, 5)
+        if step in {"route_mapping_start", "route_mapping_done", "route_mapping_skip", "route_mapping_error", "route_mapping_model_step", "route_mapping_model_delta"}:
+            if index is not None and total is not None and total > 0:
+                computed = 10 + int((max(0, min(total, index)) / total) * 85)
+                return max(value, min(95, computed))
+            return max(value, 10)
+        if step in {"route_mapping_build_done", "done"}:
+            return 100
+        return value
+    if step == "dedup_scan_start":
+        return max(value, 5)
+    if step in {"dedup_anchor_start", "dedup_pair_result", "dedup_pair_error", "dedup_model_event", "dedup_model_delta", "dedup_anchor_done"}:
+        if index is not None and total is not None and total > 0:
+            computed = 10 + int((max(0, min(total, index)) / total) * 85)
+            return max(value, min(95, computed))
+        return max(value, 10)
+    if step in {"dedup_scan_done", "done"}:
+        return 100
+    return value
+
 def _build_product_route_mapping_impl(
     payload: ProductRouteMappingBuildRequest,
     db: Session,
     event_callback: Callable[[dict[str, Any]], None] | None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> ProductRouteMappingBuildResponse:
     category = (payload.category or "").strip().lower()
     if category:
@@ -2215,7 +3067,12 @@ def _build_product_route_mapping_impl(
     only_unmapped = bool(payload.only_unmapped)
     total = len(rows)
 
+    def check_cancel() -> None:
+        if should_cancel and should_cancel():
+            raise ProductWorkbenchJobCancelledError("job cancelled by operator.")
+
     for idx, row in enumerate(rows, start=1):
+        check_cancel()
         product_id = str(row.id)
         row_category = str(row.category or "").strip().lower()
         if row_category not in ROUTE_MAPPING_SUPPORTED_CATEGORIES:
@@ -2274,11 +3131,14 @@ def _build_product_route_mapping_impl(
             continue
 
         try:
+            check_cancel()
             if not exists_rel_path(row.json_path):
                 raise ValueError(f"product json missing: {row.json_path}")
             doc = load_json(row.json_path)
             context = _build_route_mapping_product_context(row=row, doc=doc)
             fingerprint = _build_route_mapping_fingerprint(context)
+        except ProductWorkbenchJobCancelledError:
+            raise
         except Exception as e:
             failed += 1
             message = f"{product_id} ({row_category}): invalid product context | {e}"
@@ -2374,6 +3234,7 @@ def _build_product_route_mapping_impl(
         prompt_key = capability
         prompt_version = prompt_versions[row_category]
         try:
+            check_cancel()
             ai_result = run_capability_now(
                 capability=capability,
                 input_payload={"product_context_json": json.dumps(context, ensure_ascii=False)},
@@ -2460,6 +3321,8 @@ def _build_product_route_mapping_impl(
                     "text": f"[{idx}/{total}] 完成：{row_category} / {product_id}（{status}）",
                 },
             )
+        except ProductWorkbenchJobCancelledError:
+            raise
         except Exception as e:
             failed += 1
             message = f"{product_id} ({row_category}): {e}"
@@ -2879,6 +3742,7 @@ def _suggest_product_duplicates_impl(
     payload: ProductDedupSuggestRequest,
     db: Session,
     event_callback: Callable[[dict[str, Any]], None] | None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> ProductDedupSuggestResponse:
     category = (payload.category or "").strip().lower()
     if category and category not in VALID_CATEGORIES:
@@ -2927,7 +3791,12 @@ def _suggest_product_duplicates_impl(
     directed_relations: list[dict[str, Any]] = []
     failures: list[str] = []
 
+    def check_cancel() -> None:
+        if should_cancel and should_cancel():
+            raise ProductWorkbenchJobCancelledError("job cancelled by operator.")
+
     for cat, items in grouped.items():
+        check_cancel()
         if len(items) < 2:
             continue
         _emit_progress(
@@ -2940,6 +3809,7 @@ def _suggest_product_duplicates_impl(
         )
         anchor_total = len(items) - 1
         for idx, anchor in enumerate(items[:-1]):
+            check_cancel()
             anchor_id = str(anchor["row"].id)
             candidates = items[idx + 1 :]
             if not candidates:
@@ -2958,6 +3828,7 @@ def _suggest_product_duplicates_impl(
 
             chunk_hits = 0
             for chunk_start in range(0, len(candidates), batch_size):
+                check_cancel()
                 chunk = candidates[chunk_start : chunk_start + batch_size]
                 chunk_ids = [str(item["row"].id) for item in chunk]
                 for c in chunk:
@@ -2976,6 +3847,7 @@ def _suggest_product_duplicates_impl(
                 if requested_model_tier:
                     ai_input["model_tier"] = requested_model_tier
                 try:
+                    check_cancel()
                     ai_result = run_capability_now(
                         capability="doubao.product_dedup_group",
                         input_payload=ai_input,
@@ -3020,6 +3892,8 @@ def _suggest_product_duplicates_impl(
                                 ),
                             },
                         )
+                except ProductWorkbenchJobCancelledError:
+                    raise
                 except Exception as e:
                     failures.append(f"{anchor_id}: {e}")
                     for candidate_id in chunk_ids:
