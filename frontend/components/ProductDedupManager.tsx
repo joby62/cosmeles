@@ -1,11 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import ProductWorkbenchJobConsole from "@/components/workbench/ProductWorkbenchJobConsole";
+import { formatErrorDetail, useProductWorkbenchJobs } from "@/components/workbench/useProductWorkbenchJobs";
 import {
   Product,
+  ProductDedupSuggestRequest,
   ProductDedupSuggestResponse,
   ProductWorkbenchJob,
   cancelProductDedupJob,
@@ -38,18 +41,45 @@ export default function ProductDedupManager({
   const router = useRouter();
   const [selectedCategory, setSelectedCategory] = useState<string>("");
   const [selectedModelTier, setSelectedModelTier] = useState<ModelTier>("pro");
-
-  const [jobLoading, setJobLoading] = useState(false);
-  const [jobsLoading, setJobsLoading] = useState(false);
-  const [jobs, setJobs] = useState<ProductWorkbenchJob[]>([]);
-  const [activeJobId, setActiveJobId] = useState<string | null>(null);
-  const [activeJob, setActiveJob] = useState<ProductWorkbenchJob | null>(null);
-
   const [deleting, setDeleting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [report, setReport] = useState<ProductDedupSuggestResponse | null>(null);
   const [selectedRemoveIds, setSelectedRemoveIds] = useState<string[]>([]);
   const [deleteSummary, setDeleteSummary] = useState<string | null>(null);
+  const [selectionSeedJobId, setSelectionSeedJobId] = useState<string | null>(null);
+  const jobService = useMemo(
+    () => ({
+      listJobs: listProductDedupJobs,
+      fetchJob: fetchProductDedupJob,
+      createJob: createProductDedupJob,
+      cancelJob: cancelProductDedupJob,
+      retryJob: retryProductDedupJob,
+    }),
+    [],
+  );
+
+  const {
+    jobLoading,
+    jobsLoading,
+    errorMessage,
+    setErrorMessage,
+    activeJob,
+    activeRunning,
+    progressValue,
+    liveText,
+    sortedJobs,
+    result: report,
+    resultJobId,
+    refreshJobs,
+    startJob,
+    cancelActiveJob: cancelTrackedJob,
+    retryJob: retryTrackedJob,
+    selectJob,
+    clearResult,
+  } = useProductWorkbenchJobs<ProductDedupSuggestRequest, ProductDedupSuggestResponse>({
+    storageKey: ACTIVE_JOB_STORAGE_KEY,
+    listLimit: 30,
+    parseResult: parseDedupResult,
+    service: jobService,
+  });
 
   const categoryStats = useMemo(() => {
     const map = new Map<string, number>();
@@ -59,11 +89,6 @@ export default function ProductDedupManager({
     }
     return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
   }, [initialProducts]);
-
-  const sortedJobs = useMemo(
-    () => [...jobs].sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || ""))),
-    [jobs],
-  );
 
   const productMap = useMemo(() => {
     const map = new Map<string, Product>();
@@ -76,154 +101,37 @@ export default function ProductDedupManager({
     return new Set((report?.suggestions || []).map((item) => item.keep_id));
   }, [report?.suggestions]);
 
-  const activeRunning = activeJob?.status === "queued" || activeJob?.status === "running" || activeJob?.status === "cancelling";
-  const progressValue = Math.max(0, Math.min(100, Number(activeJob?.percent || 0)));
-  const streamRawText = activeJob?.logs?.join("\n") || "";
+  useEffect(() => {
+    if (!report || !resultJobId || selectionSeedJobId === resultJobId) return;
+    setSelectedRemoveIds(Array.from(new Set(report.suggestions.flatMap((item) => item.remove_ids))));
+    setSelectionSeedJobId(resultJobId);
+  }, [report, resultJobId, selectionSeedJobId]);
+
   const streamPrettyText = report ? buildPrettySummary(report) : "";
-
-  const rememberActiveJob = useCallback((jobId: string) => {
-    const value = String(jobId || "").trim();
-    if (!value) return;
-    window.localStorage.setItem(ACTIVE_JOB_STORAGE_KEY, value);
-    setActiveJobId(value);
-  }, []);
-
-  const clearActiveJob = useCallback(() => {
-    window.localStorage.removeItem(ACTIVE_JOB_STORAGE_KEY);
-    setActiveJobId(null);
-  }, []);
-
-  const loadJobs = useCallback(async () => {
-    setJobsLoading(true);
-    try {
-      const rows = await listProductDedupJobs({ limit: 30, offset: 0 });
-      setJobs(rows);
-      if (!activeJobId) {
-        const running = rows.find((item) => item.status === "queued" || item.status === "running" || item.status === "cancelling");
-        if (running) rememberActiveJob(running.job_id);
-      }
-      const latestDone = rows.find((item) => item.status === "done" && item.result && typeof item.result === "object");
-      const parsed = parseDedupResult(latestDone?.result as Record<string, unknown> | undefined);
-      if (parsed) {
-        setReport(parsed);
-        setSelectedRemoveIds(Array.from(new Set(parsed.suggestions.flatMap((item) => item.remove_ids))));
-      }
-    } catch (err) {
-      setError(formatErrorDetail(err));
-      setJobs([]);
-    } finally {
-      setJobsLoading(false);
-    }
-  }, [activeJobId, rememberActiveJob]);
-
-  useEffect(() => {
-    const raw = window.localStorage.getItem(ACTIVE_JOB_STORAGE_KEY);
-    if (raw && raw.trim()) setActiveJobId(raw.trim());
-    void loadJobs();
-  }, [loadJobs]);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      void loadJobs();
-    }, 2800);
-    return () => window.clearInterval(timer);
-  }, [loadJobs]);
-
-  useEffect(() => {
-    if (!activeJobId) {
-      setActiveJob(null);
-      return;
-    }
-    let cancelled = false;
-    let timer: number | null = null;
-
-    const pull = async () => {
-      try {
-        const job = await fetchProductDedupJob(activeJobId);
-        if (cancelled) return;
-        setActiveJob(job);
-        const parsed = parseDedupResult(job.result as Record<string, unknown> | undefined);
-        if (parsed) {
-          setReport(parsed);
-          setSelectedRemoveIds(Array.from(new Set(parsed.suggestions.flatMap((item) => item.remove_ids))));
-        }
-        if (job.status === "done" || job.status === "failed" || job.status === "cancelled") {
-          clearActiveJob();
-          void loadJobs();
-          return;
-        }
-      } catch (err) {
-        if (cancelled) return;
-        setError(formatErrorDetail(err));
-      }
-      if (cancelled) return;
-      timer = window.setTimeout(() => {
-        void pull();
-      }, 2200);
-    };
-
-    void pull();
-    return () => {
-      cancelled = true;
-      if (timer != null) window.clearTimeout(timer);
-    };
-  }, [activeJobId, clearActiveJob, loadJobs]);
 
   async function runDedupScan() {
     if (activeRunning) return;
-    setJobLoading(true);
-    setError(null);
     setDeleteSummary(null);
-    setReport(null);
+    clearResult();
     setSelectedRemoveIds([]);
+    setSelectionSeedJobId(null);
 
-    try {
-      const maxScanProducts = Math.max(1, Math.min(500, initialProducts.length || 1));
-      const job = await createProductDedupJob({
-        category: selectedCategory || undefined,
-        model_tier: selectedModelTier,
-        max_scan_products: maxScanProducts,
-        compare_batch_size: 1,
-        min_confidence: MIN_CONFIDENCE_FOR_API,
-      });
-      setActiveJob(job);
-      rememberActiveJob(job.job_id);
-      await loadJobs();
-    } catch (err) {
-      setError(formatErrorDetail(err));
-    } finally {
-      setJobLoading(false);
-    }
+    const maxScanProducts = Math.max(1, Math.min(500, initialProducts.length || 1));
+    await startJob({
+      category: selectedCategory || undefined,
+      model_tier: selectedModelTier,
+      max_scan_products: maxScanProducts,
+      compare_batch_size: 1,
+      min_confidence: MIN_CONFIDENCE_FOR_API,
+    });
   }
 
   async function cancelActiveJob() {
-    if (!activeJob) return;
-    setJobLoading(true);
-    setError(null);
-    try {
-      const resp = await cancelProductDedupJob(activeJob.job_id);
-      setActiveJob(resp.job);
-      await loadJobs();
-    } catch (err) {
-      setError(formatErrorDetail(err));
-    } finally {
-      setJobLoading(false);
-    }
+    await cancelTrackedJob();
   }
 
   async function retryJob(jobId: string) {
-    setJobLoading(true);
-    setError(null);
-    try {
-      const job = await retryProductDedupJob(jobId);
-      setActiveJob(job);
-      rememberActiveJob(job.job_id);
-      await loadJobs();
-    } catch (err) {
-      setError(formatErrorDetail(err));
-    } finally {
-      setJobLoading(false);
-    }
+    await retryTrackedJob(jobId);
   }
 
   function toggleRemove(productId: string, checked: boolean) {
@@ -239,7 +147,7 @@ export default function ProductDedupManager({
       return;
     }
     setDeleting(true);
-    setError(null);
+    setErrorMessage(null);
     setDeleteSummary(null);
     try {
       const result = await deleteProductsBatch({
@@ -251,11 +159,12 @@ export default function ProductDedupManager({
         `删除完成：${result.deleted_ids.length} 条，跳过 ${result.skipped_ids.length} 条，缺失 ${result.missing_ids.length} 条。`,
       );
       setSelectedRemoveIds([]);
-      setReport(null);
+      clearResult();
+      setSelectionSeedJobId(null);
       router.refresh();
-      await loadJobs();
+      await refreshJobs();
     } catch (err) {
-      setError(formatErrorDetail(err));
+      setErrorMessage(formatErrorDetail(err));
     } finally {
       setDeleting(false);
     }
@@ -342,7 +251,7 @@ export default function ProductDedupManager({
         </button>
         <button
           type="button"
-          onClick={() => void loadJobs()}
+          onClick={() => void refreshJobs()}
           disabled={jobsLoading}
           className="inline-flex h-10 items-center justify-center rounded-full border border-black/14 bg-white px-5 text-[13px] font-semibold text-black/78 disabled:opacity-45"
         >
@@ -359,90 +268,27 @@ export default function ProductDedupManager({
       </div>
 
       <div className="mt-3 text-[12px] text-black/64">{formatJobHint(activeJob)}</div>
-      {error ? <div className="mt-2 text-[13px] text-[#b42318]">{error}</div> : null}
+      {errorMessage ? <div className="mt-2 text-[13px] text-[#b42318]">{errorMessage}</div> : null}
       {deleteSummary ? <div className="mt-2 text-[13px] text-[#116a3f]">{deleteSummary}</div> : null}
 
-      <div className="mt-4 rounded-2xl border border-black/10 bg-white p-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="text-[13px] font-semibold text-black/82">当前任务</div>
-          <div className="text-[12px] text-black/58">
-            {activeJob ? `${activeJob.job_id} · ${activeJob.status}` : "暂无运行任务"}
-          </div>
-        </div>
-        <div className="mt-2 text-[12px] text-black/64">
-          {activeJob?.stage_label || activeJob?.stage || "待命"} · {activeJob?.message || "等待创建任务"}
-        </div>
-        <div className="mt-3 h-2 overflow-hidden rounded-full bg-black/10">
-          <div className="h-full rounded-full bg-black transition-all" style={{ width: `${progressValue}%` }} />
-        </div>
-        <div className="mt-2 text-[12px] text-black/58">
-          进度 {progressValue}% · {activeJob?.current_index || 0}/{activeJob?.current_total || 0}
-        </div>
-        {activeJob ? (
-          <div className="mt-2 text-[12px] text-black/58">
-            scanned {activeJob.counters.scanned_products} · compared {activeJob.counters.compared_pairs} · suggestions {activeJob.counters.suggestions} · failed {activeJob.counters.failed}
-          </div>
-        ) : null}
-      </div>
-
-      {(streamRawText || streamPrettyText || activeRunning) && (
-        <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
-          <div className="rounded-xl border border-black/10 bg-[#fbfcff] p-2.5">
-            <div className="text-[11px] font-semibold text-[#3151d8]">实时文本</div>
-            <pre className="mt-1 max-h-52 overflow-auto whitespace-pre-wrap text-[12px] leading-[1.55] text-black/74">
-              {streamRawText || (activeRunning ? "等待任务日志..." : "-")}
-            </pre>
-          </div>
-          <div className="rounded-xl border border-black/10 bg-white p-2.5">
-            <div className="text-[11px] font-semibold text-[#3151d8]">最终美化文本</div>
-            <pre className="mt-1 max-h-52 overflow-auto whitespace-pre-wrap text-[12px] leading-[1.55] text-black/74">
-              {streamPrettyText || (activeRunning ? "分析中..." : "-")}
-            </pre>
-          </div>
-        </div>
-      )}
-
-      <div className="mt-4 rounded-2xl border border-black/10 bg-[#f8fafc] p-4">
-        <div className="text-[13px] font-semibold text-black/82">最近任务</div>
-        <div className="mt-3 max-h-[220px] space-y-2 overflow-auto pr-1">
-          {sortedJobs.map((job) => {
-            const canRetry = job.status === "failed" || job.status === "cancelled";
-            return (
-              <div key={job.job_id} className="rounded-xl border border-black/10 bg-white px-3 py-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveJob(job);
-                    if (job.status === "running" || job.status === "queued" || job.status === "cancelling") {
-                      rememberActiveJob(job.job_id);
-                    }
-                  }}
-                  className="w-full text-left"
-                >
-                  <div className="truncate text-[12px] font-semibold text-black/78">
-                    {job.job_id} · {job.status} · {job.percent}%
-                  </div>
-                  <div className="mt-0.5 truncate text-[12px] text-black/58">{job.stage_label || job.stage || "-"} · {job.message || "-"}</div>
-                  <div className="mt-0.5 text-[11px] text-black/48">updated_at: {job.updated_at}</div>
-                </button>
-                {canRetry ? (
-                  <div className="mt-2">
-                    <button
-                      type="button"
-                      onClick={() => void retryJob(job.job_id)}
-                      disabled={jobLoading}
-                      className="inline-flex h-8 items-center justify-center rounded-full border border-[#3151d8]/30 bg-[#eef2ff] px-3 text-[12px] font-semibold text-[#3151d8] disabled:opacity-45"
-                    >
-                      失败重试
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-            );
-          })}
-          {sortedJobs.length === 0 ? <div className="text-[12px] text-black/52">暂无历史任务。</div> : null}
-        </div>
-      </div>
+      <ProductWorkbenchJobConsole
+        activeJob={activeJob}
+        activeRunning={activeRunning}
+        progressValue={progressValue}
+        countersText={
+          activeJob
+            ? `scanned ${activeJob.counters.scanned_products} · compared ${activeJob.counters.compared_pairs} · suggestions ${activeJob.counters.suggestions} · failed ${activeJob.counters.failed}`
+            : null
+        }
+        liveText={liveText}
+        prettyText={streamPrettyText}
+        jobs={sortedJobs}
+        jobLoading={jobLoading}
+        onSelectJob={selectJob}
+        onRetryJob={(jobId) => {
+          void retryJob(jobId);
+        }}
+      />
 
       {report ? (
         <div className="mt-5 space-y-4">
@@ -581,14 +427,4 @@ function buildPrettySummary(report: ProductDedupSuggestResponse): string {
     }
   }
   return lines.join("\n");
-}
-
-function formatErrorDetail(err: unknown): string {
-  if (err instanceof Error && err.message) return err.message;
-  if (typeof err === "string") return err;
-  try {
-    return JSON.stringify(err);
-  } catch {
-    return String(err);
-  }
 }
