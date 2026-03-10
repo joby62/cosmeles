@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type DefaultNavKey = "wiki" | "choose" | "compare";
 
@@ -13,6 +13,12 @@ const CATEGORY_TABS = [
   { prefix: "/m/lotion", label: "个性测配", href: "/m/lotion/start" },
   { prefix: "/m/cleanser", label: "个性测配", href: "/m/cleanser/start" },
 ] as const;
+
+const NAV_HIDE_THRESHOLD = 22;
+const NAV_SHOW_THRESHOLD = 12;
+const NAV_TOP_REVEAL = 8;
+const SCROLLABLE_EPSILON = 6;
+const MIN_SCROLL_DELTA = 0.6;
 
 function getChooseItem(pathname: string) {
   const matched = CATEGORY_TABS.find((item) => pathname.startsWith(item.prefix));
@@ -43,6 +49,13 @@ export default function MobileBottomNav() {
   const pathname = usePathname() || "/m/choose";
   const chooseItem = getChooseItem(pathname);
   const [chromeBottomInset, setChromeBottomInset] = useState(0);
+  const [navVisible, setNavVisible] = useState(true);
+  const [isScrollable, setIsScrollable] = useState(false);
+  const navVisibleRef = useRef(true);
+  const scrollableRef = useRef(false);
+  const lastScrollYRef = useRef(0);
+  const downDeltaRef = useRef(0);
+  const upDeltaRef = useRef(0);
 
   const defaultItems = [
     chooseItem,
@@ -95,9 +108,121 @@ export default function MobileBottomNav() {
     };
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const setVisible = (next: boolean) => {
+      if (navVisibleRef.current === next) return;
+      navVisibleRef.current = next;
+      setNavVisible(next);
+    };
+
+    const setScrollableState = (next: boolean) => {
+      if (scrollableRef.current !== next) {
+        scrollableRef.current = next;
+        setIsScrollable(next);
+      }
+      if (!next) {
+        downDeltaRef.current = 0;
+        upDeltaRef.current = 0;
+        setVisible(true);
+      }
+    };
+
+    const getScrollY = () => Math.max(0, window.scrollY || window.pageYOffset || 0);
+
+    const evaluateScrollable = () => {
+      const root = document.scrollingElement || document.documentElement;
+      const nextScrollable = root.scrollHeight - root.clientHeight > SCROLLABLE_EPSILON;
+      setScrollableState(nextScrollable);
+    };
+
+    const handleScroll = () => {
+      const y = getScrollY();
+      const delta = y - lastScrollYRef.current;
+      lastScrollYRef.current = y;
+
+      if (y <= NAV_TOP_REVEAL) {
+        downDeltaRef.current = 0;
+        upDeltaRef.current = 0;
+        setVisible(true);
+        return;
+      }
+
+      if (!scrollableRef.current) return;
+      if (Math.abs(delta) < MIN_SCROLL_DELTA) return;
+
+      if (delta > 0) {
+        downDeltaRef.current += delta;
+        upDeltaRef.current = 0;
+        if (downDeltaRef.current >= NAV_HIDE_THRESHOLD) {
+          downDeltaRef.current = 0;
+          setVisible(false);
+        }
+        return;
+      }
+
+      upDeltaRef.current += -delta;
+      downDeltaRef.current = 0;
+      if (upDeltaRef.current >= NAV_SHOW_THRESHOLD) {
+        upDeltaRef.current = 0;
+        setVisible(true);
+      }
+    };
+
+    let rafId = 0;
+    const scheduleEvaluate = () => {
+      if (rafId) return;
+      rafId = window.requestAnimationFrame(() => {
+        rafId = 0;
+        evaluateScrollable();
+        handleScroll();
+      });
+    };
+
+    lastScrollYRef.current = getScrollY();
+    navVisibleRef.current = true;
+    scheduleEvaluate();
+
+    const scrollingRoot = document.scrollingElement || document.documentElement;
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver(scheduleEvaluate);
+      resizeObserver.observe(scrollingRoot);
+      if (document.body && document.body !== scrollingRoot) {
+        resizeObserver.observe(document.body);
+      }
+    }
+
+    const viewport = window.visualViewport;
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    window.addEventListener("resize", scheduleEvaluate);
+    window.addEventListener("orientationchange", scheduleEvaluate);
+    window.addEventListener("pageshow", scheduleEvaluate);
+    window.addEventListener("load", scheduleEvaluate);
+    viewport?.addEventListener("resize", scheduleEvaluate);
+    viewport?.addEventListener("scroll", scheduleEvaluate);
+
+    return () => {
+      if (rafId) {
+        window.cancelAnimationFrame(rafId);
+      }
+      resizeObserver?.disconnect();
+      window.removeEventListener("scroll", handleScroll);
+      window.removeEventListener("resize", scheduleEvaluate);
+      window.removeEventListener("orientationchange", scheduleEvaluate);
+      window.removeEventListener("pageshow", scheduleEvaluate);
+      window.removeEventListener("load", scheduleEvaluate);
+      viewport?.removeEventListener("resize", scheduleEvaluate);
+      viewport?.removeEventListener("scroll", scheduleEvaluate);
+    };
+  }, [pathname]);
+
   return (
     <nav
-      className="fixed inset-x-0 z-[60] px-4"
+      className={`m-mobile-bottom-nav fixed inset-x-0 z-[60] px-4 ${
+        !isScrollable || navVisible ? "m-mobile-bottom-nav-visible" : "m-mobile-bottom-nav-hidden"
+      }`}
       style={{ bottom: `calc(12px + max(env(safe-area-inset-bottom), 0px) + ${chromeBottomInset}px)` }}
     >
       <div className="mx-auto max-w-[680px]">
