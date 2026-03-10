@@ -128,6 +128,7 @@ export default async function MobileWikiProductDetailPage({
 
   const item = data.item;
   const product = item.product;
+  const uploadCtaHref = `/m/me/use?category=${encodeURIComponent(product.category)}&source=wiki_product_detail&product_id=${encodeURIComponent(product.id)}&return_to=${encodeURIComponent(`/m/wiki/product/${product.id}`)}`;
   const ingredientRefByIndex = new Map((item.ingredient_refs || []).map((ref) => [ref.index, ref]));
   const analysis = analysisData?.item.profile || null;
   const diagnosticsEntries = analysis ? Object.entries(analysis.diagnostics || {}) : [];
@@ -169,6 +170,14 @@ export default async function MobileWikiProductDetailPage({
             {product.name || "未命名产品"}
           </h1>
           <p className="mt-1 text-[14px] text-black/58">{product.brand || "品牌未识别"}</p>
+          <div className="mt-3">
+            <Link
+              href={uploadCtaHref}
+              className="inline-flex max-w-full items-center rounded-full border border-[#cfe2ff] bg-[linear-gradient(180deg,#f7faff_0%,#eef5ff_100%)] px-4 py-2 text-[12px] font-semibold leading-[1.45] text-[#2450a3] shadow-[0_8px_22px_rgba(36,80,163,0.08)] active:translate-y-[1px]"
+            >
+              没有你的产品？点击上传一键分析
+            </Link>
+          </div>
           <p className="mt-3 text-[14px] leading-[1.55] text-black/68">
             {product.one_sentence || "暂无一句话摘要。"}
           </p>
