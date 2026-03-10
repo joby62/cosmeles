@@ -1275,6 +1275,39 @@ html[data-nav-open="1"] #app-main{
   background: var(--m-wiki-handle);
 }
 
+@keyframes mWikiPaneIn {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.m-wiki-pane {
+  animation: mWikiPaneIn 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.m-wiki-segmented {
+  border: 1px solid var(--m-wiki-border);
+  background: var(--m-wiki-frost);
+  background: color-mix(in srgb, var(--m-wiki-frost) 74%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.22);
+  backdrop-filter: saturate(175%) blur(18px);
+  -webkit-backdrop-filter: saturate(175%) blur(18px);
+}
+
+.m-wiki-segment-thumb {
+  border-radius: 11px;
+  background: linear-gradient(180deg, rgba(41,151,255,0.92), rgba(0,113,227,0.9));
+  box-shadow:
+    0 8px 20px rgba(0,113,227,0.28),
+    inset 0 1px 0 rgba(255,255,255,0.34);
+  transition: transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 @keyframes mSheetIn {
   from {
     opacity: 0;
@@ -1301,6 +1334,14 @@ html[data-nav-open="1"] #app-main{
 
   .m-sheet-enter {
     animation: none !important;
+  }
+
+  .m-wiki-pane {
+    animation: none !important;
+  }
+
+  .m-wiki-segment-thumb {
+    transition: none !important;
   }
 
   .m-compare-check-selected {
