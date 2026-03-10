@@ -18,6 +18,10 @@ const nextConfig: NextConfig = {
         source: "/images/:path*",
         destination: `http://${BACKEND_HOST}:${BACKEND_PORT}/images/:path*`,
       },
+      {
+        source: "/user-images/:path*",
+        destination: `http://${BACKEND_HOST}:${BACKEND_PORT}/user-images/:path*`,
+      },
     ];
   },
 };

@@ -3,10 +3,11 @@ from pathlib import Path
 
 import pytest
 
-from app.db.models import MobileBagItem, MobileCompareUsageStat, MobileSelectionSession
+from app.db.models import MobileBagItem, MobileCompareUsageStat, MobileSelectionSession, UserProduct, UserUploadAsset
 from app.db.session import get_db
 from app.routes import ingest as ingest_routes
 from app.routes import mobile as mobile_routes
+from app.settings import settings
 from backend.tests.support_images import VALID_TEST_IMAGE_BYTES, install_fake_save_image
 
 
@@ -287,6 +288,126 @@ def test_mobile_compare_stream_success_and_fetch_result(test_client, monkeypatch
     assert session_list.status_code == 200
     listed_ids = [item["compare_id"] for item in session_list.json()]
     assert result["compare_id"] in listed_ids
+
+
+def test_mobile_compare_upload_creates_private_user_product_and_reuses_cached_doc(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, _ = test_client
+    _install_fake_ingest_pipeline(
+        monkeypatch,
+        {
+            "category": "shampoo",
+            "brand": "SeedBrand",
+            "name": "SeedProduct",
+            "one_sentence": "seed",
+        },
+    )
+    featured_product_id = _ingest_one(client, "seed.jpg")
+    _set_shampoo_featured_slots(client, product_id=featured_product_id)
+
+    selection = client.post(
+        "/api/mobile/selection/resolve",
+        json={"category": "shampoo", "answers": {"q1": "A", "q2": "C", "q3": "B"}},
+    )
+    assert selection.status_code == 200
+    recommendation_product_id = selection.json()["recommended_product"]["id"]
+
+    upload = client.post(
+        "/api/mobile/compare/current-product/upload",
+        data={"category": "shampoo", "brand": "CacheBrand", "name": "CacheName"},
+        files={"image": ("cache.png", VALID_TEST_IMAGE_BYTES, "image/png")},
+    )
+    assert upload.status_code == 200
+    upload_body = upload.json()
+    upload_id = upload_body["upload_id"]
+    user_product_id = upload_body["user_product_id"]
+    assert user_product_id
+    assert str(upload_body["image_path"]).startswith("user-images/")
+
+    uploaded_image_abs = Path(settings.user_storage_dir) / "images" / str(upload_body["image_path"])[len("user-images/") :]
+    assert uploaded_image_abs.exists()
+
+    listed_before = client.get("/api/mobile/user-products", params={"category": "shampoo", "limit": 20})
+    assert listed_before.status_code == 200
+    listed_before_body = listed_before.json()
+    assert listed_before_body["total"] == 1
+    assert listed_before_body["items"][0]["user_product_id"] == user_product_id
+    assert listed_before_body["items"][0]["status"] == "uploaded"
+
+    pipeline_calls = {"stage1": 0, "stage2": 0}
+
+    class FakePipeline:
+        def analyze_stage1(self, image_path: str, trace_id: str | None = None, event_callback=None):
+            pipeline_calls["stage1"] += 1
+            return {
+                "vision_text": "mock vision",
+                "model": "doubao-stage1-mini",
+                "artifact": f"doubao_runs/{trace_id}/stage1_vision.json",
+            }
+
+        def analyze_stage2(self, vision_text: str, trace_id: str | None = None, event_callback=None):
+            pipeline_calls["stage2"] += 1
+            return {
+                "doc": {
+                    "product": {"category": "shampoo", "brand": "CacheBrand", "name": "CacheName"},
+                    "summary": {
+                        "one_sentence": "缓存命中后的用户产品",
+                        "pros": ["A"],
+                        "cons": ["B"],
+                        "who_for": ["C"],
+                        "who_not_for": ["D"],
+                    },
+                    "ingredients": [
+                        {"name": "甘油", "type": "保湿剂", "functions": ["保湿"], "risk": "low", "notes": ""},
+                    ],
+                    "evidence": {"doubao_raw": ""},
+                },
+                "struct_text": "{\"ok\":true}",
+                "model": "doubao-stage2-mini",
+                "artifact": f"doubao_runs/{trace_id}/stage2_struct.json",
+            }
+
+    def fake_run_capability_now(capability: str, input_payload: dict, trace_id: str | None = None, event_callback=None):
+        assert capability == "doubao.mobile_compare_summary"
+        return {
+            "decision": "keep",
+            "headline": "继续使用即可。",
+            "confidence": 0.75,
+            "sections": {
+                "keep_benefits": ["A"],
+                "keep_watchouts": ["B"],
+                "ingredient_order_diff": ["C"],
+                "profile_fit_advice": ["D"],
+            },
+            "model": "doubao-pro",
+        }
+
+    monkeypatch.setattr(mobile_routes, "DoubaoPipelineService", FakePipeline)
+    monkeypatch.setattr(mobile_routes, "run_capability_now", fake_run_capability_now)
+
+    for _ in range(2):
+        stream_resp = client.post(
+            "/api/mobile/compare/jobs/stream",
+            json={
+                "category": "shampoo",
+                "profile_mode": "reuse_latest",
+                "targets": [
+                    {"source": "upload_new", "upload_id": upload_id},
+                    {"source": "history_product", "product_id": recommendation_product_id},
+                ],
+            },
+        )
+        assert stream_resp.status_code == 200
+        events = _parse_sse_events(stream_resp.text)
+        assert not [payload for name, payload in events if name == "error"]
+
+    assert pipeline_calls == {"stage1": 1, "stage2": 1}
+
+    listed_after = client.get("/api/mobile/user-products", params={"category": "shampoo", "limit": 20})
+    assert listed_after.status_code == 200
+    listed_after_body = listed_after.json()
+    assert listed_after_body["items"][0]["user_product_id"] == user_product_id
+    assert listed_after_body["items"][0]["status"] == "ready"
+    assert str(listed_after_body["items"][0]["image_url"]).startswith("/user-images/")
 
 
 def test_mobile_compare_session_detail_fallback_to_result_when_session_file_missing(

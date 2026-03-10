@@ -58,6 +58,7 @@ def readyz():
 
     try:
         os.makedirs(settings.storage_dir, exist_ok=True)
+        os.makedirs(settings.user_storage_dir, exist_ok=True)
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Storage not ready: {e}") from e
 
@@ -68,3 +69,8 @@ os.makedirs(settings.storage_dir, exist_ok=True)
 images_dir = os.path.join(settings.storage_dir, "images")
 os.makedirs(images_dir, exist_ok=True)
 app.mount("/images", StaticFiles(directory=images_dir), name="images")
+
+os.makedirs(settings.user_storage_dir, exist_ok=True)
+user_images_dir = os.path.join(settings.user_storage_dir, "images")
+os.makedirs(user_images_dir, exist_ok=True)
+app.mount("/user-images", StaticFiles(directory=user_images_dir), name="user-images")

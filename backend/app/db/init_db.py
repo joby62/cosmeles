@@ -67,6 +67,7 @@ def init_db() -> None:
     Ensure storage dirs exist and create SQLite tables (idempotent).
     """
     os.makedirs(settings.storage_dir, exist_ok=True)
+    os.makedirs(settings.user_storage_dir, exist_ok=True)
     os.makedirs(os.path.join(settings.storage_dir, "images"), exist_ok=True)
     os.makedirs(os.path.join(settings.storage_dir, "products"), exist_ok=True)
     os.makedirs(os.path.join(settings.storage_dir, "doubao_runs"), exist_ok=True)
@@ -74,6 +75,13 @@ def init_db() -> None:
     os.makedirs(os.path.join(settings.storage_dir, "ingredients"), exist_ok=True)
     os.makedirs(os.path.join(settings.storage_dir, "route_mappings"), exist_ok=True)
     os.makedirs(os.path.join(settings.storage_dir, "product_profiles"), exist_ok=True)
+    os.makedirs(os.path.join(settings.user_storage_dir, "images"), exist_ok=True)
+    os.makedirs(os.path.join(settings.user_storage_dir, "uploads"), exist_ok=True)
+    os.makedirs(os.path.join(settings.user_storage_dir, "products"), exist_ok=True)
+    os.makedirs(os.path.join(settings.user_storage_dir, "route_mappings"), exist_ok=True)
+    os.makedirs(os.path.join(settings.user_storage_dir, "product_profiles"), exist_ok=True)
+    os.makedirs(os.path.join(settings.user_storage_dir, "doubao_runs"), exist_ok=True)
+    os.makedirs(os.path.join(settings.user_storage_dir, "compare_results"), exist_ok=True)
 
     # Create tables if not exist
     Base.metadata.create_all(bind=engine)

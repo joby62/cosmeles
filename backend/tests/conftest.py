@@ -20,6 +20,9 @@ def test_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     storage_dir = tmp_path / "storage"
     storage_dir.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(settings, "storage_dir", str(storage_dir))
+    user_storage_dir = tmp_path / "user_storage"
+    user_storage_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(settings, "user_storage_dir", str(user_storage_dir))
 
     db_path = tmp_path / "test.db"
     test_engine = create_engine(

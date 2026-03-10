@@ -1,4 +1,5 @@
 import io
+import hashlib
 import os, json
 import shutil
 from uuid import uuid4
@@ -17,12 +18,23 @@ CONTENT_TYPE_TO_EXT = {
     "image/heif": ".heif",
 }
 
+USER_STORAGE_PREFIX_MAP = {
+    "user-images/": "images/",
+    "user-uploads/": "uploads/",
+    "user-products/": "products/",
+    "user-route-mappings/": "route_mappings/",
+    "user-product-profiles/": "product_profiles/",
+    "user-doubao-runs/": "doubao_runs/",
+    "user-compare-results/": "compare_results/",
+}
+
 def now_iso():
     # Keep UTC ISO format but include microseconds to avoid same-second ordering ties.
     return datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 def ensure_dirs():
     os.makedirs(settings.storage_dir, exist_ok=True)
+    os.makedirs(settings.user_storage_dir, exist_ok=True)
     os.makedirs(os.path.join(settings.storage_dir, "images"), exist_ok=True)
     os.makedirs(os.path.join(settings.storage_dir, "images", "webp"), exist_ok=True)
     os.makedirs(os.path.join(settings.storage_dir, "images", "jpg"), exist_ok=True)
@@ -32,6 +44,15 @@ def ensure_dirs():
     os.makedirs(os.path.join(settings.storage_dir, "ingredients"), exist_ok=True)
     os.makedirs(os.path.join(settings.storage_dir, "route_mappings"), exist_ok=True)
     os.makedirs(os.path.join(settings.storage_dir, "product_profiles"), exist_ok=True)
+    os.makedirs(os.path.join(settings.user_storage_dir, "images"), exist_ok=True)
+    os.makedirs(os.path.join(settings.user_storage_dir, "images", "webp"), exist_ok=True)
+    os.makedirs(os.path.join(settings.user_storage_dir, "images", "jpg"), exist_ok=True)
+    os.makedirs(os.path.join(settings.user_storage_dir, "uploads"), exist_ok=True)
+    os.makedirs(os.path.join(settings.user_storage_dir, "products"), exist_ok=True)
+    os.makedirs(os.path.join(settings.user_storage_dir, "route_mappings"), exist_ok=True)
+    os.makedirs(os.path.join(settings.user_storage_dir, "product_profiles"), exist_ok=True)
+    os.makedirs(os.path.join(settings.user_storage_dir, "doubao_runs"), exist_ok=True)
+    os.makedirs(os.path.join(settings.user_storage_dir, "compare_results"), exist_ok=True)
 
 def new_id() -> str:
     return str(uuid4())
@@ -42,6 +63,35 @@ def _resolve_rel_path(rel_path: str) -> Path:
     if not str(target).startswith(str(base)):
         raise ValueError("Invalid storage path.")
     return target
+
+
+def _resolve_user_rel_path(rel_path: str) -> Path:
+    base = Path(settings.user_storage_dir).resolve()
+    target = (base / rel_path).resolve()
+    if not str(target).startswith(str(base)):
+        raise ValueError("Invalid user storage path.")
+    return target
+
+
+def _resolve_any_rel_path(rel_path: str) -> Path:
+    value = str(rel_path or "").strip().lstrip("/")
+    if not value:
+        raise ValueError("Invalid storage path.")
+    for prefix, mapped_prefix in USER_STORAGE_PREFIX_MAP.items():
+        if value.startswith(prefix):
+            suffix = value[len(prefix) :]
+            return _resolve_user_rel_path(f"{mapped_prefix}{suffix}")
+    return _resolve_rel_path(value)
+
+
+def owner_storage_hash(owner_type: str, owner_id: str) -> str:
+    raw = f"{str(owner_type or '').strip().lower()}::{str(owner_id or '').strip()}".encode("utf-8")
+    return hashlib.sha1(raw).hexdigest()[:16]
+
+
+def _user_owner_scope(owner_type: str, owner_id: str) -> str:
+    safe_owner_type = _safe_storage_segment(owner_type, fallback="device")
+    return f"{safe_owner_type}/{owner_storage_hash(owner_type, owner_id)}"
 
 def save_image(
     product_id: str,
@@ -76,6 +126,131 @@ def save_image(
 
     # 默认主链路返回 webp，用于前端优先加载；jpg 作为并存回退资源。
     return webp_rel
+
+
+def save_user_upload_bundle(
+    *,
+    upload_id: str,
+    owner_type: str,
+    owner_id: str,
+    category: str,
+    filename: str,
+    content: bytes,
+    content_type: str | None = None,
+) -> dict[str, str]:
+    ensure_dirs()
+    safe_upload_id = _safe_storage_segment(upload_id, fallback=new_id())
+    safe_category = _safe_storage_segment(category, fallback="unknown")
+    owner_scope = _user_owner_scope(owner_type, owner_id)
+
+    ext = os.path.splitext(filename)[1].lower().strip()
+    if ext not in ALLOWED_IMAGE_EXTS:
+        inferred = CONTENT_TYPE_TO_EXT.get(str(content_type or "").lower().strip())
+        if inferred in ALLOWED_IMAGE_EXTS:
+            ext = inferred
+        else:
+            raise ValueError(
+                f"Unsupported image extension '{ext or '(empty)'}' and content_type '{content_type or '(empty)'}'."
+            )
+
+    variants = _normalize_image_variants_for_storage(ext=ext, content=content)
+    asset_dir_rel = f"user-uploads/{owner_scope}/{safe_upload_id}"
+    original_rel = f"{asset_dir_rel}/original{ext}"
+    meta_rel = f"{asset_dir_rel}/meta.json"
+    webp_rel = f"user-images/webp/uploads/{owner_scope}/{safe_category}/{safe_upload_id}.webp"
+    jpg_rel = f"user-images/jpg/uploads/{owner_scope}/{safe_category}/{safe_upload_id}.jpg"
+
+    original_abs = _resolve_any_rel_path(original_rel)
+    original_abs.parent.mkdir(parents=True, exist_ok=True)
+    original_abs.write_bytes(content)
+
+    for rel_path, payload in [
+        (webp_rel, variants["webp"]),
+        (jpg_rel, variants["jpg"]),
+    ]:
+        abs_path = _resolve_any_rel_path(rel_path)
+        abs_path.parent.mkdir(parents=True, exist_ok=True)
+        abs_path.write_bytes(payload)
+
+    return {
+        "asset_dir": asset_dir_rel,
+        "original_path": original_rel,
+        "preview_image_path": webp_rel,
+        "preview_image_jpg_path": jpg_rel,
+        "meta_path": meta_rel,
+    }
+
+
+def save_user_product_json(
+    *,
+    user_product_id: str,
+    owner_type: str,
+    owner_id: str,
+    category: str,
+    doc: dict,
+) -> str:
+    ensure_dirs()
+    safe_category = _safe_storage_segment(category, fallback="unknown")
+    safe_user_product_id = _safe_storage_segment(user_product_id, fallback=new_id())
+    owner_scope = _user_owner_scope(owner_type, owner_id)
+    rel = f"user-products/{owner_scope}/{safe_category}/{safe_user_product_id}.json"
+    abs_path = _resolve_any_rel_path(rel)
+    abs_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(abs_path, "w", encoding="utf-8") as f:
+        json.dump(doc, f, ensure_ascii=False, indent=2)
+    return rel
+
+
+def copy_user_image_to_product(
+    *,
+    image_rel: str | None,
+    owner_type: str,
+    owner_id: str,
+    category: str,
+    user_product_id: str,
+) -> str | None:
+    rel = str(image_rel or "").strip().lstrip("/")
+    if not rel:
+        return None
+
+    ensure_dirs()
+    safe_category = _safe_storage_segment(category, fallback="unknown")
+    safe_user_product_id = _safe_storage_segment(user_product_id, fallback=new_id())
+    owner_scope = _user_owner_scope(owner_type, owner_id)
+    candidates = image_variant_rel_paths(rel)
+    if not candidates:
+        return None
+
+    primary_target_rel = f"user-images/webp/products/{owner_scope}/{safe_category}/{safe_user_product_id}.webp"
+    fallback_target_rel = f"user-images/jpg/products/{owner_scope}/{safe_category}/{safe_user_product_id}.jpg"
+
+    copied_any = False
+    for candidate in candidates:
+        try:
+            source_abs = _resolve_any_rel_path(candidate)
+        except ValueError:
+            continue
+        if not source_abs.exists() or not source_abs.is_file():
+            continue
+
+        suffix = source_abs.suffix.lower().strip()
+        if suffix == ".webp":
+            target_rel = primary_target_rel
+        elif suffix in {".jpg", ".jpeg"}:
+            target_rel = fallback_target_rel
+        else:
+            continue
+
+        target_abs = _resolve_any_rel_path(target_rel)
+        target_abs.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(str(source_abs), str(target_abs))
+        copied_any = True
+
+    if copied_any and exists_rel_path(primary_target_rel):
+        return primary_target_rel
+    if copied_any and exists_rel_path(fallback_target_rel):
+        return fallback_target_rel
+    return rel
 
 
 def save_temp_upload_image(
@@ -347,17 +522,18 @@ def _safe_storage_segment(value: str, fallback: str) -> str:
     return out or fallback
 
 def load_json(rel_path: str) -> dict:
-    abs_path = _resolve_rel_path(rel_path)
+    abs_path = _resolve_any_rel_path(rel_path)
     with open(abs_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 def read_rel_bytes(rel_path: str) -> bytes:
-    abs_path = _resolve_rel_path(rel_path)
+    abs_path = _resolve_any_rel_path(rel_path)
     with open(abs_path, "rb") as f:
         return f.read()
 
 def save_json_at(rel_path: str, doc: dict) -> None:
-    abs_path = _resolve_rel_path(rel_path)
+    abs_path = _resolve_any_rel_path(rel_path)
+    abs_path.parent.mkdir(parents=True, exist_ok=True)
     with open(abs_path, "w", encoding="utf-8") as f:
         json.dump(doc, f, ensure_ascii=False, indent=2)
 
@@ -365,7 +541,7 @@ def remove_rel_path(rel_path: str | None) -> bool:
     if not rel_path:
         return False
     try:
-        abs_path = _resolve_rel_path(rel_path)
+        abs_path = _resolve_any_rel_path(rel_path)
     except ValueError:
         return False
     if abs_path.exists():
@@ -390,14 +566,19 @@ def image_variant_rel_paths(image_rel: str | None) -> list[str]:
         out.append(value)
 
     append(rel)
-    if not rel.startswith("images/"):
+    namespace_prefix = ""
+    if rel.startswith("images/"):
+        namespace_prefix = "images/"
+    elif rel.startswith("user-images/"):
+        namespace_prefix = "user-images/"
+    if not namespace_prefix:
         return out
 
     suffix = Path(rel).suffix.lower()
     if suffix not in {".jpg", ".jpeg", ".webp"}:
         return out
 
-    rel_sub = rel[len("images/") :]
+    rel_sub = rel[len(namespace_prefix) :]
     if rel_sub.startswith("webp/"):
         rel_sub = rel_sub[len("webp/") :]
     elif rel_sub.startswith("jpg/"):
@@ -407,8 +588,8 @@ def image_variant_rel_paths(image_rel: str | None) -> list[str]:
     if not stem_rel:
         return out
 
-    append(f"images/webp/{stem_rel}.webp")
-    append(f"images/jpg/{stem_rel}.jpg")
+    append(f"{namespace_prefix}webp/{stem_rel}.webp")
+    append(f"{namespace_prefix}jpg/{stem_rel}.jpg")
     return out
 
 
@@ -518,7 +699,7 @@ def remove_rel_dir(rel_path: str | None) -> tuple[int, int]:
     if not rel_path:
         return (0, 0)
     try:
-        abs_path = _resolve_rel_path(rel_path)
+        abs_path = _resolve_any_rel_path(rel_path)
     except ValueError:
         return (0, 0)
     if not abs_path.exists() or not abs_path.is_dir():
@@ -540,7 +721,7 @@ def exists_rel_path(rel_path: str | None) -> bool:
     if not rel_path:
         return False
     try:
-        abs_path = _resolve_rel_path(rel_path)
+        abs_path = _resolve_any_rel_path(rel_path)
     except ValueError:
         return False
     return abs_path.exists()

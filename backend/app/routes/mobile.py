@@ -30,6 +30,8 @@ from app.db.models import (
     ProductIndex,
     ProductAnalysisIndex,
     ProductRouteMappingIndex,
+    UserProduct,
+    UserUploadAsset,
 )
 from app.db.session import get_db
 from app.schemas import (
@@ -64,6 +66,8 @@ from app.schemas import (
     MobileCompareTransparency,
     MobileCompareUploadResponse,
     MobileCompareVerdict,
+    MobileUserProductItem,
+    MobileUserProductListResponse,
     MobileSelectionChoice,
     MobileSelectionFitExplanationItem,
     MobileSelectionFitExplanationResponse,
@@ -105,6 +109,7 @@ from app.services.matrix_decision import (
 from app.services.parser import normalize_doc
 from app.services.selection_fit import RouteDiagnosticRule, get_route_diagnostic_rules
 from app.services.storage import (
+    copy_user_image_to_product,
     exists_rel_path,
     load_json,
     new_id,
@@ -113,7 +118,9 @@ from app.services.storage import (
     product_analysis_rel_path,
     remove_rel_dir,
     save_doubao_artifact,
-    save_image,
+    save_json_at,
+    save_user_product_json,
+    save_user_upload_bundle,
 )
 from app.settings import settings
 
@@ -1340,6 +1347,64 @@ def delete_mobile_bag_item(
     return MobileBagDeleteResponse(status="ok", item_id=normalized_item_id, deleted=True)
 
 
+@router.get("/user-products", response_model=MobileUserProductListResponse)
+def list_mobile_user_products(
+    request: Request,
+    response: Response,
+    category: str | None = Query(None),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    owner_type, owner_id, owner_cookie_new = _resolve_owner(request)
+    normalized_category = str(category or "").strip().lower() or None
+    if normalized_category and normalized_category not in VALID_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Invalid category: {normalized_category}.")
+
+    _ensure_mobile_user_product_tables(db)
+    stmt = (
+        select(UserProduct)
+        .where(UserProduct.owner_type == owner_type)
+        .where(UserProduct.owner_id == owner_id)
+    )
+    if normalized_category:
+        stmt = stmt.where(UserProduct.category == normalized_category)
+    rows = (
+        db.execute(
+            stmt.order_by(
+                UserProduct.updated_at.desc(),
+                UserProduct.created_at.desc(),
+                UserProduct.user_product_id.desc(),
+            )
+            .offset(offset)
+            .limit(limit)
+        )
+        .scalars()
+        .all()
+    )
+
+    count_stmt = (
+        select(UserProduct)
+        .where(UserProduct.owner_type == owner_type)
+        .where(UserProduct.owner_id == owner_id)
+    )
+    if normalized_category:
+        count_stmt = count_stmt.where(UserProduct.category == normalized_category)
+    total = len(db.execute(count_stmt).scalars().all())
+
+    items = [_row_to_mobile_user_product_item(row) for row in rows]
+    if owner_cookie_new:
+        _set_owner_cookie(response, owner_id, request)
+    return MobileUserProductListResponse(
+        status="ok",
+        category=normalized_category,
+        total=total,
+        offset=offset,
+        limit=limit,
+        items=items,
+    )
+
+
 @router.get("/compare/bootstrap", response_model=MobileCompareBootstrapResponse)
 def mobile_compare_bootstrap(
     request: Request,
@@ -1421,9 +1486,11 @@ async def upload_mobile_compare_current_product(
     image: UploadFile = File(...),
     brand: str | None = Form(None),
     name: str | None = Form(None),
+    db: Session = Depends(get_db),
 ):
     owner_type, owner_id, owner_cookie_new = _resolve_owner(request)
     normalized_category = _normalize_required_category(category)
+    _ensure_mobile_user_product_tables(db)
     if not image.content_type or not image.content_type.startswith("image/"):
         raise HTTPException(
             status_code=400,
@@ -1444,13 +1511,16 @@ async def upload_mobile_compare_current_product(
         )
 
     upload_id = new_id()
+    user_product_id = new_id()
     try:
-        image_rel = save_image(
-            upload_id,
-            image.filename or "upload.jpg",
-            content,
+        stored = save_user_upload_bundle(
+            upload_id=upload_id,
+            owner_type=owner_type,
+            owner_id=owner_id,
+            category=normalized_category,
+            filename=image.filename or "upload.jpg",
+            content=content,
             content_type=image.content_type,
-            subdir=f"mobile_compare/{normalized_category}",
         )
     except ValueError as e:
         raise HTTPException(
@@ -1458,8 +1528,10 @@ async def upload_mobile_compare_current_product(
             detail={"code": "COMPARE_UPLOAD_INVALID_IMAGE", "detail": str(e)},
         ) from e
 
+    created_at = now_iso()
     payload = {
         "upload_id": upload_id,
+        "user_product_id": user_product_id,
         "owner_type": owner_type,
         "owner_id": owner_id,
         "category": normalized_category,
@@ -1467,10 +1539,46 @@ async def upload_mobile_compare_current_product(
         "name": str(name or "").strip() or None,
         "filename": image.filename,
         "content_type": image.content_type,
-        "image_path": image_rel,
-        "created_at": now_iso(),
+        "original_path": stored["original_path"],
+        "image_path": stored["preview_image_path"],
+        "meta_path": stored["meta_path"],
+        "created_at": created_at,
+        "updated_at": created_at,
     }
-    save_doubao_artifact(upload_id, "mobile_compare_upload_meta", payload)
+    save_json_at(stored["meta_path"], payload)
+
+    upload_row = UserUploadAsset(
+        upload_id=upload_id,
+        owner_type=owner_type,
+        owner_id=owner_id,
+        category=normalized_category,
+        brand=payload["brand"],
+        name=payload["name"],
+        original_path=stored["original_path"],
+        preview_image_path=stored["preview_image_path"],
+        meta_path=stored["meta_path"],
+        user_product_id=user_product_id,
+        status="uploaded",
+        created_at=created_at,
+        updated_at=created_at,
+        last_used_at=created_at,
+    )
+    user_product_row = UserProduct(
+        user_product_id=user_product_id,
+        owner_type=owner_type,
+        owner_id=owner_id,
+        category=normalized_category,
+        brand=payload["brand"],
+        name=payload["name"],
+        image_path=stored["preview_image_path"],
+        source_upload_id=upload_id,
+        status="uploaded",
+        created_at=created_at,
+        updated_at=created_at,
+    )
+    db.add(upload_row)
+    db.add(user_product_row)
+    db.commit()
 
     if owner_cookie_new:
         _set_owner_cookie(response, owner_id, request)
@@ -1478,8 +1586,9 @@ async def upload_mobile_compare_current_product(
         status="ok",
         trace_id=upload_id,
         upload_id=upload_id,
+        user_product_id=user_product_id,
         category=normalized_category,
-        image_path=image_rel,
+        image_path=stored["preview_image_path"],
         created_at=payload["created_at"],
     )
 
@@ -2318,6 +2427,339 @@ def _target_title_from_doc(doc: ProductDoc) -> str:
     return "未命名产品"
 
 
+def _get_mobile_user_upload_asset(
+    *,
+    db: Session,
+    upload_id: str,
+    owner_type: str,
+    owner_id: str,
+) -> UserUploadAsset | None:
+    _ensure_mobile_user_product_tables(db)
+    return (
+        db.execute(
+            select(UserUploadAsset)
+            .where(UserUploadAsset.upload_id == upload_id)
+            .where(UserUploadAsset.owner_type == owner_type)
+            .where(UserUploadAsset.owner_id == owner_id)
+            .limit(1)
+        )
+        .scalars()
+        .first()
+    )
+
+
+def _get_mobile_user_product(
+    *,
+    db: Session,
+    user_product_id: str,
+    owner_type: str,
+    owner_id: str,
+) -> UserProduct | None:
+    _ensure_mobile_user_product_tables(db)
+    return (
+        db.execute(
+            select(UserProduct)
+            .where(UserProduct.user_product_id == user_product_id)
+            .where(UserProduct.owner_type == owner_type)
+            .where(UserProduct.owner_id == owner_id)
+            .limit(1)
+        )
+        .scalars()
+        .first()
+    )
+
+
+def _validate_compare_upload_doc(
+    *,
+    category: str,
+    raw_doc: dict[str, Any],
+    image_path: str,
+    brand_override: str,
+    name_override: str,
+    stage1: dict[str, Any],
+    stage2: dict[str, Any],
+    trace_id: str,
+) -> dict[str, Any]:
+    product = raw_doc.setdefault("product", {})
+    raw_category = str(product.get("category") or "").strip()
+    normalized_raw_category = _normalize_model_category(raw_category)
+    if normalized_raw_category and normalized_raw_category not in VALID_CATEGORIES:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "COMPARE_CATEGORY_INVALID",
+                "detail": f"Current product category extracted from image is invalid: '{raw_category}'.",
+                "retryable": False,
+                "trace_id": trace_id,
+            },
+        )
+    if normalized_raw_category and normalized_raw_category != category:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "COMPARE_CATEGORY_MISMATCH",
+                "detail": f"Current product category '{raw_category}' does not match selected category '{category}'.",
+                "retryable": False,
+                "trace_id": trace_id,
+            },
+        )
+
+    product["category"] = category
+    if brand_override:
+        product["brand"] = brand_override
+    if name_override:
+        product["name"] = name_override
+
+    normalized = normalize_doc(
+        raw_doc,
+        image_rel_path=image_path,
+        doubao_raw=str(stage2.get("struct_text") or ""),
+    )
+    evidence = normalized.setdefault("evidence", {})
+    evidence["doubao_vision_text"] = stage1.get("vision_text")
+    evidence["doubao_pipeline_mode"] = "mobile-compare-two-stage"
+    evidence["doubao_models"] = {
+        "vision": stage1.get("model"),
+        "struct": stage2.get("model"),
+    }
+    evidence["doubao_artifacts"] = {
+        "vision": stage1.get("artifact"),
+        "struct": stage2.get("artifact"),
+    }
+    return normalized
+
+
+def _analyze_mobile_compare_upload_doc(
+    *,
+    category: str,
+    image_path: str,
+    brand_override: str,
+    name_override: str,
+    trace_id: str,
+    event_callback: Callable[[str, dict[str, Any]], None],
+) -> dict[str, Any]:
+    if not image_path or not exists_rel_path(image_path):
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "COMPARE_UPLOAD_IMAGE_NOT_FOUND",
+                "detail": f"Upload image not found: {image_path or '(empty)'}.",
+                "retryable": False,
+                "trace_id": trace_id,
+            },
+        )
+
+    pipeline = DoubaoPipelineService()
+
+    def on_pipeline_event(event: dict[str, Any]) -> None:
+        _ = event
+        return
+
+    _emit_compare_progress(
+        event_callback,
+        trace_id=trace_id,
+        stage="stage1_vision",
+        message="正在识别图片中的品牌、品类与成分信息。",
+        percent=32,
+    )
+    stage1 = pipeline.analyze_stage1(
+        image_path=image_path,
+        trace_id=trace_id,
+        event_callback=on_pipeline_event,
+    )
+    _emit_compare_progress(
+        event_callback,
+        trace_id=trace_id,
+        stage="stage2_struct",
+        message="正在结构化提取成分与摘要。",
+        percent=40,
+    )
+    stage2 = pipeline.analyze_stage2(
+        vision_text=str(stage1.get("vision_text") or ""),
+        trace_id=trace_id,
+        event_callback=on_pipeline_event,
+    )
+
+    doc = stage2.get("doc")
+    if not isinstance(doc, dict):
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "COMPARE_PARSE_INVALID_DOC",
+                "detail": "Stage2 did not return a valid product document.",
+                "retryable": True,
+                "trace_id": trace_id,
+            },
+        )
+
+    return _validate_compare_upload_doc(
+        category=category,
+        raw_doc=doc,
+        image_path=image_path,
+        brand_override=brand_override,
+        name_override=name_override,
+        stage1=stage1,
+        stage2=stage2,
+        trace_id=trace_id,
+    )
+
+
+def _resolve_user_product_doc(
+    *,
+    category: str,
+    row: UserProduct,
+    owner_type: str,
+    owner_id: str,
+    trace_id: str,
+    event_callback: Callable[[str, dict[str, Any]], None],
+    db: Session,
+) -> dict[str, Any]:
+    if row.owner_type != owner_type or row.owner_id != owner_id:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "COMPARE_UPLOAD_NOT_FOUND",
+                "detail": f"user_product_id '{row.user_product_id}' not found.",
+                "retryable": False,
+                "trace_id": trace_id,
+            },
+        )
+    if str(row.category or "").strip().lower() != category:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "COMPARE_CATEGORY_MISMATCH",
+                "detail": f"User product '{row.user_product_id}' category does not match '{category}'.",
+                "retryable": False,
+                "trace_id": trace_id,
+            },
+        )
+
+    now = now_iso()
+    json_path = str(row.json_path or "").strip()
+    if json_path and exists_rel_path(json_path):
+        upload_row = None
+        if str(row.source_upload_id or "").strip():
+            upload_row = _get_mobile_user_upload_asset(
+                db=db,
+                upload_id=str(row.source_upload_id),
+                owner_type=owner_type,
+                owner_id=owner_id,
+            )
+        if str(row.public_product_id or "").strip():
+            _increase_product_usage_count(
+                db=db,
+                owner_type=owner_type,
+                owner_id=owner_id,
+                product_id=str(row.public_product_id),
+                category=category,
+            )
+        row.updated_at = now
+        db.add(row)
+        if upload_row is not None:
+            upload_row.last_used_at = now
+            upload_row.updated_at = now
+            db.add(upload_row)
+        db.commit()
+        return load_json(json_path)
+
+    upload_id = str(row.source_upload_id or "").strip()
+    if not upload_id:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "COMPARE_UPLOAD_NOT_FOUND",
+                "detail": f"user_product_id '{row.user_product_id}' has no source upload.",
+                "retryable": False,
+                "trace_id": trace_id,
+            },
+        )
+
+    upload_row = _get_mobile_user_upload_asset(
+        db=db,
+        upload_id=upload_id,
+        owner_type=owner_type,
+        owner_id=owner_id,
+    )
+    meta = _load_mobile_compare_upload_meta(
+        upload_id=upload_id,
+        owner_type=owner_type,
+        owner_id=owner_id,
+        trace_id=trace_id,
+        db=db,
+    )
+    image_path = str(meta.get("image_path") or row.image_path or "").strip()
+    brand_override = str(row.brand or meta.get("brand") or "").strip()
+    name_override = str(row.name or meta.get("name") or "").strip()
+
+    try:
+        normalized = _analyze_mobile_compare_upload_doc(
+            category=category,
+            image_path=image_path,
+            brand_override=brand_override,
+            name_override=name_override,
+            trace_id=trace_id,
+            event_callback=event_callback,
+        )
+        persisted_image_path = copy_user_image_to_product(
+            image_rel=image_path,
+            owner_type=owner_type,
+            owner_id=owner_id,
+            category=category,
+            user_product_id=str(row.user_product_id),
+        )
+        if persisted_image_path:
+            normalized.setdefault("evidence", {})["image_path"] = persisted_image_path
+        json_path = save_user_product_json(
+            user_product_id=str(row.user_product_id),
+            owner_type=owner_type,
+            owner_id=owner_id,
+            category=category,
+            doc=normalized,
+        )
+    except HTTPException as exc:
+        row.status = "failed"
+        row.last_error = _extract_http_exception_detail_message(exc)
+        row.updated_at = now_iso()
+        db.add(row)
+        db.commit()
+        raise
+
+    matched_product_id = _match_existing_product_id_for_usage(
+        db=db,
+        category=category,
+        brand=str(normalized.get("product", {}).get("brand") or ""),
+        name=str(normalized.get("product", {}).get("name") or ""),
+    )
+    if matched_product_id:
+        _increase_product_usage_count(
+            db=db,
+            owner_type=owner_type,
+            owner_id=owner_id,
+            product_id=matched_product_id,
+            category=category,
+        )
+
+    row.brand = str(normalized.get("product", {}).get("brand") or "").strip() or row.brand
+    row.name = str(normalized.get("product", {}).get("name") or "").strip() or row.name
+    row.one_sentence = str(normalized.get("summary", {}).get("one_sentence") or "").strip() or None
+    row.image_path = str(normalized.get("evidence", {}).get("image_path") or image_path or "").strip() or None
+    row.json_path = json_path
+    row.public_product_id = matched_product_id
+    row.status = "ready"
+    row.last_error = None
+    row.updated_at = now
+    row.last_analyzed_at = now
+    db.add(row)
+    if upload_row is not None:
+        upload_row.last_used_at = now
+        upload_row.updated_at = now
+        upload_row.status = "linked"
+        db.add(upload_row)
+    db.commit()
+    return normalized
+
+
 def _resolve_target_product_doc(
     *,
     category: str,
@@ -2371,132 +2813,45 @@ def _resolve_target_product_doc(
                 "trace_id": trace_id,
             },
         )
-    meta = _load_mobile_compare_upload_meta(upload_id=upload_id, owner_type=owner_type, owner_id=owner_id, trace_id=trace_id)
-    image_path = str(meta.get("image_path") or "").strip()
-    if not image_path or not exists_rel_path(image_path):
-        raise HTTPException(
-            status_code=404,
-            detail={
-                "code": "COMPARE_UPLOAD_IMAGE_NOT_FOUND",
-                "detail": f"Upload image not found for upload_id={upload_id}.",
-                "retryable": False,
-                "trace_id": trace_id,
-            },
-        )
-
-    pipeline = DoubaoPipelineService()
-
-    def on_pipeline_event(event: dict[str, Any]) -> None:
-        _ = event
-        # Do not forward low-level pipeline deltas/steps to mobile users.
-        return
-
-    _emit_compare_progress(
-        event_callback,
-        trace_id=trace_id,
-        stage="stage1_vision",
-        message="正在识别图片中的品牌、品类与成分信息。",
-        percent=32,
-    )
-    stage1 = pipeline.analyze_stage1(
-        image_path=image_path,
-        trace_id=trace_id,
-        event_callback=on_pipeline_event,
-    )
-    _emit_compare_progress(
-        event_callback,
-        trace_id=trace_id,
-        stage="stage2_struct",
-        message="正在结构化提取成分与摘要。",
-        percent=40,
-    )
-    stage2 = pipeline.analyze_stage2(
-        vision_text=str(stage1.get("vision_text") or ""),
-        trace_id=trace_id,
-        event_callback=on_pipeline_event,
-    )
-
-    doc = stage2.get("doc")
-    if not isinstance(doc, dict):
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "code": "COMPARE_PARSE_INVALID_DOC",
-                "detail": "Stage2 did not return a valid product document.",
-                "retryable": True,
-                "trace_id": trace_id,
-            },
-        )
-
-    product = doc.setdefault("product", {})
-    raw_category = str(product.get("category") or "").strip()
-    normalized_raw_category = _normalize_model_category(raw_category)
-    if normalized_raw_category and normalized_raw_category not in VALID_CATEGORIES:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "code": "COMPARE_CATEGORY_INVALID",
-                "detail": (
-                    "Current product category extracted from image is invalid: "
-                    f"'{raw_category}'."
-                ),
-                "retryable": False,
-                "trace_id": trace_id,
-            },
-        )
-    if normalized_raw_category and normalized_raw_category != category:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "code": "COMPARE_CATEGORY_MISMATCH",
-                "detail": (
-                    "Current product category "
-                    f"'{raw_category}' does not match selected category '{category}'."
-                ),
-                "retryable": False,
-                "trace_id": trace_id,
-            },
-        )
-
-    product["category"] = category
-    brand_override = str(meta.get("brand") or "").strip()
-    name_override = str(meta.get("name") or "").strip()
-    if brand_override:
-        product["brand"] = brand_override
-    if name_override:
-        product["name"] = name_override
-
-    normalized = normalize_doc(
-        doc,
-        image_rel_path=image_path,
-        doubao_raw=str(stage2.get("struct_text") or ""),
-    )
-    evidence = normalized.setdefault("evidence", {})
-    evidence["doubao_vision_text"] = stage1.get("vision_text")
-    evidence["doubao_pipeline_mode"] = "mobile-compare-two-stage"
-    evidence["doubao_models"] = {
-        "vision": stage1.get("model"),
-        "struct": stage2.get("model"),
-    }
-    evidence["doubao_artifacts"] = {
-        "vision": stage1.get("artifact"),
-        "struct": stage2.get("artifact"),
-    }
-    matched_product_id = _match_existing_product_id_for_usage(
+    upload_row = _get_mobile_user_upload_asset(
         db=db,
-        category=category,
-        brand=str(normalized.get("product", {}).get("brand") or ""),
-        name=str(normalized.get("product", {}).get("name") or ""),
+        upload_id=upload_id,
+        owner_type=owner_type,
+        owner_id=owner_id,
     )
-    if matched_product_id:
-        _increase_product_usage_count(
+    if upload_row is not None and str(upload_row.user_product_id or "").strip():
+        user_product_row = _get_mobile_user_product(
             db=db,
+            user_product_id=str(upload_row.user_product_id),
             owner_type=owner_type,
             owner_id=owner_id,
-            product_id=matched_product_id,
-            category=category,
         )
-    return normalized
+        if user_product_row is not None:
+            return _resolve_user_product_doc(
+                category=category,
+                row=user_product_row,
+                owner_type=owner_type,
+                owner_id=owner_id,
+                trace_id=trace_id,
+                event_callback=event_callback,
+                db=db,
+            )
+
+    meta = _load_mobile_compare_upload_meta(
+        upload_id=upload_id,
+        owner_type=owner_type,
+        owner_id=owner_id,
+        trace_id=trace_id,
+        db=db,
+    )
+    return _analyze_mobile_compare_upload_doc(
+        category=category,
+        image_path=str(meta.get("image_path") or "").strip(),
+        brand_override=str(meta.get("brand") or "").strip(),
+        name_override=str(meta.get("name") or "").strip(),
+        trace_id=trace_id,
+        event_callback=event_callback,
+    )
 
 
 def _build_compare_sections_from_summary(
@@ -2590,7 +2945,22 @@ def _load_mobile_compare_upload_meta(
     owner_type: str,
     owner_id: str,
     trace_id: str,
+    db: Session | None = None,
 ) -> dict[str, Any]:
+    if db is not None:
+        upload_row = _get_mobile_user_upload_asset(
+            db=db,
+            upload_id=upload_id,
+            owner_type=owner_type,
+            owner_id=owner_id,
+        )
+        if upload_row is not None:
+            meta_path = str(upload_row.meta_path or "").strip()
+            if meta_path and exists_rel_path(meta_path):
+                payload = load_json(meta_path)
+                if str(payload.get("owner_type") or "") == owner_type and str(payload.get("owner_id") or "") == owner_id:
+                    return payload
+
     rel_path = f"doubao_runs/{upload_id}/mobile_compare_upload_meta.json"
     if not exists_rel_path(rel_path):
         raise HTTPException(
@@ -2770,6 +3140,21 @@ def _normalize_model_category(raw: str | None) -> str:
     if alias:
         return alias
     return lowered
+
+
+def _extract_http_exception_detail_message(exc: HTTPException) -> str:
+    detail = exc.detail
+    if isinstance(detail, dict):
+        message = str(detail.get("detail") or detail.get("message") or "").strip()
+        if message:
+            return message
+    return str(detail or "Unknown error").strip() or "Unknown error"
+
+
+def _ensure_mobile_user_product_tables(db: Session) -> None:
+    bind = db.get_bind()
+    UserUploadAsset.__table__.create(bind=bind, checkfirst=True)
+    UserProduct.__table__.create(bind=bind, checkfirst=True)
 
 
 def _ensure_mobile_compare_index_tables(db: Session) -> None:
@@ -4734,6 +5119,24 @@ def _row_to_product_card(row: ProductIndex) -> ProductCard:
         tags=tags,
         image_url=image_url,
         created_at=row.created_at,
+    )
+
+
+def _row_to_mobile_user_product_item(row: UserProduct) -> MobileUserProductItem:
+    preferred_image_rel = preferred_image_rel_path(str(row.image_path or "").strip())
+    image_url = f"/{preferred_image_rel.lstrip('/')}" if preferred_image_rel else None
+    return MobileUserProductItem(
+        user_product_id=str(row.user_product_id),
+        category=str(row.category),
+        brand=row.brand,
+        name=row.name,
+        one_sentence=row.one_sentence,
+        image_url=image_url,
+        source_upload_id=row.source_upload_id,
+        status=str(row.status or "uploaded"),
+        created_at=str(row.created_at),
+        updated_at=str(row.updated_at),
+        last_analyzed_at=row.last_analyzed_at,
     )
 
 

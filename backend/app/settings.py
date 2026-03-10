@@ -4,6 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # === 路径基准（backend 目录）===
 BACKEND_DIR = Path(__file__).resolve().parents[1]  # backend/
 DEFAULT_STORAGE_DIR = BACKEND_DIR / "storage"
+DEFAULT_USER_STORAGE_DIR = BACKEND_DIR / "user_storage"
 
 class Settings(BaseSettings):
     # === 基础环境 ===
@@ -14,6 +15,7 @@ class Settings(BaseSettings):
 
     # === 存储路径（绝对路径，关键）===
     storage_dir: str = str(DEFAULT_STORAGE_DIR)
+    user_storage_dir: str = str(DEFAULT_USER_STORAGE_DIR)
 
     # === 数据库 ===
     # SQLite 文件将位于 backend/storage/app.db

@@ -1289,6 +1289,7 @@ class MobileCompareUploadResponse(BaseModel):
     status: str
     trace_id: str
     upload_id: str
+    user_product_id: Optional[str] = None
     category: str
     image_path: Optional[str] = None
     created_at: str
@@ -1437,6 +1438,29 @@ class MobileCompareSessionResponse(BaseModel):
     targets_snapshot: List[MobileCompareJobTargetInput] = Field(default_factory=list)
     result: Optional[MobileCompareSessionResultBrief] = None
     error: Optional[MobileCompareSessionError] = None
+
+
+class MobileUserProductItem(BaseModel):
+    user_product_id: str
+    category: str
+    brand: Optional[str] = None
+    name: Optional[str] = None
+    one_sentence: Optional[str] = None
+    image_url: Optional[str] = None
+    source_upload_id: Optional[str] = None
+    status: str
+    created_at: str
+    updated_at: str
+    last_analyzed_at: Optional[str] = None
+
+
+class MobileUserProductListResponse(BaseModel):
+    status: str
+    category: Optional[str] = None
+    total: int = 0
+    offset: int = 0
+    limit: int = 0
+    items: List[MobileUserProductItem] = Field(default_factory=list)
 
 
 class MobileCompareBatchDeleteRequest(BaseModel):

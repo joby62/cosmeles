@@ -403,3 +403,73 @@ class MobileBagItem(Base):
     quantity: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[str] = mapped_column(String(32), index=True)
     updated_at: Mapped[str] = mapped_column(String(32), index=True)
+
+
+class UserUploadAsset(Base):
+    __tablename__ = "user_upload_assets"
+    __table_args__ = (
+        Index(
+            "ix_user_upload_assets_owner_scope",
+            "owner_type",
+            "owner_id",
+            "category",
+            "updated_at",
+        ),
+        Index(
+            "ix_user_upload_assets_owner_user_product",
+            "owner_type",
+            "owner_id",
+            "user_product_id",
+        ),
+    )
+
+    upload_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner_type: Mapped[str] = mapped_column(String(32), index=True, default="device")
+    owner_id: Mapped[str] = mapped_column(String(128), index=True)
+    category: Mapped[str] = mapped_column(String(32), index=True)
+    brand: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    name: Mapped[str | None] = mapped_column(String(256), nullable=True, index=True)
+    original_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    preview_image_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    meta_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    user_product_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True, default="uploaded")
+    created_at: Mapped[str] = mapped_column(String(32), index=True)
+    updated_at: Mapped[str] = mapped_column(String(32), index=True)
+    last_used_at: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+
+
+class UserProduct(Base):
+    __tablename__ = "user_products"
+    __table_args__ = (
+        Index(
+            "ix_user_products_owner_scope",
+            "owner_type",
+            "owner_id",
+            "category",
+            "updated_at",
+        ),
+        Index(
+            "ix_user_products_owner_upload",
+            "owner_type",
+            "owner_id",
+            "source_upload_id",
+        ),
+    )
+
+    user_product_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner_type: Mapped[str] = mapped_column(String(32), index=True, default="device")
+    owner_id: Mapped[str] = mapped_column(String(128), index=True)
+    category: Mapped[str] = mapped_column(String(32), index=True)
+    brand: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    name: Mapped[str | None] = mapped_column(String(256), nullable=True, index=True)
+    one_sentence: Mapped[str | None] = mapped_column(Text, nullable=True)
+    image_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    json_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_upload_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    public_product_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(32), index=True, default="uploaded")
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[str] = mapped_column(String(32), index=True)
+    updated_at: Mapped[str] = mapped_column(String(32), index=True)
+    last_analyzed_at: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)

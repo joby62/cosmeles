@@ -1106,9 +1106,33 @@ export type MobileCompareUploadResponse = {
   status: string;
   trace_id: string;
   upload_id: string;
+  user_product_id?: string | null;
   category: MobileSelectionCategory;
   image_path?: string | null;
   created_at: string;
+};
+
+export type MobileUserProductItem = {
+  user_product_id: string;
+  category: MobileSelectionCategory;
+  brand?: string | null;
+  name?: string | null;
+  one_sentence?: string | null;
+  image_url?: string | null;
+  source_upload_id?: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  last_analyzed_at?: string | null;
+};
+
+export type MobileUserProductListResponse = {
+  status: string;
+  category?: MobileSelectionCategory | null;
+  total: number;
+  offset: number;
+  limit: number;
+  items: MobileUserProductItem[];
 };
 
 export type MobileCompareJobTargetInput = {
@@ -1944,6 +1968,20 @@ export async function deleteMobileBagItem(itemId: string): Promise<{ status: str
 export async function fetchMobileCompareBootstrap(category?: MobileSelectionCategory): Promise<MobileCompareBootstrapResponse> {
   const query = category ? `?category=${encodeURIComponent(category)}` : "";
   return apiFetch<MobileCompareBootstrapResponse>(`/api/mobile/compare/bootstrap${query}`);
+}
+
+export async function fetchMobileUserProducts(params?: {
+  category?: MobileSelectionCategory;
+  offset?: number;
+  limit?: number;
+}): Promise<MobileUserProductListResponse> {
+  const search = new URLSearchParams();
+  if (params?.category) search.set("category", params.category);
+  if (typeof params?.offset === "number") search.set("offset", String(params.offset));
+  if (typeof params?.limit === "number") search.set("limit", String(params.limit));
+  const query = search.toString();
+  const path = query ? `/api/mobile/user-products?${query}` : "/api/mobile/user-products";
+  return apiFetch<MobileUserProductListResponse>(path);
 }
 
 export async function uploadMobileCompareCurrentProduct(input: {
