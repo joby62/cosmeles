@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { fetchIngredientLibrary, fetchMobileWikiProducts, resolveImageUrl, type IngredientLibraryListItem, type MobileWikiProductItem } from "@/lib/api";
 import { WIKI_MAP, WIKI_ORDER, type WikiCategoryKey } from "@/lib/mobile/ingredientWiki";
 
@@ -79,6 +79,83 @@ function summaryFocus(summary: string | null | undefined): string {
   return first.length > 24 ? `${first.slice(0, 23)}…` : first;
 }
 
+function normalizeViewportWidth(width: number): number {
+  if (!Number.isFinite(width) || width <= 0) return 390;
+  return Math.max(320, Math.min(460, Math.round(width)));
+}
+
+type ProductHeroMetrics = {
+  headingSize: number;
+  cardHeight: number;
+  imageSize: number;
+  imageTop: number;
+  titleSize: number;
+  titleLineHeight: number;
+  subtitleSize: number;
+  titleRightInset: number;
+};
+
+function resolveProductHeroMetrics(title: string, viewportWidth: number): ProductHeroMetrics {
+  const width = normalizeViewportWidth(viewportWidth);
+  const titleLength = title.trim().length;
+
+  let headingSize = 34;
+  let cardHeight = 236;
+  let imageSize = 100;
+  let imageTop = 28;
+  let subtitleSize = 14;
+  if (width <= 340) {
+    headingSize = 30;
+    cardHeight = 214;
+    imageSize = 84;
+    imageTop = 24;
+    subtitleSize = 12;
+  } else if (width <= 360) {
+    headingSize = 32;
+    cardHeight = 224;
+    imageSize = 90;
+    imageTop = 25;
+    subtitleSize = 13;
+  } else if (width <= 390) {
+    headingSize = 34;
+    cardHeight = 232;
+    imageSize = 96;
+    imageTop = 26;
+    subtitleSize = 13;
+  } else if (width >= 430) {
+    headingSize = 36;
+    cardHeight = 248;
+    imageSize = 108;
+    imageTop = 30;
+    subtitleSize = 14;
+  }
+
+  let titleSize = Math.round(width * 0.082);
+  titleSize = Math.max(26, Math.min(36, titleSize));
+  if (titleLength > 34) {
+    titleSize -= 6;
+  } else if (titleLength > 28) {
+    titleSize -= 4;
+  } else if (titleLength > 22) {
+    titleSize -= 2;
+  }
+  titleSize = Math.max(22, titleSize);
+
+  const titleLineHeight = titleLength > 28 ? 1.1 : titleLength > 20 ? 1.07 : 1.04;
+  const titleRightInset = imageSize + 20;
+
+  return {
+    headingSize,
+    cardHeight,
+    imageSize,
+    imageTop,
+    titleSize,
+    titleLineHeight,
+    subtitleSize,
+    titleRightInset,
+  };
+}
+
 function SearchIcon({ className = "h-5 w-5" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" aria-hidden className={className}>
@@ -98,6 +175,9 @@ export default function MobileWikiPage() {
   const [entryTab, setEntryTab] = useState<WikiEntryTab>("product");
   const [active, setActive] = useState<WikiCategoryKey>("shampoo");
   const [query, setQuery] = useState("");
+  const [viewportWidth, setViewportWidth] = useState<number>(() =>
+    typeof window === "undefined" ? 390 : normalizeViewportWidth(window.visualViewport?.width || window.innerWidth || 390),
+  );
   const [ingredientItems, setIngredientItems] = useState<IngredientLibraryListItem[]>([]);
   const [ingredientLoading, setIngredientLoading] = useState(false);
   const [ingredientError, setIngredientError] = useState<string | null>(null);
@@ -109,6 +189,52 @@ export default function MobileWikiPage() {
   const normalizedQuery = query.trim();
   const theme = CATEGORY_THEME[active];
   const entryTabIndex = entryTab === "product" ? 0 : 1;
+  const segmentThumbRef = useRef<HTMLSpanElement | null>(null);
+  const previousEntryTabIndexRef = useRef(entryTabIndex);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const viewport = window.visualViewport;
+    const handleViewportResize = () => {
+      const next = normalizeViewportWidth(viewport?.width || window.innerWidth || 390);
+      setViewportWidth((prev) => (Math.abs(prev - next) < 1 ? prev : next));
+    };
+    viewport?.addEventListener("resize", handleViewportResize);
+    window.addEventListener("resize", handleViewportResize);
+    window.addEventListener("orientationchange", handleViewportResize);
+    window.addEventListener("pageshow", handleViewportResize);
+    return () => {
+      viewport?.removeEventListener("resize", handleViewportResize);
+      window.removeEventListener("resize", handleViewportResize);
+      window.removeEventListener("orientationchange", handleViewportResize);
+      window.removeEventListener("pageshow", handleViewportResize);
+    };
+  }, []);
+
+  useEffect(() => {
+    const thumb = segmentThumbRef.current;
+    const previousIndex = previousEntryTabIndexRef.current;
+    if (!thumb || previousIndex === entryTabIndex) {
+      previousEntryTabIndexRef.current = entryTabIndex;
+      return;
+    }
+    if (typeof thumb.animate === "function") {
+      const fromX = `${previousIndex * 100}%`;
+      const toX = `${entryTabIndex * 100}%`;
+      thumb.animate(
+        [
+          { transform: `translateX(${fromX}) scale(0.96,0.92)` },
+          { transform: `translateX(${toX}) scale(1.04,1.04)`, offset: 0.72 },
+          { transform: `translateX(${toX}) scale(1,1)` },
+        ],
+        {
+          duration: 420,
+          easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+        },
+      );
+    }
+    previousEntryTabIndexRef.current = entryTabIndex;
+  }, [entryTabIndex]);
 
   useEffect(() => {
     if (entryTab !== "product") return;
@@ -175,6 +301,16 @@ export default function MobileWikiPage() {
   }, [ingredientItems]);
   const featuredProductItem = productItems[0] || null;
   const listProductItems = featuredProductItem ? productItems.slice(1) : productItems;
+  const featuredProductTitle =
+    featuredProductItem
+      ? [featuredProductItem.product.brand, featuredProductItem.product.name].filter(Boolean).join(" ").trim() ||
+        featuredProductItem.product.name ||
+        "未命名产品"
+      : "";
+  const productHeroMetrics = useMemo(
+    () => resolveProductHeroMetrics(featuredProductTitle, viewportWidth),
+    [featuredProductTitle, viewportWidth],
+  );
 
   return (
     <section className="m-wiki-page -mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[color:var(--m-wiki-canvas)] px-4 pb-36 pt-4 text-white">
@@ -183,6 +319,7 @@ export default function MobileWikiPage() {
           <div role="tablist" aria-label="百科类型" className="m-wiki-segmented relative grid grid-cols-2 p-1">
             <span
               aria-hidden
+              ref={segmentThumbRef}
               className="m-wiki-segment-thumb absolute bottom-1 left-1 top-1"
               style={{ width: "calc(50% - 4px)", transform: `translateX(${entryTabIndex * 100}%)` }}
             />
@@ -304,7 +441,13 @@ export default function MobileWikiPage() {
           <section className="mt-6 space-y-4">
             <div className="mb-1">
               <p className="m-wiki-kicker text-[14px] text-[#4ea0ff]">默认入口</p>
-              <h1 data-m-large-title="产品百科" className="mt-1 text-[34px] leading-[1.08] font-semibold tracking-[-0.03em]">产品百科</h1>
+              <h1
+                data-m-large-title="产品百科"
+                className="mt-1 font-semibold tracking-[-0.03em]"
+                style={{ fontSize: `${productHeroMetrics.headingSize}px`, lineHeight: 1.08 }}
+              >
+                产品百科
+              </h1>
               <p className="mt-1 text-[15px] leading-[1.5] text-white/66">
                 当前品类 {WIKI_MAP[active].label} · 共 {productTotal} 款产品
               </p>
@@ -315,7 +458,7 @@ export default function MobileWikiPage() {
                 href={`/m/wiki/product/${encodeURIComponent(featuredProductItem.product.id)}`}
                 className="m-wiki-hero-card m-pressable block overflow-hidden rounded-[32px] transition-transform active:scale-[0.996]"
               >
-                <div className={`${theme.heroClass} relative h-[236px] w-full`}>
+                <div className={`${theme.heroClass} relative w-full`} style={{ height: `${productHeroMetrics.cardHeight}px` }}>
                   <div className={`absolute inset-0 ${theme.hazeClass}`} />
                   <div className={`absolute right-[-42px] top-[-36px] h-[170px] w-[170px] rounded-full ${theme.accentClass} opacity-30 blur-3xl`} />
                   <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.16)_0%,rgba(255,255,255,0)_35%,rgba(0,0,0,0.42)_100%)]" />
@@ -323,23 +466,32 @@ export default function MobileWikiPage() {
                   <Image
                     src={resolveImageUrl(featuredProductItem.product)}
                     alt={featuredProductItem.product.name || featuredProductItem.product.id}
-                    width={128}
-                    height={128}
-                    className="absolute right-6 top-7 h-[100px] w-[100px] rounded-[28px] object-cover opacity-92 shadow-[0_16px_36px_rgba(0,0,0,0.25)] ring-1 ring-white/25"
+                    width={productHeroMetrics.imageSize}
+                    height={productHeroMetrics.imageSize}
+                    className="absolute right-6 rounded-[28px] object-cover opacity-92 shadow-[0_16px_36px_rgba(0,0,0,0.25)] ring-1 ring-white/25"
+                    style={{
+                      top: `${productHeroMetrics.imageTop}px`,
+                      width: `${productHeroMetrics.imageSize}px`,
+                      height: `${productHeroMetrics.imageSize}px`,
+                    }}
                   />
 
                   <div className="absolute left-5 top-5 rounded-full border border-white/35 bg-white/10 px-2.5 py-0.5 text-[12px] font-medium text-white/86 backdrop-blur-lg">
                     {featuredProductItem.target_type_title || featuredProductItem.category_label}
                   </div>
 
-                  <div className="absolute bottom-5 left-5 right-5">
+                  <div
+                    className="absolute bottom-5 left-5 right-5"
+                    style={{ paddingRight: `${productHeroMetrics.titleRightInset}px` }}
+                  >
                     <p className="m-wiki-kicker text-[13px] text-white/82">重点推荐</p>
-                    <h2 className="mt-1 line-clamp-2 break-words text-[31px] leading-[1.05] font-semibold tracking-[-0.03em] text-white">
-                      {[featuredProductItem.product.brand, featuredProductItem.product.name].filter(Boolean).join(" ").trim() ||
-                        featuredProductItem.product.name ||
-                        "未命名产品"}
+                    <h2
+                      className="mt-1 line-clamp-2 break-words font-semibold tracking-[-0.03em] text-white"
+                      style={{ fontSize: `${productHeroMetrics.titleSize}px`, lineHeight: productHeroMetrics.titleLineHeight }}
+                    >
+                      {featuredProductTitle}
                     </h2>
-                    <p className="mt-1 line-clamp-1 text-[14px] text-white/84">
+                    <p className="mt-1 line-clamp-1 text-white/84" style={{ fontSize: `${productHeroMetrics.subtitleSize}px` }}>
                       {featuredProductItem.product.one_sentence || "点击查看完整产品分析与使用建议。"}
                     </p>
                   </div>
