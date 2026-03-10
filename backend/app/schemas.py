@@ -1,5 +1,5 @@
 from typing import Any, List, Optional, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 RiskLevel = Literal["low", "mid", "high"]
 IngredientAbundanceLevel = Literal["major", "trace"]
@@ -539,6 +539,221 @@ class ProductRouteMappingBuildResponse(BaseModel):
 class ProductRouteMappingDetailResponse(BaseModel):
     status: str
     item: ProductRouteMappingResult
+
+
+ProductAnalysisCategory = Literal["shampoo", "bodywash", "conditioner", "lotion", "cleanser"]
+ProductAnalysisSubtypeFitVerdict = Literal["strong_fit", "fit_with_limits", "weak_fit", "mismatch"]
+ProductAnalysisMissingCode = Literal[
+    "route_support_missing",
+    "evidence_too_sparse",
+    "active_strength_unclear",
+    "ingredient_order_unclear",
+    "formula_signal_conflict",
+    "ingredient_library_absent",
+    "summary_signal_too_weak",
+]
+
+
+class StrictSchemaModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class ProductAnalysisContextProduct(StrictSchemaModel):
+    product_id: str
+    category: ProductAnalysisCategory
+    brand: str = ""
+    name: str = ""
+    one_sentence: str = ""
+
+
+class ProductAnalysisContextRouteMapping(StrictSchemaModel):
+    primary_route_key: str
+    primary_route_title: str
+    primary_confidence: int = Field(..., ge=0, le=100)
+    secondary_route_key: str = ""
+    secondary_route_title: str = ""
+    secondary_confidence: int = Field(default=0, ge=0, le=100)
+
+
+class ProductAnalysisContextSummary(StrictSchemaModel):
+    one_sentence: str = ""
+    pros: List[str]
+    cons: List[str]
+    who_for: List[str]
+    who_not_for: List[str]
+
+
+class ProductAnalysisContextIngredientCompact(StrictSchemaModel):
+    rank: int = Field(..., ge=1)
+    ingredient_name_cn: str = ""
+    ingredient_name_en: str = ""
+    type: str = ""
+    functions: List[str]
+    risk: RiskLevel = "low"
+    abundance_level: IngredientAbundanceLevel = "trace"
+
+
+class ProductAnalysisContextIngredientBrief(StrictSchemaModel):
+    ingredient_name_cn: str = ""
+    ingredient_name_en: str = ""
+    rank: int = Field(..., ge=1)
+    why_selected: Literal["top_rank", "route_related", "risk_related"]
+    library_summary: str = ""
+    benefit_tags: List[str]
+    risk_tags: List[str]
+
+
+class ProductAnalysisContextFormulaSignals(StrictSchemaModel):
+    top10_names: List[str]
+    function_counts: dict[str, int]
+    risk_counts: dict[str, int]
+    special_flags: List[str]
+
+
+class ProductAnalysisContextPayload(StrictSchemaModel):
+    product: ProductAnalysisContextProduct
+    route_mapping: ProductAnalysisContextRouteMapping
+    stage2_summary: ProductAnalysisContextSummary
+    ingredients_compact: List[ProductAnalysisContextIngredientCompact]
+    salient_ingredient_briefs: List[ProductAnalysisContextIngredientBrief]
+    formula_signals: ProductAnalysisContextFormulaSignals
+
+
+class ProductAnalysisKeyIngredient(StrictSchemaModel):
+    ingredient_name_cn: str
+    ingredient_name_en: str
+    rank: int = Field(..., ge=0)
+    role: str
+    impact: str
+
+
+class ProductAnalysisEvidenceItem(StrictSchemaModel):
+    ingredient_name_cn: str
+    ingredient_name_en: str
+    rank: int = Field(..., ge=0)
+    impact: str
+
+
+class ProductAnalysisEvidence(StrictSchemaModel):
+    positive: List[ProductAnalysisEvidenceItem]
+    counter: List[ProductAnalysisEvidenceItem]
+    missing_codes: List[ProductAnalysisMissingCode]
+
+
+class ProductAnalysisDiagnosticScore(StrictSchemaModel):
+    score: int = Field(..., ge=0, le=5)
+    reason: str
+
+
+class ProductAnalysisProfileBase(StrictSchemaModel):
+    schema_version: str
+    category: ProductAnalysisCategory
+    route_key: str
+    route_title: str
+    headline: str
+    positioning_summary: str
+    subtype_fit_verdict: ProductAnalysisSubtypeFitVerdict
+    subtype_fit_reason: str
+    best_for: List[str]
+    not_ideal_for: List[str]
+    usage_tips: List[str]
+    watchouts: List[str]
+    key_ingredients: List[ProductAnalysisKeyIngredient]
+    evidence: ProductAnalysisEvidence
+    confidence: int = Field(..., ge=0, le=100)
+    confidence_reason: str
+    needs_review: bool
+
+
+class ShampooProductAnalysisDiagnostics(StrictSchemaModel):
+    cleanse_intensity: ProductAnalysisDiagnosticScore
+    oil_control_support: ProductAnalysisDiagnosticScore
+    dandruff_itch_support: ProductAnalysisDiagnosticScore
+    scalp_soothing_support: ProductAnalysisDiagnosticScore
+    hair_strengthening_support: ProductAnalysisDiagnosticScore
+    moisture_balance_support: ProductAnalysisDiagnosticScore
+    daily_use_friendliness: ProductAnalysisDiagnosticScore
+    residue_weight: ProductAnalysisDiagnosticScore
+
+
+class BodywashProductAnalysisDiagnostics(StrictSchemaModel):
+    cleanse_intensity: ProductAnalysisDiagnosticScore
+    barrier_repair_support: ProductAnalysisDiagnosticScore
+    body_acne_support: ProductAnalysisDiagnosticScore
+    keratin_softening_support: ProductAnalysisDiagnosticScore
+    brightening_support: ProductAnalysisDiagnosticScore
+    fragrance_presence: ProductAnalysisDiagnosticScore
+    rinse_afterfeel_nourishment: ProductAnalysisDiagnosticScore
+
+
+class ConditionerProductAnalysisDiagnostics(StrictSchemaModel):
+    detangling_support: ProductAnalysisDiagnosticScore
+    anti_frizz_support: ProductAnalysisDiagnosticScore
+    airy_light_support: ProductAnalysisDiagnosticScore
+    repair_density: ProductAnalysisDiagnosticScore
+    color_lock_support: ProductAnalysisDiagnosticScore
+    basic_hydration_support: ProductAnalysisDiagnosticScore
+    fine_hair_burden: ProductAnalysisDiagnosticScore
+
+
+class LotionProductAnalysisDiagnostics(StrictSchemaModel):
+    light_hydration_support: ProductAnalysisDiagnosticScore
+    heavy_repair_support: ProductAnalysisDiagnosticScore
+    body_acne_support: ProductAnalysisDiagnosticScore
+    aha_renew_support: ProductAnalysisDiagnosticScore
+    brightening_support: ProductAnalysisDiagnosticScore
+    fragrance_presence: ProductAnalysisDiagnosticScore
+    occlusive_weight: ProductAnalysisDiagnosticScore
+
+
+class CleanserProductAnalysisDiagnostics(StrictSchemaModel):
+    apg_support: ProductAnalysisDiagnosticScore
+    amino_support: ProductAnalysisDiagnosticScore
+    soap_blend_strength: ProductAnalysisDiagnosticScore
+    bha_support: ProductAnalysisDiagnosticScore
+    clay_support: ProductAnalysisDiagnosticScore
+    enzyme_support: ProductAnalysisDiagnosticScore
+    barrier_friendliness: ProductAnalysisDiagnosticScore
+    makeup_residue_support: ProductAnalysisDiagnosticScore
+
+
+class ShampooProductAnalysisResult(ProductAnalysisProfileBase):
+    schema_version: Literal["product_profile_shampoo.v1"]
+    category: Literal["shampoo"]
+    diagnostics: ShampooProductAnalysisDiagnostics
+
+
+class BodywashProductAnalysisResult(ProductAnalysisProfileBase):
+    schema_version: Literal["product_profile_bodywash.v1"]
+    category: Literal["bodywash"]
+    diagnostics: BodywashProductAnalysisDiagnostics
+
+
+class ConditionerProductAnalysisResult(ProductAnalysisProfileBase):
+    schema_version: Literal["product_profile_conditioner.v1"]
+    category: Literal["conditioner"]
+    diagnostics: ConditionerProductAnalysisDiagnostics
+
+
+class LotionProductAnalysisResult(ProductAnalysisProfileBase):
+    schema_version: Literal["product_profile_lotion.v1"]
+    category: Literal["lotion"]
+    diagnostics: LotionProductAnalysisDiagnostics
+
+
+class CleanserProductAnalysisResult(ProductAnalysisProfileBase):
+    schema_version: Literal["product_profile_cleanser.v1"]
+    category: Literal["cleanser"]
+    diagnostics: CleanserProductAnalysisDiagnostics
+
+
+ProductAnalysisResult = (
+    ShampooProductAnalysisResult
+    | BodywashProductAnalysisResult
+    | ConditionerProductAnalysisResult
+    | LotionProductAnalysisResult
+    | CleanserProductAnalysisResult
+)
 
 
 class ProductBatchDeleteRequest(BaseModel):
