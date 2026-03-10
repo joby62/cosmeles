@@ -14,11 +14,14 @@ const CATEGORY_TABS = [
   { prefix: "/m/cleanser", label: "个性测配", href: "/m/cleanser/start" },
 ] as const;
 
-const NAV_HIDE_THRESHOLD = 22;
-const NAV_SHOW_THRESHOLD = 12;
+const NAV_HIDE_THRESHOLD = 26;
+const NAV_SHOW_THRESHOLD = 10;
 const NAV_TOP_REVEAL = 8;
+const NAV_BOTTOM_REVEAL = 12;
 const SCROLLABLE_EPSILON = 6;
 const MIN_SCROLL_DELTA = 0.6;
+const MAX_DIRECTION_STEP = 30;
+const SCROLL_IDLE_RESET_MS = 220;
 
 function getChooseItem(pathname: string) {
   const matched = CATEGORY_TABS.find((item) => pathname.startsWith(item.prefix));
@@ -56,6 +59,7 @@ export default function MobileBottomNav() {
   const lastScrollYRef = useRef(0);
   const downDeltaRef = useRef(0);
   const upDeltaRef = useRef(0);
+  const scrollIdleTimerRef = useRef<number | null>(null);
 
   const defaultItems = [
     chooseItem,
@@ -117,14 +121,34 @@ export default function MobileBottomNav() {
       setNavVisible(next);
     };
 
+    const resetDirectionDeltas = () => {
+      downDeltaRef.current = 0;
+      upDeltaRef.current = 0;
+    };
+
+    const clearIdleTimer = () => {
+      if (scrollIdleTimerRef.current !== null) {
+        window.clearTimeout(scrollIdleTimerRef.current);
+        scrollIdleTimerRef.current = null;
+      }
+    };
+
+    const armIdleReset = () => {
+      clearIdleTimer();
+      scrollIdleTimerRef.current = window.setTimeout(() => {
+        scrollIdleTimerRef.current = null;
+        resetDirectionDeltas();
+      }, SCROLL_IDLE_RESET_MS);
+    };
+
     const setScrollableState = (next: boolean) => {
       if (scrollableRef.current !== next) {
         scrollableRef.current = next;
         setIsScrollable(next);
       }
       if (!next) {
-        downDeltaRef.current = 0;
-        upDeltaRef.current = 0;
+        clearIdleTimer();
+        resetDirectionDeltas();
         setVisible(true);
       }
     };
@@ -141,19 +165,24 @@ export default function MobileBottomNav() {
       const y = getScrollY();
       const delta = y - lastScrollYRef.current;
       lastScrollYRef.current = y;
+      const root = document.scrollingElement || document.documentElement;
+      const maxScrollY = Math.max(0, root.scrollHeight - root.clientHeight);
 
-      if (y <= NAV_TOP_REVEAL) {
-        downDeltaRef.current = 0;
-        upDeltaRef.current = 0;
+      if (y <= NAV_TOP_REVEAL || maxScrollY - y <= NAV_BOTTOM_REVEAL) {
+        clearIdleTimer();
+        resetDirectionDeltas();
         setVisible(true);
         return;
       }
 
       if (!scrollableRef.current) return;
       if (Math.abs(delta) < MIN_SCROLL_DELTA) return;
+      armIdleReset();
+
+      const step = Math.min(Math.abs(delta), MAX_DIRECTION_STEP);
 
       if (delta > 0) {
-        downDeltaRef.current += delta;
+        downDeltaRef.current += step;
         upDeltaRef.current = 0;
         if (downDeltaRef.current >= NAV_HIDE_THRESHOLD) {
           downDeltaRef.current = 0;
@@ -162,7 +191,7 @@ export default function MobileBottomNav() {
         return;
       }
 
-      upDeltaRef.current += -delta;
+      upDeltaRef.current += step;
       downDeltaRef.current = 0;
       if (upDeltaRef.current >= NAV_SHOW_THRESHOLD) {
         upDeltaRef.current = 0;
@@ -207,6 +236,7 @@ export default function MobileBottomNav() {
       if (rafId) {
         window.cancelAnimationFrame(rafId);
       }
+      clearIdleTimer();
       resizeObserver?.disconnect();
       window.removeEventListener("scroll", handleScroll);
       window.removeEventListener("resize", scheduleEvaluate);

@@ -700,9 +700,10 @@ html[data-nav-open="1"] #app-main{
 .m-mobile-bottom-nav {
   will-change: transform, opacity;
   transition:
-    transform 280ms cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 220ms cubic-bezier(0.22, 1, 0.36, 1),
-    filter 280ms cubic-bezier(0.22, 1, 0.36, 1);
+    transform 310ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    filter 300ms cubic-bezier(0.22, 1, 0.36, 1);
+  transform-origin: center bottom;
 }
 
 .m-mobile-bottom-nav-visible {
@@ -713,9 +714,9 @@ html[data-nav-open="1"] #app-main{
 }
 
 .m-mobile-bottom-nav-hidden {
-  transform: translate3d(0, calc(100% + env(safe-area-inset-bottom) + 16px), 0);
+  transform: translate3d(0, calc(100% + env(safe-area-inset-bottom) + 20px), 0);
   opacity: 0.01;
-  filter: saturate(0.92) blur(0.4px);
+  filter: saturate(0.9) blur(0.45px);
   pointer-events: none;
 }
 
