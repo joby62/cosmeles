@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   calculateBestMatch,
   compareMatrixTestId,
@@ -12,6 +12,11 @@ import {
   SHAMPOO_QUESTIONS,
   type AnswerMap,
 } from "@/lib/mobile/haircareMatrix";
+import {
+  runExhaustiveRules,
+  type RuleConfig,
+  type RuleExhaustiveResult,
+} from "@/lib/mobile/exhaustiveRules";
 
 const DEFAULT_INPUT = `test_id,desc,q1,q2,q3,c_q1,c_q2,c_q3,exp_shampoo,exp_conditioner
 1,经典通勤油头,A,D,C,C,C,C,deep-oil-control,c-basic-hydrate
@@ -49,6 +54,9 @@ export default function DesktopMatrixTestPage() {
   const [batchSummary, setBatchSummary] = useState(() => runMatrixCsvTests(DEFAULT_INPUT));
   const [shampooAnswers, setShampooAnswers] = useState<AnswerMap>({ q1: "A", q2: "D", q3: "C" });
   const [conditionerAnswers, setConditionerAnswers] = useState<AnswerMap>({ c_q1: "C", c_q2: "C", c_q3: "C" });
+  const [exhaustive, setExhaustive] = useState<RuleExhaustiveResult[]>([]);
+  const [exhaustiveLoading, setExhaustiveLoading] = useState(false);
+  const [exhaustiveError, setExhaustiveError] = useState<string | null>(null);
 
   const shampooResult = useMemo(
     () => calculateBestMatch(shampooAnswers, SHAMPOO_CONFIG),
@@ -66,6 +74,28 @@ export default function DesktopMatrixTestPage() {
       }),
     [batchSummary.results],
   );
+  const runExhaustive = useCallback(async () => {
+    setExhaustiveLoading(true);
+    setExhaustiveError(null);
+    try {
+      const res = await fetch("/rules.json", { cache: "no-store" });
+      if (!res.ok) {
+        throw new Error(`rules.json 读取失败（${res.status}）`);
+      }
+      const json = (await res.json()) as RuleConfig[];
+      setExhaustive(runExhaustiveRules(json));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "rules.json 读取失败";
+      setExhaustiveError(message);
+      setExhaustive([]);
+    } finally {
+      setExhaustiveLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void runExhaustive();
+  }, [runExhaustive]);
 
   return (
     <section className="mx-auto max-w-[1180px] space-y-5 px-6 pb-20 pt-12 md:px-10">
@@ -92,6 +122,76 @@ export default function DesktopMatrixTestPage() {
           </Link>
         </div>
       </header>
+
+      <article className="rounded-2xl border border-black/10 bg-white/90 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-[16px] font-semibold text-black/86">rules.json 全量穷举推演</h2>
+          <button
+            type="button"
+            onClick={() => void runExhaustive()}
+            disabled={exhaustiveLoading}
+            className="rounded-full border border-black/12 bg-white px-3 py-1.5 text-[12px] font-medium text-black/70 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {exhaustiveLoading ? "运行中..." : "重新运行"}
+          </button>
+        </div>
+        <p className="mt-1 text-[12px] text-black/56">逻辑与 test_engine.py 一致：穷举所有问卷组合后统计命中分布。</p>
+
+        {exhaustiveError ? (
+          <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[12px] text-rose-700">
+            {exhaustiveError}
+          </div>
+        ) : null}
+
+        {exhaustiveLoading && !exhaustiveError ? (
+          <div className="mt-3 rounded-xl border border-black/10 bg-white px-3 py-2 text-[12px] text-black/62">正在计算全量组合...</div>
+        ) : null}
+
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          {exhaustive.map((item) => (
+            <section key={item.category} className="rounded-xl border border-black/10 bg-white p-3">
+              <div className="flex items-end justify-between">
+                <h3 className="text-[13px] font-semibold text-black/84">{item.category}</h3>
+                <p className="text-[11px] text-black/52">
+                  维度 {item.dimensions} · 组合 {fmt(item.totalCases)}
+                </p>
+              </div>
+              <div className="mt-2 space-y-2">
+                {item.distribution.map((row) => (
+                  <div key={row.category} className="rounded-lg border border-black/[0.08] bg-white px-2 py-2">
+                    <div className="flex items-center justify-between gap-2 text-[11px]">
+                      <span className="font-medium text-black/78">{row.category}</span>
+                      <span className="text-black/62">
+                        {row.percentage.toFixed(1)}% · {fmt(row.hits)}
+                      </span>
+                    </div>
+                    <div className="mt-1 h-2 rounded-full bg-black/[0.06]">
+                      <div
+                        className={`h-full rounded-full ${
+                          row.warning === "monopoly"
+                            ? "bg-amber-500"
+                            : row.warning === "depletion"
+                              ? "bg-rose-500"
+                              : "bg-cyan-500"
+                        }`}
+                        style={{ width: `${Math.max(2, Math.min(100, row.percentage))}%` }}
+                      />
+                    </div>
+                    {row.warning ? (
+                      <p className={`mt-1 text-[10px] ${row.warning === "monopoly" ? "text-amber-700" : "text-rose-700"}`}>
+                        {row.warning === "monopoly" ? "流量垄断（>40%）" : "流量枯竭（<2%）"}
+                      </p>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+        {!exhaustiveLoading && !exhaustiveError && exhaustive.length === 0 ? (
+          <div className="mt-3 rounded-xl border border-black/10 bg-white px-3 py-2 text-[12px] text-black/62">暂无可展示结果。</div>
+        ) : null}
+      </article>
 
       <article className="rounded-2xl border border-black/10 bg-white/90 p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
