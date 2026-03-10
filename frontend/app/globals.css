@@ -930,7 +930,6 @@ html[data-nav-open="1"] #app-main{
   -ms-overflow-style: none;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
-  touch-action: pan-x;
 }
 
 .m-choose-focus-rail::-webkit-scrollbar {

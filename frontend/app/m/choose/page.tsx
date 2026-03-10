@@ -51,6 +51,7 @@ type DraftProgress = {
   continueHref: string;
 };
 
+const DEFAULT_CATEGORY_KEY: CategoryKey = "shampoo";
 const CHOOSE_SELECTED_CATEGORY_KEY = "mx_mobile_choose_selected_category_v1";
 
 const CATS: CategoryMeta[] = [
@@ -152,24 +153,24 @@ const CAT_INDEX_MAP: Record<CategoryKey, number> = CATS.reduce((acc, cat, index)
   return acc;
 }, {} as Record<CategoryKey, number>);
 
-const FIRST_CAT = CATS[0] as CategoryMeta;
-const LAST_CAT = CATS[CATS.length - 1] as CategoryMeta;
+const CARD_REPEAT = 7;
+const CARD_LOOP_SIZE = CATS.length;
+const CARD_MIDDLE_LOOP = Math.floor(CARD_REPEAT / 2);
+const MIDDLE_CARD_BASE_INDEX = CARD_LOOP_SIZE * CARD_MIDDLE_LOOP;
+const CARD_RECENTER_DELTA = MIDDLE_CARD_BASE_INDEX;
+const CARD_RECENTER_MIN_INDEX = CARD_LOOP_SIZE;
+const CARD_RECENTER_MAX_INDEX = CARD_LOOP_SIZE * (CARD_REPEAT - 1) - 1;
+const DEFAULT_CARD_INDEX = MIDDLE_CARD_BASE_INDEX + CAT_INDEX_MAP[DEFAULT_CATEGORY_KEY];
 
-const CARD_ITEMS: Array<{ id: string; cat: CategoryMeta; realIndex: number; clone: "head" | "body" | "tail" }> = [
-  { id: `clone-head-${LAST_CAT.key}`, cat: LAST_CAT, realIndex: CATS.length - 1, clone: "head" },
-  ...CATS.map((cat, index) => ({
-    id: `real-${cat.key}`,
-    cat,
-    realIndex: index,
-    clone: "body" as const,
-  })),
-  { id: `clone-tail-${FIRST_CAT.key}`, cat: FIRST_CAT, realIndex: 0, clone: "tail" },
-];
-
-const CARD_FIRST_REAL_INDEX = 1;
-const CARD_LAST_REAL_INDEX = CATS.length;
-const CARD_HEAD_CLONE_INDEX = 0;
-const CARD_TAIL_CLONE_INDEX = CARD_ITEMS.length - 1;
+const CARD_ITEMS: Array<{ id: string; cat: CategoryMeta; realIndex: number }> = Array.from(
+  { length: CARD_REPEAT },
+  (_, loop) =>
+    CATS.map((cat, index) => ({
+      id: `loop-${loop}-${cat.key}`,
+      cat,
+      realIndex: index,
+    })),
+).flat();
 
 function asString(v: unknown): string | undefined {
   return typeof v === "string" ? v : undefined;
@@ -297,7 +298,7 @@ function isCategoryKey(v: string | null): v is CategoryKey {
 }
 
 export default function MobileChoose() {
-  const [selectedKey, setSelectedKey] = useState<CategoryKey>("shampoo");
+  const [selectedKey, setSelectedKey] = useState<CategoryKey>(DEFAULT_CATEGORY_KEY);
   const [drafts, setDrafts] = useState<Partial<Record<CategoryKey, DraftProgress>>>({});
   const [recentResultHref, setRecentResultHref] = useState<Partial<Record<CategoryKey, string>>>({});
   const [railsReady, setRailsReady] = useState(false);
@@ -305,7 +306,7 @@ export default function MobileChoose() {
   const cardItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const cardScrollRafRef = useRef<number | null>(null);
   const cardSettleTimerRef = useRef<number | null>(null);
-  const activeCardIndexRef = useRef<number>(CARD_FIRST_REAL_INDEX);
+  const activeCardIndexRef = useRef<number>(DEFAULT_CARD_INDEX);
   const autoCycleTimerRef = useRef<number | null>(null);
   const autoCycleStoppedRef = useRef(false);
   const lastHapticAtRef = useRef(0);
@@ -350,15 +351,29 @@ export default function MobileChoose() {
     rail.scrollTo({ left: node.offsetLeft, behavior });
   }, []);
 
-  const keyToRealCardIndex = useCallback((key: CategoryKey): number => {
+  const keyToMiddleCardIndex = useCallback((key: CategoryKey): number => {
     const index = CAT_INDEX_MAP[key];
-    return Number.isFinite(index) ? index + 1 : CARD_FIRST_REAL_INDEX;
+    if (!Number.isFinite(index)) return DEFAULT_CARD_INDEX;
+    return MIDDLE_CARD_BASE_INDEX + index;
   }, []);
 
-  const normalizeCardIndex = useCallback((index: number): number => {
-    if (index <= CARD_HEAD_CLONE_INDEX) return CARD_LAST_REAL_INDEX;
-    if (index >= CARD_TAIL_CLONE_INDEX) return CARD_FIRST_REAL_INDEX;
-    return index;
+  const recenterCardRail = useCallback((index: number): number => {
+    let targetIndex = index;
+    if (index < CARD_RECENTER_MIN_INDEX) {
+      targetIndex = index + CARD_RECENTER_DELTA;
+    } else if (index > CARD_RECENTER_MAX_INDEX) {
+      targetIndex = index - CARD_RECENTER_DELTA;
+    }
+    if (targetIndex === index) return index;
+
+    const rail = cardRailRef.current;
+    const fromNode = cardItemRefs.current[index];
+    const toNode = cardItemRefs.current[targetIndex];
+    if (!rail || !fromNode || !toNode) return index;
+
+    const offsetInsideCard = rail.scrollLeft - fromNode.offsetLeft;
+    rail.scrollTo({ left: toNode.offsetLeft + offsetInsideCard, behavior: "auto" });
+    return targetIndex;
   }, []);
 
   const pickNearestCardIndex = useCallback((): number | null => {
@@ -379,6 +394,23 @@ export default function MobileChoose() {
     return bestIndex >= 0 ? bestIndex : null;
   }, []);
 
+  const pickClosestCardIndexForKey = useCallback(
+    (key: CategoryKey, fromIndex: number): number => {
+      let bestIndex = -1;
+      let bestDistance = Number.POSITIVE_INFINITY;
+      for (let index = 0; index < CARD_ITEMS.length; index += 1) {
+        if (CARD_ITEMS[index]?.cat.key !== key) continue;
+        const distance = Math.abs(index - fromIndex);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          bestIndex = index;
+        }
+      }
+      return bestIndex >= 0 ? bestIndex : keyToMiddleCardIndex(key);
+    },
+    [keyToMiddleCardIndex],
+  );
+
   const applySelectedKey = useCallback(
     (key: CategoryKey, withHaptic: boolean) => {
       setSelectedKey((prev) => {
@@ -396,15 +428,12 @@ export default function MobileChoose() {
   const settleCardRail = useCallback(() => {
     const nearestIndex = pickNearestCardIndex();
     if (nearestIndex === null) return;
-    activeCardIndexRef.current = nearestIndex;
-    const normalizedIndex = normalizeCardIndex(nearestIndex);
-    if (normalizedIndex !== nearestIndex) {
-      alignCardIndex(normalizedIndex, "auto");
-      activeCardIndexRef.current = normalizedIndex;
-    }
-    const key = CARD_ITEMS[normalizedIndex]?.cat.key || "shampoo";
+    const recenteredIndex = recenterCardRail(nearestIndex);
+    activeCardIndexRef.current = recenteredIndex;
+    alignCardIndex(recenteredIndex, "auto");
+    const key = CARD_ITEMS[recenteredIndex]?.cat.key || DEFAULT_CATEGORY_KEY;
     applySelectedKey(key, autoCycleStoppedRef.current);
-  }, [alignCardIndex, applySelectedKey, normalizeCardIndex, pickNearestCardIndex]);
+  }, [alignCardIndex, applySelectedKey, pickNearestCardIndex, recenterCardRail]);
 
   const scheduleCardSettle = useCallback(() => {
     if (typeof window === "undefined") return;
@@ -416,18 +445,13 @@ export default function MobileChoose() {
 
   const scrollToCategory = useCallback(
     (key: CategoryKey, behavior: ScrollBehavior) => {
-      const baseIndex = keyToRealCardIndex(key);
-      const currentIndex = activeCardIndexRef.current;
-      let targetIndex = baseIndex;
-      if (currentIndex === CARD_LAST_REAL_INDEX && baseIndex === CARD_FIRST_REAL_INDEX) {
-        targetIndex = CARD_TAIL_CLONE_INDEX;
-      } else if (currentIndex === CARD_FIRST_REAL_INDEX && baseIndex === CARD_LAST_REAL_INDEX) {
-        targetIndex = CARD_HEAD_CLONE_INDEX;
-      }
+      const stabilizedCurrent = recenterCardRail(activeCardIndexRef.current);
+      activeCardIndexRef.current = stabilizedCurrent;
+      const targetIndex = pickClosestCardIndexForKey(key, stabilizedCurrent);
       activeCardIndexRef.current = targetIndex;
       alignCardIndex(targetIndex, behavior);
     },
-    [alignCardIndex, keyToRealCardIndex],
+    [alignCardIndex, pickClosestCardIndexForKey, recenterCardRail],
   );
 
   useEffect(() => {
@@ -458,7 +482,7 @@ export default function MobileChoose() {
 
       const storedSelected = window.localStorage.getItem(CHOOSE_SELECTED_CATEGORY_KEY);
       const firstDraftKey = CATS.find((cat) => Boolean(nextDrafts[cat.key]))?.key;
-      const nextSelected = isCategoryKey(storedSelected) ? storedSelected : firstDraftKey || "shampoo";
+      const nextSelected = isCategoryKey(storedSelected) ? storedSelected : firstDraftKey || DEFAULT_CATEGORY_KEY;
 
       setSelectedKey((prev) => (prev === nextSelected ? prev : nextSelected));
       setRailsReady(false);
@@ -481,7 +505,7 @@ export default function MobileChoose() {
     if (typeof window === "undefined") return;
     if (!cardRailRef.current) return;
     if (!cardItemRefs.current.length) return;
-    const targetIndex = keyToRealCardIndex(selectedKey);
+    const targetIndex = keyToMiddleCardIndex(selectedKey);
 
     if (!railsReady) {
       const rafId = window.requestAnimationFrame(() => {
@@ -493,7 +517,7 @@ export default function MobileChoose() {
         window.cancelAnimationFrame(rafId);
       };
     }
-  }, [alignCardIndex, keyToRealCardIndex, railsReady, selectedKey]);
+  }, [alignCardIndex, keyToMiddleCardIndex, railsReady, selectedKey]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -504,12 +528,12 @@ export default function MobileChoose() {
 
     autoCycleTimerRef.current = window.setInterval(() => {
       if (autoCycleStoppedRef.current) return;
-      const normalizedCurrent = normalizeCardIndex(activeCardIndexRef.current);
-      let nextIndex = normalizedCurrent + 1;
-      if (nextIndex > CARD_TAIL_CLONE_INDEX) {
-        nextIndex = CARD_FIRST_REAL_INDEX;
+      const stabilizedCurrent = recenterCardRail(activeCardIndexRef.current);
+      let nextIndex = stabilizedCurrent + 1;
+      if (nextIndex >= CARD_ITEMS.length) {
+        nextIndex = keyToMiddleCardIndex(CARD_ITEMS[stabilizedCurrent]?.cat.key || DEFAULT_CATEGORY_KEY);
       }
-      const nextKey = CARD_ITEMS[nextIndex]?.cat.key || FIRST_CAT.key;
+      const nextKey = CARD_ITEMS[nextIndex]?.cat.key || DEFAULT_CATEGORY_KEY;
       activeCardIndexRef.current = nextIndex;
       applySelectedKey(nextKey, false);
       alignCardIndex(nextIndex, "smooth");
@@ -521,7 +545,7 @@ export default function MobileChoose() {
         autoCycleTimerRef.current = null;
       }
     };
-  }, [alignCardIndex, applySelectedKey, normalizeCardIndex, railsReady]);
+  }, [alignCardIndex, applySelectedKey, keyToMiddleCardIndex, railsReady, recenterCardRail]);
 
   useEffect(() => {
     return () => {
@@ -544,12 +568,13 @@ export default function MobileChoose() {
     cardScrollRafRef.current = window.requestAnimationFrame(() => {
       const nearestIndex = pickNearestCardIndex();
       if (nearestIndex === null) return;
-      activeCardIndexRef.current = nearestIndex;
-      const key = CARD_ITEMS[nearestIndex]?.cat.key || "shampoo";
+      const recenteredIndex = recenterCardRail(nearestIndex);
+      activeCardIndexRef.current = recenteredIndex;
+      const key = CARD_ITEMS[recenteredIndex]?.cat.key || DEFAULT_CATEGORY_KEY;
       applySelectedKey(key, autoCycleStoppedRef.current);
       scheduleCardSettle();
     });
-  }, [applySelectedKey, pickNearestCardIndex, scheduleCardSettle]);
+  }, [applySelectedKey, pickNearestCardIndex, recenterCardRail, scheduleCardSettle]);
 
   const onSelectTag = useCallback(
     (key: CategoryKey) => {
