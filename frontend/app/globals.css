@@ -786,7 +786,7 @@ html[data-nav-open="1"] #app-main{
 }
 
 .m-choose-shell {
-  padding-bottom: calc(124px + env(safe-area-inset-bottom) + var(--m-chrome-bottom-inset));
+  padding-bottom: calc(244px + env(safe-area-inset-bottom) + var(--m-chrome-bottom-inset));
 }
 
 .m-choose-head {
@@ -794,6 +794,20 @@ html[data-nav-open="1"] #app-main{
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.m-choose-head-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  border-radius: 999px;
+  border: 1px solid rgba(124,164,241,0.42);
+  background: rgba(231,241,255,0.86);
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: rgba(45,92,177,0.94);
 }
 
 .m-choose-recent {
@@ -899,7 +913,7 @@ html[data-nav-open="1"] #app-main{
   gap: 12px;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
-  padding: 0 0 8px;
+  padding: 0 18px 8px 0;
   -ms-overflow-style: none;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
@@ -911,9 +925,9 @@ html[data-nav-open="1"] #app-main{
 }
 
 .m-choose-focus-card {
-  width: min(88vw, 352px);
+  width: min(74vw, 298px);
   flex: 0 0 auto;
-  scroll-snap-align: center;
+  scroll-snap-align: start;
   border-radius: 32px;
   border: 1px solid var(--m-choose-card-border);
   background: linear-gradient(155deg, var(--m-choose-card-bg), rgba(118,154,215,0.14));
@@ -937,27 +951,12 @@ html[data-nav-open="1"] #app-main{
   50% { transform: translateY(-1.5px); }
 }
 
-.m-choose-focus-kicker {
-  display: inline-flex;
-  align-items: center;
-  min-height: 30px;
-  border-radius: 999px;
-  border: 1px solid rgba(124,164,241,0.42);
-  background: rgba(231,241,255,0.86);
-  padding: 0 12px;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  color: rgba(45,92,177,0.94);
-}
-
 .m-choose-focus-main {
-  margin-top: 12px;
-  touch-action: pan-y;
+  margin-top: 2px;
 }
 
 .m-choose-focus-title {
-  font-size: 34px;
+  font-size: 30px;
   line-height: 1.22;
   font-weight: 640;
   letter-spacing: -0.02em;
@@ -989,7 +988,6 @@ html[data-nav-open="1"] #app-main{
   border: 1px solid var(--m-choose-card-border);
   background: rgba(255,255,255,0.5);
   padding: 10px;
-  touch-action: pan-y;
 }
 
 .m-choose-focus-image {
@@ -1001,9 +999,27 @@ html[data-nav-open="1"] #app-main{
   background: var(--m-choose-image-bg);
 }
 
+.m-choose-cta-dock {
+  position: fixed;
+  inset-inline: 0;
+  bottom: calc(88px + max(env(safe-area-inset-bottom), 0px) + var(--m-chrome-bottom-inset));
+  z-index: 55;
+  padding: 0 16px;
+  pointer-events: none;
+}
+
+.m-choose-cta-inner {
+  margin: 0 auto;
+  max-width: 680px;
+  pointer-events: auto;
+}
+
 .m-choose-action-wrap {
-  margin-top: 16px;
-  padding-bottom: 6px;
+  border-radius: 24px;
+  background: linear-gradient(180deg, rgba(245,248,255,0.92), rgba(245,248,255,0.78));
+  padding: 10px;
+  backdrop-filter: saturate(175%) blur(12px);
+  -webkit-backdrop-filter: saturate(175%) blur(12px);
 }
 
 .m-choose-primary-btn {
@@ -1016,6 +1032,10 @@ html[data-nav-open="1"] #app-main{
 }
 
 @media (max-width: 420px) {
+  .m-choose-shell {
+    padding-bottom: calc(236px + env(safe-area-inset-bottom) + var(--m-chrome-bottom-inset));
+  }
+
   .m-choose-dial-item {
     min-width: 62px;
     padding: 0 10px;
@@ -1023,13 +1043,13 @@ html[data-nav-open="1"] #app-main{
   }
 
   .m-choose-focus-card {
-    width: min(90vw, 338px);
+    width: min(76vw, 286px);
     border-radius: 30px;
     padding: 14px;
   }
 
   .m-choose-focus-title {
-    font-size: 31px;
+    font-size: 28px;
   }
 
   .m-choose-focus-image {
@@ -1263,7 +1283,7 @@ html[data-nav-open="1"] #app-main{
   .m-shell [class*="bg-white/"] { background-color: rgba(255,255,255,0.08) !important; }
   .m-shell .bg-white { background-color: rgba(22,28,41,0.9) !important; }
 
-  .m-shell .m-choose-focus-kicker {
+  .m-shell .m-choose-head-chip {
     border-color: rgba(112,168,250,0.52);
     background: rgba(35,58,93,0.66);
     color: rgba(195,224,255,0.96);
@@ -1271,6 +1291,10 @@ html[data-nav-open="1"] #app-main{
 
   .m-shell .m-choose-focus-image-shell {
     background: rgba(17,27,44,0.64);
+  }
+
+  .m-shell .m-choose-action-wrap {
+    background: linear-gradient(180deg, rgba(14,22,35,0.88), rgba(14,22,35,0.76));
   }
 }
 
