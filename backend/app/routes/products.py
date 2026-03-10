@@ -3270,6 +3270,7 @@ def _build_product_route_mapping_impl(
             rec.last_error = str(e)
             rec.last_generated_at = now
             db.add(rec)
+            db.commit()
             items.append(
                 ProductRouteMappingBuildItem(
                     product_id=product_id,
@@ -3412,6 +3413,7 @@ def _build_product_route_mapping_impl(
             rec.last_generated_at = result_item.generated_at
             rec.last_error = None
             db.add(rec)
+            db.commit()
 
             items.append(
                 ProductRouteMappingBuildItem(
@@ -3453,6 +3455,7 @@ def _build_product_route_mapping_impl(
             rec.last_error = str(e)
             rec.last_generated_at = now_iso()
             db.add(rec)
+            db.commit()
             items.append(
                 ProductRouteMappingBuildItem(
                     product_id=product_id,
@@ -3477,8 +3480,6 @@ def _build_product_route_mapping_impl(
                     "text": f"[{idx}/{total}] 失败：{row_category} / {product_id} | {e}",
                 },
             )
-
-    db.commit()
 
     status = "ok" if failed == 0 else "partial_failed"
     _emit_progress(

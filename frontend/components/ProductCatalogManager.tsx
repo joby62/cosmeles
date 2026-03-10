@@ -2,13 +2,18 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type {
   Product,
   ProductFeaturedSlotItem,
   ProductRouteMappingIndexItem,
 } from "@/lib/api";
-import { clearProductFeaturedSlot, resolveImageUrl, setProductFeaturedSlot } from "@/lib/api";
+import {
+  clearProductFeaturedSlot,
+  fetchProductRouteMappingIndex,
+  resolveImageUrl,
+  setProductFeaturedSlot,
+} from "@/lib/api";
 import { CATEGORY_CONFIG } from "@/lib/catalog";
 
 const ROUTE_MAPPED_CATEGORIES = new Set(["shampoo", "bodywash", "conditioner", "lotion", "cleanser"]);
@@ -25,18 +30,58 @@ export default function ProductCatalogManager({
 }) {
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [selectedSubtype, setSelectedSubtype] = useState<string>("all");
+  const [routeMappings, setRouteMappings] = useState<ProductRouteMappingIndexItem[]>(initialRouteMappings);
   const [featuredSlots, setFeaturedSlots] = useState<ProductFeaturedSlotItem[]>(initialFeaturedSlots);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    setRouteMappings(initialRouteMappings);
+  }, [initialRouteMappings]);
+
+  useEffect(() => {
+    setFeaturedSlots(initialFeaturedSlots);
+  }, [initialFeaturedSlots]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let syncing = false;
+
+    const syncRouteMappings = async () => {
+      if (syncing) return;
+      syncing = true;
+      try {
+        const resp = await fetchProductRouteMappingIndex();
+        if (!cancelled) {
+          setRouteMappings(resp.items);
+        }
+      } catch {
+        // Keep the last successful snapshot to avoid disrupting featured-slot actions.
+      } finally {
+        syncing = false;
+      }
+    };
+
+    const timer = window.setInterval(() => {
+      void syncRouteMappings();
+    }, 3200);
+
+    void syncRouteMappings();
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+
   const routeMappingByProductId = useMemo(() => {
     const map = new Map<string, ProductRouteMappingIndexItem>();
-    for (const item of initialRouteMappings) {
+    for (const item of routeMappings) {
       if (item.status !== "ready") continue;
       map.set(item.product_id, item);
     }
     return map;
-  }, [initialRouteMappings]);
+  }, [routeMappings]);
 
   const featuredBySlot = useMemo(() => {
     const map = new Map<string, ProductFeaturedSlotItem>();

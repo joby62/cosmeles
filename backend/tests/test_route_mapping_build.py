@@ -1,7 +1,12 @@
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 from app.routes import ingest as ingest_routes
 from app.routes import products as products_routes
+from app.db.models import Base, ProductIndex, ProductRouteMappingIndex
+from app.services.storage import ensure_dirs, save_json_at
+from app.settings import settings
 from backend.tests.support_images import VALID_TEST_IMAGE_BYTES, install_fake_save_image
 
 
@@ -178,3 +183,150 @@ def test_route_mapping_build_reject_invalid_category(test_client):
     )
     assert build_resp.status_code == 400
     assert "Invalid category" in str(build_resp.json().get("detail"))
+
+
+def test_route_mapping_build_commits_each_completed_item(tmp_path, monkeypatch: pytest.MonkeyPatch):
+    storage_dir = tmp_path / "storage"
+    storage_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(settings, "storage_dir", str(storage_dir))
+    ensure_dirs()
+
+    db_path = tmp_path / "test.db"
+    engine = create_engine(
+        f"sqlite:///{db_path}",
+        connect_args={"check_same_thread": False},
+    )
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    Base.metadata.create_all(bind=engine)
+
+    product_ids = ["prod-route-1", "prod-route-2"]
+    for idx, product_id in enumerate(product_ids, start=1):
+        save_json_at(
+            f"products/{product_id}.json",
+            {
+                "product": {
+                    "category": "shampoo",
+                    "brand": "Dove",
+                    "name": f"Shampoo {idx}",
+                },
+                "summary": {
+                    "one_sentence": f"洗发测试 {idx}",
+                    "pros": ["温和清洁"],
+                    "cons": [],
+                    "who_for": ["普通头皮"],
+                    "who_not_for": [],
+                },
+                "ingredients": [
+                    {
+                        "name": "椰油酰胺丙基甜菜碱 (Cocamidopropyl Betaine)",
+                        "rank": 1,
+                        "abundance_level": "major",
+                        "order_confidence": 95,
+                        "type": "表活",
+                        "functions": ["清洁"],
+                        "risk": "low",
+                        "notes": "",
+                    },
+                    {
+                        "name": "甘油 (Glycerin)",
+                        "rank": 2,
+                        "abundance_level": "major",
+                        "order_confidence": 92,
+                        "type": "保湿剂",
+                        "functions": ["保湿"],
+                        "risk": "low",
+                        "notes": "",
+                    },
+                ],
+                "evidence": {"doubao_raw": ""},
+            },
+        )
+
+    seed_db = SessionLocal()
+    try:
+        for idx, product_id in enumerate(product_ids, start=1):
+            seed_db.add(
+                ProductIndex(
+                    id=product_id,
+                    category="shampoo",
+                    brand="Dove",
+                    name=f"Shampoo {idx}",
+                    one_sentence=f"洗发测试 {idx}",
+                    tags_json="[]",
+                    image_path=None,
+                    json_path=f"products/{product_id}.json",
+                    created_at=f"2026-03-10T00:00:0{idx}Z",
+                )
+            )
+        seed_db.commit()
+    finally:
+        seed_db.close()
+
+    committed_mid_batch = False
+    seen_trace_ids: list[str] = []
+
+    def fake_run_capability_now(*, capability, input_payload, trace_id=None, event_callback=None):
+        nonlocal committed_mid_batch
+        assert capability == "doubao.route_mapping_shampoo"
+        assert input_payload.get("product_context_json")
+        if event_callback:
+            event_callback({"type": "step", "stage": capability, "message": "mock route mapping"})
+        if seen_trace_ids:
+            observer_db = SessionLocal()
+            try:
+                committed = observer_db.get(ProductRouteMappingIndex, seen_trace_ids[0])
+                assert committed is not None
+                assert committed.status == "ready"
+                assert committed.primary_route_key == "deep-oil-control"
+                committed_mid_batch = True
+            finally:
+                observer_db.close()
+        seen_trace_ids.append(str(trace_id))
+        return {
+            "category": "shampoo",
+            "rules_version": "2026-03-03.1",
+            "primary_route": {
+                "route_key": "deep-oil-control",
+                "route_title": "深层控油型",
+                "confidence": 92,
+                "reason": "mock",
+            },
+            "secondary_route": {
+                "route_key": "moisture-balance",
+                "route_title": "水油平衡型",
+                "confidence": 70,
+                "reason": "mock",
+            },
+            "route_scores": [
+                {"route_key": "deep-oil-control", "route_title": "深层控油型", "confidence": 92, "reason": "mock"},
+                {"route_key": "moisture-balance", "route_title": "水油平衡型", "confidence": 70, "reason": "mock"},
+                {"route_key": "gentle-soothing", "route_title": "温和舒缓型", "confidence": 54, "reason": "mock"},
+                {"route_key": "anti-hair-loss", "route_title": "防脱强韧型", "confidence": 30, "reason": "mock"},
+                {"route_key": "anti-dandruff-itch", "route_title": "去屑止痒型", "confidence": 20, "reason": "mock"},
+            ],
+            "evidence": {"positive": [], "counter": []},
+            "confidence_reason": "mock",
+            "needs_review": False,
+            "analysis_text": "{\"mock\":true}",
+            "model": "mock-pro",
+        }
+
+    monkeypatch.setattr(products_routes, "run_capability_now", fake_run_capability_now)
+
+    build_db = SessionLocal()
+    try:
+        result = products_routes._build_product_route_mapping_impl(
+            products_routes.ProductRouteMappingBuildRequest(
+                category="shampoo",
+                force_regenerate=True,
+            ),
+            db=build_db,
+            event_callback=None,
+        )
+    finally:
+        build_db.close()
+        engine.dispose()
+
+    assert result.status == "ok"
+    assert result.created == 2
+    assert committed_mid_batch is True
