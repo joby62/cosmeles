@@ -995,9 +995,62 @@ class MobileSelectionRoute(BaseModel):
     title: str
 
 
+MobileSelectionRecommendationSource = Literal["featured_slot", "route_mapping", "category_fallback"]
+MobileSelectionFitLevel = Literal["high", "medium", "low"]
+MobileSelectionDesiredLevel = Literal["high", "mid", "low"]
+
+
 class MobileSelectionLinks(BaseModel):
     product: str
     wiki: str
+
+
+class MobileSelectionMatrixRouteScore(BaseModel):
+    route_key: str
+    route_title: str
+    score_before_mask: int = 0
+    score_after_mask: Optional[int] = None
+    is_excluded: bool = False
+    rank: int = Field(default=0, ge=0)
+    gap_from_best: Optional[int] = None
+
+
+class MobileSelectionMatrixQuestionRouteDelta(BaseModel):
+    route_key: str
+    route_title: str
+    delta: int = 0
+
+
+class MobileSelectionMatrixQuestionContribution(BaseModel):
+    question_key: str
+    question_title: str
+    answer_value: str
+    answer_label: str
+    route_deltas: List[MobileSelectionMatrixQuestionRouteDelta] = Field(default_factory=list)
+
+
+class MobileSelectionMatrixVetoRoute(BaseModel):
+    route_key: str
+    route_title: str
+
+
+class MobileSelectionMatrixTriggeredVeto(BaseModel):
+    trigger: str
+    note: str = ""
+    excluded_routes: List[MobileSelectionMatrixVetoRoute] = Field(default_factory=list)
+
+
+class MobileSelectionMatrixTopRoute(BaseModel):
+    route_key: str
+    route_title: str
+    score_after_mask: int = 0
+
+
+class MobileSelectionMatrixAnalysis(BaseModel):
+    routes: List[MobileSelectionMatrixRouteScore] = Field(default_factory=list)
+    question_contributions: List[MobileSelectionMatrixQuestionContribution] = Field(default_factory=list)
+    triggered_vetoes: List[MobileSelectionMatrixTriggeredVeto] = Field(default_factory=list)
+    top2: List[MobileSelectionMatrixTopRoute] = Field(default_factory=list)
 
 
 class MobileSelectionResolveResponse(BaseModel):
@@ -1011,9 +1064,53 @@ class MobileSelectionResolveResponse(BaseModel):
     route: MobileSelectionRoute
     choices: List[MobileSelectionChoice] = []
     rule_hits: List[MobileSelectionRuleHit] = []
+    recommendation_source: MobileSelectionRecommendationSource = "category_fallback"
+    matrix_analysis: MobileSelectionMatrixAnalysis = Field(default_factory=MobileSelectionMatrixAnalysis)
     recommended_product: ProductCard
     links: MobileSelectionLinks
     created_at: str
+
+
+class MobileSelectionFitRationaleItem(BaseModel):
+    question_key: str
+    question_title: str
+    answer_label: str
+    route_delta: int = 0
+    reason: str
+
+
+class MobileSelectionProductFitItem(BaseModel):
+    diagnostic_key: str
+    diagnostic_label: str
+    desired_level: MobileSelectionDesiredLevel
+    product_score: int = Field(default=0, ge=0, le=5)
+    fit_level: MobileSelectionFitLevel = "medium"
+    reason: str
+
+
+class MobileSelectionFitExplanationItem(BaseModel):
+    session_id: str
+    category: str
+    route_key: str
+    route_title: str
+    recommended_product_id: Optional[str] = None
+    recommendation_source: MobileSelectionRecommendationSource = "category_fallback"
+    explanation_version: Literal["selection_fit.v1"] = "selection_fit.v1"
+    summary_headline: str
+    summary_text: str
+    matrix_analysis: MobileSelectionMatrixAnalysis = Field(default_factory=MobileSelectionMatrixAnalysis)
+    route_rationale: List[MobileSelectionFitRationaleItem] = Field(default_factory=list)
+    product_fit: List[MobileSelectionProductFitItem] = Field(default_factory=list)
+    matched_points: List[str] = Field(default_factory=list)
+    tradeoffs: List[str] = Field(default_factory=list)
+    guardrails: List[str] = Field(default_factory=list)
+    confidence: int = Field(default=0, ge=0, le=100)
+    needs_review: bool = False
+
+
+class MobileSelectionFitExplanationResponse(BaseModel):
+    status: str
+    item: MobileSelectionFitExplanationItem
 
 
 class MobileSelectionBatchDeleteRequest(BaseModel):

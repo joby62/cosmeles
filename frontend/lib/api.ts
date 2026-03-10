@@ -848,6 +848,59 @@ export type MobileSelectionRuleHit = {
   effect: string;
 };
 
+export type MobileSelectionRecommendationSource =
+  | "featured_slot"
+  | "route_mapping"
+  | "category_fallback";
+
+export type MobileSelectionMatrixRouteScore = {
+  route_key: string;
+  route_title: string;
+  score_before_mask: number;
+  score_after_mask?: number | null;
+  is_excluded: boolean;
+  rank: number;
+  gap_from_best?: number | null;
+};
+
+export type MobileSelectionMatrixQuestionRouteDelta = {
+  route_key: string;
+  route_title: string;
+  delta: number;
+};
+
+export type MobileSelectionMatrixQuestionContribution = {
+  question_key: string;
+  question_title: string;
+  answer_value: string;
+  answer_label: string;
+  route_deltas: MobileSelectionMatrixQuestionRouteDelta[];
+};
+
+export type MobileSelectionMatrixVetoRoute = {
+  route_key: string;
+  route_title: string;
+};
+
+export type MobileSelectionMatrixTriggeredVeto = {
+  trigger: string;
+  note: string;
+  excluded_routes: MobileSelectionMatrixVetoRoute[];
+};
+
+export type MobileSelectionMatrixTopRoute = {
+  route_key: string;
+  route_title: string;
+  score_after_mask: number;
+};
+
+export type MobileSelectionMatrixAnalysis = {
+  routes: MobileSelectionMatrixRouteScore[];
+  question_contributions: MobileSelectionMatrixQuestionContribution[];
+  triggered_vetoes: MobileSelectionMatrixTriggeredVeto[];
+  top2: MobileSelectionMatrixTopRoute[];
+};
+
 export type MobileSelectionResolveResponse = {
   status: string;
   session_id: string;
@@ -862,12 +915,59 @@ export type MobileSelectionResolveResponse = {
   };
   choices: MobileSelectionChoice[];
   rule_hits: MobileSelectionRuleHit[];
+  recommendation_source: MobileSelectionRecommendationSource;
+  matrix_analysis: MobileSelectionMatrixAnalysis;
   recommended_product: Product;
   links: {
     product: string;
     wiki: string;
   };
   created_at: string;
+};
+
+export type MobileSelectionFitLevel = "high" | "medium" | "low";
+export type MobileSelectionDesiredLevel = "high" | "mid" | "low";
+
+export type MobileSelectionFitRationaleItem = {
+  question_key: string;
+  question_title: string;
+  answer_label: string;
+  route_delta: number;
+  reason: string;
+};
+
+export type MobileSelectionProductFitItem = {
+  diagnostic_key: string;
+  diagnostic_label: string;
+  desired_level: MobileSelectionDesiredLevel;
+  product_score: number;
+  fit_level: MobileSelectionFitLevel;
+  reason: string;
+};
+
+export type MobileSelectionFitExplanationItem = {
+  session_id: string;
+  category: string;
+  route_key: string;
+  route_title: string;
+  recommended_product_id?: string | null;
+  recommendation_source: MobileSelectionRecommendationSource;
+  explanation_version: "selection_fit.v1";
+  summary_headline: string;
+  summary_text: string;
+  matrix_analysis: MobileSelectionMatrixAnalysis;
+  route_rationale: MobileSelectionFitRationaleItem[];
+  product_fit: MobileSelectionProductFitItem[];
+  matched_points: string[];
+  tradeoffs: string[];
+  guardrails: string[];
+  confidence: number;
+  needs_review: boolean;
+};
+
+export type MobileSelectionFitExplanationResponse = {
+  status: string;
+  item: MobileSelectionFitExplanationItem;
 };
 
 export type MobileSelectionBatchDeleteRequest = {
@@ -1725,6 +1825,16 @@ export async function resolveMobileSelection(
 
 export async function fetchMobileSelectionSession(sessionId: string): Promise<MobileSelectionResolveResponse> {
   return apiFetch<MobileSelectionResolveResponse>(`/api/mobile/selection/sessions/${encodeURIComponent(sessionId)}`);
+}
+
+export async function fetchMobileSelectionFitExplanation(
+  sessionId: string,
+): Promise<MobileSelectionFitExplanationResponse> {
+  const value = sessionId.trim();
+  if (!value) throw new Error("sessionId is required.");
+  return apiFetch<MobileSelectionFitExplanationResponse>(
+    `/api/mobile/selection/sessions/${encodeURIComponent(value)}/fit-explanation`,
+  );
 }
 
 export async function listMobileSelectionSessions(params?: {

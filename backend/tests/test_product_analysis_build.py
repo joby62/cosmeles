@@ -234,6 +234,27 @@ def test_product_analysis_build_and_fetch_detail(test_client, monkeypatch: pytes
     assert mobile_payload["profile"]["headline"] == "典型控油清洁型洗发水"
     assert mobile_payload["profile"]["subtype_fit_verdict"] == "strong_fit"
 
+    selection = client.post(
+        "/api/mobile/selection/resolve",
+        json={
+            "category": "shampoo",
+            "answers": {"q1": "A", "q2": "C", "q3": "B"},
+            "reuse_existing": False,
+        },
+    )
+    assert selection.status_code == 200
+    selection_body = selection.json()
+    assert selection_body["matrix_analysis"]["top2"][0]["route_key"] == "deep-oil-control"
+
+    fit = client.get(f"/api/mobile/selection/sessions/{selection_body['session_id']}/fit-explanation")
+    assert fit.status_code == 200
+    fit_body = fit.json()["item"]
+    assert fit_body["route_key"] == "deep-oil-control"
+    assert fit_body["recommended_product_id"] == product_id
+    assert fit_body["product_fit"]
+    assert fit_body["matched_points"]
+    assert fit_body["matrix_analysis"]["routes"][0]["route_key"]
+
     index_resp = client.get("/api/products/analysis/index", params={"category": "shampoo"})
     assert index_resp.status_code == 200
     index_body = index_resp.json()

@@ -208,6 +208,9 @@ def test_mobile_selection_resolve_without_featured_slot_uses_fallback(test_clien
     assert body["status"] == "ok"
     assert body["recommended_product"]["id"]
     assert body["recommended_product"]["category"] == "shampoo"
+    assert body["recommendation_source"] == "route_mapping"
+    assert body["matrix_analysis"]["routes"][0]["route_key"]
+    assert len(body["matrix_analysis"]["routes"]) == 5
 
 
 def test_mobile_selection_resolve_shampoo_route_mapping(test_client, monkeypatch: pytest.MonkeyPatch):
@@ -241,6 +244,9 @@ def test_mobile_selection_resolve_shampoo_route_mapping(test_client, monkeypatch
     assert body["links"]["wiki"].endswith("focus=deep-oil-control")
     assert body["recommended_product"]["category"] == "shampoo"
     assert body["recommended_product"]["id"]
+    assert body["recommendation_source"] == "featured_slot"
+    assert body["matrix_analysis"]["top2"][0]["route_key"] == "deep-oil-control"
+    assert body["matrix_analysis"]["routes"][0]["route_title"]
 
 
 def test_mobile_selection_resolve_bodywash_fastpath(test_client, monkeypatch: pytest.MonkeyPatch):
@@ -300,6 +306,7 @@ def test_mobile_selection_resolve_conditioner_matrix(test_client, monkeypatch: p
     assert body["route"]["title"] == "锁色固色型"
     assert [item["key"] for item in body["choices"]] == ["c_q1", "c_q2", "c_q3"]
     assert any(item["rule"] == "veto" for item in body["rule_hits"])
+    assert len(body["matrix_analysis"]["triggered_vetoes"]) >= 1
 
 
 def test_mobile_selection_resolve_cleanser_matrix(test_client, monkeypatch: pytest.MonkeyPatch):
@@ -395,6 +402,7 @@ def test_mobile_selection_resolve_reuse_existing_session(test_client, monkeypatc
     second_body = second.json()
     assert second_body["reused"] is True
     assert second_body["session_id"] == first_body["session_id"]
+    assert len(second_body["matrix_analysis"]["routes"]) == 6
 
 
 def test_mobile_selection_isolated_by_device_cookie(test_client, monkeypatch: pytest.MonkeyPatch):
