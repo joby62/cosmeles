@@ -847,26 +847,11 @@ html[data-nav-open="1"] #app-main{
   background: linear-gradient(270deg, var(--m-bg), rgba(0,0,0,0));
 }
 
-.m-choose-dial-center-line {
-  position: absolute;
-  left: 50%;
-  top: 7px;
-  bottom: 14px;
-  width: 2px;
-  border-radius: 999px;
-  transform: translateX(-50%);
-  background: rgba(10,132,255,0.52);
-  box-shadow: 0 0 10px rgba(10,132,255,0.32);
-  pointer-events: none;
-  z-index: 3;
-}
-
 .m-choose-dial {
   display: flex;
   gap: 10px;
   overflow-x: auto;
   scroll-snap-type: x proximity;
-  scroll-behavior: smooth;
   padding: 2px 0 8px;
   -ms-overflow-style: none;
   scrollbar-width: none;
@@ -914,7 +899,6 @@ html[data-nav-open="1"] #app-main{
   gap: 12px;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
-  scroll-behavior: smooth;
   padding: 0 0 8px;
   -ms-overflow-style: none;
   scrollbar-width: none;
@@ -969,6 +953,7 @@ html[data-nav-open="1"] #app-main{
 
 .m-choose-focus-main {
   margin-top: 12px;
+  touch-action: pan-y;
 }
 
 .m-choose-focus-title {
@@ -1004,6 +989,7 @@ html[data-nav-open="1"] #app-main{
   border: 1px solid var(--m-choose-card-border);
   background: rgba(255,255,255,0.5);
   padding: 10px;
+  touch-action: pan-y;
 }
 
 .m-choose-focus-image {
@@ -1276,11 +1262,6 @@ html[data-nav-open="1"] #app-main{
   .m-shell [class*="bg-black/"] { background-color: rgba(255,255,255,0.1) !important; }
   .m-shell [class*="bg-white/"] { background-color: rgba(255,255,255,0.08) !important; }
   .m-shell .bg-white { background-color: rgba(22,28,41,0.9) !important; }
-
-  .m-shell .m-choose-dial-center-line {
-    background: rgba(114,182,255,0.8);
-    box-shadow: 0 0 12px rgba(114,182,255,0.36);
-  }
 
   .m-shell .m-choose-focus-kicker {
     border-color: rgba(112,168,250,0.52);

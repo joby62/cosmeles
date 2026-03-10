@@ -296,8 +296,7 @@ export default function MobileChoose() {
   const railsReadyRef = useRef(false);
   const dialScrollRafRef = useRef<number | null>(null);
   const cardScrollRafRef = useRef<number | null>(null);
-  const settleTimerRef = useRef<number | null>(null);
-  const activeGestureRef = useRef<"dial" | "card" | null>(null);
+  const railSyncLockedRef = useRef(false);
   const lastHapticAtRef = useRef(0);
 
   const persistSelectedKey = useCallback((key: CategoryKey) => {
@@ -333,6 +332,22 @@ export default function MobileChoose() {
   const centerCardSlot = useCallback((slot: number, behavior: ScrollBehavior) => {
     centerRailSlot(cardRailRef.current, cardItemRefs.current, slot, behavior);
   }, [centerRailSlot]);
+
+  const stopAllRailMotion = useCallback(() => {
+    const dial = dialRef.current;
+    const card = cardRailRef.current;
+    if (dial) {
+      dial.scrollTo({ left: dial.scrollLeft, behavior: "auto" });
+    }
+    if (card) {
+      card.scrollTo({ left: card.scrollLeft, behavior: "auto" });
+    }
+  }, []);
+
+  const lockRailSync = useCallback(() => {
+    railSyncLockedRef.current = true;
+    stopAllRailMotion();
+  }, [stopAllRailMotion]);
 
   const slotToKey = useCallback((slot: number): CategoryKey => {
     const normalized = ((slot % CATS.length) + CATS.length) % CATS.length;
@@ -389,60 +404,22 @@ export default function MobileChoose() {
     [centerCardSlot, centerDialSlot],
   );
 
-  const settleRails = useCallback(
-    (source: "dial" | "card") => {
-      if (typeof window === "undefined") return;
-      if (settleTimerRef.current !== null) {
-        window.clearTimeout(settleTimerRef.current);
-      }
-      settleTimerRef.current = window.setTimeout(() => {
-        const slot = source === "dial" ? pickCenteredDialSlot() : pickCenteredCardSlot();
-        if (slot === null) {
-          activeGestureRef.current = null;
-          return;
-        }
-        const stableSlot = stabilizeSlot(slot, source);
-        const key = slotToKey(stableSlot);
-        if (key !== selectedKey) {
-          setSelectedKey(key);
-          persistSelectedKey(key);
-          pulseSelectionHaptic();
-        }
-        centerDialSlot(stableSlot, "smooth");
-        centerCardSlot(stableSlot, "smooth");
-        activeGestureRef.current = null;
-      }, 180);
-    },
-    [
-      centerCardSlot,
-      centerDialSlot,
-      persistSelectedKey,
-      pickCenteredCardSlot,
-      pickCenteredDialSlot,
-      pulseSelectionHaptic,
-      selectedKey,
-      slotToKey,
-      stabilizeSlot,
-    ],
-  );
-
   const selectBySlot = useCallback(
     (slot: number, source: "dial" | "card") => {
+      if (railSyncLockedRef.current) return;
       const stableSlot = stabilizeSlot(slot, source);
       const key = slotToKey(stableSlot);
       const changed = key !== selectedKey;
       if (changed) {
         setSelectedKey(key);
         persistSelectedKey(key);
-        if (activeGestureRef.current === source) {
-          pulseSelectionHaptic();
-        }
+        pulseSelectionHaptic();
       }
       if (changed) {
         if (source === "dial") {
-          centerCardSlot(stableSlot, "smooth");
+          centerCardSlot(stableSlot, "auto");
         } else {
-          centerDialSlot(stableSlot, "smooth");
+          centerDialSlot(stableSlot, "auto");
         }
       }
     },
@@ -496,6 +473,23 @@ export default function MobileChoose() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    const releaseLock = () => {
+      railSyncLockedRef.current = false;
+    };
+    window.addEventListener("pointerup", releaseLock, { passive: true });
+    window.addEventListener("pointercancel", releaseLock, { passive: true });
+    window.addEventListener("touchend", releaseLock, { passive: true });
+    window.addEventListener("touchcancel", releaseLock, { passive: true });
+    return () => {
+      window.removeEventListener("pointerup", releaseLock);
+      window.removeEventListener("pointercancel", releaseLock);
+      window.removeEventListener("touchend", releaseLock);
+      window.removeEventListener("touchcancel", releaseLock);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
     if (!dialRef.current || !cardRailRef.current) return;
     if (!dialItemRefs.current.length || !cardItemRefs.current.length) return;
 
@@ -514,8 +508,6 @@ export default function MobileChoose() {
         window.cancelAnimationFrame(rafId);
       };
     }
-
-    if (activeGestureRef.current) return;
 
     const centeredDialSlot = pickCenteredDialSlot();
     const centeredCardSlot = pickCenteredCardSlot();
@@ -537,13 +529,11 @@ export default function MobileChoose() {
       if (cardScrollRafRef.current !== null) {
         window.cancelAnimationFrame(cardScrollRafRef.current);
       }
-      if (settleTimerRef.current !== null) {
-        window.clearTimeout(settleTimerRef.current);
-      }
     };
   }, []);
 
   const onDialScroll = useCallback(() => {
+    if (railSyncLockedRef.current) return;
     if (typeof window === "undefined") return;
     if (dialScrollRafRef.current !== null) {
       window.cancelAnimationFrame(dialScrollRafRef.current);
@@ -556,6 +546,7 @@ export default function MobileChoose() {
   }, [pickCenteredDialSlot, selectBySlot]);
 
   const onCardScroll = useCallback(() => {
+    if (railSyncLockedRef.current) return;
     if (typeof window === "undefined") return;
     if (cardScrollRafRef.current !== null) {
       window.cancelAnimationFrame(cardScrollRafRef.current);
@@ -567,50 +558,32 @@ export default function MobileChoose() {
     });
   }, [pickCenteredCardSlot, selectBySlot]);
 
-  const onGestureStart = useCallback((source: "dial" | "card") => {
-    activeGestureRef.current = source;
-    if (typeof window === "undefined") return;
-    if (settleTimerRef.current !== null) {
-      window.clearTimeout(settleTimerRef.current);
-      settleTimerRef.current = null;
-    }
-  }, []);
-
-  const onGestureEnd = useCallback(
-    (source: "dial" | "card") => {
-      settleRails(source);
-    },
-    [settleRails],
-  );
-
   const onSelectDialItem = useCallback(
     (slot: number, key: CategoryKey) => {
-      activeGestureRef.current = "dial";
+      railSyncLockedRef.current = false;
       if (key !== selectedKey) {
         setSelectedKey(key);
         persistSelectedKey(key);
         pulseSelectionHaptic();
       }
-      centerDialSlot(slot, "smooth");
-      centerCardSlot(slot, "smooth");
-      settleRails("dial");
+      centerDialSlot(slot, "auto");
+      centerCardSlot(slot, "auto");
     },
-    [centerCardSlot, centerDialSlot, persistSelectedKey, pulseSelectionHaptic, selectedKey, settleRails],
+    [centerCardSlot, centerDialSlot, persistSelectedKey, pulseSelectionHaptic, selectedKey],
   );
 
   const onSelectCardItem = useCallback(
     (slot: number, key: CategoryKey) => {
-      activeGestureRef.current = "card";
+      railSyncLockedRef.current = false;
       if (key !== selectedKey) {
         setSelectedKey(key);
         persistSelectedKey(key);
         pulseSelectionHaptic();
       }
-      centerCardSlot(slot, "smooth");
-      centerDialSlot(slot, "smooth");
-      settleRails("card");
+      centerCardSlot(slot, "auto");
+      centerDialSlot(slot, "auto");
     },
-    [centerCardSlot, centerDialSlot, persistSelectedKey, pulseSelectionHaptic, selectedKey, settleRails],
+    [centerCardSlot, centerDialSlot, persistSelectedKey, pulseSelectionHaptic, selectedKey],
   );
 
   const selected = CAT_MAP[selectedKey];
@@ -630,15 +603,10 @@ export default function MobileChoose() {
       <div className="m-choose-dial-wrap">
         <div className="m-choose-dial-label">全部品类</div>
         <div className="m-choose-dial-shell">
-          <div className="m-choose-dial-center-line" aria-hidden />
           <div
             className="m-choose-dial"
             ref={dialRef}
             onScroll={onDialScroll}
-            onPointerDown={() => onGestureStart("dial")}
-            onPointerUp={() => onGestureEnd("dial")}
-            onPointerCancel={() => onGestureEnd("dial")}
-            onTouchEnd={() => onGestureEnd("dial")}
             role="tablist"
             aria-label="选择测评品类"
           >
@@ -668,10 +636,6 @@ export default function MobileChoose() {
         className="m-choose-focus-rail"
         ref={cardRailRef}
         onScroll={onCardScroll}
-        onPointerDown={() => onGestureStart("card")}
-        onPointerUp={() => onGestureEnd("card")}
-        onPointerCancel={() => onGestureEnd("card")}
-        onTouchEnd={() => onGestureEnd("card")}
         aria-label="滑动选择品类卡片"
       >
         {DIAL_ITEMS.map((item) => {
@@ -690,12 +654,12 @@ export default function MobileChoose() {
               }}
             >
               <div className="m-choose-focus-kicker">{draft ? `继续上次 · ${draft.answered}/${draft.total}` : "个性测评"}</div>
-              <div className="m-choose-focus-main">
+              <div className="m-choose-focus-main" onPointerDownCapture={lockRailSync} onTouchStart={lockRailSync}>
                 <div className="m-choose-focus-title">{cat.zh}</div>
                 <div className="m-choose-focus-meta">{cat.summary}</div>
                 <p className="m-choose-focus-note">{cat.detail}</p>
               </div>
-              <div className="m-choose-focus-image-shell">
+              <div className="m-choose-focus-image-shell" onPointerDownCapture={lockRailSync} onTouchStart={lockRailSync}>
                 <div className="m-choose-focus-image">
                   <Image src={cat.image} alt={cat.zh} width={220} height={150} className="h-[148px] w-[220px] object-contain" />
                 </div>
