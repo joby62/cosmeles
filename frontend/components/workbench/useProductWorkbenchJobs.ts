@@ -184,6 +184,24 @@ export function useProductWorkbenchJobs<
   const [resultJobId, setResultJobId] = useState<string | null>(null);
   const [liveTextState, setLiveTextState] = useState<WorkbenchLiveTextState>(createEmptyLiveTextState);
   const resultSignatureRef = useRef<string | null>(null);
+  const loadJobsPromiseRef = useRef<Promise<void> | null>(null);
+  const serviceRef = useRef(service);
+  const parseResultRef = useRef(parseResult);
+  const isTerminalJobRef = useRef(isTerminalJob);
+  const shouldKeepActiveJobRef = useRef(shouldKeepActiveJob);
+  const extractCancelledJobRef = useRef(extractCancelledJob);
+  const assembleLiveTextRef = useRef(assembleLiveText);
+  const activeJobIdRef = useRef<string | null>(activeJobId);
+  const activeJobRef = useRef<TJob | null>(activeJob);
+
+  serviceRef.current = service;
+  parseResultRef.current = parseResult;
+  isTerminalJobRef.current = isTerminalJob;
+  shouldKeepActiveJobRef.current = shouldKeepActiveJob;
+  extractCancelledJobRef.current = extractCancelledJob;
+  assembleLiveTextRef.current = assembleLiveText;
+  activeJobIdRef.current = activeJobId;
+  activeJobRef.current = activeJob;
 
   const rememberActiveJob = useCallback(
     (jobId: string) => {
@@ -216,28 +234,41 @@ export function useProductWorkbenchJobs<
   }, []);
 
   const loadJobs = useCallback(async () => {
-    setJobsLoading(true);
+    if (loadJobsPromiseRef.current) return loadJobsPromiseRef.current;
+
+    const task = (async () => {
+      setJobsLoading(true);
+      try {
+        const rows = await serviceRef.current.listJobs({ limit: listLimit, offset: 0 });
+        setJobs(rows);
+        if (!activeJobIdRef.current) {
+          const running = rows.find((item) => shouldKeepActiveJobRef.current(item));
+          if (running) rememberActiveJob(running.job_id);
+        }
+        const latestDone = [...rows]
+          .sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")))
+          .find((item) => parseResultRef.current(item) !== null);
+        if (latestDone) {
+          const parsed = parseResultRef.current(latestDone);
+          applyParsedResult(latestDone, parsed);
+        }
+      } catch (err) {
+        setErrorMessage(formatErrorDetail(err));
+        setJobs([]);
+      } finally {
+        setJobsLoading(false);
+      }
+    })();
+
+    loadJobsPromiseRef.current = task;
     try {
-      const rows = await service.listJobs({ limit: listLimit, offset: 0 });
-      setJobs(rows);
-      if (!activeJobId) {
-        const running = rows.find((item) => shouldKeepActiveJob(item));
-        if (running) rememberActiveJob(running.job_id);
-      }
-      const latestDone = [...rows]
-        .sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")))
-        .find((item) => parseResult(item) !== null);
-      if (latestDone) {
-        const parsed = parseResult(latestDone);
-        applyParsedResult(latestDone, parsed);
-      }
-    } catch (err) {
-      setErrorMessage(formatErrorDetail(err));
-      setJobs([]);
+      await task;
     } finally {
-      setJobsLoading(false);
+      if (loadJobsPromiseRef.current === task) {
+        loadJobsPromiseRef.current = null;
+      }
     }
-  }, [activeJobId, applyParsedResult, listLimit, parseResult, rememberActiveJob, service, shouldKeepActiveJob]);
+  }, [applyParsedResult, listLimit, rememberActiveJob]);
 
   useEffect(() => {
     const raw = window.localStorage.getItem(storageKey);
@@ -262,12 +293,12 @@ export function useProductWorkbenchJobs<
 
     const pull = async () => {
       try {
-        const job = await service.fetchJob(activeJobId);
+        const job = await serviceRef.current.fetchJob(activeJobId);
         if (cancelled) return;
         setActiveJob(job);
-        const parsed = parseResult(job);
+        const parsed = parseResultRef.current(job);
         applyParsedResult(job, parsed);
-        if (isTerminalJob(job)) {
+        if (isTerminalJobRef.current(job)) {
           clearActiveJob();
           void loadJobs();
           return;
@@ -287,15 +318,15 @@ export function useProductWorkbenchJobs<
       cancelled = true;
       if (timer != null) window.clearTimeout(timer);
     };
-  }, [activeJobId, activePollIntervalMs, applyParsedResult, clearActiveJob, isTerminalJob, loadJobs, parseResult, service]);
+  }, [activeJobId, activePollIntervalMs, applyParsedResult, clearActiveJob, loadJobs]);
 
   useEffect(() => {
     setLiveTextState(createEmptyLiveTextState());
   }, [activeJob?.job_id]);
 
   useEffect(() => {
-    setLiveTextState((previous) => assembleLiveText(activeJob, previous));
-  }, [activeJob, assembleLiveText]);
+    setLiveTextState((previous) => assembleLiveTextRef.current(activeJob, previous));
+  }, [activeJob]);
 
   const startJobs = useCallback(
     async (payloads: TCreatePayload[]): Promise<{ jobs: TJob[]; errors: string[] }> => {
@@ -342,9 +373,9 @@ export function useProductWorkbenchJobs<
     setJobLoading(true);
     setErrorMessage(null);
     try {
-      const resp = await service.cancelJob(value);
-      const job = extractCancelledJob(resp);
-      if (activeJob?.job_id === value || activeJobId === value) {
+      const resp = await serviceRef.current.cancelJob(value);
+      const job = extractCancelledJobRef.current(resp);
+      if (activeJobRef.current?.job_id === value || activeJobIdRef.current === value) {
         setActiveJob(job);
       }
       await loadJobs();
@@ -355,7 +386,7 @@ export function useProductWorkbenchJobs<
     } finally {
       setJobLoading(false);
     }
-  }, [activeJob?.job_id, activeJobId, extractCancelledJob, loadJobs, service]);
+  }, [loadJobs]);
 
   const cancelActiveJob = useCallback(async (): Promise<TJob | null> => {
     if (!activeJob) return null;
@@ -364,16 +395,17 @@ export function useProductWorkbenchJobs<
 
   const retryJob = useCallback(
     async (jobId: string): Promise<TJob | null> => {
-      if (!service.retryJob) {
+      const retryImpl = serviceRef.current.retryJob;
+      if (!retryImpl) {
         setErrorMessage("当前任务类型不支持重试。");
         return null;
       }
       setJobLoading(true);
       setErrorMessage(null);
       try {
-        const job = await service.retryJob(jobId);
+        const job = await retryImpl(jobId);
         setActiveJob(job);
-        if (shouldKeepActiveJob(job)) rememberActiveJob(job.job_id);
+        if (shouldKeepActiveJobRef.current(job)) rememberActiveJob(job.job_id);
         await loadJobs();
         return job;
       } catch (err) {
@@ -383,21 +415,22 @@ export function useProductWorkbenchJobs<
         setJobLoading(false);
       }
     },
-    [loadJobs, rememberActiveJob, service, shouldKeepActiveJob],
+    [loadJobs, rememberActiveJob],
   );
 
   const resumeJob = useCallback(
     async (payload: TResumePayload): Promise<TJob | null> => {
-      if (!service.resumeJob) {
+      const resumeImpl = serviceRef.current.resumeJob;
+      if (!resumeImpl) {
         setErrorMessage("当前任务类型不支持继续。");
         return null;
       }
       setJobLoading(true);
       setErrorMessage(null);
       try {
-        const job = await service.resumeJob(payload);
+        const job = await resumeImpl(payload);
         setActiveJob(job);
-        if (shouldKeepActiveJob(job)) rememberActiveJob(job.job_id);
+        if (shouldKeepActiveJobRef.current(job)) rememberActiveJob(job.job_id);
         await loadJobs();
         return job;
       } catch (err) {
@@ -407,19 +440,19 @@ export function useProductWorkbenchJobs<
         setJobLoading(false);
       }
     },
-    [loadJobs, rememberActiveJob, service, shouldKeepActiveJob],
+    [loadJobs, rememberActiveJob],
   );
 
   const selectJob = useCallback(
     (job: TJob) => {
       setActiveJob(job);
-      const parsed = parseResult(job);
+      const parsed = parseResultRef.current(job);
       applyParsedResult(job, parsed);
-      if (shouldKeepActiveJob(job)) {
+      if (shouldKeepActiveJobRef.current(job)) {
         rememberActiveJob(job.job_id);
       }
     },
-    [applyParsedResult, parseResult, rememberActiveJob, shouldKeepActiveJob],
+    [applyParsedResult, rememberActiveJob],
   );
 
   const refreshJobs = useCallback(async () => {
