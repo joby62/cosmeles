@@ -8,6 +8,7 @@ import {
   pinMobileSelectionSession,
   type MobileSelectionResolveResponse,
 } from "@/lib/api";
+import { describeMobileRouteFocus, getMobileCategoryLabel } from "@/lib/mobile/routeCopy";
 
 const SWIPE_ACTION_WIDTH = 84;
 const SWIPE_ACTION_TOTAL = SWIPE_ACTION_WIDTH * 2;
@@ -383,6 +384,8 @@ export default function MobileSelectionHistoryPanel() {
         {!loading &&
           entries.map((entry) => {
             const product = entry.recommended_product;
+            const categoryLabel = getMobileCategoryLabel(entry.category);
+            const routeFocus = describeMobileRouteFocus(entry.category, entry.route.key);
             const checked = selectedIds.includes(entry.session_id);
             const offset = rowOffset(entry.session_id);
             const showingAction = openRowId === entry.session_id && !selectionMode;
@@ -482,7 +485,7 @@ export default function MobileSelectionHistoryPanel() {
                         </button>
                       )}
                       <span className="inline-flex h-7 items-center rounded-full bg-black/[0.06] px-3 text-[12px] text-black/72">
-                        {entry.category} · {entry.route.title}
+                        {categoryLabel} · {entry.route.title}
                       </span>
                       {entry.is_pinned && (
                         <span className="inline-flex h-7 items-center rounded-full border border-[#ff9f0a]/35 bg-[#ff9f0a]/12 px-3 text-[12px] font-medium text-[#b06b00]">
@@ -496,9 +499,10 @@ export default function MobileSelectionHistoryPanel() {
                   <h2 className="mt-3 text-[17px] font-semibold leading-[1.35] text-black/88">
                     {product.brand || "未知品牌"} {product.name || "未命名产品"}
                   </h2>
-                  <p className="mt-2 text-[13px] leading-[1.5] text-black/60">
-                    route={entry.route.key} · rules={entry.rules_version}
-                    {entry.reused ? " · reused" : ""}
+                  <p className="mt-2 text-[13px] leading-[1.6] text-black/62">{routeFocus}</p>
+                  <p className="mt-2 text-[12px] leading-[1.5] text-black/48">
+                    规则版本 {entry.rules_version}
+                    {entry.reused ? " · 复用同一答案结果" : ""}
                   </p>
 
                   <div className="mt-3 flex flex-wrap gap-2">

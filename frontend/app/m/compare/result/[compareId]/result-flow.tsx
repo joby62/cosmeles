@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { MobileCompareResult, MobileCompareResultSection } from "@/lib/api";
+import { describeMobileRouteFocus } from "@/lib/mobile/routeCopy";
 
 type InsightSource = "feel" | "rhythm" | "care" | "consensus" | "ingredient" | "fallback";
 
@@ -35,6 +36,8 @@ export default function MobileCompareResultFlow({ result }: { result: MobileComp
   const pairResults = useMemo(() => result.pair_results || [], [result.pair_results]);
   const overall = result.overall || null;
   const focusPair = pairResults[0] || null;
+  const routeFocus = describeMobileRouteFocus(result.category, result.recommendation.route.key);
+  const routeTitle = result.recommendation.route.title || "历史首推";
 
   const finalDecision = overall?.decision || result.verdict.decision;
   const finalConfidence = Math.round((overall?.confidence ?? result.verdict.confidence) * 100);
@@ -209,6 +212,19 @@ export default function MobileCompareResultFlow({ result }: { result: MobileComp
               置信度 {finalConfidence}%
             </span>
           </div>
+
+          <section className="mt-6 rounded-[28px] border border-[#cdd8ea] bg-white/88 px-4 py-4 dark:border-[#5f6d87] dark:bg-[#1d283b]">
+            <p className="text-[12px] font-semibold text-[#5f6d87] dark:text-[#b3c0d8]">沿用的历史基线</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <span className="inline-flex min-h-8 items-center rounded-full border border-[#cfe2ff] bg-[#f4f8ff] px-3 text-[12px] text-[#24509c] dark:border-[#6f86a8] dark:bg-[#243146] dark:text-[#d7e7ff]">
+                {routeTitle}
+              </span>
+              <span className="inline-flex min-h-8 items-center rounded-full border border-[#d4d9e3] bg-white px-3 text-[12px] text-[#52617b] dark:border-[#5f6b82] dark:bg-[#1f2a3e] dark:text-[#d2dcf0]">
+                历史主推：{recommendedVisual.shortName}
+              </span>
+            </div>
+            <p className="mt-3 text-[14px] leading-[1.65] text-[#52617b] dark:text-[#c9d2e6]">{routeFocus}</p>
+          </section>
 
           {finalDecision === "hybrid" ? (
             <section className="mt-6 rounded-[28px] border border-[#ccd2dd] bg-white/92 px-4 py-4 dark:border-[#5e6a81] dark:bg-[#1d283b]">

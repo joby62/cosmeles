@@ -7,6 +7,7 @@ import {
   MobileSelectionResolveResponse,
   resolveImageUrl,
 } from "@/lib/api";
+import { describeMobileRouteFocus } from "@/lib/mobile/routeCopy";
 
 const SOURCE_LABELS: Record<string, string> = {
   featured_slot: "主推槽位",
@@ -41,6 +42,7 @@ export default function SelectionResultFlow({
 }: Props) {
   const product = resolved.recommended_product;
   const matrix = explanation?.matrix_analysis || resolved.matrix_analysis;
+  const routeFocus = describeMobileRouteFocus(resolved.category, resolved.route.key);
   const matrixRoutes = [...matrix.routes].sort((a, b) => a.rank - b.rank);
   const nonExcludedScores = matrixRoutes
     .map((item) => item.score_after_mask)
@@ -55,9 +57,7 @@ export default function SelectionResultFlow({
       <h1 className="mt-2 text-[30px] leading-[1.12] font-semibold tracking-[-0.02em] text-black/92">
         {resolved.route.title}
       </h1>
-      <p className="mt-2 text-[14px] leading-[1.55] text-black/62">
-        route_key: {resolved.route.key} · rules: {resolved.rules_version}
-      </p>
+      <p className="mt-3 text-[15px] leading-[1.65] text-black/66">{routeFocus}</p>
 
       <article className="mt-6 rounded-3xl border border-black/10 bg-white p-5">
         <div className="flex flex-wrap items-center gap-2">
@@ -66,6 +66,9 @@ export default function SelectionResultFlow({
           </span>
           <span className="rounded-full border border-black/12 bg-[#fafafa] px-3 py-1 text-[11px] text-black/58">
             推荐来源：{SOURCE_LABELS[explanation?.recommendation_source || resolved.recommendation_source] || "未知"}
+          </span>
+          <span className="rounded-full border border-black/12 bg-[#fafafa] px-3 py-1 text-[11px] text-black/58">
+            规则版本：{resolved.rules_version}
           </span>
           {explanation?.needs_review ? (
             <span className="rounded-full border border-[#f4dfb1] bg-[#fffaf0] px-3 py-1 text-[11px] text-[#8c5a00]">
