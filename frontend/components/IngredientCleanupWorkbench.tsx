@@ -56,7 +56,6 @@ export default function IngredientCleanupWorkbench({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [allIngredients, setAllIngredients] = useState<IngredientLibraryListItem[]>([]);
-  const [showDetails, setShowDetails] = useState(false);
 
   const [detailQuery, setDetailQuery] = useState("");
   const [detailCategory, setDetailCategory] = useState("");
@@ -366,42 +365,101 @@ export default function IngredientCleanupWorkbench({
   }
 
   return (
-    <section className="mt-8 rounded-[30px] border border-black/10 bg-white p-6">
+    <section className="mt-8 space-y-5">
+      <IngredientVisualizationPanel
+        loading={loading}
+        exportingCsv={exportingCsv}
+        totalIngredients={allIngredients.length}
+        error={error}
+        summaryRows={summaryRows}
+        onRefresh={() => {
+          void loadAllIngredients();
+        }}
+        onExport={() => {
+          void exportAllCsv();
+        }}
+      />
+
+      <IngredientCleanupPanel
+        loading={loading}
+        detailQuery={detailQuery}
+        detailCategory={detailCategory}
+        detailSubtype={detailSubtype}
+        categoryOptions={categoryOptions}
+        subtypeOptions={subtypeOptions}
+        removeArtifacts={removeArtifacts}
+        deleting={deleting}
+        selectedCount={selectedIngredientIds.length}
+        filteredCount={filteredIngredients.length}
+        deleteSummary={deleteSummary}
+        deleteError={deleteError}
+        filteredIngredients={filteredIngredients}
+        selectedSet={selectedSet}
+        onDetailQueryChange={setDetailQuery}
+        onDetailCategoryChange={setDetailCategory}
+        onDetailSubtypeChange={setDetailSubtype}
+        onReload={() => {
+          void loadAllIngredients();
+        }}
+        onSelectAll={selectAllFiltered}
+        onClearSelection={clearSelection}
+        onRemoveArtifactsChange={setRemoveArtifacts}
+        onDeleteSelected={() => {
+          void deleteSelectedIngredients();
+        }}
+        onToggleIngredient={toggleIngredientSelection}
+      />
+    </section>
+  );
+}
+
+function IngredientVisualizationPanel({
+  loading,
+  exportingCsv,
+  totalIngredients,
+  error,
+  summaryRows,
+  onRefresh,
+  onExport,
+}: {
+  loading: boolean;
+  exportingCsv: boolean;
+  totalIngredients: number;
+  error: string | null;
+  summaryRows: CategorySummary[];
+  onRefresh: () => void;
+  onExport: () => void;
+}) {
+  return (
+    <div className="rounded-[30px] border border-black/10 bg-white p-6">
       <div className="flex flex-wrap items-center gap-2">
         <span className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/62">
-          Stage E · 成分清理
+          成分治理 · 可视化
         </span>
       </div>
-      <h2 className="mt-3 text-[28px] font-semibold tracking-[-0.02em] text-black/90">成分清理台</h2>
-      <p className="mt-2 text-[14px] text-black/65">默认展示摘要；按需展开成分明细并批量清理。映射可用时自动展示二级分类简况与产品使用排行。</p>
+      <h2 className="mt-3 text-[28px] font-semibold tracking-[-0.02em] text-black/90">成分可视化</h2>
+      <p className="mt-2 text-[14px] text-black/65">先看各一级/二级分类的成分分布、Top 成分和产品覆盖，再决定哪些成分需要清理。</p>
 
       <div className="mt-4 rounded-2xl border border-black/10 bg-[#f8fafc] p-4">
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => void loadAllIngredients()}
+            onClick={onRefresh}
             disabled={loading}
             className="inline-flex h-9 items-center justify-center rounded-full border border-black/14 bg-white px-4 text-[12px] font-semibold text-black/78 disabled:opacity-45"
           >
-            {loading ? "刷新中..." : "刷新摘要"}
+            {loading ? "刷新中..." : "刷新可视化"}
           </button>
           <button
             type="button"
-            onClick={() => setShowDetails((prev) => !prev)}
-            className="inline-flex h-9 items-center justify-center rounded-full border border-black/14 bg-white px-4 text-[12px] font-semibold text-black/78"
-          >
-            {showDetails ? "隐藏成分明细" : "显示成分明细"}
-          </button>
-          <button
-            type="button"
-            onClick={() => void exportAllCsv()}
-            disabled={loading || exportingCsv || allIngredients.length === 0}
+            onClick={onExport}
+            disabled={loading || exportingCsv || totalIngredients === 0}
             className="inline-flex h-9 items-center justify-center rounded-full border border-black/14 bg-white px-4 text-[12px] font-semibold text-black/78 disabled:opacity-45"
-            title="导出全量成分 CSV（不受当前摘要/筛选影响）"
+            title="导出全量成分 CSV（不受当前筛选影响）"
           >
             {exportingCsv ? "导出中..." : "导出全量 CSV"}
           </button>
-          <span className="text-[12px] text-black/58">成分总数 {allIngredients.length} 条</span>
+          <span className="text-[12px] text-black/58">成分总数 {totalIngredients} 条</span>
         </div>
 
         {error ? <div className="mt-2 text-[13px] text-[#b42318]">{error}</div> : null}
@@ -443,115 +501,173 @@ export default function IngredientCleanupWorkbench({
           {!loading && summaryRows.length === 0 ? <div className="text-[12px] text-black/52">暂无成分摘要数据。</div> : null}
         </div>
       </div>
+    </div>
+  );
+}
 
-      {showDetails ? (
-        <div className="mt-5 rounded-2xl border border-black/10 bg-white p-4">
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-4">
-            <input
-              value={detailQuery}
-              onChange={(e) => setDetailQuery(e.target.value)}
-              placeholder="按成分名/摘要检索"
-              className="h-10 rounded-xl border border-black/12 bg-white px-3 text-[13px] outline-none focus:border-black/35"
-            />
-            <select
-              value={detailCategory}
-              onChange={(e) => setDetailCategory(e.target.value)}
-              className="h-10 rounded-xl border border-black/12 bg-white px-3 text-[13px] outline-none focus:border-black/35"
-            >
-              <option value="">全部一级分类</option>
-              {categoryOptions.map((category) => (
-                <option key={category} value={category}>
-                  {categoryLabel(category)}
-                </option>
-              ))}
-            </select>
-            <select
-              value={detailSubtype}
-              onChange={(e) => setDetailSubtype(e.target.value)}
-              disabled={!detailCategory || subtypeOptions.length === 0}
-              className="h-10 rounded-xl border border-black/12 bg-white px-3 text-[13px] outline-none focus:border-black/35 disabled:opacity-45"
-            >
-              <option value="">全部二级分类</option>
-              {subtypeOptions.map((item) => (
-                <option key={item.key} value={item.key}>
-                  {item.title} · {item.count}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={() => void loadAllIngredients()}
-              disabled={loading}
-              className="inline-flex h-10 items-center justify-center rounded-xl border border-black/12 bg-white px-4 text-[13px] font-semibold text-black/78 disabled:opacity-45"
-            >
-              {loading ? "加载中..." : "重载明细"}
-            </button>
-          </div>
+function IngredientCleanupPanel({
+  loading,
+  detailQuery,
+  detailCategory,
+  detailSubtype,
+  categoryOptions,
+  subtypeOptions,
+  removeArtifacts,
+  deleting,
+  selectedCount,
+  filteredCount,
+  deleteSummary,
+  deleteError,
+  filteredIngredients,
+  selectedSet,
+  onDetailQueryChange,
+  onDetailCategoryChange,
+  onDetailSubtypeChange,
+  onReload,
+  onSelectAll,
+  onClearSelection,
+  onRemoveArtifactsChange,
+  onDeleteSelected,
+  onToggleIngredient,
+}: {
+  loading: boolean;
+  detailQuery: string;
+  detailCategory: string;
+  detailSubtype: string;
+  categoryOptions: string[];
+  subtypeOptions: Array<{ key: string; title: string; count: number }>;
+  removeArtifacts: boolean;
+  deleting: boolean;
+  selectedCount: number;
+  filteredCount: number;
+  deleteSummary: string | null;
+  deleteError: string | null;
+  filteredIngredients: IngredientLibraryListItem[];
+  selectedSet: Set<string>;
+  onDetailQueryChange: (value: string) => void;
+  onDetailCategoryChange: (value: string) => void;
+  onDetailSubtypeChange: (value: string) => void;
+  onReload: () => void;
+  onSelectAll: () => void;
+  onClearSelection: () => void;
+  onRemoveArtifactsChange: (value: boolean) => void;
+  onDeleteSelected: () => void;
+  onToggleIngredient: (ingredientId: string, checked: boolean) => void;
+}) {
+  return (
+    <div className="rounded-[30px] border border-black/10 bg-white p-6">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/62">
+          成分治理 · 清理
+        </span>
+      </div>
+      <h2 className="mt-3 text-[28px] font-semibold tracking-[-0.02em] text-black/90">成分清理台</h2>
+      <p className="mt-2 text-[14px] text-black/65">按一级/二级分类筛选成分，勾选后批量删除，并可同步清理关联 doubao 产物。</p>
 
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={selectAllFiltered}
-              className="inline-flex h-9 items-center justify-center rounded-full border border-black/12 bg-white px-4 text-[12px] font-semibold text-black/75"
-            >
-              勾选当前列表
-            </button>
-            <button
-              type="button"
-              onClick={clearSelection}
-              className="inline-flex h-9 items-center justify-center rounded-full border border-black/12 bg-white px-4 text-[12px] font-semibold text-black/75"
-            >
-              清空勾选
-            </button>
-            <label className="inline-flex items-center gap-2 rounded-full border border-black/12 bg-white px-3 py-1.5 text-[12px] text-black/72">
+      <div className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-4">
+        <input
+          value={detailQuery}
+          onChange={(e) => onDetailQueryChange(e.target.value)}
+          placeholder="按成分名/摘要检索"
+          className="h-10 rounded-xl border border-black/12 bg-white px-3 text-[13px] outline-none focus:border-black/35"
+        />
+        <select
+          value={detailCategory}
+          onChange={(e) => onDetailCategoryChange(e.target.value)}
+          className="h-10 rounded-xl border border-black/12 bg-white px-3 text-[13px] outline-none focus:border-black/35"
+        >
+          <option value="">全部一级分类</option>
+          {categoryOptions.map((category) => (
+            <option key={category} value={category}>
+              {categoryLabel(category)}
+            </option>
+          ))}
+        </select>
+        <select
+          value={detailSubtype}
+          onChange={(e) => onDetailSubtypeChange(e.target.value)}
+          disabled={!detailCategory || subtypeOptions.length === 0}
+          className="h-10 rounded-xl border border-black/12 bg-white px-3 text-[13px] outline-none focus:border-black/35 disabled:opacity-45"
+        >
+          <option value="">全部二级分类</option>
+          {subtypeOptions.map((item) => (
+            <option key={item.key} value={item.key}>
+              {item.title} · {item.count}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          onClick={onReload}
+          disabled={loading}
+          className="inline-flex h-10 items-center justify-center rounded-xl border border-black/12 bg-white px-4 text-[13px] font-semibold text-black/78 disabled:opacity-45"
+        >
+          {loading ? "加载中..." : "重载清理列表"}
+        </button>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={onSelectAll}
+          className="inline-flex h-9 items-center justify-center rounded-full border border-black/12 bg-white px-4 text-[12px] font-semibold text-black/75"
+        >
+          勾选当前列表
+        </button>
+        <button
+          type="button"
+          onClick={onClearSelection}
+          className="inline-flex h-9 items-center justify-center rounded-full border border-black/12 bg-white px-4 text-[12px] font-semibold text-black/75"
+        >
+          清空勾选
+        </button>
+        <label className="inline-flex items-center gap-2 rounded-full border border-black/12 bg-white px-3 py-1.5 text-[12px] text-black/72">
+          <input
+            type="checkbox"
+            checked={removeArtifacts}
+            onChange={(e) => onRemoveArtifactsChange(e.target.checked)}
+            className="h-4 w-4"
+          />
+          删除关联 doubao_runs
+        </label>
+        <button
+          type="button"
+          onClick={onDeleteSelected}
+          disabled={deleting || selectedCount === 0}
+          className="inline-flex h-9 items-center justify-center rounded-full border border-[#ef4444]/40 bg-[#fff5f5] px-4 text-[12px] font-semibold text-[#b42318] disabled:opacity-50"
+        >
+          {deleting ? "清理中..." : `删除勾选 (${selectedCount})`}
+        </button>
+        <span className="text-[12px] text-black/58">当前筛选 {filteredCount} 条</span>
+      </div>
+
+      {deleteSummary ? <div className="mt-2 text-[13px] text-[#116a3f]">{deleteSummary}</div> : null}
+      {deleteError ? <pre className="mt-2 whitespace-pre-wrap text-[12px] text-[#b42318]">{deleteError}</pre> : null}
+
+      <div className="mt-3 max-h-[360px] space-y-2 overflow-auto pr-1">
+        {filteredIngredients.map((item) => {
+          const checked = selectedSet.has(item.ingredient_id);
+          return (
+            <label key={item.ingredient_id} className="flex items-start gap-2 rounded-lg border border-black/10 bg-[#fbfcff] p-2.5">
               <input
                 type="checkbox"
-                checked={removeArtifacts}
-                onChange={(e) => setRemoveArtifacts(e.target.checked)}
-                className="h-4 w-4"
+                checked={checked}
+                onChange={(e) => onToggleIngredient(item.ingredient_id, e.target.checked)}
+                className="mt-1 h-4 w-4"
               />
-              删除关联 doubao_runs
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[13px] font-semibold text-black/84">{ingredientDisplayName(item)}</div>
+                <div className="truncate text-[12px] text-black/62">
+                  {categoryLabel(item.category)} · source {item.source_count} · id: {item.ingredient_id}
+                </div>
+                <div className="truncate text-[12px] text-black/56">{item.summary || "-"}</div>
+              </div>
             </label>
-            <button
-              type="button"
-              onClick={deleteSelectedIngredients}
-              disabled={deleting || selectedIngredientIds.length === 0}
-              className="inline-flex h-9 items-center justify-center rounded-full border border-[#ef4444]/40 bg-[#fff5f5] px-4 text-[12px] font-semibold text-[#b42318] disabled:opacity-50"
-            >
-              {deleting ? "清理中..." : `删除勾选 (${selectedIngredientIds.length})`}
-            </button>
-            <span className="text-[12px] text-black/58">当前筛选 {filteredIngredients.length} 条</span>
-          </div>
-
-          {deleteSummary ? <div className="mt-2 text-[13px] text-[#116a3f]">{deleteSummary}</div> : null}
-          {deleteError ? <pre className="mt-2 whitespace-pre-wrap text-[12px] text-[#b42318]">{deleteError}</pre> : null}
-
-          <div className="mt-3 max-h-[360px] space-y-2 overflow-auto pr-1">
-            {filteredIngredients.map((item) => {
-              const checked = selectedSet.has(item.ingredient_id);
-              return (
-                <label key={item.ingredient_id} className="flex items-start gap-2 rounded-lg border border-black/10 bg-[#fbfcff] p-2.5">
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    onChange={(e) => toggleIngredientSelection(item.ingredient_id, e.target.checked)}
-                    className="mt-1 h-4 w-4"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[13px] font-semibold text-black/84">{ingredientDisplayName(item)}</div>
-                    <div className="truncate text-[12px] text-black/62">
-                      {categoryLabel(item.category)} · source {item.source_count} · id: {item.ingredient_id}
-                    </div>
-                    <div className="truncate text-[12px] text-black/56">{item.summary || "-"}</div>
-                  </div>
-                </label>
-              );
-            })}
-            {!loading && filteredIngredients.length === 0 ? <div className="text-[12px] text-black/52">当前筛选无成分数据。</div> : null}
-          </div>
-        </div>
-      ) : null}
-    </section>
+          );
+        })}
+        {!loading && filteredIngredients.length === 0 ? <div className="text-[12px] text-black/52">当前筛选无成分数据。</div> : null}
+      </div>
+    </div>
   );
 }
 

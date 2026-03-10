@@ -179,7 +179,7 @@ export default function ProductDedupManager({
           </Link>
         ) : null}
         <span className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/62">
-          Stage B · AI 重合度检测（后台任务）
+          Stage B · 同品归并（后台任务）
         </span>
         <span className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/62">
           模型档位：{selectedModelTier.toUpperCase()}
@@ -189,9 +189,9 @@ export default function ProductDedupManager({
         </span>
       </div>
 
-      <h2 className="mt-3 text-[30px] font-semibold tracking-[-0.02em] text-black/90">AI 重合度清理台</h2>
+      <h2 className="mt-3 text-[30px] font-semibold tracking-[-0.02em] text-black/90">同品归并台</h2>
       <p className="mt-2 text-[14px] leading-[1.6] text-black/65">
-        一次性扫描同品类产品，两两调用豆包判断重合度。命中置信度 {">"}{AUTO_SELECT_CONFIDENCE_GT}% 的 trace_id 自动勾选待删除清单，刷新后可恢复任务进度。
+        一次性扫描同品类产品，两两调用豆包判断是否为同品。命中置信度 {">"}{AUTO_SELECT_CONFIDENCE_GT}% 的 trace_id 会自动进入待删候选，仍需人工确认后再删除。
       </p>
 
       <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-[260px_220px_1fr]">
@@ -239,7 +239,7 @@ export default function ProductDedupManager({
           disabled={activeRunning || jobLoading}
           className="inline-flex h-10 items-center justify-center rounded-full bg-black px-5 text-[13px] font-semibold text-white disabled:bg-black/25"
         >
-          {jobLoading && !activeRunning ? "提交中..." : "开始同品类两两分析（后台）"}
+          {jobLoading && !activeRunning ? "提交中..." : "开始同品归并分析（后台）"}
         </button>
         <button
           type="button"
@@ -396,7 +396,7 @@ function parseDedupResult(value: Record<string, unknown> | undefined): ProductDe
 }
 
 function formatJobHint(job: ProductWorkbenchJob | null): string {
-  if (!job) return "待命：可创建新的重合度扫描任务。";
+  if (!job) return "待命：可创建新的同品归并任务。";
   if (job.status === "queued") return "任务排队中，等待执行。";
   if (job.status === "running") return "任务运行中，刷新页面后可恢复。";
   if (job.status === "cancelling") return "已收到取消请求，当前处理单元结束后停止。";

@@ -1,3 +1,4 @@
+import { ReactNode } from "react";
 import {
   fetchAIMetricsSummary,
   fetchAllProducts,
@@ -100,29 +101,20 @@ export default async function ProductManagementPage() {
           <div className="text-[12px] font-semibold tracking-[0.12em] text-black/46">PRODUCT MANAGEMENT</div>
           <h1 className="mt-2 text-[44px] font-semibold tracking-[-0.03em] text-black/90">产品管理</h1>
           <p className="mt-3 max-w-[760px] text-[16px] leading-[1.6] text-black/62">
-            一个页面串行完成：上传解析、重合度去重、成分分析、类型映射、成分库生成、产品增强分析与主推配置，不再分散到独立上传页或桌面对比页。
+            统一收口到一个页面，但不再平铺堆叠；按“产品生产流水线 / 产品展示与清理 / 成分可视化与清理”三组编排，减少上下文切换。
           </p>
           <div className="mt-6 flex flex-wrap items-center gap-2.5">
             <span className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-[12px] font-medium text-black/72">
               总产品数：{products.length}
             </span>
             <span className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-[12px] text-black/66">
-              Stage A 上传解析
+              产品生产流水线
             </span>
             <span className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-[12px] text-black/66">
-              Stage B 去重
+              产品展示与清理
             </span>
             <span className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-[12px] text-black/66">
-              Stage C 成分分析
-            </span>
-            <span className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-[12px] text-black/66">
-              Stage D 类型映射
-            </span>
-            <span className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-[12px] text-black/66">
-              Stage E 成分库生成
-            </span>
-            <span className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-[12px] text-black/66">
-              Stage F 产品增强分析
+              成分可视化与清理
             </span>
             {categoryStats.map(([key, count]) => (
               <span key={key} className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-[12px] text-black/66">
@@ -141,21 +133,50 @@ export default async function ProductManagementPage() {
               sub={`覆盖率 ${pct(aiMetrics.cost_coverage_rate)}`}
             />
           </div>
+
+          <div className="mt-6 flex flex-wrap items-center gap-2">
+            <AnchorChip href="#product-pipeline" label="流水线" />
+            <AnchorChip href="#product-governance" label="产品治理" />
+            <AnchorChip href="#ingredient-governance" label="成分治理" />
+          </div>
         </div>
       </section>
 
-      <ProductIngestWorkbench />
-      <ProductDedupManager initialProducts={products} />
-      <IngredientLibraryGenerator initialProducts={products} showCleanupConsole={false} />
-      <ProductRouteMappingGenerator initialProducts={products} />
-      <ProductAnalysisGenerator initialProducts={products} initialAnalysisIndex={analysisIndex.items} />
-      <ProductCatalogManager
-        initialProducts={products}
-        initialRouteMappings={routeMappings.items}
-        initialFeaturedSlots={featuredSlots.items}
-      />
-      <ProductCleanupWorkbench initialProducts={products} />
-      <IngredientCleanupWorkbench initialProducts={products} initialRouteMappings={routeMappings.items} />
+      <ManagementCluster
+        id="product-pipeline"
+        eyebrow="PRODUCT FLOWLINE"
+        title="产品生产流水线"
+        description="先产出，再治理。上传、同品归并、成分分析、类型映射和产品增强分析都放在同一条生产链里。"
+      >
+        <ProductIngestWorkbench />
+        <ProductDedupManager initialProducts={products} />
+        <IngredientLibraryGenerator initialProducts={products} showCleanupConsole={false} />
+        <ProductRouteMappingGenerator initialProducts={products} />
+        <ProductAnalysisGenerator initialProducts={products} initialAnalysisIndex={analysisIndex.items} />
+      </ManagementCluster>
+
+      <ManagementCluster
+        id="product-governance"
+        eyebrow="PRODUCT GOVERNANCE"
+        title="产品展示与清理"
+        description="主推配置、展示筛选和清理维护放在同一区块，先看展示，再决定修或删。"
+      >
+        <ProductCatalogManager
+          initialProducts={products}
+          initialRouteMappings={routeMappings.items}
+          initialFeaturedSlots={featuredSlots.items}
+        />
+        <ProductCleanupWorkbench initialProducts={products} />
+      </ManagementCluster>
+
+      <ManagementCluster
+        id="ingredient-governance"
+        eyebrow="INGREDIENT GOVERNANCE"
+        title="成分可视化与清理"
+        description="把成分分布洞察和批量清理放在一起，先看结构，再做删除。"
+      >
+        <IngredientCleanupWorkbench initialProducts={products} initialRouteMappings={routeMappings.items} />
+      </ManagementCluster>
     </main>
   );
 }
@@ -191,6 +212,42 @@ function MetricsBadge({ label, value, sub }: { label: string; value: string; sub
       <div className="mt-0.5 text-[15px] font-semibold text-black/82">{value}</div>
       {sub ? <div className="mt-0.5 text-[11px] text-black/44">{sub}</div> : null}
     </div>
+  );
+}
+
+function AnchorChip({ href, label }: { href: string; label: string }) {
+  return (
+    <a
+      href={href}
+      className="inline-flex h-9 items-center justify-center rounded-full border border-black/12 bg-white px-4 text-[12px] font-semibold text-black/72 hover:bg-black/[0.03]"
+    >
+      {label}
+    </a>
+  );
+}
+
+function ManagementCluster({
+  id,
+  eyebrow,
+  title,
+  description,
+  children,
+}: {
+  id: string;
+  eyebrow: string;
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
+  return (
+    <section id={id} className="mt-10 scroll-mt-6">
+      <div className="rounded-[28px] border border-black/10 bg-[#f6f8fb] px-6 py-5">
+        <div className="text-[11px] font-semibold tracking-[0.12em] text-black/42">{eyebrow}</div>
+        <div className="mt-2 text-[28px] font-semibold tracking-[-0.02em] text-black/88">{title}</div>
+        <p className="mt-2 max-w-[760px] text-[14px] leading-[1.6] text-black/62">{description}</p>
+      </div>
+      {children}
+    </section>
   );
 }
 

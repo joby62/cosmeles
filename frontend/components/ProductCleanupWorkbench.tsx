@@ -194,7 +194,7 @@ export default function ProductCleanupWorkbench({ initialProducts }: { initialPr
     <section className="mt-8 rounded-[30px] border border-black/10 bg-white p-6">
       <div className="flex flex-wrap items-center gap-2">
         <span className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/62">
-          Stage E · 清理维护
+          产品治理 · 清理维护
         </span>
       </div>
       <h2 className="mt-3 text-[28px] font-semibold tracking-[-0.02em] text-black/90">产品清理台</h2>
