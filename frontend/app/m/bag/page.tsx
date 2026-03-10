@@ -1,5 +1,7 @@
-import { redirect } from "next/navigation";
+"use client";
 
-export default function MobileBagRedirectPage() {
-  redirect("/m/me?tab=bag");
+import MobileBagPanel from "@/components/mobile/MobileBagPanel";
+
+export default function MobileBagPage() {
+  return <MobileBagPanel />;
 }

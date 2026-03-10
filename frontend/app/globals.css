@@ -611,6 +611,30 @@ html[data-nav-open="1"] #app-main{
   -webkit-backdrop-filter: saturate(190%) blur(26px);
 }
 
+.m-nav-mode-layer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transform-origin: center bottom;
+  transition:
+    opacity 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.m-nav-mode-active {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+.m-nav-mode-hidden {
+  opacity: 0;
+  transform: translateY(7px) scale(0.985);
+  pointer-events: none;
+}
+
 .m-nav-compare-icon {
   display: inline-block;
   width: 18px;
@@ -628,6 +652,26 @@ html[data-nav-open="1"] #app-main{
   background-color: currentColor;
   -webkit-mask: url("/m/icons/mobile-nav-choose.svg") center / contain no-repeat;
   mask: url("/m/icons/mobile-nav-choose.svg") center / contain no-repeat;
+  transform: translateY(0.5px);
+}
+
+.m-nav-features-icon {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  background-color: currentColor;
+  -webkit-mask: url("/m/icons/mobile-nav-features.svg") center / contain no-repeat;
+  mask: url("/m/icons/mobile-nav-features.svg") center / contain no-repeat;
+  transform: translateY(0.5px);
+}
+
+.m-nav-bag-icon {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  background-color: currentColor;
+  -webkit-mask: url("/m/icons/mobile-nav-bag.svg") center / contain no-repeat;
+  mask: url("/m/icons/mobile-nav-bag.svg") center / contain no-repeat;
   transform: translateY(0.5px);
 }
 

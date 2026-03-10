@@ -2,21 +2,18 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import MobileBagPanel from "@/components/mobile/MobileBagPanel";
 import MobileCompareHistoryPanel from "@/components/mobile/MobileCompareHistoryPanel";
 import MobileSelectionHistoryPanel from "@/components/mobile/MobileSelectionHistoryPanel";
 
-type MeTab = "selection" | "compare" | "bag";
+type MeTab = "selection" | "compare";
 
 const TAB_META: Array<{ key: MeTab; label: string }> = [
   { key: "selection", label: "历史选择" },
   { key: "compare", label: "历史对比" },
-  { key: "bag", label: "购物袋" },
 ];
 
 function normalizeTab(raw: string | null | undefined): MeTab {
   if (raw === "compare") return "compare";
-  if (raw === "bag") return "bag";
   return "selection";
 }
 
@@ -29,25 +26,29 @@ export default function MobileMePage() {
     const applyFromLocation = () => {
       if (typeof window === "undefined") return;
       const params = new URLSearchParams(window.location.search);
-      setActiveTab(normalizeTab(params.get("tab")));
+      const tab = params.get("tab");
+      if (tab === "bag") {
+        router.replace("/m/bag");
+        return;
+      }
+      setActiveTab(normalizeTab(tab));
     };
     applyFromLocation();
     window.addEventListener("popstate", applyFromLocation);
     return () => {
       window.removeEventListener("popstate", applyFromLocation);
     };
-  }, []);
+  }, [router]);
 
   const renderPanel = () => {
     if (activeTab === "compare") return <MobileCompareHistoryPanel />;
-    if (activeTab === "bag") return <MobileBagPanel />;
     return <MobileSelectionHistoryPanel />;
   };
 
   return (
     <section className="pb-4">
       <div className="sticky top-[48px] z-20 -mx-4 border-b border-black/8 bg-[color:var(--m-bg)] px-4 py-3 backdrop-blur">
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2">
           {TAB_META.map((tab) => {
             const active = tab.key === activeTab;
             return (
