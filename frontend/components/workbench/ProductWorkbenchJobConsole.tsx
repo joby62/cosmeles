@@ -4,7 +4,7 @@ import { ReactNode } from "react";
 import { ProductWorkbenchJob } from "@/lib/api";
 import { WorkbenchJobLike } from "@/components/workbench/useProductWorkbenchJobs";
 
-type ProductWorkbenchJobConsoleProps<TJob extends WorkbenchJobLike = ProductWorkbenchJob> = {
+export type ProductWorkbenchJobConsoleProps<TJob extends WorkbenchJobLike = ProductWorkbenchJob> = {
   activeJob: TJob | null;
   activeRunning: boolean;
   progressValue: number;
@@ -14,8 +14,12 @@ type ProductWorkbenchJobConsoleProps<TJob extends WorkbenchJobLike = ProductWork
   jobs: TJob[];
   jobLoading: boolean;
   onSelectJob: (job: TJob) => void;
+  onCancelJob?: (jobId: string) => void;
+  canCancelJob?: (job: TJob) => boolean;
   onRetryJob?: (jobId: string) => void;
   canRetryJob?: (job: TJob) => boolean;
+  cancelLabel?: string;
+  retryLabel?: string;
   waitingLogText?: string;
   waitingPrettyText?: string;
   emptyHistoryText?: string;
@@ -37,8 +41,12 @@ export default function ProductWorkbenchJobConsole<TJob extends WorkbenchJobLike
   jobs,
   jobLoading,
   onSelectJob,
+  onCancelJob,
+  canCancelJob,
   onRetryJob,
   canRetryJob,
+  cancelLabel = "终止任务",
+  retryLabel = "失败重试",
   waitingLogText = "等待任务日志...",
   waitingPrettyText = "分析中...",
   emptyHistoryText = "暂无历史任务。",
@@ -95,6 +103,9 @@ export default function ProductWorkbenchJobConsole<TJob extends WorkbenchJobLike
         <div className="mt-3 max-h-[220px] space-y-2 overflow-auto pr-1">
           {jobs.map((job) => {
             const canRetry = canRetryJob ? canRetryJob(job) : Boolean(onRetryJob && (job.status === "failed" || job.status === "cancelled"));
+            const canCancel = canCancelJob
+              ? canCancelJob(job)
+              : Boolean(onCancelJob && (job.status === "queued" || job.status === "running" || job.status === "cancelling"));
             return (
               <div key={job.job_id} className="rounded-xl border border-black/10 bg-white px-3 py-2">
                 <button
@@ -108,18 +119,30 @@ export default function ProductWorkbenchJobConsole<TJob extends WorkbenchJobLike
                   <div className="mt-0.5 truncate text-[12px] text-black/58">{job.stage_label || job.stage || "-"} · {job.message || "-"}</div>
                   <div className="mt-0.5 text-[11px] text-black/48">updated_at: {job.updated_at}</div>
                 </button>
-                {canRetry && onRetryJob ? (
-                  <div className="mt-2">
-                    <button
-                      type="button"
-                      onClick={() => onRetryJob(job.job_id)}
-                      disabled={jobLoading}
-                      className="inline-flex h-8 items-center justify-center rounded-full border border-[#3151d8]/30 bg-[#eef2ff] px-3 text-[12px] font-semibold text-[#3151d8] disabled:opacity-45"
-                  >
-                    失败重试
-                  </button>
-                </div>
-              ) : null}
+                {canCancel || canRetry ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {canCancel && onCancelJob ? (
+                      <button
+                        type="button"
+                        onClick={() => onCancelJob(job.job_id)}
+                        disabled={jobLoading || job.status === "cancelling"}
+                        className="inline-flex h-8 items-center justify-center rounded-full border border-[#ef4444]/40 bg-[#fff5f5] px-3 text-[12px] font-semibold text-[#b42318] disabled:opacity-45"
+                      >
+                        {job.status === "cancelling" ? "取消中..." : cancelLabel}
+                      </button>
+                    ) : null}
+                    {canRetry && onRetryJob ? (
+                      <button
+                        type="button"
+                        onClick={() => onRetryJob(job.job_id)}
+                        disabled={jobLoading}
+                        className="inline-flex h-8 items-center justify-center rounded-full border border-[#3151d8]/30 bg-[#eef2ff] px-3 text-[12px] font-semibold text-[#3151d8] disabled:opacity-45"
+                      >
+                        {retryLabel}
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
                 {renderJobActions ? <div className="mt-2 flex flex-wrap items-center gap-2">{renderJobActions(job)}</div> : null}
                 {renderJobBody ? <div className="mt-2">{renderJobBody(job)}</div> : null}
               </div>

@@ -532,6 +532,7 @@ def create_ingredient_library_build_job(
         skipped_count=0,
         failed_count=0,
         cancel_requested=False,
+        live_text_json=None,
         result_json=None,
         error_json=None,
         created_at=now,
@@ -613,6 +614,14 @@ def cancel_ingredient_library_build_job(job_id: str, db: Session = Depends(get_d
         rec.stage = "cancelling"
         rec.stage_label = _ingredient_build_stage_label("cancelling")
         rec.message = "已收到取消请求，当前成分处理结束后停止。"
+    rec.live_text_json = _update_ingredient_build_live_text_state_json(
+        rec.live_text_json,
+        updated_at=rec.updated_at,
+        step=str(rec.stage or rec.status or "").strip().lower(),
+        stage_label=str(rec.stage_label or "").strip() or _ingredient_build_stage_label(str(rec.stage or rec.status or "")),
+        text=str(rec.message or ""),
+        ingredient_id=rec.current_ingredient_id,
+    )
     db.add(rec)
     try:
         db.commit()
@@ -656,6 +665,7 @@ def retry_ingredient_library_build_job(job_id: str, db: Session = Depends(get_db
     rec.skipped_count = 0
     rec.failed_count = 0
     rec.cancel_requested = False
+    rec.live_text_json = None
     rec.result_json = None
     rec.error_json = None
     rec.started_at = None
@@ -2209,6 +2219,14 @@ def _apply_ingredient_build_job_progress(
 
     rec.current_ingredient_id = str(payload.get("ingredient_id") or rec.current_ingredient_id or "").strip() or rec.current_ingredient_id
     rec.current_ingredient_name = str(payload.get("ingredient_name") or rec.current_ingredient_name or "").strip() or rec.current_ingredient_name
+    rec.live_text_json = _update_ingredient_build_live_text_state_json(
+        rec.live_text_json,
+        updated_at=now,
+        step=step,
+        stage_label=str(rec.stage_label or "").strip() or _ingredient_build_stage_label(step),
+        text=text,
+        ingredient_id=rec.current_ingredient_id,
+    )
 
     index_value = _safe_positive_int(payload.get("index"), fallback=rec.current_index or 0)
     total_value = _safe_positive_int(payload.get("total"), fallback=rec.current_total or 0)
@@ -2254,6 +2272,14 @@ def _mark_ingredient_build_job_done(
         rec.updated_count = int(result.updated)
         rec.skipped_count = int(result.skipped)
         rec.failed_count = int(result.failed)
+        rec.live_text_json = _update_ingredient_build_live_text_state_json(
+            rec.live_text_json,
+            updated_at=now,
+            step="done",
+            stage_label=_ingredient_build_stage_label("done"),
+            text=str(rec.message or ""),
+            ingredient_id=rec.current_ingredient_id,
+        )
         rec.result_json = json.dumps(result.model_dump(), ensure_ascii=False)
         rec.error_json = None
         rec.finished_at = now
@@ -2282,6 +2308,14 @@ def _mark_ingredient_build_job_cancelled(
         rec.stage_label = _ingredient_build_stage_label("cancelled")
         rec.message = message.strip() or "任务已取消。"
         rec.percent = max(0, min(99, int(rec.percent or 0)))
+        rec.live_text_json = _update_ingredient_build_live_text_state_json(
+            rec.live_text_json,
+            updated_at=now,
+            step="cancelled",
+            stage_label=_ingredient_build_stage_label("cancelled"),
+            text=str(rec.message or ""),
+            ingredient_id=rec.current_ingredient_id,
+        )
         rec.finished_at = now
         rec.updated_at = now
         db.add(rec)
@@ -2309,6 +2343,14 @@ def _mark_ingredient_build_job_failed(
         rec.stage = "failed"
         rec.stage_label = _ingredient_build_stage_label("failed")
         rec.message = detail
+        rec.live_text_json = _update_ingredient_build_live_text_state_json(
+            rec.live_text_json,
+            updated_at=now,
+            step="failed",
+            stage_label=_ingredient_build_stage_label("failed"),
+            text=str(detail or ""),
+            ingredient_id=rec.current_ingredient_id,
+        )
         rec.error_json = json.dumps(
             {
                 "code": str(code or "ingredient_build_failed"),
@@ -2323,6 +2365,114 @@ def _mark_ingredient_build_job_failed(
         db.commit()
     finally:
         db.close()
+
+
+def _update_ingredient_build_live_text_state_json(
+    raw: str | None,
+    *,
+    updated_at: str,
+    step: str,
+    stage_label: str,
+    text: str,
+    ingredient_id: str | None,
+) -> str | None:
+    state = _load_ingredient_build_live_text_state(raw)
+    logs = list(state["logs"])
+    model_buffer = str(state["model_buffer"])
+    model_ingredient = str(state["model_ingredient"])
+    model_log_index = state["model_log_index"]
+
+    def trim_logs() -> None:
+        nonlocal logs, model_log_index
+        if len(logs) <= 200:
+            return
+        overflow = len(logs) - 200
+        logs = logs[overflow:]
+        if isinstance(model_log_index, int):
+            model_log_index = max(0, model_log_index - overflow)
+
+    def append_line(line: str) -> None:
+        nonlocal logs
+        value = str(line or "").strip()
+        if not value:
+            return
+        if logs and logs[-1] == value:
+            return
+        logs.append(value)
+        trim_logs()
+
+    def sync_model_line() -> None:
+        nonlocal logs, model_log_index
+        merged = re.sub(r"\s+", " ", model_buffer).strip()
+        if not merged:
+            return
+        current_ingredient = str(ingredient_id or model_ingredient or "").strip() or "-"
+        line = f"[{updated_at}] 模型输出流 | {current_ingredient} | {merged}"
+        if isinstance(model_log_index, int) and 0 <= model_log_index < len(logs):
+            logs[model_log_index] = line
+        else:
+            logs.append(line)
+            model_log_index = len(logs) - 1
+            trim_logs()
+
+    def flush_model_line() -> None:
+        nonlocal model_buffer, model_log_index
+        sync_model_line()
+        model_buffer = ""
+        model_log_index = None
+
+    if step == "ingredient_model_delta":
+        current_ingredient = str(ingredient_id or "").strip()
+        if current_ingredient and model_ingredient and model_ingredient != current_ingredient:
+            flush_model_line()
+        if current_ingredient:
+            model_ingredient = current_ingredient
+        if text:
+            model_buffer = f"{model_buffer}{text}"
+            sync_model_line()
+    else:
+        flush_model_line()
+        if text:
+            append_line(f"[{updated_at}] {stage_label or step or '处理中'} | {text}")
+
+    if step in {"ingredient_build_done", "ingredient_build_cancelled", "done", "failed", "cancelled"}:
+        flush_model_line()
+        model_ingredient = ""
+
+    if not logs and not model_buffer:
+        return None
+
+    return json.dumps(
+        {
+            "logs": logs,
+            "model_buffer": model_buffer,
+            "model_ingredient": model_ingredient,
+            "model_log_index": model_log_index,
+        },
+        ensure_ascii=False,
+    )
+
+
+def _load_ingredient_build_live_text_state(raw: str | None) -> dict[str, Any]:
+    parsed = _safe_load_json_object(raw) or {}
+    logs_raw = parsed.get("logs")
+    logs = [str(item).strip() for item in logs_raw] if isinstance(logs_raw, list) else []
+    model_log_index_raw = parsed.get("model_log_index")
+    model_log_index = model_log_index_raw if isinstance(model_log_index_raw, int) else None
+    return {
+        "logs": [item for item in logs if item],
+        "model_buffer": str(parsed.get("model_buffer") or ""),
+        "model_ingredient": str(parsed.get("model_ingredient") or ""),
+        "model_log_index": model_log_index,
+    }
+
+
+def _ingredient_build_live_text_from_json(raw: str | None) -> str | None:
+    state = _load_ingredient_build_live_text_state(raw)
+    logs = state["logs"]
+    if not logs:
+        return None
+    return "\n".join(logs)
 
 
 def _ingredient_build_progress_percent(
@@ -2410,6 +2560,7 @@ def _to_ingredient_build_job_view(rec: IngredientLibraryBuildJob) -> IngredientL
         current_total=int(rec.current_total) if rec.current_total is not None else None,
         current_ingredient_id=str(rec.current_ingredient_id or "").strip() or None,
         current_ingredient_name=str(rec.current_ingredient_name or "").strip() or None,
+        live_text=_ingredient_build_live_text_from_json(rec.live_text_json),
         counters=IngredientLibraryBuildJobCounters(
             scanned_products=int(rec.scanned_products or 0),
             unique_ingredients=int(rec.unique_ingredients or 0),
@@ -6400,6 +6551,8 @@ def _ensure_ingredient_build_job_table(db: Session) -> None:
     statements: list[str] = []
     if "normalization_packages_json" not in columns:
         statements.append("ALTER TABLE ingredient_library_build_jobs ADD COLUMN normalization_packages_json TEXT NOT NULL DEFAULT '[]'")
+    if "live_text_json" not in columns:
+        statements.append("ALTER TABLE ingredient_library_build_jobs ADD COLUMN live_text_json TEXT")
     if statements:
         with bind.begin() as conn:
             for stmt in statements:

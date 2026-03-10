@@ -107,6 +107,7 @@ class IngredientLibraryBuildJob(Base):
     failed_count: Mapped[int] = mapped_column(Integer, default=0)
 
     cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    live_text_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 

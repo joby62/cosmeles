@@ -327,6 +327,7 @@ class IngredientLibraryBuildJobView(BaseModel):
     current_total: Optional[int] = None
     current_ingredient_id: Optional[str] = None
     current_ingredient_name: Optional[str] = None
+    live_text: Optional[str] = None
     counters: IngredientLibraryBuildJobCounters = Field(default_factory=IngredientLibraryBuildJobCounters)
     result: Optional[IngredientLibraryBuildResponse] = None
     error: Optional[IngredientLibraryBuildJobError] = None

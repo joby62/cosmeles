@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import ProductWorkbenchJobConsole from "@/components/workbench/ProductWorkbenchJobConsole";
+import WorkbenchTaskSection from "@/components/workbench/WorkbenchTaskSection";
 import {
   createEmptyLiveTextState,
   formatErrorDetail,
@@ -83,6 +83,7 @@ export default function IngredientLibraryGenerator({
     sortedJobs,
     refreshJobs,
     startJob,
+    cancelJob,
     cancelActiveJob,
     retryJob,
     selectJob,
@@ -353,56 +354,56 @@ export default function IngredientLibraryGenerator({
         >
           {jobLoading ? "提交中..." : "一键生成成分库（后台）"}
         </button>
-        <button
-          type="button"
-          onClick={() => void cancelActiveJob()}
-          disabled={jobLoading || !activeRunning || !activeJob}
-          className="inline-flex h-10 items-center justify-center rounded-full border border-[#ef4444]/40 bg-[#fff5f5] px-5 text-[13px] font-semibold text-[#b42318] disabled:opacity-45"
-        >
-          中止当前任务
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            void refreshJobs();
-            if (showCleanupConsole) {
-              void loadIngredientItems();
-            }
-            void runPreflight();
-          }}
-          disabled={jobsLoading || (showCleanupConsole && itemsLoading)}
-          className="inline-flex h-10 items-center justify-center rounded-full border border-black/14 bg-white px-5 text-[13px] font-semibold text-black/78 disabled:opacity-45"
-        >
-          {jobsLoading || (showCleanupConsole && itemsLoading) ? "刷新中..." : "刷新任务与成分"}
-        </button>
       </div>
 
-      {jobError ? <div className="mt-3 whitespace-pre-wrap text-[13px] text-[#b42318]">{jobError}</div> : null}
-
-      <ProductWorkbenchJobConsole
-        activeJob={activeJob}
-        activeRunning={activeRunning}
-        progressValue={progressValue}
-        countersText={countersText}
-        liveText={liveText}
-        prettyText={prettyText}
-        jobs={sortedJobs}
-        jobLoading={jobLoading}
-        onSelectJob={selectJob}
-        onRetryJob={(jobId) => {
-          void retryJob(jobId);
+      <WorkbenchTaskSection
+        errorMessage={jobError}
+        onRefresh={() => {
+          void refreshJobs();
+          if (showCleanupConsole) {
+            void loadIngredientItems();
+          }
+          void runPreflight();
         }}
-        liveTitle="实时任务日志"
-        prettyTitle="最终结果摘要"
-        waitingLogText="等待任务日志..."
-        waitingPrettyText="分析中..."
-        formatActiveMessage={formatIngredientActiveMessage}
-        renderActiveMeta={(job) => (
-          <div className="space-y-1 text-[12px] text-black/58">
-            {job.current_ingredient_name ? <div>当前成分：{job.current_ingredient_name}</div> : null}
-            {job.normalization_packages.length > 0 ? <div>归一工具包：{job.normalization_packages.join(" · ")}</div> : null}
-          </div>
-        )}
+        refreshDisabled={jobsLoading || preflightLoading || (showCleanupConsole && itemsLoading)}
+        refreshLabel={jobsLoading || preflightLoading || (showCleanupConsole && itemsLoading) ? "刷新中..." : "刷新任务与成分"}
+        onCancelActive={
+          activeRunning && activeJob
+            ? () => {
+                void cancelActiveJob();
+              }
+            : undefined
+        }
+        cancelActiveDisabled={jobLoading || !activeRunning || !activeJob || activeJob.status === "cancelling"}
+        cancelActiveLabel={activeJob?.status === "cancelling" ? "取消中..." : "中止当前任务"}
+        consoleProps={{
+          activeJob,
+          activeRunning,
+          progressValue,
+          countersText,
+          liveText,
+          prettyText,
+          jobs: sortedJobs,
+          jobLoading,
+          onSelectJob: selectJob,
+          onCancelJob: (jobId) => {
+            void cancelJob(jobId);
+          },
+          onRetryJob: (jobId) => {
+            void retryJob(jobId);
+          },
+          liveTitle: "实时任务日志",
+          prettyTitle: "最终结果摘要",
+          waitingLogText: "等待任务日志...",
+          waitingPrettyText: "分析中...",
+          formatActiveMessage: formatIngredientActiveMessage,
+          renderActiveMeta: (job) => (
+            <div className="space-y-1 text-[12px] text-black/58">
+              {job.current_ingredient_name ? <div>当前成分：{job.current_ingredient_name}</div> : null}
+              {job.normalization_packages.length > 0 ? <div>归一工具包：{job.normalization_packages.join(" · ")}</div> : null}
+            </div>
+          ),
+        }}
       />
 
       {showCleanupConsole ? (
@@ -517,6 +518,12 @@ function assembleIngredientLiveText(
   previous: WorkbenchLiveTextState,
 ): WorkbenchLiveTextState {
   if (!job) return createEmptyLiveTextState();
+  if (job.live_text && job.live_text.trim()) {
+    return {
+      text: job.live_text.trim(),
+      meta: { jobId: job.job_id, source: "backend_live_text" },
+    };
+  }
 
   const prevJobId = String(previous.meta.jobId || "");
   let logs = prevJobId === job.job_id && Array.isArray(previous.meta.logs) ? [...(previous.meta.logs as string[])] : [];

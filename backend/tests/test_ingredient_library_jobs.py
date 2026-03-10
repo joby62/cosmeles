@@ -71,6 +71,79 @@ def test_ingredient_library_background_job_done(test_client, monkeypatch: pytest
     assert done["result"]["status"] == "ok"
 
 
+def test_ingredient_library_background_job_live_text_merges_model_delta(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, _ = test_client
+
+    def fake_build(payload, db, event_callback=None, stop_checker=None):
+        _ = payload
+        _ = db
+        _ = stop_checker
+        if event_callback:
+            event_callback(
+                {
+                    "step": "ingredient_build_start",
+                    "scanned_products": 1,
+                    "unique_ingredients": 1,
+                    "text": "start",
+                }
+            )
+            event_callback(
+                {
+                    "step": "ingredient_start",
+                    "index": 1,
+                    "total": 1,
+                    "ingredient_id": "ing-1",
+                    "ingredient_name": "Niacinamide",
+                    "text": "running",
+                }
+            )
+            for delta in ["Nia", "cin", "amide"]:
+                event_callback(
+                    {
+                        "step": "ingredient_model_delta",
+                        "index": 1,
+                        "total": 1,
+                        "ingredient_id": "ing-1",
+                        "ingredient_name": "Niacinamide",
+                        "text": delta,
+                    }
+                )
+            event_callback(
+                {
+                    "step": "ingredient_done",
+                    "index": 1,
+                    "total": 1,
+                    "ingredient_id": "ing-1",
+                    "ingredient_name": "Niacinamide",
+                    "text": "done",
+                }
+            )
+        return IngredientLibraryBuildResponse(
+            status="ok",
+            scanned_products=1,
+            unique_ingredients=1,
+            backfilled_from_storage=0,
+            submitted_to_model=1,
+            created=1,
+            updated=0,
+            skipped=0,
+            failed=0,
+            items=[],
+            failures=[],
+        )
+
+    monkeypatch.setattr(products_routes, "_build_ingredient_library_impl", fake_build)
+
+    created = client.post("/api/products/ingredients/library/jobs", json={})
+    assert created.status_code == 200
+    job_id = created.json()["job_id"]
+
+    done = _wait_for_job_status(client, job_id=job_id, expected={"done"})
+    assert "live_text" in done
+    assert "模型输出流 | ing-1 | Niacinamide" in str(done["live_text"])
+    assert "已完成 | 成分库生成完成" in str(done["live_text"])
+
+
 def test_ingredient_library_background_job_can_cancel(test_client, monkeypatch: pytest.MonkeyPatch):
     client, _ = test_client
 

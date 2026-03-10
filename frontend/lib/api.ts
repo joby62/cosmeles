@@ -228,6 +228,7 @@ export type IngredientLibraryBuildJob = {
   current_total?: number | null;
   current_ingredient_id?: string | null;
   current_ingredient_name?: string | null;
+  live_text?: string | null;
   counters: IngredientLibraryBuildJobCounters;
   result?: IngredientLibraryBuildResponse | null;
   error?: IngredientLibraryBuildJobError | null;

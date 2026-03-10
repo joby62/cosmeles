@@ -3,9 +3,10 @@
 import { FormEvent, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import ProductWorkbenchJobConsole from "@/components/workbench/ProductWorkbenchJobConsole";
+import WorkbenchTaskSection from "@/components/workbench/WorkbenchTaskSection";
 import {
   WorkbenchLiveTextState,
+  createWorkbenchStatusHandlers,
   createEmptyLiveTextState,
   useProductWorkbenchJobs,
 } from "@/components/workbench/useProductWorkbenchJobs";
@@ -76,6 +77,12 @@ const EMPTY_DRAFT: ResumeDraft = {
   brand: "",
   name: "",
 };
+
+const UPLOAD_JOB_STATUS_HANDLERS = createWorkbenchStatusHandlers<UploadIngestJob>({
+  running: ["queued", "running", "cancelling"],
+  terminal: ["done", "failed", "cancelled"],
+  keepActive: ["queued", "running", "waiting_more", "cancelling"],
+});
 
 const SAMPLE_JSON = `{
   "category": "shampoo",
@@ -158,9 +165,7 @@ export default function ProductIngestWorkbench() {
     activePollIntervalMs: 2200,
     service: jobService,
     parseResult: parseUploadResult,
-    isRunningJob: (job) => job.status === "queued" || job.status === "running" || job.status === "cancelling",
-    isTerminalJob: (job) => job.status === "done" || job.status === "failed" || job.status === "cancelled",
-    shouldKeepActiveJob: (job) => job.status !== "done" && job.status !== "failed" && job.status !== "cancelled",
+    ...UPLOAD_JOB_STATUS_HANDLERS,
     assembleLiveText: assembleUploadLiveText,
     formatPrettyText: ({ activeJob: current }) => buildUploadPrettyText(current),
   });
@@ -433,56 +438,60 @@ export default function ProductIngestWorkbench() {
           >
             {submitting || jobLoading ? "提交中..." : "上传到后端"}
           </button>
-          <button
-            type="button"
-            onClick={() => void refreshJobs()}
-            disabled={jobsLoading}
-            className="inline-flex h-11 items-center justify-center rounded-full border border-black/12 bg-white px-5 text-[13px] font-semibold text-black/78 disabled:opacity-45"
-          >
-            {jobsLoading ? "刷新中..." : "刷新任务"}
-          </button>
         </div>
 
-        {errorMessage ? <p className="whitespace-pre-wrap text-[13px] leading-[1.5] text-[#b42318]">{errorMessage}</p> : null}
-
-        <ProductWorkbenchJobConsole
-          activeJob={activeJob}
-          activeRunning={activeRunning}
-          progressValue={progressValue}
-          countersText={buildUploadCountersText(activeJob)}
-          liveText={liveText}
-          prettyText={prettyText}
-          jobs={sortedJobs}
-          jobLoading={jobLoading}
-          onSelectJob={selectJob}
-          onRetryJob={(jobId) => {
-            void retryJob(jobId);
+        <WorkbenchTaskSection
+          errorMessage={errorMessage}
+          onRefresh={() => {
+            void refreshJobs();
           }}
-          canRetryJob={(job) => Boolean(job.can_retry)}
-          waitingLogText="等待 Stage 文本..."
-          waitingPrettyText="等待格式化结果..."
-          emptyHistoryText="暂无上传任务。"
-          liveTitle="实时文本"
-          prettyTitle="格式化文本"
-          renderActiveMeta={(job) => renderUploadActiveMeta(job)}
-          renderJobActions={(job) =>
-            renderUploadJobActions({
-              job,
-              jobLoading,
-              onCancel: cancelJob,
-            })
+          refreshDisabled={jobsLoading}
+          refreshLabel={jobsLoading ? "刷新中..." : "刷新任务"}
+          onCancelActive={
+            activeJob && canCancelUploadJob(activeJob)
+              ? () => {
+                  void cancelJob(activeJob.job_id);
+                }
+              : undefined
           }
-          renderJobBody={(job) =>
-            renderUploadJobBody({
-              job,
-              draft: resumeDrafts[job.job_id] || EMPTY_DRAFT,
-              onChangeDraft: updateResumeDraft,
-              onPreview: setPreviewModal,
-              onResume: handleResumeJob,
-              canResume: Boolean(resumeJob),
-              jobLoading,
-            })
-          }
+          cancelActiveDisabled={!activeJob || !canCancelUploadJob(activeJob) || activeJob.status === "cancelling" || jobLoading}
+          cancelActiveLabel={activeJob?.status === "cancelling" ? "取消中..." : "中止当前任务"}
+          consoleProps={{
+            activeJob,
+            activeRunning,
+            progressValue,
+            countersText: buildUploadCountersText(activeJob),
+            liveText,
+            prettyText,
+            jobs: sortedJobs,
+            jobLoading,
+            onSelectJob: selectJob,
+            onCancelJob: (jobId) => {
+              void cancelJob(jobId);
+            },
+            canCancelJob: canCancelUploadJob,
+            onRetryJob: (jobId) => {
+              void retryJob(jobId);
+            },
+            canRetryJob: (job) => Boolean(job.can_retry),
+            waitingLogText: "等待 Stage 文本...",
+            waitingPrettyText: "等待格式化结果...",
+            emptyHistoryText: "暂无上传任务。",
+            liveTitle: "实时文本",
+            prettyTitle: "格式化文本",
+            renderActiveMeta: (job) => renderUploadActiveMeta(job),
+            renderJobActions: (job) => renderUploadJobLinks(job),
+            renderJobBody: (job) =>
+              renderUploadJobBody({
+                job,
+                draft: resumeDrafts[job.job_id] || EMPTY_DRAFT,
+                onChangeDraft: updateResumeDraft,
+                onPreview: setPreviewModal,
+                onResume: handleResumeJob,
+                canResume: Boolean(resumeJob),
+                jobLoading,
+              }),
+          }}
         />
 
         {manualResult || result ? (
@@ -608,30 +617,14 @@ function renderUploadActiveMeta(job: UploadIngestJob) {
   );
 }
 
-function renderUploadJobActions({
-  job,
-  jobLoading,
-  onCancel,
-}: {
-  job: UploadIngestJob;
-  jobLoading: boolean;
-  onCancel: (jobId: string) => Promise<UploadIngestJob | null>;
-}) {
-  const running = job.status === "queued" || job.status === "running" || job.status === "cancelling";
+function canCancelUploadJob(job: UploadIngestJob): boolean {
+  return job.status === "queued" || job.status === "running" || job.status === "waiting_more" || job.status === "cancelling";
+}
+
+function renderUploadJobLinks(job: UploadIngestJob) {
   const resultId = getIngestResultId(job.result);
   return (
     <>
-      {running ? (
-        <button
-          type="button"
-          onClick={() => void onCancel(job.job_id)}
-          disabled={jobLoading || job.status === "cancelling"}
-          className="inline-flex h-8 items-center justify-center rounded-full border border-[#ef4444]/40 bg-[#fff5f5] px-3 text-[12px] font-semibold text-[#b42318] disabled:opacity-45"
-        >
-          {job.status === "cancelling" ? "取消中..." : "终止任务"}
-        </button>
-      ) : null}
-
       {resultId ? (
         <Link
           href={`/product/${resultId}`}

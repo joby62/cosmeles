@@ -5,6 +5,12 @@ import { ProductWorkbenchJob, ProductWorkbenchJobCancelResponse } from "@/lib/ap
 
 type ProductWorkbenchJobStatus = ProductWorkbenchJob["status"];
 
+export type WorkbenchJobStatusConfig<TStatus extends string = ProductWorkbenchJobStatus> = {
+  running: readonly TStatus[];
+  terminal: readonly TStatus[];
+  keepActive?: readonly TStatus[];
+};
+
 export type WorkbenchJobLike = {
   status: string;
   job_id: string;
@@ -108,6 +114,27 @@ export type UseProductWorkbenchJobsState<
 
 export function createEmptyLiveTextState(): WorkbenchLiveTextState {
   return { text: "", meta: {} };
+}
+
+export function createWorkbenchStatusHandlers<
+  TJob extends WorkbenchJobLike,
+  TStatus extends string = TJob["status"] & string,
+>(config: WorkbenchJobStatusConfig<TStatus>) {
+  const running = new Set(config.running.map((status) => String(status || "").trim().toLowerCase()));
+  const terminal = new Set(config.terminal.map((status) => String(status || "").trim().toLowerCase()));
+  const keepActive = config.keepActive
+    ? new Set(config.keepActive.map((status) => String(status || "").trim().toLowerCase()))
+    : null;
+
+  return {
+    isRunningJob: (job: TJob) => running.has(String(job.status || "").trim().toLowerCase()),
+    isTerminalJob: (job: TJob) => terminal.has(String(job.status || "").trim().toLowerCase()),
+    shouldKeepActiveJob: (job: TJob) => {
+      const value = String(job.status || "").trim().toLowerCase();
+      if (keepActive) return keepActive.has(value);
+      return !terminal.has(value);
+    },
+  };
 }
 
 function defaultIsRunningJob(job: WorkbenchJobLike): boolean {
@@ -337,10 +364,10 @@ export function useProductWorkbenchJobs<
       try {
         for (const payload of payloads) {
           try {
-            const job = await service.createJob(payload);
+            const job = await serviceRef.current.createJob(payload);
             createdJobs.push(job);
             setActiveJob(job);
-            if (shouldKeepActiveJob(job)) {
+            if (shouldKeepActiveJobRef.current(job)) {
               rememberActiveJob(job.job_id);
             }
           } catch (err) {
@@ -356,7 +383,7 @@ export function useProductWorkbenchJobs<
         setJobLoading(false);
       }
     },
-    [loadJobs, rememberActiveJob, service, shouldKeepActiveJob],
+    [loadJobs, rememberActiveJob],
   );
 
   const startJob = useCallback(
