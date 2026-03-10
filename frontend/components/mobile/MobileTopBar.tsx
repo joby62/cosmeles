@@ -5,6 +5,8 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
+const MOBILE_BRAND_NAME = "予选";
+
 function getSectionLabel(pathname: string | null): string {
   if (!pathname || pathname === "/m") return "个性测配";
   if (pathname.startsWith("/m/choose")) return "个性测配";
@@ -20,7 +22,8 @@ function getSectionLabel(pathname: string | null): string {
   if (pathname.startsWith("/m/me/bag")) return "购物袋";
   if (pathname.startsWith("/m/bag")) return "购物袋";
   if (pathname.startsWith("/m/me")) return "在用";
-  return "予选";
+  if (pathname.startsWith("/m/about")) return "关于";
+  return "首页";
 }
 
 export default function MobileTopBar() {
@@ -114,7 +117,7 @@ export default function MobileTopBar() {
       <div className="mx-auto flex h-12 max-w-[680px] items-center justify-between px-4">
         <Link
           href="/m"
-          className="m-pressable relative z-[1] inline-flex items-center gap-0.5 rounded-full px-1 py-0.5 active:bg-[color:var(--m-press)]"
+          className="m-pressable relative z-[1] inline-flex min-w-0 max-w-[58vw] items-center gap-1 rounded-full px-1 py-0.5 active:bg-[color:var(--m-press)]"
           style={{ opacity: sectionOpacity }}
         >
           {!logoHidden ? (
@@ -134,12 +137,13 @@ export default function MobileTopBar() {
               }}
             />
           ) : null}
+          <span className="truncate text-[13px] font-medium tracking-[0.002em] text-[color:var(--m-topbar-sub)]">{MOBILE_BRAND_NAME}</span>
           <span className="text-[11px] leading-none text-[color:var(--m-topbar-dot)]">·</span>
-          <span className="text-[14px] font-semibold tracking-[0.005em] text-[color:var(--m-topbar-text)]">{section}</span>
+          <span className="truncate text-[14px] font-semibold tracking-[0.005em] text-[color:var(--m-topbar-text)]">{section}</span>
         </Link>
 
         <p
-          className="relative z-[1] max-w-[56vw] truncate text-right text-[11px] leading-none tracking-[0.01em] text-[color:var(--m-topbar-sub)] transition-[opacity,transform] duration-200 min-[430px]:text-[12px]"
+          className="relative z-[1] max-w-[44vw] truncate text-right text-[11px] leading-none tracking-[0.01em] text-[color:var(--m-topbar-sub)] transition-[opacity,transform] duration-200 min-[430px]:max-w-[48vw] min-[430px]:text-[12px]"
           style={{
             opacity: sloganOpacity,
             transform: `translateY(${-sloganOffset}px)`,
