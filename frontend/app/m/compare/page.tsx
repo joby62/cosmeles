@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   fetchMobileCompareBootstrap,
@@ -76,6 +76,7 @@ type StoredCompareDraft = {
   brand: string;
   name: string;
   updated_at: string;
+  had_upload?: boolean;
 };
 
 function normalizeSelectionCategory(raw: unknown): MobileSelectionCategory | null {
@@ -115,6 +116,8 @@ export default function MobileComparePage() {
   const [activeSession, setActiveSession] = useState<MobileCompareSession | null>(null);
   const [restoringSession, setRestoringSession] = useState(true);
   const [pendingDraft, setPendingDraft] = useState<StoredCompareDraft | null>(null);
+  const [uploadSectionExpanded, setUploadSectionExpanded] = useState(false);
+  const [needsUploadReattach, setNeedsUploadReattach] = useState(false);
   const activeCompareIdRef = useRef<string | null>(null);
 
   const recommendationReady = Boolean(bootstrap?.recommendation?.exists);
@@ -125,6 +128,14 @@ export default function MobileComparePage() {
   const orderedLibraryItems = useMemo(
     () => orderProductLibraryItems(bootstrap?.product_library?.items || []),
     [bootstrap?.product_library?.items],
+  );
+  const priorityLibraryItems = useMemo(
+    () => orderedLibraryItems.filter((item) => item.emphasized),
+    [orderedLibraryItems],
+  );
+  const standardLibraryItems = useMemo(
+    () => orderedLibraryItems.filter((item) => !item.emphasized),
+    [orderedLibraryItems],
   );
   const availableProductIdSet = useMemo(
     () => new Set(orderedLibraryItems.map((item) => item.productId)),
@@ -141,9 +152,12 @@ export default function MobileComparePage() {
 
   const selectedCount = selectedProductIds.length;
   const hasUpload = Boolean(file);
+  const hasUploadSignal = hasUpload || needsUploadReattach;
   const totalSelectedCount = selectedCount + (hasUpload ? 1 : 0);
   const maxLibrarySelection = hasUpload ? MAX_TOTAL_SELECTION - 1 : MAX_TOTAL_SELECTION;
   const minLibrarySelection = hasUpload ? 1 : 2;
+  const selectionShortfall = Math.max(0, 2 - totalSelectedCount);
+  const uploadSectionBodyVisible = uploadSectionExpanded || hasUploadSignal;
 
   const canStart =
     !running &&
@@ -189,15 +203,28 @@ export default function MobileComparePage() {
   }, [brand, file?.name, hasUpload, name, productTitleById, selectedProductIds]);
 
   const selectionStatusText = useMemo(() => {
-    if (totalSelectedCount <= 0) return "先选 2 款开始";
-    if (totalSelectedCount === 1) return "再选 1 款即可开始";
-    if (totalSelectedCount === 2) return "已选 2 款，可直接分析";
-    return "已选 3 款，已选满";
+    if (totalSelectedCount <= 0) return "还没选择产品";
+    if (totalSelectedCount === 1) return "再选 1 款即可继续";
+    if (totalSelectedCount === 2) return "已选 2 款，可以下一步";
+    return "已选满 3 款，可直接下一步";
   }, [totalSelectedCount]);
 
   const selectionAssistText = hasUpload
     ? `已包含在用产品；还可从产品库选 ${maxLibrarySelection} 款。`
-    : "补充在用产品后，会额外判断：继续用 / 建议替换 / 分场景混用。";
+    : "想判断现在这瓶是否值得继续用，再把它加进来。";
+
+  const uploadSectionSummary = hasUpload
+    ? "已加入你正在用的产品。"
+    : needsUploadReattach
+      ? "已保留填写信息，还差重新补传图片。"
+      : "可选增强，用来判断是否继续用、替换，还是分场景混用。";
+
+  const selectionDockLabel =
+    totalSelectedCount >= 2
+      ? "已选完成，可继续下一步"
+      : selectionShortfall === 1
+        ? "再选 1 款即可继续"
+        : "先选 2 款对比产品";
 
   const retryTargetsSnapshot = useMemo(
     () => normalizeCompareTargetSnapshot(activeSession?.targets_snapshot || []),
@@ -325,12 +352,14 @@ export default function MobileComparePage() {
             brand: String(parsed?.brand || ""),
             name: String(parsed?.name || ""),
             updated_at: String(parsed?.updated_at || ""),
+            had_upload: Boolean(parsed?.had_upload),
           };
           setPendingDraft(restoredDraft);
           setShowGuide(false);
           setStep(draftStep);
           setBrand(restoredDraft.brand);
           setName(restoredDraft.name);
+          setUploadSectionExpanded(Boolean(restoredDraft.had_upload));
           if (draftCategory) {
             setCategory(draftCategory);
           }
@@ -365,6 +394,10 @@ export default function MobileComparePage() {
     setBrand(String(pendingDraft.brand || ""));
     setName(String(pendingDraft.name || ""));
     setShowGuide(false);
+    if (pendingDraft.had_upload) {
+      setNeedsUploadReattach(true);
+      setUploadSectionExpanded(true);
+    }
     setPendingDraft(null);
   }, [bootstrapLoading, category, pendingDraft]);
 
@@ -515,6 +548,7 @@ export default function MobileComparePage() {
       !running &&
       (step > 1 ||
         selectedProductIds.length > 0 ||
+        hasUploadSignal ||
         Boolean(brand.trim()) ||
         Boolean(name.trim()) ||
         category !== "shampoo");
@@ -539,12 +573,14 @@ export default function MobileComparePage() {
       brand,
       name,
       updated_at: new Date().toISOString(),
+      had_upload: hasUploadSignal,
     });
   }, [
     activeCompareId,
     brand,
     category,
     clearCompareDraft,
+    hasUploadSignal,
     name,
     rememberCompareDraft,
     running,
@@ -571,16 +607,42 @@ export default function MobileComparePage() {
     setLastProgressUpdateAt(null);
     setStep(1);
     setShowGuide(true);
+    setSelectedProductIds([]);
+    setFile(null);
+    setBrand("");
+    setName("");
+    setUploadSectionExpanded(false);
+    setNeedsUploadReattach(false);
     clearActiveCompare();
     clearCompareDraft();
     void safeTrack("compare_reset_to_intro", { category });
   }, [category, clearActiveCompare, clearCompareDraft]);
+
+  const pulseSelectionHaptic = useCallback(() => {
+    if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+      navigator.vibrate(8);
+    }
+  }, []);
 
   const notifySelectionLimit = useCallback(() => {
     setSelectionNotice("本次最多选择 3 款产品，已选满。");
     if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
       navigator.vibrate(10);
     }
+  }, []);
+
+  const openUploadPicker = useCallback(() => {
+    setUploadSectionExpanded(true);
+    if (!running) {
+      uploadInputRef.current?.click();
+    }
+  }, [running]);
+
+  const clearUploadDraft = useCallback(() => {
+    setFile(null);
+    setBrand("");
+    setName("");
+    setNeedsUploadReattach(false);
   }, []);
 
   async function startCompare(options?: {
@@ -606,6 +668,7 @@ export default function MobileComparePage() {
     setActiveSession(null);
     setActiveCompareId(null);
     activeCompareIdRef.current = null;
+    setNeedsUploadReattach(false);
     clearActiveCompare();
     clearCompareDraft();
     setLastProgressUpdateAt(Date.now());
@@ -809,12 +872,28 @@ export default function MobileComparePage() {
   }
 
   function toggleSelected(pid: string) {
+    let changed = false;
+    let blocked = false;
     setSelectedProductIds((prev) => {
       const exists = prev.includes(pid);
-      if (exists) return prev.filter((id) => id !== pid);
-      if (prev.length >= maxLibrarySelection) return prev;
+      if (exists) {
+        changed = true;
+        return prev.filter((id) => id !== pid);
+      }
+      if (prev.length >= maxLibrarySelection) {
+        blocked = true;
+        return prev;
+      }
+      changed = true;
       return [...prev, pid];
     });
+    if (blocked) {
+      notifySelectionLimit();
+      return;
+    }
+    if (changed) {
+      pulseSelectionHaptic();
+    }
   }
 
   function goPrevStep() {
@@ -930,48 +1009,44 @@ export default function MobileComparePage() {
   } else if (step === 3) {
     stepBody = (
       <div>
-        <h2 className="text-[24px] leading-[1.2] font-semibold tracking-[-0.02em] text-black/90">选择要对比的产品</h2>
-        <p className="mt-2 text-[14px] leading-[1.55] text-black/62">2 款最聚焦，最多 3 款。</p>
+        <h2 className="text-[26px] leading-[1.18] font-semibold tracking-[-0.02em] text-black/90">先选 2 款对比产品</h2>
+        <p className="mt-2 text-[14px] leading-[1.6] text-black/62">想判断“现在这瓶还值不值得继续用”，再把你正在用的产品加进来。</p>
 
-        <div className="m-compare-selection-tip mt-4 rounded-xl border px-3 py-2 text-[12px]">
-          <div>{selectionStatusText}</div>
-          <div className="mt-1 text-[11px] opacity-85">{selectionAssistText}</div>
-        </div>
-        <div className="mt-3 rounded-[18px] border border-black/10 bg-black/[0.02] px-3 py-3">
-          <div className="flex items-center justify-between gap-2">
-            <div className="text-[12px] text-black/56">已选对象（{totalSelectedCount}/{MAX_TOTAL_SELECTION}）</div>
+        <div className="m-compare-selection-hero mt-5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="m-compare-selection-hero-kicker">已选 {totalSelectedCount}/{MAX_TOTAL_SELECTION}</div>
+              <div className="m-compare-selection-hero-title">{selectionStatusText}</div>
+              <div className="m-compare-selection-hero-note">{selectionAssistText}</div>
+            </div>
             {totalSelectedCount > 0 ? (
               <button
                 type="button"
                 onClick={() => {
                   setSelectedProductIds([]);
-                  setFile(null);
-                  setBrand("");
-                  setName("");
+                  clearUploadDraft();
                   setSelectionNotice(null);
                 }}
-                className="inline-flex h-7 items-center rounded-full border border-black/12 px-3 text-[11px] text-black/64 active:bg-black/[0.04]"
+                className="inline-flex h-8 shrink-0 items-center rounded-full border border-black/12 px-3 text-[12px] font-medium text-black/64 active:bg-black/[0.04]"
               >
                 清空
               </button>
             ) : null}
           </div>
           {selectedDraftItems.length > 0 ? (
-            <div className="mt-2 flex flex-wrap gap-2">
+            <div className="mt-3 flex flex-wrap gap-2">
               {selectedDraftItems.map((item) => (
                 <button
                   key={item.key}
                   type="button"
                   onClick={() => {
                     if (item.source === "upload_new") {
-                      setFile(null);
-                      setBrand("");
-                      setName("");
+                      clearUploadDraft();
                       return;
                     }
                     toggleSelected(item.key);
                   }}
-                  className="inline-flex h-8 items-center gap-1 rounded-full border border-black/12 bg-white/70 px-3 text-[12px] text-black/76 active:bg-black/[0.03]"
+                  className="m-compare-selection-chip inline-flex h-8 items-center gap-1 rounded-full border px-3 text-[12px] font-medium"
                 >
                   <span className="max-w-[170px] truncate">{item.label}</span>
                   <span aria-hidden>×</span>
@@ -979,7 +1054,7 @@ export default function MobileComparePage() {
               ))}
             </div>
           ) : (
-            <div className="mt-2 text-[12px] text-black/52">还没选择产品，先从下面挑 2~3 款。</div>
+            <div className="mt-3 text-[12px] text-black/52">还没选择产品，先从下面挑 2 款开始。</div>
           )}
         </div>
         {selectionNotice ? (
@@ -997,11 +1072,13 @@ export default function MobileComparePage() {
           onChange={(e) => {
             const picked = e.target.files?.[0] || null;
             setFile(picked);
+            e.currentTarget.value = "";
             if (!picked) {
-              setBrand("");
-              setName("");
               return;
             }
+            setNeedsUploadReattach(false);
+            setUploadSectionExpanded(true);
+            pulseSelectionHaptic();
             void safeTrack("compare_upload_pick", { category, filename: picked.name });
           }}
           className="hidden"
@@ -1014,117 +1091,171 @@ export default function MobileComparePage() {
         ) : orderedLibraryItems.length === 0 ? (
           <div className="mt-3 text-[13px] text-black/55">该品类暂时还没有可用产品。</div>
         ) : (
-          <div className="mt-3">
-            <div className="text-[12px] text-black/52">可选产品（左右滑动）</div>
-            <div className="mt-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            <div className="flex min-w-max gap-3 pr-2">
-              <UploadProductCard
-                selected={hasUpload}
-                disabled={running}
-                fileName={file?.name || ""}
-                fileSize={file?.size || 0}
-                previewUrl={uploadPreviewUrl}
-                onPick={() => uploadInputRef.current?.click()}
-                onRemove={() => {
-                  setFile(null);
-                  setBrand("");
-                  setName("");
-                }}
-              />
+          <div className="mt-5 space-y-4">
+            {priorityLibraryItems.length > 0 ? (
+              <CompareProductRail
+                title="先看这几款"
+                note={
+                  recommendationReady
+                    ? "更贴近你已有结论的产品，适合先做判断。"
+                    : "更值得优先比较的产品，适合先做第一轮取舍。"
+                }
+              >
+                {priorityLibraryItems.map((item) => {
+                  const pid = item.productId;
+                  const selected = selectedSet.has(pid);
+                  const blocked = !selected && selectedCount >= maxLibrarySelection;
+                  return (
+                    <ProductLibraryCard
+                      key={pid}
+                      item={item}
+                      selected={selected}
+                      disabled={running}
+                      blocked={blocked}
+                      onPress={() => {
+                        toggleSelected(pid);
+                        void safeTrack("compare_library_pick", {
+                          category,
+                          product_id: pid,
+                          is_recommendation: item.isRecommendation,
+                          is_most_used: item.isMostUsed,
+                          selected: !selected,
+                        });
+                      }}
+                    />
+                  );
+                })}
+              </CompareProductRail>
+            ) : null}
 
-              {orderedLibraryItems.map((item) => {
-                const pid = item.productId;
-                const selected = selectedSet.has(pid);
-                const disabled = !selected && selectedCount >= maxLibrarySelection;
-                const canToggle = selected || selectedCount < maxLibrarySelection;
-                return (
-                  <ProductLibraryCard
-                    key={pid}
-                    item={item}
-                    selected={selected}
-                    disabled={running || disabled}
-                    onPress={() => {
-                      if (!canToggle) {
-                        notifySelectionLimit();
-                        return;
-                      }
-                      toggleSelected(pid);
-                      void safeTrack("compare_library_pick", {
-                        category,
-                        product_id: pid,
-                        is_recommendation: item.isRecommendation,
-                        is_most_used: item.isMostUsed,
-                        selected: !selected,
-                      });
-                    }}
-                    onToggle={(event) => {
-                      event.stopPropagation();
-                      if (!canToggle) {
-                        notifySelectionLimit();
-                        return;
-                      }
-                      toggleSelected(pid);
-                      void safeTrack("compare_library_pick", {
-                        category,
-                        product_id: pid,
-                        is_recommendation: item.isRecommendation,
-                        is_most_used: item.isMostUsed,
-                        selected: !selected,
-                      });
-                    }}
-                  />
-                );
-              })}
-            </div>
-          </div>
+            {standardLibraryItems.length > 0 ? (
+              <CompareProductRail title={priorityLibraryItems.length > 0 ? "更多可选" : "可选产品"} note="左右滑动浏览，整卡点按即可选择或取消。">
+                {standardLibraryItems.map((item) => {
+                  const pid = item.productId;
+                  const selected = selectedSet.has(pid);
+                  const blocked = !selected && selectedCount >= maxLibrarySelection;
+                  return (
+                    <ProductLibraryCard
+                      key={pid}
+                      item={item}
+                      selected={selected}
+                      disabled={running}
+                      blocked={blocked}
+                      onPress={() => {
+                        toggleSelected(pid);
+                        void safeTrack("compare_library_pick", {
+                          category,
+                          product_id: pid,
+                          is_recommendation: item.isRecommendation,
+                          is_most_used: item.isMostUsed,
+                          selected: !selected,
+                        });
+                      }}
+                    />
+                  );
+                })}
+              </CompareProductRail>
+            ) : null}
           </div>
         )}
 
-        {hasUpload ? (
-          <div className="mt-4 rounded-[20px] border border-black/10 bg-black/[0.02] p-3">
-            <div className="flex items-center justify-between gap-2">
-              <div className="text-[12px] text-black/56">补充在用产品信息（可选，提升识别准确度）</div>
-              <button
-                type="button"
-                onClick={() => {
-                  setFile(null);
-                  setBrand("");
-                  setName("");
-                }}
-                className="inline-flex h-8 items-center rounded-full border border-black/12 px-3 text-[12px] text-black/65 active:bg-black/[0.04]"
-              >
-                移除上传
-              </button>
+        <div className={`m-compare-upload-disclosure mt-5 ${uploadSectionBodyVisible ? "m-compare-upload-disclosure-open" : ""}`}>
+          <button
+            type="button"
+            disabled={running}
+            onClick={() => {
+              if (hasUploadSignal) return;
+              setUploadSectionExpanded((prev) => !prev);
+            }}
+            className="m-compare-upload-disclosure-trigger"
+          >
+            <div>
+              <div className="m-compare-upload-disclosure-kicker">可选增强</div>
+              <div className="m-compare-upload-disclosure-title">加入我正在用的产品</div>
+              <div className="m-compare-upload-disclosure-note">{uploadSectionSummary}</div>
             </div>
-            <div className="mt-3 grid grid-cols-1 gap-3">
-              <input
-                value={brand}
-                onChange={(e) => setBrand(e.target.value)}
-                disabled={running}
-                placeholder="品牌（可选）"
-                className="m-compare-upload-input h-10 rounded-xl border px-3 text-[13px] outline-none"
-              />
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                disabled={running}
-                placeholder="产品名（可选）"
-                className="m-compare-upload-input h-10 rounded-xl border px-3 text-[13px] outline-none"
-              />
+            <div className={`m-compare-upload-disclosure-arrow ${uploadSectionBodyVisible ? "m-compare-upload-disclosure-arrow-open" : ""}`} aria-hidden>
+              <svg viewBox="0 0 20 20" className="h-4 w-4 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M5.5 7.5L10 12l4.5-4.5" />
+              </svg>
             </div>
-          </div>
-        ) : (
-          <div className="mt-4 flex flex-wrap gap-2">
-            {(uploadValuePoints.length ? uploadValuePoints : ["补充在用产品后，可判断是否继续用", "若不上传，仍可完成产品库专业对比"]).map((item, idx) => (
-              <span
-                key={`${idx}-${item}`}
-                className="m-compare-upload-point inline-flex rounded-full border px-3 py-1 text-[11px] font-medium"
-              >
-                {item}
-              </span>
-            ))}
-          </div>
-        )}
+          </button>
+
+          {uploadSectionBodyVisible ? (
+            <div className="mt-4 space-y-4">
+              {needsUploadReattach ? (
+                <div className="m-compare-upload-restore rounded-[18px] border px-4 py-3 text-[12px] leading-[1.6]">
+                  已为你保留已选产品和填写信息，还差重新补传在用产品图片。
+                </div>
+              ) : null}
+
+              <div className="flex gap-3 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <UploadProductCard
+                  selected={hasUpload}
+                  disabled={running}
+                  needsReattach={needsUploadReattach}
+                  fileName={file?.name || ""}
+                  fileSize={file?.size || 0}
+                  previewUrl={uploadPreviewUrl}
+                  onPick={openUploadPicker}
+                />
+              </div>
+
+              {hasUpload || needsUploadReattach ? (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 gap-3">
+                    <input
+                      value={brand}
+                      onChange={(e) => setBrand(e.target.value)}
+                      disabled={running}
+                      placeholder="品牌（可选）"
+                      className="m-compare-upload-input h-10 rounded-xl border px-3 text-[13px] outline-none"
+                    />
+                    <input
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      disabled={running}
+                      placeholder="产品名（可选）"
+                      className="m-compare-upload-input h-10 rounded-xl border px-3 text-[13px] outline-none"
+                    />
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={openUploadPicker}
+                      disabled={running}
+                      className="inline-flex h-9 items-center rounded-full border border-[#0a84ff]/28 bg-[#eef6ff] px-4 text-[13px] font-medium text-[#1f61ba] active:bg-[#e0efff] dark:border-[#69adff]/35 dark:bg-[#1f3658]/78 dark:text-[#b6d9ff]"
+                    >
+                      {hasUpload ? "重新上传" : "补传图片"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        clearUploadDraft();
+                        setUploadSectionExpanded(false);
+                      }}
+                      disabled={running}
+                      className="inline-flex h-9 items-center rounded-full border border-black/12 px-4 text-[13px] font-medium text-black/65 active:bg-black/[0.04]"
+                    >
+                      先不加入
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {(uploadValuePoints.length ? uploadValuePoints : ["加入在用品后，可判断是否继续用", "不上传也能先完成产品库专业对比"]).map((item, idx) => (
+                    <span
+                      key={`${idx}-${item}`}
+                      className="m-compare-upload-point inline-flex rounded-full border px-3 py-1 text-[11px] font-medium"
+                    >
+                      {item}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : null}
+        </div>
       </div>
     );
   } else {
@@ -1361,7 +1492,7 @@ export default function MobileComparePage() {
   }
 
   return (
-    <section className="m-compare-page pb-10">
+    <section className={`m-compare-page pb-10 ${step === 3 ? "m-compare-page-selection" : ""}`}>
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-[26px] leading-[1.15] font-semibold tracking-[-0.02em] text-black/90">开始对比</h1>
         <button
@@ -1396,30 +1527,43 @@ export default function MobileComparePage() {
 
       <div className="mt-4 rounded-[26px] border border-black/10 bg-white p-4">{stepBody}</div>
 
-      <div className="mt-4 flex items-center gap-2">
-        {step > 1 ? (
-          <button
-            type="button"
-            onClick={goPrevStep}
-            className="inline-flex h-11 items-center justify-center rounded-full border border-black/12 bg-white px-4 text-[14px] font-medium text-black/72 active:bg-black/[0.03]"
-          >
-            上一步
-          </button>
-        ) : null}
-
-        <button
-          type="button"
-          onClick={() => {
+      {step === 3 ? (
+        <CompareSelectionDock
+          count={totalSelectedCount}
+          max={MAX_TOTAL_SELECTION}
+          label={selectionDockLabel}
+          selectedItems={selectedProductSummary}
+          primaryLabel={primaryActionLabel}
+          primaryDisabled={primaryDisabled}
+          onPrimary={() => {
             void handlePrimaryAction();
           }}
-          disabled={primaryDisabled}
-          className="inline-flex h-11 flex-1 items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-5 text-[15px] font-semibold text-white shadow-[0_10px_24px_rgba(0,113,227,0.28)] disabled:opacity-45"
-        >
-          {primaryActionLabel}
-        </button>
-      </div>
+          onPrev={goPrevStep}
+        />
+      ) : (
+        <div className="mt-4 flex items-center gap-2">
+          {step > 1 ? (
+            <button
+              type="button"
+              onClick={goPrevStep}
+              className="inline-flex h-11 items-center justify-center rounded-full border border-black/12 bg-white px-4 text-[14px] font-medium text-black/72 active:bg-black/[0.03]"
+            >
+              上一步
+            </button>
+          ) : null}
 
-      <div className="mt-3 text-[12px] text-black/55">当前状态：{progressHint}</div>
+          <button
+            type="button"
+            onClick={() => {
+              void handlePrimaryAction();
+            }}
+            disabled={primaryDisabled}
+            className="inline-flex h-11 flex-1 items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-5 text-[15px] font-semibold text-white shadow-[0_10px_24px_rgba(0,113,227,0.28)] disabled:opacity-45"
+          >
+            {primaryActionLabel}
+          </button>
+        </div>
+      )}
     </section>
   );
 }
@@ -1531,25 +1675,118 @@ type OrderedProductLibraryItem = {
   isMostUsed: boolean;
 };
 
+function CompareProductRail({
+  title,
+  note,
+  children,
+}: {
+  title: string;
+  note?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="m-compare-product-rail">
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <div className="m-compare-product-rail-title">{title}</div>
+          {note ? <div className="m-compare-product-rail-note">{note}</div> : null}
+        </div>
+      </div>
+      <div className="mt-3 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="flex min-w-max gap-3 pr-2">{children}</div>
+      </div>
+    </section>
+  );
+}
+
+function CompareSelectionDock({
+  count,
+  max,
+  label,
+  selectedItems,
+  primaryLabel,
+  primaryDisabled,
+  onPrimary,
+  onPrev,
+}: {
+  count: number;
+  max: number;
+  label: string;
+  selectedItems: string[];
+  primaryLabel: string;
+  primaryDisabled: boolean;
+  onPrimary: () => void;
+  onPrev: () => void;
+}) {
+  return (
+    <div className="m-compare-selection-dock">
+      <div className="m-compare-selection-dock-inner">
+        <div className="m-compare-selection-dock-surface">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="m-compare-selection-dock-kicker">已选 {count}/{max}</div>
+              <div className="m-compare-selection-dock-title">{label}</div>
+            </div>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {selectedItems.length > 0 ? (
+              selectedItems.slice(0, 3).map((item, index) => (
+                <span key={`${item}-${index}`} className="m-compare-selection-chip inline-flex h-8 items-center rounded-full border px-3 text-[12px] font-medium">
+                  {item}
+                </span>
+              ))
+            ) : (
+              <span className="text-[12px] text-black/52">还没选择产品</span>
+            )}
+            {selectedItems.length > 3 ? (
+              <span className="m-compare-selection-chip inline-flex h-8 items-center rounded-full border px-3 text-[12px] font-medium">
+                +{selectedItems.length - 3}
+              </span>
+            ) : null}
+          </div>
+          <div className="mt-4 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onPrev}
+              className="inline-flex h-11 items-center justify-center rounded-full border border-black/12 bg-white px-4 text-[14px] font-medium text-black/72 active:bg-black/[0.03]"
+            >
+              上一步
+            </button>
+            <button
+              type="button"
+              onClick={onPrimary}
+              disabled={primaryDisabled}
+              className="inline-flex h-11 flex-1 items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-5 text-[15px] font-semibold text-white shadow-[0_10px_24px_rgba(0,113,227,0.28)] disabled:opacity-45"
+            >
+              {primaryLabel}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const UploadProductCard = memo(function UploadProductCard({
   selected,
   disabled,
+  needsReattach,
   fileName,
   fileSize,
   previewUrl,
   onPick,
-  onRemove,
 }: {
   selected: boolean;
   disabled: boolean;
+  needsReattach: boolean;
   fileName: string;
   fileSize: number;
   previewUrl: string | null;
   onPick: () => void;
-  onRemove: () => void;
 }) {
   return (
-    <article
+    <button
+      type="button"
       className={`m-compare-product-card m-compare-product-card-press m-pressable group relative flex w-[clamp(108px,31vw,134px)] shrink-0 flex-col rounded-[22px] border px-2.5 pb-2.5 pt-3 text-left transition-[background-color,border-color,box-shadow,transform] duration-200 ${
         selected ? "m-compare-product-card-selected" : "m-compare-product-card-default"
       } ${disabled ? "opacity-45" : "cursor-pointer active:scale-[0.985]"}`}
@@ -1557,15 +1794,8 @@ const UploadProductCard = memo(function UploadProductCard({
         if (disabled) return;
         onPick();
       }}
-      onKeyDown={(event) => {
-        if (disabled) return;
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onPick();
-        }
-      }}
-      role="button"
-      tabIndex={disabled ? -1 : 0}
+      disabled={disabled}
+      aria-pressed={selected}
     >
       <div className="relative h-[86px] w-full overflow-hidden rounded-[16px] bg-[linear-gradient(148deg,#f4f6fb,#d9e3f1)]">
         {previewUrl ? (
@@ -1580,35 +1810,30 @@ const UploadProductCard = memo(function UploadProductCard({
             <span className="text-[10px]">上传在用款</span>
           </div>
         )}
-
-        <button
-          type="button"
-          disabled={disabled}
-          aria-label={selected ? "移除在用产品" : "添加在用产品"}
-          onClick={(event) => {
-            event.stopPropagation();
-            if (selected) {
-              onRemove();
-              return;
-            }
-            onPick();
-          }}
+        <div
           className={`m-compare-check absolute right-1 top-1 z-[3] inline-flex h-7 w-7 items-center justify-center rounded-full border transition-colors ${
             selected ? "m-compare-check-selected" : "m-compare-check-unselected"
           }`}
+          aria-hidden
         >
           <span className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-full text-[11px] leading-none">✓</span>
-        </button>
+        </div>
       </div>
 
       <div className="mt-2 min-h-[58px]">
         <span className="m-compare-upload-point inline-flex rounded-full border px-2.5 py-1 text-[10px] font-semibold">在用产品</span>
         <div className="mt-1.5 line-clamp-2 text-[13px] leading-[1.28] font-medium text-black/86">
-          {selected ? fileName || "我在用的产品" : "上传我在用的产品"}
+          {selected ? fileName || "我在用的产品" : needsReattach ? "重新补传在用产品" : "上传我在用的产品"}
         </div>
-        {selected && fileSize > 0 ? <div className="mt-1 text-[11px] text-black/52">{formatFileSize(fileSize)}</div> : null}
+        {selected && fileSize > 0 ? (
+          <div className="mt-1 text-[11px] text-black/52">{formatFileSize(fileSize)}</div>
+        ) : needsReattach ? (
+          <div className="mt-1 text-[11px] text-black/52">点按补传图片</div>
+        ) : (
+          <div className="mt-1 text-[11px] text-black/52">点按后可补充品牌和产品名</div>
+        )}
       </div>
-    </article>
+    </button>
   );
 });
 
@@ -1616,34 +1841,29 @@ const ProductLibraryCard = memo(function ProductLibraryCard({
   item,
   selected,
   disabled,
+  blocked,
   onPress,
-  onToggle,
 }: {
   item: OrderedProductLibraryItem;
   selected: boolean;
   disabled: boolean;
+  blocked: boolean;
   onPress: () => void;
-  onToggle: (event: MouseEvent<HTMLButtonElement>) => void;
 }) {
   const image = resolveProductImage(item.item.product.image_url);
   return (
-    <article
+    <button
+      type="button"
       className={`m-compare-product-card m-compare-product-card-press m-pressable group relative flex w-[clamp(108px,31vw,134px)] shrink-0 flex-col rounded-[22px] border text-left transition-[background-color,border-color,box-shadow,transform] duration-200 ${
         selected ? "m-compare-product-card-selected" : "m-compare-product-card-default"
-      } ${item.emphasized ? "m-compare-product-card-emphasized px-2.5 pb-2.5 pt-3" : "px-2 pb-2 pt-2.5"} ${disabled ? "opacity-45" : "cursor-pointer active:scale-[0.985]"}`}
+      } ${item.emphasized ? "m-compare-product-card-emphasized px-2.5 pb-2.5 pt-3" : "px-2 pb-2 pt-2.5"} ${disabled ? "opacity-45" : blocked ? "opacity-60" : "cursor-pointer active:scale-[0.985]"}`}
       onClick={() => {
         if (disabled) return;
         onPress();
       }}
-      onKeyDown={(event) => {
-        if (disabled) return;
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          onPress();
-        }
-      }}
-      role="button"
-      tabIndex={disabled ? -1 : 0}
+      disabled={disabled}
+      aria-pressed={selected}
+      aria-disabled={disabled || blocked}
     >
       <div className="relative h-[86px] w-full overflow-hidden rounded-[16px] bg-[linear-gradient(148deg,#f4f6fb,#d9e3f1)]">
         {image ? (
@@ -1651,19 +1871,16 @@ const ProductLibraryCard = memo(function ProductLibraryCard({
         ) : (
           <div className="flex h-full items-center justify-center text-[11px] text-black/35">无图</div>
         )}
-        <button
-          type="button"
-          disabled={disabled}
-          aria-label={selected ? `取消选择 ${item.title}` : `选择 ${item.title}`}
-          onClick={onToggle}
+        <div
           className={`m-compare-check absolute right-1 top-1 z-[3] inline-flex h-7 w-7 items-center justify-center rounded-full border transition-colors ${
             selected ? "m-compare-check-selected" : "m-compare-check-unselected"
           }`}
+          aria-hidden
         >
           <span className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-full text-[11px] leading-none">
             ✓
           </span>
-        </button>
+        </div>
       </div>
 
       <div className="mt-2 min-h-[54px]">
@@ -1675,8 +1892,9 @@ const ProductLibraryCard = memo(function ProductLibraryCard({
           </div>
         ) : null}
         <div className="line-clamp-2 text-[13px] leading-[1.28] font-medium text-black/86">{item.title}</div>
+        {blocked ? <div className="mt-1 text-[11px] text-black/48">已选满 3 款</div> : null}
       </div>
-    </article>
+    </button>
   );
 });
 
