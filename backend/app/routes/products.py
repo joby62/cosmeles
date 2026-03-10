@@ -21,7 +21,12 @@ from sqlalchemy.orm import sessionmaker
 
 from app.ai.orchestrator import run_capability_now
 from app.ai.prompts import load_prompt
-from app.constants import VALID_CATEGORIES, MOBILE_RULES_VERSION, ROUTE_MAPPING_SUPPORTED_CATEGORIES
+from app.constants import (
+    VALID_CATEGORIES,
+    MOBILE_RULES_VERSION,
+    PRODUCT_PROFILE_SUPPORTED_CATEGORIES,
+    ROUTE_MAPPING_SUPPORTED_CATEGORIES,
+)
 from app.db.session import get_db
 from app.db.models import (
     ProductIndex,
@@ -31,6 +36,7 @@ from app.db.models import (
     IngredientLibraryBuildJob,
     ProductWorkbenchJob,
     ProductRouteMappingIndex,
+    ProductAnalysisIndex,
     ProductFeaturedSlot,
     MobileSelectionSession,
     MobileBagItem,
@@ -54,6 +60,8 @@ from app.services.storage import (
     cleanup_orphan_storage,
     save_product_route_mapping,
     product_route_mapping_rel_path,
+    save_product_analysis,
+    product_analysis_rel_path,
 )
 from app.schemas import (
     ProductCard,
@@ -110,6 +118,15 @@ from app.schemas import (
     ProductRouteMappingScore,
     ProductRouteMappingResult,
     ProductRouteMappingDetailResponse,
+    ProductAnalysisBuildRequest,
+    ProductAnalysisBuildResponse,
+    ProductAnalysisBuildItem,
+    ProductAnalysisDetailResponse,
+    ProductAnalysisIndexItem,
+    ProductAnalysisIndexListResponse,
+    ProductAnalysisStoredResult,
+    ProductAnalysisResult,
+    ProductAnalysisContextPayload,
 )
 
 router = APIRouter(prefix="/api", tags=["products"])
@@ -909,6 +926,97 @@ def list_product_route_mapping_index(
     )
 
 
+@router.post("/products/analysis/build", response_model=ProductAnalysisBuildResponse)
+def build_product_analysis(payload: ProductAnalysisBuildRequest, db: Session = Depends(get_db)):
+    return _build_product_analysis_impl(payload, db=db, event_callback=None)
+
+
+@router.post("/products/analysis/build/stream")
+def build_product_analysis_stream(payload: ProductAnalysisBuildRequest, db: Session = Depends(get_db)):
+    events: queue.Queue[tuple[str, dict[str, Any]] | None] = queue.Queue()
+    SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=db.get_bind())
+
+    def emit(event: str, body: dict[str, Any]) -> None:
+        events.put((event, body))
+
+    def worker() -> None:
+        local_db = SessionMaker()
+        try:
+            result = _build_product_analysis_impl(payload, local_db, event_callback=lambda e: emit("progress", e))
+            emit("result", result.model_dump())
+        except HTTPException as e:
+            emit("error", {"status": e.status_code, "detail": e.detail})
+        except Exception as e:  # pragma: no cover
+            emit("error", {"status": 500, "detail": f"product analysis build failed: {e}"})
+        finally:
+            emit("done", {"status": "done"})
+            events.put(None)
+            local_db.close()
+
+    threading.Thread(target=worker, daemon=True).start()
+    return StreamingResponse(
+        _sse_iter(events),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Pragma": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.get("/products/{product_id}/analysis", response_model=ProductAnalysisDetailResponse)
+def get_product_analysis(product_id: str, db: Session = Depends(get_db)):
+    rec = db.get(ProductAnalysisIndex, product_id)
+    if not rec or str(rec.status or "").strip().lower() != "ready":
+        raise HTTPException(status_code=404, detail=f"Product analysis not found for product '{product_id}'.")
+    storage_path = str(rec.storage_path or "").strip() or product_analysis_rel_path(str(rec.category or ""), product_id)
+    if not exists_rel_path(storage_path):
+        raise HTTPException(status_code=404, detail=f"Product analysis file missing for product '{product_id}'.")
+    try:
+        doc = load_json(storage_path)
+        item = _to_product_analysis_record(doc=doc, storage_path=storage_path)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Invalid product analysis for product '{product_id}': {e}") from e
+    return ProductAnalysisDetailResponse(status="ok", item=item)
+
+
+@router.get("/products/analysis/index", response_model=ProductAnalysisIndexListResponse)
+def list_product_analysis_index(
+    category: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    normalized_category = _normalize_optional_category(category)
+    stmt = select(ProductAnalysisIndex)
+    if normalized_category:
+        stmt = stmt.where(ProductAnalysisIndex.category == normalized_category)
+    rows = db.execute(stmt.order_by(ProductAnalysisIndex.last_generated_at.desc())).scalars().all()
+    items = [
+        ProductAnalysisIndexItem(
+            product_id=str(row.product_id),
+            category=str(row.category),
+            status=str(row.status or ""),
+            route_key=str(row.route_key or ""),
+            route_title=str(row.route_title or ""),
+            headline=str(row.headline or ""),
+            subtype_fit_verdict=(str(row.subtype_fit_verdict or "").strip() or None),
+            confidence=int(row.confidence or 0),
+            needs_review=bool(row.needs_review),
+            schema_version=str(row.schema_version or ""),
+            rules_version=str(row.rules_version or ""),
+            last_generated_at=str(row.last_generated_at or "").strip() or None,
+        )
+        for row in rows
+    ]
+    return ProductAnalysisIndexListResponse(
+        status="ok",
+        category=normalized_category,
+        total=len(items),
+        items=items,
+    )
+
+
 @router.get("/products/featured-slots", response_model=ProductFeaturedSlotListResponse)
 def list_product_featured_slots(
     category: str | None = Query(None),
@@ -1062,6 +1170,15 @@ def batch_delete_products(payload: ProductBatchDeleteRequest, db: Session = Depe
             if route_mapping_path and remove_rel_path(route_mapping_path):
                 removed_files += 1
             db.delete(route_mapping_rec)
+        analysis_rec = db.get(ProductAnalysisIndex, product_id)
+        if analysis_rec:
+            analysis_path = str(analysis_rec.storage_path or "").strip() or product_analysis_rel_path(
+                str(analysis_rec.category or ""),
+                product_id,
+            )
+            if analysis_path and remove_rel_path(analysis_path):
+                removed_files += 1
+            db.delete(analysis_rec)
         try:
             featured_slots = db.execute(
                 select(ProductFeaturedSlot).where(ProductFeaturedSlot.product_id == product_id)
@@ -3608,6 +3725,718 @@ def _ensure_route_mapping_record(
     )
 
 
+def _build_product_analysis_impl(
+    payload: ProductAnalysisBuildRequest,
+    db: Session,
+    event_callback: Callable[[dict[str, Any]], None] | None,
+    should_cancel: Callable[[], bool] | None = None,
+) -> ProductAnalysisBuildResponse:
+    category = (payload.category or "").strip().lower()
+    if category:
+        if category not in VALID_CATEGORIES:
+            raise HTTPException(status_code=400, detail=f"Invalid category: {category}.")
+        if category not in PRODUCT_PROFILE_SUPPORTED_CATEGORIES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Product analysis does not support category '{category}'.",
+            )
+        target_categories = [category]
+    else:
+        target_categories = sorted(PRODUCT_PROFILE_SUPPORTED_CATEGORIES)
+
+    _ensure_product_route_mapping_index_table(db)
+    _ensure_product_analysis_index_table(db)
+    _ensure_ingredient_index_table(db)
+    _ensure_ingredient_alias_tables(db)
+    prompt_versions = {
+        cat: load_prompt(f"doubao.product_profile_{cat}").version
+        for cat in target_categories
+    }
+
+    rows = db.execute(
+        select(ProductIndex)
+        .where(ProductIndex.category.in_(target_categories))
+        .order_by(ProductIndex.created_at.desc())
+    ).scalars().all()
+
+    scanned_products = len(rows)
+    _emit_progress(
+        event_callback,
+        {
+            "step": "product_analysis_build_start",
+            "scanned_products": scanned_products,
+            "categories": target_categories,
+            "text": f"开始构建产品增强分析：扫描产品 {scanned_products} 条。",
+        },
+    )
+
+    submitted_to_model = 0
+    created = 0
+    updated = 0
+    skipped = 0
+    failed = 0
+    items: list[ProductAnalysisBuildItem] = []
+    failures: list[str] = []
+
+    force_regenerate = bool(payload.force_regenerate)
+    only_unanalyzed = bool(payload.only_unanalyzed)
+    total = len(rows)
+
+    def check_cancel() -> None:
+        if should_cancel and should_cancel():
+            raise ProductWorkbenchJobCancelledError("job cancelled by operator.")
+
+    for idx, row in enumerate(rows, start=1):
+        check_cancel()
+        product_id = str(row.id or "").strip()
+        row_category = str(row.category or "").strip().lower()
+        if row_category not in PRODUCT_PROFILE_SUPPORTED_CATEGORIES:
+            continue
+
+        rec = db.get(ProductAnalysisIndex, product_id)
+        storage_path_existing = str(rec.storage_path or "").strip() if rec else ""
+        if not storage_path_existing:
+            storage_path_existing = product_analysis_rel_path(row_category, product_id)
+        is_ready_existing = bool(
+            rec
+            and str(rec.status or "").strip().lower() == "ready"
+            and str(rec.rules_version or "").strip() == MOBILE_RULES_VERSION
+            and exists_rel_path(storage_path_existing)
+        )
+
+        if only_unanalyzed and is_ready_existing:
+            skipped += 1
+            items.append(
+                ProductAnalysisBuildItem(
+                    product_id=product_id,
+                    category=row_category,
+                    status="skipped",
+                    route_key=str(rec.route_key or "").strip() or None,
+                    route_title=str(rec.route_title or "").strip() or None,
+                    headline=str(rec.headline or "").strip() or None,
+                    subtype_fit_verdict=str(rec.subtype_fit_verdict or "").strip() or None,
+                    confidence=int(rec.confidence or 0),
+                    needs_review=bool(rec.needs_review),
+                    storage_path=storage_path_existing,
+                    model=rec.model,
+                    error=None,
+                )
+            )
+            _emit_progress(
+                event_callback,
+                {
+                    "step": "product_analysis_skip",
+                    "product_id": product_id,
+                    "category": row_category,
+                    "index": idx,
+                    "total": total,
+                    "text": f"[{idx}/{total}] 跳过（已有分析）：{row_category} / {product_id}",
+                },
+            )
+            continue
+
+        try:
+            check_cancel()
+            if not exists_rel_path(row.json_path):
+                raise ValueError(f"product json missing: {row.json_path}")
+            doc = load_json(row.json_path)
+            context = _build_product_analysis_context(db=db, row=row, doc=doc)
+            fingerprint = _build_product_analysis_fingerprint(context)
+        except ProductWorkbenchJobCancelledError:
+            raise
+        except Exception as e:
+            failed += 1
+            message = f"{product_id} ({row_category}): invalid product analysis context | {e}"
+            failures.append(message)
+            now = now_iso()
+            rec = _ensure_product_analysis_record(rec=rec, product_id=product_id, category=row_category)
+            rec.rules_version = MOBILE_RULES_VERSION
+            rec.fingerprint = rec.fingerprint or _fallback_product_analysis_fingerprint(row_category, product_id)
+            rec.status = "failed"
+            rec.prompt_key = f"doubao.product_profile_{row_category}"
+            rec.prompt_version = prompt_versions.get(row_category)
+            rec.last_error = str(e)
+            rec.last_generated_at = now
+            db.add(rec)
+            items.append(
+                ProductAnalysisBuildItem(
+                    product_id=product_id,
+                    category=row_category,
+                    status="failed",
+                    error=f"invalid product analysis context: {e}",
+                )
+            )
+            _emit_progress(
+                event_callback,
+                {
+                    "step": "product_analysis_error",
+                    "product_id": product_id,
+                    "category": row_category,
+                    "index": idx,
+                    "total": total,
+                    "text": f"[{idx}/{total}] 失败：{row_category} / {product_id} | {e}",
+                },
+            )
+            continue
+
+        if is_ready_existing and not force_regenerate and str(rec.fingerprint or "").strip() == fingerprint:
+            skipped += 1
+            items.append(
+                ProductAnalysisBuildItem(
+                    product_id=product_id,
+                    category=row_category,
+                    status="skipped",
+                    route_key=str(rec.route_key or "").strip() or None,
+                    route_title=str(rec.route_title or "").strip() or None,
+                    headline=str(rec.headline or "").strip() or None,
+                    subtype_fit_verdict=str(rec.subtype_fit_verdict or "").strip() or None,
+                    confidence=int(rec.confidence or 0),
+                    needs_review=bool(rec.needs_review),
+                    storage_path=storage_path_existing,
+                    model=rec.model,
+                    error=None,
+                )
+            )
+            _emit_progress(
+                event_callback,
+                {
+                    "step": "product_analysis_skip",
+                    "product_id": product_id,
+                    "category": row_category,
+                    "index": idx,
+                    "total": total,
+                    "text": f"[{idx}/{total}] 跳过（指纹未变化）：{row_category} / {product_id}",
+                },
+            )
+            continue
+
+        submitted_to_model += 1
+        _emit_progress(
+            event_callback,
+            {
+                "step": "product_analysis_start",
+                "product_id": product_id,
+                "category": row_category,
+                "index": idx,
+                "total": total,
+                "text": f"[{idx}/{total}] 开始分析：{row_category} / {product_id}",
+            },
+        )
+
+        capability = f"doubao.product_profile_{row_category}"
+        prompt_key = capability
+        prompt_version = prompt_versions[row_category]
+        try:
+            check_cancel()
+            ai_result = run_capability_now(
+                capability=capability,
+                input_payload={"product_analysis_context_json": json.dumps(context, ensure_ascii=False)},
+                trace_id=product_id,
+                event_callback=lambda event, _pid=product_id, _cat=row_category: _forward_product_analysis_model_event(
+                    event_callback=event_callback,
+                    product_id=_pid,
+                    category=_cat,
+                    payload=event,
+                ),
+            )
+
+            generated_at = now_iso()
+            profile_payload = {
+                key: value
+                for key, value in ai_result.items()
+                if key not in {"model", "artifact"}
+            }
+            profile_doc = {
+                "product_id": product_id,
+                "category": row_category,
+                "rules_version": MOBILE_RULES_VERSION,
+                "fingerprint": fingerprint,
+                "generated_at": generated_at,
+                "prompt_key": prompt_key,
+                "prompt_version": prompt_version,
+                "model": str(ai_result.get("model") or "").strip(),
+                "profile": profile_payload,
+            }
+            record = _to_product_analysis_record(doc=profile_doc, storage_path="")
+            storage_path = save_product_analysis(row_category, product_id, profile_doc)
+            record = record.model_copy(update={"storage_path": storage_path})
+
+            existed_before = rec is not None
+            status = "updated" if existed_before else "created"
+            if status == "updated":
+                updated += 1
+            else:
+                created += 1
+
+            rec = _ensure_product_analysis_record(rec=rec, product_id=product_id, category=row_category)
+            rec.rules_version = record.rules_version
+            rec.fingerprint = record.fingerprint
+            rec.status = "ready"
+            rec.storage_path = storage_path
+            rec.route_key = record.profile.route_key
+            rec.route_title = record.profile.route_title
+            rec.headline = record.profile.headline
+            rec.subtype_fit_verdict = record.profile.subtype_fit_verdict
+            rec.confidence = int(record.profile.confidence)
+            rec.needs_review = bool(record.profile.needs_review)
+            rec.schema_version = record.profile.schema_version
+            rec.prompt_key = record.prompt_key
+            rec.prompt_version = record.prompt_version
+            rec.model = record.model
+            rec.last_generated_at = record.generated_at
+            rec.last_error = None
+            db.add(rec)
+
+            items.append(
+                ProductAnalysisBuildItem(
+                    product_id=product_id,
+                    category=row_category,
+                    status=status,
+                    route_key=record.profile.route_key,
+                    route_title=record.profile.route_title,
+                    headline=record.profile.headline,
+                    subtype_fit_verdict=record.profile.subtype_fit_verdict,
+                    confidence=int(record.profile.confidence),
+                    needs_review=bool(record.profile.needs_review),
+                    storage_path=storage_path,
+                    model=record.model,
+                    error=None,
+                )
+            )
+            _emit_progress(
+                event_callback,
+                {
+                    "step": "product_analysis_done",
+                    "product_id": product_id,
+                    "category": row_category,
+                    "index": idx,
+                    "total": total,
+                    "status": status,
+                    "text": f"[{idx}/{total}] 完成：{row_category} / {product_id}（{status}）",
+                },
+            )
+        except ProductWorkbenchJobCancelledError:
+            raise
+        except Exception as e:
+            failed += 1
+            message = f"{product_id} ({row_category}): {e}"
+            failures.append(message)
+            rec = _ensure_product_analysis_record(rec=rec, product_id=product_id, category=row_category)
+            rec.rules_version = MOBILE_RULES_VERSION
+            rec.fingerprint = fingerprint or _fallback_product_analysis_fingerprint(row_category, product_id)
+            rec.status = "failed"
+            rec.prompt_key = prompt_key
+            rec.prompt_version = prompt_version
+            rec.last_error = str(e)
+            rec.last_generated_at = now_iso()
+            db.add(rec)
+            items.append(
+                ProductAnalysisBuildItem(
+                    product_id=product_id,
+                    category=row_category,
+                    status="failed",
+                    error=str(e),
+                )
+            )
+            _emit_progress(
+                event_callback,
+                {
+                    "step": "product_analysis_error",
+                    "product_id": product_id,
+                    "category": row_category,
+                    "index": idx,
+                    "total": total,
+                    "text": f"[{idx}/{total}] 失败：{row_category} / {product_id} | {e}",
+                },
+            )
+
+    db.commit()
+
+    status = "ok" if failed == 0 else "partial_failed"
+    _emit_progress(
+        event_callback,
+        {
+            "step": "product_analysis_build_done",
+            "status": status,
+            "scanned_products": scanned_products,
+            "submitted_to_model": submitted_to_model,
+            "created": created,
+            "updated": updated,
+            "skipped": skipped,
+            "failed": failed,
+            "text": (
+                "产品增强分析构建完成："
+                f"submitted={submitted_to_model}, created={created}, "
+                f"updated={updated}, skipped={skipped}, failed={failed}"
+            ),
+        },
+    )
+    return ProductAnalysisBuildResponse(
+        status=status,
+        scanned_products=scanned_products,
+        submitted_to_model=submitted_to_model,
+        created=created,
+        updated=updated,
+        skipped=skipped,
+        failed=failed,
+        items=items,
+        failures=failures[:200],
+    )
+
+
+def _to_product_analysis_record(doc: dict[str, Any], storage_path: str) -> ProductAnalysisStoredResult:
+    if not isinstance(doc, dict):
+        raise ValueError("product analysis document is not an object.")
+    out_storage_path = str(storage_path or "").strip()
+    payload = dict(doc)
+    payload["storage_path"] = out_storage_path
+    record = ProductAnalysisStoredResult.model_validate(payload)
+    if record.profile.category != record.category:
+        raise ValueError("product analysis profile category mismatch.")
+    if record.profile.route_key.strip() != record.profile.route_key:
+        raise ValueError("product analysis profile.route_key contains invalid whitespace.")
+    return record
+
+
+def _forward_product_analysis_model_event(
+    event_callback: Callable[[dict[str, Any]], None] | None,
+    product_id: str,
+    category: str,
+    payload: dict[str, Any],
+) -> None:
+    event_type = str(payload.get("type") or "").strip()
+    if event_type == "delta":
+        delta = str(payload.get("delta") or "")
+        if not delta:
+            return
+        _emit_progress(
+            event_callback,
+            {
+                "step": "product_analysis_model_delta",
+                "product_id": product_id,
+                "category": category,
+                "delta": delta,
+                "text": delta,
+            },
+        )
+        return
+    if event_type != "step":
+        return
+    message = str(payload.get("message") or "").strip()
+    if not message:
+        return
+    _emit_progress(
+        event_callback,
+        {
+            "step": "product_analysis_model_step",
+            "product_id": product_id,
+            "category": category,
+            "text": f"{product_id} | {message}",
+        },
+    )
+
+
+def _ensure_product_analysis_record(
+    *,
+    rec: ProductAnalysisIndex | None,
+    product_id: str,
+    category: str,
+) -> ProductAnalysisIndex:
+    if rec is not None:
+        rec.category = category
+        return rec
+    return ProductAnalysisIndex(
+        product_id=product_id,
+        category=category,
+        rules_version=MOBILE_RULES_VERSION,
+        fingerprint=_fallback_product_analysis_fingerprint(category, product_id),
+        status="pending",
+        storage_path=None,
+        route_key="",
+        route_title="",
+        headline="",
+        subtype_fit_verdict=None,
+        confidence=0,
+        needs_review=False,
+        schema_version="",
+        prompt_key=None,
+        prompt_version=None,
+        model=None,
+        last_generated_at=None,
+        last_error=None,
+    )
+
+
+def _fallback_product_analysis_fingerprint(category: str, product_id: str) -> str:
+    raw = f"{category}:{product_id}:product-analysis:fallback"
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+
+
+def _build_product_analysis_context(*, db: Session, row: ProductIndex, doc: dict[str, Any]) -> dict[str, Any]:
+    product_context = _build_route_mapping_product_context(row=row, doc=doc)
+    category = str(product_context.get("category") or "").strip().lower()
+    if category not in PRODUCT_PROFILE_SUPPORTED_CATEGORIES:
+        raise ValueError(f"product analysis category unsupported: {category}")
+
+    route_mapping = _load_ready_route_mapping_for_product(db=db, product_id=str(row.id), category=category)
+    ingredients = product_context.get("ingredients")
+    if not isinstance(ingredients, list):
+        raise ValueError("product analysis ingredients missing.")
+
+    matched_profiles = _match_ingredient_profiles_for_analysis(db=db, category=category, ingredients=ingredients)
+    context = {
+        "product": {
+            "product_id": str(row.id),
+            "category": category,
+            "brand": str(product_context.get("brand") or "").strip(),
+            "name": str(product_context.get("name") or "").strip(),
+            "one_sentence": str(product_context.get("one_sentence") or "").strip(),
+        },
+        "route_mapping": {
+            "primary_route_key": route_mapping.primary_route.route_key,
+            "primary_route_title": route_mapping.primary_route.route_title,
+            "primary_confidence": int(route_mapping.primary_route.confidence),
+            "secondary_route_key": route_mapping.secondary_route.route_key,
+            "secondary_route_title": route_mapping.secondary_route.route_title,
+            "secondary_confidence": int(route_mapping.secondary_route.confidence),
+        },
+        "stage2_summary": {
+            "one_sentence": str(product_context.get("one_sentence") or "").strip(),
+            "pros": _safe_str_list((product_context.get("summary") or {}).get("pros")),
+            "cons": _safe_str_list((product_context.get("summary") or {}).get("cons")),
+            "who_for": _safe_str_list((product_context.get("summary") or {}).get("who_for")),
+            "who_not_for": _safe_str_list((product_context.get("summary") or {}).get("who_not_for")),
+        },
+        "ingredients_compact": _build_product_analysis_ingredients_compact(ingredients=ingredients),
+        "salient_ingredient_briefs": _build_product_analysis_salient_ingredient_briefs(
+            ingredients=ingredients,
+            matched_profiles=matched_profiles,
+            route_mapping=route_mapping,
+        ),
+        "formula_signals": _build_product_analysis_formula_signals(
+            ingredients=ingredients,
+            route_mapping=route_mapping,
+            matched_profiles=matched_profiles,
+        ),
+    }
+    return ProductAnalysisContextPayload.model_validate(context).model_dump()
+
+
+def _load_ready_route_mapping_for_product(*, db: Session, product_id: str, category: str) -> ProductRouteMappingResult:
+    rec = db.get(ProductRouteMappingIndex, product_id)
+    if rec is None or str(rec.status or "").strip().lower() != "ready":
+        raise ValueError("route mapping missing; build route mapping first.")
+    if str(rec.category or "").strip().lower() != category:
+        raise ValueError("route mapping category mismatch.")
+    storage_path = str(rec.storage_path or "").strip() or product_route_mapping_rel_path(category, product_id)
+    if not exists_rel_path(storage_path):
+        raise ValueError("route mapping file missing.")
+    doc = load_json(storage_path)
+    return _to_product_route_mapping_result(doc=doc, storage_path=storage_path)
+
+
+def _build_product_analysis_ingredients_compact(*, ingredients: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for item in ingredients:
+        if not isinstance(item, dict):
+            continue
+        out.append(
+            {
+                "rank": int(item.get("rank") or 0),
+                "ingredient_name_cn": str(item.get("ingredient_name_cn") or "").strip(),
+                "ingredient_name_en": str(item.get("ingredient_name_en") or "").strip(),
+                "type": str(item.get("type") or "").strip(),
+                "functions": _safe_str_list(item.get("functions")),
+                "risk": str(item.get("risk") or "").strip().lower() or "low",
+                "abundance_level": str(item.get("abundance_level") or "").strip().lower() or "trace",
+            }
+        )
+    return out
+
+
+def _match_ingredient_profiles_for_analysis(
+    *,
+    db: Session,
+    category: str,
+    ingredients: list[dict[str, Any]],
+) -> dict[int, IngredientLibraryDetailItem]:
+    alias_keys_by_rank: dict[int, list[str]] = {}
+    alias_key_set: set[str] = set()
+    for item in ingredients:
+        if not isinstance(item, dict):
+            continue
+        rank = int(item.get("rank") or 0)
+        if rank <= 0:
+            continue
+        candidates = [
+            str(item.get("ingredient_name_raw") or "").strip(),
+            str(item.get("ingredient_name_cn") or "").strip(),
+            str(item.get("ingredient_name_en") or "").strip(),
+        ]
+        keys: list[str] = []
+        seen: set[str] = set()
+        for name in candidates:
+            for key in _build_ingredient_alias_keys(name):
+                if key in seen:
+                    continue
+                seen.add(key)
+                keys.append(key)
+                alias_key_set.add(key)
+        if keys:
+            alias_keys_by_rank[rank] = keys
+
+    if not alias_key_set:
+        return {}
+
+    alias_rows = db.execute(
+        select(IngredientLibraryAlias)
+        .where(IngredientLibraryAlias.category == category)
+        .where(IngredientLibraryAlias.alias_key.in_(sorted(alias_key_set)))
+    ).scalars().all()
+    alias_map = {str(row.alias_key): str(row.ingredient_id or "").strip().lower() for row in alias_rows}
+
+    target_ids: list[str] = []
+    for keys in alias_keys_by_rank.values():
+        for key in keys:
+            ingredient_id = alias_map.get(key)
+            if ingredient_id:
+                target_ids.append(_resolve_ingredient_id_redirect(db=db, category=category, ingredient_id=ingredient_id))
+                break
+    if not target_ids:
+        return {}
+
+    index_map = _load_ingredient_index_map(db, target_ids)
+    out: dict[int, IngredientLibraryDetailItem] = {}
+    for rank, keys in alias_keys_by_rank.items():
+        resolved_id = ""
+        for key in keys:
+            ingredient_id = alias_map.get(key)
+            if ingredient_id:
+                resolved_id = _resolve_ingredient_id_redirect(db=db, category=category, ingredient_id=ingredient_id)
+                break
+        if not resolved_id:
+            continue
+        rec = index_map.get(resolved_id)
+        if rec is None:
+            continue
+        rel_path = str(rec.storage_path or "").strip() or ingredient_profile_rel_path(category, resolved_id)
+        if not exists_rel_path(rel_path):
+            continue
+        try:
+            doc = _load_ingredient_profile_doc(rel_path=rel_path)
+            out[rank] = _to_ingredient_library_detail_item(doc=doc, rel_path=rel_path)
+        except Exception:
+            continue
+    return out
+
+
+def _build_product_analysis_salient_ingredient_briefs(
+    *,
+    ingredients: list[dict[str, Any]],
+    matched_profiles: dict[int, IngredientLibraryDetailItem],
+    route_mapping: ProductRouteMappingResult,
+) -> list[dict[str, Any]]:
+    route_related_names = {
+        str(item.ingredient_name_cn or "").strip().lower()
+        for item in (route_mapping.evidence.positive + route_mapping.evidence.counter)
+        if str(item.ingredient_name_cn or "").strip()
+    }
+    route_related_names.update(
+        {
+            str(item.ingredient_name_en or "").strip().lower()
+            for item in (route_mapping.evidence.positive + route_mapping.evidence.counter)
+            if str(item.ingredient_name_en or "").strip()
+        }
+    )
+
+    out: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    for item in ingredients:
+        if not isinstance(item, dict):
+            continue
+        rank = int(item.get("rank") or 0)
+        if rank <= 0 or rank in seen:
+            continue
+        profile = matched_profiles.get(rank)
+        if profile is None:
+            continue
+
+        ingredient_cn = str(item.get("ingredient_name_cn") or "").strip()
+        ingredient_en = str(item.get("ingredient_name_en") or "").strip()
+        why_selected = "top_rank"
+        if (
+            ingredient_cn.lower() in route_related_names
+            or ingredient_en.lower() in route_related_names
+        ):
+            why_selected = "route_related"
+        elif str(item.get("risk") or "").strip().lower() in {"mid", "high"} or profile.profile.risks:
+            why_selected = "risk_related"
+
+        out.append(
+            {
+                "ingredient_name_cn": ingredient_cn,
+                "ingredient_name_en": ingredient_en,
+                "rank": rank,
+                "why_selected": why_selected,
+                "library_summary": str(profile.profile.summary or "").strip(),
+                "benefit_tags": list(dict.fromkeys(profile.profile.benefits[:2])),
+                "risk_tags": list(dict.fromkeys(profile.profile.risks[:2])),
+            }
+        )
+        seen.add(rank)
+        if len(out) >= 12:
+            break
+    return out
+
+
+def _build_product_analysis_formula_signals(
+    *,
+    ingredients: list[dict[str, Any]],
+    route_mapping: ProductRouteMappingResult,
+    matched_profiles: dict[int, IngredientLibraryDetailItem],
+) -> dict[str, Any]:
+    function_counts: dict[str, int] = defaultdict(int)
+    risk_counts: dict[str, int] = defaultdict(int)
+    top10_names: list[str] = []
+    matched_count = 0
+    for item in ingredients[:10]:
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("ingredient_name_cn") or "").strip() or str(item.get("ingredient_name_en") or "").strip() or str(item.get("ingredient_name_raw") or "").strip()
+        if label:
+            top10_names.append(label)
+    for item in ingredients:
+        if not isinstance(item, dict):
+            continue
+        for function_name in _safe_str_list(item.get("functions")):
+            function_counts[function_name] += 1
+        risk = str(item.get("risk") or "").strip().lower()
+        if risk:
+            risk_counts[risk] += 1
+        rank = int(item.get("rank") or 0)
+        if rank > 0 and rank in matched_profiles:
+            matched_count += 1
+
+    special_flags: list[str] = []
+    if route_mapping.needs_review:
+        special_flags.append("route_mapping_needs_review")
+    if matched_count == 0:
+        special_flags.append("ingredient_library_absent")
+    elif matched_count < min(3, len(ingredients)):
+        special_flags.append("ingredient_library_sparse")
+    return {
+        "top10_names": top10_names[:10],
+        "function_counts": dict(function_counts),
+        "risk_counts": dict(risk_counts),
+        "special_flags": special_flags,
+    }
+
+
+def _build_product_analysis_fingerprint(context: dict[str, Any]) -> str:
+    raw = json.dumps(context, ensure_ascii=False, sort_keys=True)
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+
+
 def _fallback_route_mapping_fingerprint(category: str, product_id: str) -> str:
     raw = f"{category}:{product_id}:fallback"
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()
@@ -5507,6 +6336,11 @@ def _ensure_ingredient_build_job_table(db: Session) -> None:
 def _ensure_product_route_mapping_index_table(db: Session) -> None:
     bind = db.get_bind()
     ProductRouteMappingIndex.__table__.create(bind=bind, checkfirst=True)
+
+
+def _ensure_product_analysis_index_table(db: Session) -> None:
+    bind = db.get_bind()
+    ProductAnalysisIndex.__table__.create(bind=bind, checkfirst=True)
 
 
 def _load_ingredient_index_map(db: Session, ingredient_ids: list[str]) -> dict[str, IngredientLibraryIndex]:

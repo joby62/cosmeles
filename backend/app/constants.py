@@ -21,3 +21,11 @@ ROUTE_MAPPING_SUPPORTED_CATEGORIES = {
     "lotion",
     "cleanser",
 }
+
+PRODUCT_PROFILE_SUPPORTED_CATEGORIES = {
+    "shampoo",
+    "bodywash",
+    "conditioner",
+    "lotion",
+    "cleanser",
+}

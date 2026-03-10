@@ -31,6 +31,7 @@ def ensure_dirs():
     os.makedirs(os.path.join(settings.storage_dir, "tmp_uploads"), exist_ok=True)
     os.makedirs(os.path.join(settings.storage_dir, "ingredients"), exist_ok=True)
     os.makedirs(os.path.join(settings.storage_dir, "route_mappings"), exist_ok=True)
+    os.makedirs(os.path.join(settings.storage_dir, "product_profiles"), exist_ok=True)
 
 def new_id() -> str:
     return str(uuid4())
@@ -307,10 +308,31 @@ def save_product_route_mapping(category: str, product_id: str, payload: dict) ->
     return rel
 
 
+def save_product_analysis(category: str, product_id: str, payload: dict) -> str:
+    """
+    产品增强分析落盘路径：storage/product_profiles/<category>/<product_id>.json
+    """
+    ensure_dirs()
+    safe_category = _safe_storage_segment(category, fallback="unknown")
+    safe_product_id = _safe_storage_segment(product_id, fallback=new_id())
+    rel = f"product_profiles/{safe_category}/{safe_product_id}.json"
+    abs_path = _resolve_rel_path(rel)
+    abs_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(abs_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    return rel
+
+
 def product_route_mapping_rel_path(category: str, product_id: str) -> str:
     safe_category = _safe_storage_segment(category, fallback="unknown")
     safe_product_id = _safe_storage_segment(product_id, fallback="")
     return f"route_mappings/{safe_category}/{safe_product_id}.json"
+
+
+def product_analysis_rel_path(category: str, product_id: str) -> str:
+    safe_category = _safe_storage_segment(category, fallback="unknown")
+    safe_product_id = _safe_storage_segment(product_id, fallback="")
+    return f"product_profiles/{safe_category}/{safe_product_id}.json"
 
 
 def ingredient_profile_rel_path(category: str, ingredient_id: str) -> str:

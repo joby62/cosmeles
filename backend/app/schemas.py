@@ -1,4 +1,4 @@
-from typing import Any, List, Optional, Literal
+from typing import Any, List, Optional, Literal, Annotated
 from pydantic import BaseModel, Field, ConfigDict
 
 RiskLevel = Literal["low", "mid", "high"]
@@ -747,13 +747,88 @@ class CleanserProductAnalysisResult(ProductAnalysisProfileBase):
     diagnostics: CleanserProductAnalysisDiagnostics
 
 
-ProductAnalysisResult = (
+ProductAnalysisResult = Annotated[
     ShampooProductAnalysisResult
     | BodywashProductAnalysisResult
     | ConditionerProductAnalysisResult
     | LotionProductAnalysisResult
     | CleanserProductAnalysisResult
-)
+    ,
+    Field(discriminator="category"),
+]
+
+
+class ProductAnalysisStoredResult(StrictSchemaModel):
+    product_id: str
+    category: ProductAnalysisCategory
+    rules_version: str
+    fingerprint: str
+    generated_at: str
+    prompt_key: str
+    prompt_version: str
+    model: str
+    profile: ProductAnalysisResult
+    storage_path: str
+
+
+class ProductAnalysisIndexItem(BaseModel):
+    product_id: str
+    category: ProductAnalysisCategory
+    status: str
+    route_key: str = ""
+    route_title: str = ""
+    headline: str = ""
+    subtype_fit_verdict: Optional[ProductAnalysisSubtypeFitVerdict] = None
+    confidence: int = 0
+    needs_review: bool = False
+    schema_version: str = ""
+    rules_version: str = ""
+    last_generated_at: Optional[str] = None
+
+
+class ProductAnalysisIndexListResponse(BaseModel):
+    status: str
+    category: Optional[str] = None
+    total: int = 0
+    items: List[ProductAnalysisIndexItem] = []
+
+
+class ProductAnalysisBuildRequest(BaseModel):
+    category: Optional[str] = None
+    force_regenerate: bool = False
+    only_unanalyzed: bool = False
+
+
+class ProductAnalysisBuildItem(BaseModel):
+    product_id: str
+    category: str
+    status: Literal["created", "updated", "skipped", "failed"] = "created"
+    route_key: Optional[str] = None
+    route_title: Optional[str] = None
+    headline: Optional[str] = None
+    subtype_fit_verdict: Optional[ProductAnalysisSubtypeFitVerdict] = None
+    confidence: Optional[int] = None
+    needs_review: Optional[bool] = None
+    storage_path: Optional[str] = None
+    model: Optional[str] = None
+    error: Optional[str] = None
+
+
+class ProductAnalysisBuildResponse(BaseModel):
+    status: str
+    scanned_products: int = 0
+    submitted_to_model: int = 0
+    created: int = 0
+    updated: int = 0
+    skipped: int = 0
+    failed: int = 0
+    items: List[ProductAnalysisBuildItem] = []
+    failures: List[str] = []
+
+
+class ProductAnalysisDetailResponse(BaseModel):
+    status: str
+    item: ProductAnalysisStoredResult
 
 
 class ProductBatchDeleteRequest(BaseModel):

@@ -267,6 +267,33 @@ class ProductRouteMappingIndex(Base):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class ProductAnalysisIndex(Base):
+    __tablename__ = "product_analysis_index"
+
+    product_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    category: Mapped[str] = mapped_column(String(32), index=True)
+    rules_version: Mapped[str] = mapped_column(String(32), index=True)
+    fingerprint: Mapped[str] = mapped_column(String(64), index=True)
+
+    status: Mapped[str] = mapped_column(String(32), index=True, default="ready")
+    storage_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    route_key: Mapped[str] = mapped_column(String(128), index=True, default="")
+    route_title: Mapped[str] = mapped_column(String(256), default="")
+    headline: Mapped[str] = mapped_column(Text, default="")
+    subtype_fit_verdict: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    confidence: Mapped[int] = mapped_column(Integer, default=0, index=True)
+    needs_review: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    schema_version: Mapped[str] = mapped_column(String(64), default="")
+
+    prompt_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    prompt_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+    last_generated_at: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class ProductFeaturedSlot(Base):
     __tablename__ = "product_featured_slots"
 

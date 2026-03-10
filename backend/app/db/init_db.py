@@ -73,6 +73,7 @@ def init_db() -> None:
     os.makedirs(os.path.join(settings.storage_dir, "tmp_uploads"), exist_ok=True)
     os.makedirs(os.path.join(settings.storage_dir, "ingredients"), exist_ok=True)
     os.makedirs(os.path.join(settings.storage_dir, "route_mappings"), exist_ok=True)
+    os.makedirs(os.path.join(settings.storage_dir, "product_profiles"), exist_ok=True)
 
     # Create tables if not exist
     Base.metadata.create_all(bind=engine)

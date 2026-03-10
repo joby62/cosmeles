@@ -6,9 +6,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from app.constants import MOBILE_RULES_VERSION, ROUTE_MAPPING_SUPPORTED_CATEGORIES
+from app.constants import MOBILE_RULES_VERSION, PRODUCT_PROFILE_SUPPORTED_CATEGORIES, ROUTE_MAPPING_SUPPORTED_CATEGORIES
 from app.ai.errors import AIServiceError
 from app.ai.prompts import load_prompt, render_prompt
+from app.schemas import (
+    BodywashProductAnalysisResult,
+    CleanserProductAnalysisResult,
+    ConditionerProductAnalysisResult,
+    LotionProductAnalysisResult,
+    ProductAnalysisContextPayload,
+    ShampooProductAnalysisResult,
+)
 from app.services.doubao_openai_client import DoubaoOpenAIClient
 from app.services.storage import read_rel_bytes, save_doubao_artifact
 from app.settings import settings
@@ -28,6 +36,11 @@ SUPPORTED_CAPABILITIES = {
     "doubao.route_mapping_conditioner",
     "doubao.route_mapping_lotion",
     "doubao.route_mapping_cleanser",
+    "doubao.product_profile_shampoo",
+    "doubao.product_profile_bodywash",
+    "doubao.product_profile_conditioner",
+    "doubao.product_profile_lotion",
+    "doubao.product_profile_cleanser",
 }
 
 MODEL_TIER_VALUES = {"mini", "lite", "pro"}
@@ -84,6 +97,16 @@ def execute_capability(
         return _cap_route_mapping("lotion", input_payload, trace_id, event_callback=event_callback)
     if capability == "doubao.route_mapping_cleanser":
         return _cap_route_mapping("cleanser", input_payload, trace_id, event_callback=event_callback)
+    if capability == "doubao.product_profile_shampoo":
+        return _cap_product_profile("shampoo", input_payload, trace_id, event_callback=event_callback)
+    if capability == "doubao.product_profile_bodywash":
+        return _cap_product_profile("bodywash", input_payload, trace_id, event_callback=event_callback)
+    if capability == "doubao.product_profile_conditioner":
+        return _cap_product_profile("conditioner", input_payload, trace_id, event_callback=event_callback)
+    if capability == "doubao.product_profile_lotion":
+        return _cap_product_profile("lotion", input_payload, trace_id, event_callback=event_callback)
+    if capability == "doubao.product_profile_cleanser":
+        return _cap_product_profile("cleanser", input_payload, trace_id, event_callback=event_callback)
 
     raise AIServiceError(
         code="capability_not_supported",
@@ -852,6 +875,121 @@ def _cap_route_mapping(
     )
 
 
+def _cap_product_profile(
+    category: str,
+    input_payload: dict[str, Any],
+    trace_id: str | None,
+    event_callback: Callable[[dict[str, Any]], None] | None = None,
+) -> CapabilityExecutionResult:
+    normalized_category = str(category or "").strip().lower()
+    if normalized_category not in PRODUCT_PROFILE_SUPPORTED_CATEGORIES:
+        raise AIServiceError(
+            code="product_profile_category_unsupported",
+            message=f"product profile does not support category '{normalized_category}'.",
+            http_status=400,
+        )
+
+    context_json = _required_nonempty_str(input_payload, "product_analysis_context_json")
+    try:
+        context_payload = json.loads(context_json)
+    except json.JSONDecodeError as e:
+        raise AIServiceError(
+            code="invalid_input",
+            message="product_analysis_context_json must be valid JSON object text.",
+            http_status=400,
+        ) from e
+    if not isinstance(context_payload, dict):
+        raise AIServiceError(
+            code="invalid_input",
+            message="product_analysis_context_json must decode to a JSON object.",
+            http_status=400,
+        )
+
+    try:
+        validated_context = ProductAnalysisContextPayload.model_validate(context_payload)
+    except Exception as e:
+        raise AIServiceError(
+            code="invalid_input",
+            message=f"product analysis context invalid: {e}",
+            http_status=400,
+        ) from e
+
+    if validated_context.product.category != normalized_category:
+        raise AIServiceError(
+            code="invalid_input",
+            message=(
+                f"product analysis context category mismatch: expected '{normalized_category}', "
+                f"got '{validated_context.product.category}'."
+            ),
+            http_status=400,
+        )
+
+    normalized_context_json = json.dumps(validated_context.model_dump(), ensure_ascii=False)
+    prompt_key = f"doubao.product_profile_{normalized_category}"
+    prompt = load_prompt(prompt_key)
+    rendered_prompt = render_prompt(
+        prompt.text,
+        {
+            "product_analysis_context_json": normalized_context_json,
+        },
+    )
+
+    stage = f"product_profile_{normalized_category}"
+    if _is_sample_mode():
+        sample = _build_sample_product_profile(normalized_category, validated_context)
+        normalized = _normalize_product_profile_result(normalized_category, sample)
+        artifact = _maybe_save_artifact(
+            trace_id,
+            stage,
+            {
+                "model": "sample",
+                "prompt": rendered_prompt,
+                "response": {"mode": "sample"},
+                "text": json.dumps(sample, ensure_ascii=False),
+            },
+        )
+        return CapabilityExecutionResult(
+            output={**normalized, "model": "sample", "artifact": artifact},
+            prompt_key=prompt.key,
+            prompt_version=prompt.version,
+            model="sample",
+            request_payload={"prompt": rendered_prompt},
+            response_payload={"mode": "sample"},
+        )
+
+    sdk, _, _, _ = _build_sdk_and_models()
+    pro_model = settings.doubao_pro_model or "doubao-seed-2-0-pro-260215"
+    _emit(
+        event_callback,
+        {"type": "step", "stage": stage, "message": f"Calling model {pro_model}."},
+    )
+    response_raw = _safe_sdk_call(
+        lambda: sdk.chat_with_text(
+            rendered_prompt,
+            model=pro_model,
+            stream=event_callback is not None,
+            on_text_delta=(lambda delta: _emit(event_callback, {"type": "delta", "stage": stage, "delta": delta})),
+        )
+    )
+    text = _extract_content(response_raw)
+    parsed = _extract_json_object(text)
+    normalized = _normalize_product_profile_result(normalized_category, parsed)
+    _emit(event_callback, {"type": "step", "stage": stage, "message": "Product profile completed."})
+    artifact = _maybe_save_artifact(
+        trace_id,
+        stage,
+        {"model": pro_model, "prompt": rendered_prompt, "response": response_raw, "text": text},
+    )
+    return CapabilityExecutionResult(
+        output={**normalized, "model": pro_model, "artifact": artifact},
+        prompt_key=prompt.key,
+        prompt_version=prompt.version,
+        model=pro_model,
+        request_payload={"prompt": rendered_prompt},
+        response_payload=response_raw,
+    )
+
+
 def _normalize_stage1_image_paths(input_payload: dict[str, Any]) -> list[str]:
     raw = input_payload.get("image_paths")
     out: list[str] = []
@@ -1235,6 +1373,138 @@ def _normalize_mobile_compare_summary_result(payload: dict[str, Any]) -> dict[st
         "confidence": confidence,
         "sections": sections,
     }
+
+
+def _product_profile_result_model(category: str):
+    normalized_category = str(category or "").strip().lower()
+    models = {
+        "shampoo": ShampooProductAnalysisResult,
+        "bodywash": BodywashProductAnalysisResult,
+        "conditioner": ConditionerProductAnalysisResult,
+        "lotion": LotionProductAnalysisResult,
+        "cleanser": CleanserProductAnalysisResult,
+    }
+    model = models.get(normalized_category)
+    if model is None:
+        raise AIServiceError(
+            code="product_profile_category_unsupported",
+            message=f"product profile does not support category '{normalized_category}'.",
+            http_status=400,
+        )
+    return model
+
+
+def _build_sample_product_profile(category: str, context: ProductAnalysisContextPayload) -> dict[str, Any]:
+    route_key = str(context.route_mapping.primary_route_key or "").strip()
+    route_title = str(context.route_mapping.primary_route_title or "").strip()
+    diagnostics_fields: dict[str, list[str]] = {
+        "shampoo": [
+            "cleanse_intensity",
+            "oil_control_support",
+            "dandruff_itch_support",
+            "scalp_soothing_support",
+            "hair_strengthening_support",
+            "moisture_balance_support",
+            "daily_use_friendliness",
+            "residue_weight",
+        ],
+        "bodywash": [
+            "cleanse_intensity",
+            "barrier_repair_support",
+            "body_acne_support",
+            "keratin_softening_support",
+            "brightening_support",
+            "fragrance_presence",
+            "rinse_afterfeel_nourishment",
+        ],
+        "conditioner": [
+            "detangling_support",
+            "anti_frizz_support",
+            "airy_light_support",
+            "repair_density",
+            "color_lock_support",
+            "basic_hydration_support",
+            "fine_hair_burden",
+        ],
+        "lotion": [
+            "light_hydration_support",
+            "heavy_repair_support",
+            "body_acne_support",
+            "aha_renew_support",
+            "brightening_support",
+            "fragrance_presence",
+            "occlusive_weight",
+        ],
+        "cleanser": [
+            "apg_support",
+            "amino_support",
+            "soap_blend_strength",
+            "bha_support",
+            "clay_support",
+            "enzyme_support",
+            "barrier_friendliness",
+            "makeup_residue_support",
+        ],
+    }
+    schema_versions = {
+        "shampoo": "product_profile_shampoo.v1",
+        "bodywash": "product_profile_bodywash.v1",
+        "conditioner": "product_profile_conditioner.v1",
+        "lotion": "product_profile_lotion.v1",
+        "cleanser": "product_profile_cleanser.v1",
+    }
+    fields = diagnostics_fields.get(category, [])
+    diagnostics = {
+        key: {
+            "score": 2,
+            "reason": "sample mode: using conservative placeholder evidence.",
+        }
+        for key in fields
+    }
+    return {
+        "schema_version": schema_versions[category],
+        "category": category,
+        "route_key": route_key,
+        "route_title": route_title,
+        "headline": f"Sample {category} profile",
+        "positioning_summary": "sample mode output generated from validated product analysis context.",
+        "subtype_fit_verdict": "fit_with_limits",
+        "subtype_fit_reason": "sample mode output with conservative confidence.",
+        "best_for": ["sample mode suitable audience"],
+        "not_ideal_for": ["sample mode unsuitable audience"],
+        "usage_tips": ["sample mode usage tip"],
+        "watchouts": ["sample mode watchout"],
+        "key_ingredients": [],
+        "evidence": {
+            "positive": [],
+            "counter": [],
+            "missing_codes": ["summary_signal_too_weak"],
+        },
+        "diagnostics": diagnostics,
+        "confidence": 50,
+        "confidence_reason": "sample mode output only.",
+        "needs_review": True,
+    }
+
+
+def _normalize_product_profile_result(category: str, payload: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise AIServiceError(
+            code="product_profile_invalid",
+            message="product profile output must be a JSON object.",
+            http_status=422,
+        )
+
+    model = _product_profile_result_model(category)
+    try:
+        normalized = model.model_validate(payload)
+    except Exception as e:
+        raise AIServiceError(
+            code="product_profile_invalid",
+            message=f"product profile output invalid: {e}",
+            http_status=422,
+        ) from e
+    return normalized.model_dump()
 
 
 def _load_route_mapping_decision_table(category: str) -> dict[str, Any]:
