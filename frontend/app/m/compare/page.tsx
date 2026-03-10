@@ -179,6 +179,15 @@ export default function MobileComparePage() {
       : profileBasis === "latest"
         ? "来源：该品类最近一次确认"
         : "来源：最近一次可用个人选项";
+  const recommendationRouteTitle = String(bootstrap?.recommendation?.route_title || "").trim() || null;
+  const recommendationProductTitle = useMemo(
+    () => formatCompareProductTitle(bootstrap?.recommendation?.product || null),
+    [bootstrap?.recommendation?.product],
+  );
+  const profileLastCompletedLabel = useMemo(
+    () => formatCompareProfileCompletedAt(bootstrap?.profile?.last_completed_at || null),
+    [bootstrap?.profile?.last_completed_at],
+  );
 
   const selectedProductSummary = useMemo(() => {
     const names = selectedProductIds
@@ -972,37 +981,23 @@ export default function MobileComparePage() {
   } else if (step === 2) {
     stepBody = (
       <div>
-        <h2 className="text-[24px] leading-[1.2] font-semibold tracking-[-0.02em] text-black/90">本次已带入的信息</h2>
-        <p className="mt-2 text-[14px] leading-[1.55] text-black/62">以下个人选项将用于本次分析。</p>
+        <h2 className="text-[26px] leading-[1.18] font-semibold tracking-[-0.02em] text-black/90">这次会按这条路径来比</h2>
+        <p className="mt-2 text-[14px] leading-[1.6] text-black/62">先确认分析基线，再去选要对比的产品，结论会更容易读懂。</p>
 
-        <div className="mt-4 rounded-[20px] border border-black/10 bg-black/[0.02] p-4">
-          {bootstrapLoading ? (
-            <div className="text-[13px] text-black/58">正在读取你最近确认的个人选项...</div>
-          ) : hasHistoryProfile ? (
-            <>
-              <div className="text-[12px] font-medium text-black/56">{profileBasisHint}</div>
-              <div className="mt-2 text-[12px] text-black/56">当前品类：{currentCategoryLabel}</div>
-              {bootstrap?.profile?.summary?.length ? (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {bootstrap.profile.summary.map((item, idx) => (
-                    <span
-                      key={`${idx}-${item}`}
-                      className="inline-flex rounded-full border border-black/10 bg-white/72 px-3 py-1 text-[12px] text-black/72"
-                    >
-                      {item}
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <div className="mt-3 text-[13px] text-black/58">暂无可展示的个人标签。</div>
-              )}
-            </>
-          ) : (
-            <div className="text-[13px] leading-[1.6] text-[#b53a3a] dark:text-[#ffb4b4]">
-              还没有可沿用的个人选项。先完成一次“{currentCategoryLabel}”问答后再来对比。
-            </div>
-          )}
-        </div>
+        <CompareRecommendationSummaryCard
+          loading={bootstrapLoading}
+          hasHistoryProfile={hasHistoryProfile}
+          recommendationReady={recommendationReady}
+          categoryLabel={currentCategoryLabel}
+          routeTitle={recommendationRouteTitle}
+          productTitle={recommendationProductTitle}
+          profileBasisHint={profileBasisHint}
+          lastCompletedLabel={profileLastCompletedLabel}
+          summaryItems={bootstrap?.profile?.summary || []}
+          detailButtonLabel="查看依据"
+          emptyTitle={`还没有可沿用的“${currentCategoryLabel}”历史首推`}
+          emptyDescription={`先完成一次“${currentCategoryLabel}”问答，这次对比才会更贴合你的情况。`}
+        />
 
       </div>
     );
@@ -1274,18 +1269,21 @@ export default function MobileComparePage() {
             <div className="mt-1 text-[15px] font-semibold text-black/86">{currentCategoryLabel}</div>
           </div>
 
-          <div className="rounded-[18px] border border-black/10 bg-black/[0.02] px-4 py-3">
-            <div className="text-[12px] text-black/52">本次已带入信息</div>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {(bootstrap?.profile?.summary?.length
-                ? bootstrap.profile.summary
-                : ["未找到可沿用信息，请先更新个人选项"]).map((item, idx) => (
-                <span key={`${idx}-${item}`} className="inline-flex rounded-full border border-black/10 bg-white/70 px-3 py-1 text-[12px] text-black/72">
-                  {item}
-                </span>
-              ))}
-            </div>
-          </div>
+          <CompareRecommendationSummaryCard
+            loading={bootstrapLoading}
+            hasHistoryProfile={hasHistoryProfile}
+            recommendationReady={recommendationReady}
+            categoryLabel={currentCategoryLabel}
+            routeTitle={recommendationRouteTitle}
+            productTitle={recommendationProductTitle}
+            profileBasisHint={profileBasisHint}
+            lastCompletedLabel={profileLastCompletedLabel}
+            summaryItems={bootstrap?.profile?.summary || []}
+            detailButtonLabel="查看带入信息"
+            emptyTitle={`“${currentCategoryLabel}”还没有可沿用的历史首推`}
+            emptyDescription={`先完成一次“${currentCategoryLabel}”问答，再开始专业对比。`}
+            compact
+          />
 
           <div className="rounded-[18px] border border-black/10 bg-black/[0.02] px-4 py-3">
             <div className="text-[12px] text-black/52">本次对比对象（{totalSelectedCount}）</div>
@@ -1663,6 +1661,27 @@ function formatFileSize(size: number): string {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function formatCompareProductTitle(product?: { brand?: string | null; name?: string | null; one_sentence?: string | null } | null): string | null {
+  if (!product) return null;
+  const direct = [product.brand, product.name].filter(Boolean).join(" ").trim();
+  if (direct) return direct;
+  const fallback = String(product.one_sentence || "").trim();
+  return fallback || null;
+}
+
+function formatCompareProfileCompletedAt(raw: string | null): string | null {
+  const value = String(raw || "").trim();
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const now = new Date();
+  const options: Intl.DateTimeFormatOptions =
+    date.getFullYear() === now.getFullYear()
+      ? { month: "numeric", day: "numeric" }
+      : { year: "numeric", month: "numeric", day: "numeric" };
+  return `最近确认：${new Intl.DateTimeFormat("zh-CN", options).format(date)}`;
+}
+
 type ProductBadge = "recommendation_primary" | "most_used_primary" | "most_used_secondary";
 
 type OrderedProductLibraryItem = {
@@ -1695,6 +1714,100 @@ function CompareProductRail({
       <div className="mt-3 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <div className="flex min-w-max gap-3 pr-2">{children}</div>
       </div>
+    </section>
+  );
+}
+
+function CompareRecommendationSummaryCard({
+  loading,
+  hasHistoryProfile,
+  recommendationReady,
+  categoryLabel,
+  routeTitle,
+  productTitle,
+  profileBasisHint,
+  lastCompletedLabel,
+  summaryItems,
+  detailButtonLabel,
+  emptyTitle,
+  emptyDescription,
+  compact = false,
+}: {
+  loading: boolean;
+  hasHistoryProfile: boolean;
+  recommendationReady: boolean;
+  categoryLabel: string;
+  routeTitle: string | null;
+  productTitle: string | null;
+  profileBasisHint: string;
+  lastCompletedLabel: string | null;
+  summaryItems: string[];
+  detailButtonLabel: string;
+  emptyTitle: string;
+  emptyDescription: string;
+  compact?: boolean;
+}) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const hasDetails = summaryItems.length > 0;
+
+  if (loading) {
+    return (
+      <section className={`m-compare-recommend-card mt-4 ${compact ? "m-compare-recommend-card-compact" : ""}`}>
+        <div className="m-compare-recommend-kicker">本次分析基线</div>
+        <div className="mt-3 text-[13px] text-black/58">正在读取你最近确认的历史首推...</div>
+      </section>
+    );
+  }
+
+  if (!hasHistoryProfile || !recommendationReady) {
+    return (
+      <section className={`m-compare-recommend-card mt-4 ${compact ? "m-compare-recommend-card-compact" : ""}`}>
+        <div className="m-compare-recommend-kicker">本次分析基线</div>
+        <div className="m-compare-recommend-title mt-3">{emptyTitle}</div>
+        <p className="m-compare-recommend-note mt-2">{emptyDescription}</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className={`m-compare-recommend-card mt-4 ${compact ? "m-compare-recommend-card-compact" : ""}`}>
+      <div className="m-compare-recommend-kicker">本次分析基线</div>
+      <div className="m-compare-recommend-title mt-3">{routeTitle || `${categoryLabel}历史首推`}</div>
+      <div className="m-compare-recommend-note mt-2">
+        {productTitle ? `对应推荐产品：${productTitle}` : "本次会沿用这条历史首推路径做判断。"}
+      </div>
+
+      <div className="m-compare-recommend-meta mt-4 flex flex-wrap gap-2">
+        <span className="m-compare-recommend-meta-chip">当前品类：{categoryLabel}</span>
+        <span className="m-compare-recommend-meta-chip">{profileBasisHint}</span>
+        {lastCompletedLabel ? <span className="m-compare-recommend-meta-chip">{lastCompletedLabel}</span> : null}
+      </div>
+
+      {hasDetails ? (
+        <div className="mt-4">
+          <button
+            type="button"
+            onClick={() => setDetailsOpen((prev) => !prev)}
+            className="m-compare-recommend-details-trigger"
+          >
+            <span>{detailButtonLabel}</span>
+            <span className={`m-compare-recommend-details-arrow ${detailsOpen ? "m-compare-recommend-details-arrow-open" : ""}`} aria-hidden>
+              <svg viewBox="0 0 20 20" className="h-4 w-4 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M5.5 7.5L10 12l4.5-4.5" />
+              </svg>
+            </span>
+          </button>
+          {detailsOpen ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {summaryItems.map((item, idx) => (
+                <span key={`${idx}-${item}`} className="m-compare-recommend-detail-chip">
+                  {item}
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </section>
   );
 }
