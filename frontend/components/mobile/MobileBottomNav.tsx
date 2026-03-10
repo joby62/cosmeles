@@ -101,8 +101,8 @@ export default function MobileBottomNav() {
       style={{ bottom: `calc(12px + max(env(safe-area-inset-bottom), 0px) + ${chromeBottomInset}px)` }}
     >
       <div className="mx-auto max-w-[680px]">
-        <div className="relative h-[60px]">
-          <div className={`m-nav-mode-layer ${profileMode ? "m-nav-mode-hidden" : "m-nav-mode-active"}`}>
+        <div className="m-nav-stack relative h-[60px]" data-nav-mode={profileMode ? "profile" : "default"}>
+          <div className="m-nav-mode-layer m-nav-mode-default">
             <div className="m-bottom-dock flex h-[60px] min-w-0 flex-1 items-center rounded-[30px] border border-[color:var(--m-nav-border)] bg-[color:var(--m-nav-bg)] px-1.5 shadow-[0_14px_34px_rgba(0,0,0,0.26)]">
               {defaultItems.map((item) => {
                 const active = isDefaultActive(pathname, item.key);
@@ -110,16 +110,16 @@ export default function MobileBottomNav() {
                   <Link
                     key={item.key}
                     href={item.href}
-                    className={`m-pressable flex h-[52px] min-w-0 flex-1 flex-col items-center justify-center rounded-[24px] transition-colors ${
+                    className={`m-pressable m-nav-item flex h-[52px] min-w-0 flex-1 flex-col items-center justify-center rounded-[24px] transition-colors ${
                       active
-                        ? "bg-[color:var(--m-nav-active-bg)] text-[color:var(--m-nav-active-text)]"
+                        ? "m-nav-item-active bg-[color:var(--m-nav-active-bg)] text-[color:var(--m-nav-active-text)]"
                         : "text-[color:var(--m-nav-text)] active:bg-[color:var(--m-nav-item-active-bg)] active:text-[color:var(--m-nav-text-strong)]"
                     }`}
                   >
                     <span className="leading-none">
                       <NavIcon name={item.key} />
                     </span>
-                    <span className={`mt-1 text-[12px] leading-none ${active ? "font-semibold" : "font-medium"}`}>
+                    <span className={`m-nav-label mt-1 text-[12px] leading-none ${active ? "font-semibold" : "font-medium"}`}>
                       {item.label}
                     </span>
                   </Link>
@@ -130,9 +130,9 @@ export default function MobileBottomNav() {
             <Link
               href="/m/me/use"
               aria-label="我的"
-              className={`m-pressable m-bottom-dock flex h-[60px] w-[60px] shrink-0 items-center justify-center rounded-full border border-[color:var(--m-nav-border)] shadow-[0_14px_34px_rgba(0,0,0,0.26)] ${
+              className={`m-pressable m-nav-item m-nav-me-trigger m-bottom-dock flex h-[60px] w-[60px] shrink-0 items-center justify-center rounded-full border border-[color:var(--m-nav-border)] shadow-[0_14px_34px_rgba(0,0,0,0.26)] ${
                 meActive
-                  ? "bg-[color:var(--m-nav-active-bg)] text-[color:var(--m-nav-active-text)]"
+                  ? "m-nav-item-active bg-[color:var(--m-nav-active-bg)] text-[color:var(--m-nav-active-text)]"
                   : "bg-[color:var(--m-nav-bg)] text-[color:var(--m-nav-text-strong)] active:bg-[color:var(--m-nav-item-active-bg)]"
               }`}
             >
@@ -143,21 +143,21 @@ export default function MobileBottomNav() {
             </Link>
           </div>
 
-          <div className={`m-nav-mode-layer ${profileMode ? "m-nav-mode-active" : "m-nav-mode-hidden"}`}>
+          <div className="m-nav-mode-layer m-nav-mode-profile">
             <Link
               href="/m/choose"
-              className="m-pressable m-bottom-dock flex h-[60px] w-[104px] shrink-0 items-center justify-center gap-1.5 rounded-[30px] border border-[color:var(--m-nav-border)] bg-[color:var(--m-nav-bg)] px-3 text-[color:var(--m-nav-text-strong)] shadow-[0_14px_34px_rgba(0,0,0,0.26)] active:bg-[color:var(--m-nav-item-active-bg)]"
+              className="m-pressable m-nav-item m-nav-features-trigger m-bottom-dock flex h-[60px] w-[104px] shrink-0 items-center justify-center gap-1.5 rounded-[30px] border border-[color:var(--m-nav-border)] bg-[color:var(--m-nav-bg)] px-3 text-[color:var(--m-nav-text-strong)] shadow-[0_14px_34px_rgba(0,0,0,0.26)] active:bg-[color:var(--m-nav-item-active-bg)]"
             >
               <NavIcon name="features" />
-              <span className="text-[14px] font-semibold leading-none">功能</span>
+              <span className="m-nav-label text-[14px] font-semibold leading-none">功能</span>
             </Link>
 
             <div className="m-bottom-dock flex h-[60px] min-w-0 flex-1 items-center rounded-[30px] border border-[color:var(--m-nav-border)] bg-[color:var(--m-nav-bg)] px-1.5 shadow-[0_14px_34px_rgba(0,0,0,0.26)]">
               <Link
                 href="/m/me/use"
-                className={`m-pressable flex h-[52px] min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[24px] transition-colors ${
+                className={`m-pressable m-nav-item flex h-[52px] min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[24px] transition-colors ${
                   useActive
-                    ? "bg-[color:var(--m-nav-active-bg)] text-[color:var(--m-nav-active-text)]"
+                    ? "m-nav-item-active bg-[color:var(--m-nav-active-bg)] text-[color:var(--m-nav-active-text)]"
                     : "text-[color:var(--m-nav-text)] active:bg-[color:var(--m-nav-item-active-bg)] active:text-[color:var(--m-nav-text-strong)]"
                 }`}
               >
@@ -165,31 +165,31 @@ export default function MobileBottomNav() {
                   <circle cx="12" cy="8" r="3.5" fill="none" stroke="currentColor" strokeWidth="1.9" />
                   <path d="M5.2 19.2a6.8 6.8 0 0 1 13.6 0" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
                 </svg>
-                <span className={`text-[13px] leading-none ${useActive ? "font-semibold" : "font-medium"}`}>在用</span>
+                <span className={`m-nav-label text-[13px] leading-none ${useActive ? "font-semibold" : "font-medium"}`}>在用</span>
               </Link>
 
               <Link
                 href="/m/me/history"
-                className={`m-pressable flex h-[52px] min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[24px] transition-colors ${
+                className={`m-pressable m-nav-item flex h-[52px] min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[24px] transition-colors ${
                   historyActive
-                    ? "bg-[color:var(--m-nav-active-bg)] text-[color:var(--m-nav-active-text)]"
+                    ? "m-nav-item-active bg-[color:var(--m-nav-active-bg)] text-[color:var(--m-nav-active-text)]"
                     : "text-[color:var(--m-nav-text)] active:bg-[color:var(--m-nav-item-active-bg)] active:text-[color:var(--m-nav-text-strong)]"
                 }`}
               >
                 <NavIcon name="history" />
-                <span className={`text-[13px] leading-none ${historyActive ? "font-semibold" : "font-medium"}`}>历史</span>
+                <span className={`m-nav-label text-[13px] leading-none ${historyActive ? "font-semibold" : "font-medium"}`}>历史</span>
               </Link>
 
               <Link
                 href="/m/me/bag"
-                className={`m-pressable flex h-[52px] min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[24px] transition-colors ${
+                className={`m-pressable m-nav-item flex h-[52px] min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[24px] transition-colors ${
                   bagActive
-                    ? "bg-[color:var(--m-nav-active-bg)] text-[color:var(--m-nav-active-text)]"
+                    ? "m-nav-item-active bg-[color:var(--m-nav-active-bg)] text-[color:var(--m-nav-active-text)]"
                     : "text-[color:var(--m-nav-text)] active:bg-[color:var(--m-nav-item-active-bg)] active:text-[color:var(--m-nav-text-strong)]"
                 }`}
               >
                 <NavIcon name="bag" />
-                <span className={`text-[13px] leading-none ${bagActive ? "font-semibold" : "font-medium"}`}>购物袋</span>
+                <span className={`m-nav-label text-[13px] leading-none ${bagActive ? "font-semibold" : "font-medium"}`}>购物袋</span>
               </Link>
             </div>
           </div>
