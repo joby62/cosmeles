@@ -1123,6 +1123,7 @@ def update_product(product_id: str, payload: ProductUpdateRequest, db: Session =
         doc = load_json(rec.json_path)
         doc.setdefault("product", {})
         doc.setdefault("summary", {})
+        doc.setdefault("commerce", {})
         if payload.category is not None:
             doc["product"]["category"] = rec.category
         if payload.brand is not None:
@@ -1133,6 +1134,51 @@ def update_product(product_id: str, payload: ProductUpdateRequest, db: Session =
             doc["summary"]["one_sentence"] = rec.one_sentence or ""
         if tags is not None:
             doc["tags"] = tags
+        if payload.commerce is not None:
+            raw_commerce = doc.get("commerce")
+            commerce = raw_commerce if isinstance(raw_commerce, dict) else {}
+
+            for field_name in ("price_label", "inventory_label", "shipping_eta_label"):
+                next_value = getattr(payload.commerce, field_name, None)
+                if next_value is None:
+                    continue
+                cleaned = next_value.strip()
+                if cleaned:
+                    commerce[field_name] = cleaned
+                else:
+                    commerce.pop(field_name, None)
+
+            if payload.commerce.pack_size is not None:
+                pack_size_payload = payload.commerce.pack_size
+                raw_pack_size = commerce.get("pack_size")
+                pack_size = raw_pack_size if isinstance(raw_pack_size, dict) else {}
+
+                if pack_size_payload.label is not None:
+                    cleaned = pack_size_payload.label.strip()
+                    if cleaned:
+                        pack_size["label"] = cleaned
+                    else:
+                        pack_size.pop("label", None)
+
+                if pack_size_payload.unit is not None:
+                    cleaned = pack_size_payload.unit.strip()
+                    if cleaned:
+                        pack_size["unit"] = cleaned
+                    else:
+                        pack_size.pop("unit", None)
+
+                if pack_size_payload.value is not None:
+                    pack_size["value"] = pack_size_payload.value
+
+                if pack_size:
+                    commerce["pack_size"] = pack_size
+                else:
+                    commerce.pop("pack_size", None)
+
+            if commerce:
+                doc["commerce"] = commerce
+            else:
+                doc.pop("commerce", None)
         save_json_at(rec.json_path, doc)
 
     db.add(rec)

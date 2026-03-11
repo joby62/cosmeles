@@ -50,8 +50,10 @@ def _extract_pack_size_from_doc(raw_doc: dict[str, Any]) -> ProductCommercePackS
     commerce = _as_dict(raw_doc.get("commerce"))
     product = _as_dict(raw_doc.get("product"))
     packaging = _as_dict(raw_doc.get("packaging"))
+    commerce_pack_size = _as_dict(commerce.get("pack_size"))
 
     explicit_label = _first_text(
+        commerce_pack_size.get("label"),
         commerce.get("pack_size_label"),
         commerce.get("size_label"),
         commerce.get("size"),
@@ -66,8 +68,8 @@ def _extract_pack_size_from_doc(raw_doc: dict[str, Any]) -> ProductCommercePackS
     if explicit_label:
         return ProductCommercePackSize(
             label=explicit_label,
-            unit=_first_text(commerce.get("pack_size_unit"), packaging.get("unit")),
-            value=_coerce_float(commerce.get("pack_size_value")),
+            unit=_first_text(commerce_pack_size.get("unit"), commerce.get("pack_size_unit"), packaging.get("unit")),
+            value=_coerce_float(commerce_pack_size.get("value") or commerce.get("pack_size_value")),
             source="doc",
         )
 

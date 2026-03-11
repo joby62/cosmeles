@@ -18,6 +18,18 @@ export function commercePackSizeLabel(commerce: StorefrontCommerce): string | nu
   return commerce?.pack_size?.label || null;
 }
 
+export function commercePriceLabel(commerce: StorefrontCommerce): string | null {
+  return commerce?.price_label || null;
+}
+
+export function commerceInventoryLabel(commerce: StorefrontCommerce): string | null {
+  return commerce?.inventory_label || null;
+}
+
+export function commerceShippingEtaLabel(commerce: StorefrontCommerce): string | null {
+  return commerce?.shipping_eta_label || null;
+}
+
 export function commerceMissingFieldsLabel(commerce: StorefrontCommerce): string {
   const fields = (commerce?.missing_fields || []).map((item) => MISSING_FIELD_LABELS[item] || item);
   if (fields.length === 0) return "Commerce fields are available in the current product feed.";

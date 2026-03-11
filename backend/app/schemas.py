@@ -119,12 +119,26 @@ class ProductFeaturedSlotClearResponse(BaseModel):
     target_type_key: str
     deleted: bool = False
 
+class ProductCommercePackSizeUpdateRequest(BaseModel):
+    label: Optional[str] = None
+    unit: Optional[str] = None
+    value: Optional[float] = Field(default=None, ge=0)
+
+
+class ProductCommerceUpdateRequest(BaseModel):
+    price_label: Optional[str] = None
+    inventory_label: Optional[str] = None
+    shipping_eta_label: Optional[str] = None
+    pack_size: Optional[ProductCommercePackSizeUpdateRequest] = None
+
+
 class ProductUpdateRequest(BaseModel):
     category: Optional[str] = None
     brand: Optional[str] = None
     name: Optional[str] = None
     one_sentence: Optional[str] = None
     tags: Optional[List[str]] = None
+    commerce: Optional[ProductCommerceUpdateRequest] = None
 
 class ProductListMeta(BaseModel):
     total: int

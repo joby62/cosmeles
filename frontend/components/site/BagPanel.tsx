@@ -4,7 +4,14 @@ import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { deleteMobileBagItem, fetchMobileBagItems, resolveImageUrl, type MobileBagItem } from "@/lib/api";
-import { commerceBadgeLabel, commercePackSizeLabel, commerceMissingFieldsLabel } from "@/lib/productCommerce";
+import {
+  commerceBadgeLabel,
+  commerceInventoryLabel,
+  commerceMissingFieldsLabel,
+  commercePackSizeLabel,
+  commercePriceLabel,
+  commerceShippingEtaLabel,
+} from "@/lib/productCommerce";
 
 export default function BagPanel() {
   const [items, setItems] = useState<MobileBagItem[]>([]);
@@ -57,6 +64,9 @@ export default function BagPanel() {
             const productBrand = product.brand || "Jeslect";
             const packSizeLabel = commercePackSizeLabel(product.commerce);
             const statusLabel = commerceBadgeLabel(product.commerce);
+            const priceLabel = commercePriceLabel(product.commerce);
+            const inventoryLabel = commerceInventoryLabel(product.commerce);
+            const shippingEtaLabel = commerceShippingEtaLabel(product.commerce);
             return (
               <article
                 key={item.item_id}
@@ -102,6 +112,19 @@ export default function BagPanel() {
                     <p className="mt-3 text-[14px] leading-6 text-slate-600">
                       {product.one_sentence || "Open the full product profile for ingredient and routine details."}
                     </p>
+                    {priceLabel || inventoryLabel || shippingEtaLabel ? (
+                      <div className="mt-3 rounded-[20px] border border-black/8 bg-slate-50 px-4 py-3">
+                        {priceLabel ? <div className="text-[18px] font-semibold tracking-[-0.03em] text-slate-950">{priceLabel}</div> : null}
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          {inventoryLabel ? (
+                            <span className="rounded-full border border-black/8 bg-white px-3 py-1 text-[11px] font-medium text-slate-600">{inventoryLabel}</span>
+                          ) : null}
+                          {shippingEtaLabel ? (
+                            <span className="rounded-full border border-black/8 bg-white px-3 py-1 text-[11px] font-medium text-slate-600">{shippingEtaLabel}</span>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
                     <p className="mt-2 text-[13px] leading-6 text-slate-500">{commerceMissingFieldsLabel(product.commerce)}</p>
 
                     <div className="mt-5 flex flex-wrap gap-2">

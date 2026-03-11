@@ -3,7 +3,7 @@ import Link from "next/link";
 import { type Product, resolveImageUrl } from "@/lib/api";
 import { getCategoryMeta } from "@/lib/site";
 import AddToBagButton from "@/components/site/AddToBagButton";
-import { commerceBadgeLabel, commercePackSizeLabel } from "@/lib/productCommerce";
+import { commerceBadgeLabel, commerceInventoryLabel, commercePackSizeLabel, commercePriceLabel } from "@/lib/productCommerce";
 
 type ProductCardProps = {
   product: Product;
@@ -20,6 +20,8 @@ export default function ProductCard({ product, headline, routeTitle, routeSummar
   const summary = headline || product.one_sentence || product.description || "Open the full profile for details.";
   const packSizeLabel = commercePackSizeLabel(product.commerce);
   const statusLabel = commerceBadgeLabel(product.commerce);
+  const priceLabel = commercePriceLabel(product.commerce);
+  const inventoryLabel = commerceInventoryLabel(product.commerce);
 
   return (
     <article className="group overflow-hidden rounded-[28px] border border-black/8 bg-white/92 shadow-[0_20px_46px_rgba(15,23,42,0.07)]">
@@ -62,6 +64,12 @@ export default function ProductCard({ product, headline, routeTitle, routeSummar
         <h3 className="mt-2 text-[22px] font-semibold leading-[1.15] tracking-[-0.03em] text-slate-950">{productName}</h3>
         <p className="mt-3 line-clamp-3 text-[14px] leading-6 text-slate-600">{summary}</p>
         {routeSummary ? <p className="mt-3 line-clamp-2 text-[13px] leading-6 text-slate-500">{routeSummary}</p> : null}
+        {priceLabel || inventoryLabel ? (
+          <div className="mt-4 rounded-[22px] border border-black/8 bg-slate-50 px-4 py-3">
+            {priceLabel ? <div className="text-[20px] font-semibold tracking-[-0.03em] text-slate-950">{priceLabel}</div> : null}
+            {inventoryLabel ? <div className="mt-1 text-[12px] font-medium uppercase tracking-[0.14em] text-slate-500">{inventoryLabel}</div> : null}
+          </div>
+        ) : null}
 
         <div className="mt-5 flex flex-wrap items-center gap-2">
           <Link

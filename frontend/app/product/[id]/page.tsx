@@ -12,7 +12,14 @@ import {
   type Product,
 } from "@/lib/api";
 import { getMatchRouteMeta } from "@/lib/match";
-import { commerceBadgeLabel, commerceMissingFieldsLabel, commercePackSizeLabel } from "@/lib/productCommerce";
+import {
+  commerceBadgeLabel,
+  commerceInventoryLabel,
+  commerceMissingFieldsLabel,
+  commercePackSizeLabel,
+  commercePriceLabel,
+  commerceShippingEtaLabel,
+} from "@/lib/productCommerce";
 import { getCategoryMeta, TRUST_ITEMS } from "@/lib/site";
 import { PDP_SUPPORT_LINKS, PDP_TRUST_NOTES, PRODUCT_RELEASE_NOTES } from "@/lib/storefrontTrust";
 
@@ -104,6 +111,9 @@ export default async function ProductPage({
   const packSizeLabel = commercePackSizeLabel(commerce);
   const statusLabel = commerceBadgeLabel(commerce);
   const missingFieldsLabel = commerceMissingFieldsLabel(commerce);
+  const priceLabel = commercePriceLabel(commerce);
+  const inventoryLabel = commerceInventoryLabel(commerce);
+  const shippingEtaLabel = commerceShippingEtaLabel(commerce);
 
   return (
     <div className="mx-auto max-w-7xl px-4 pb-16 pt-8">
@@ -170,6 +180,23 @@ export default async function ProductPage({
           </div>
           <p className="mt-4 text-[12px] font-medium uppercase tracking-[0.18em] text-slate-500">{productBrand}</p>
           <h1 className="mt-2 text-[38px] font-semibold leading-[0.98] tracking-[-0.05em] text-slate-950">{productName}</h1>
+          {priceLabel || inventoryLabel || shippingEtaLabel ? (
+            <div className="mt-5 rounded-[24px] border border-black/8 bg-slate-50 px-4 py-4">
+              {priceLabel ? <div className="text-[30px] font-semibold tracking-[-0.05em] text-slate-950">{priceLabel}</div> : null}
+              <div className="mt-3 flex flex-wrap gap-2">
+                {inventoryLabel ? (
+                  <span className="rounded-full border border-black/8 bg-white px-3 py-1 text-[12px] font-medium text-slate-600">
+                    {inventoryLabel}
+                  </span>
+                ) : null}
+                {shippingEtaLabel ? (
+                  <span className="rounded-full border border-black/8 bg-white px-3 py-1 text-[12px] font-medium text-slate-600">
+                    {shippingEtaLabel}
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
           <p className="mt-4 text-[16px] leading-7 text-slate-600">{summaryText}</p>
           {routeMeta?.summary ? <p className="mt-3 text-[14px] leading-6 text-slate-500">{routeMeta.summary}</p> : null}
           <div className="mt-6 flex flex-wrap gap-3">

@@ -170,6 +170,60 @@ def test_product_detail_exposes_catalog_commerce_status(test_client, monkeypatch
     assert "shipping_eta" in body["commerce"]["missing_fields"]
 
 
+def test_product_commerce_patch_flows_into_product_and_bag(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, _ = test_client
+    _install_fake_ingest_pipeline(
+        monkeypatch,
+        {
+            "category": "shampoo",
+            "brand": "Dove",
+            "name": "Shampoo A",
+            "one_sentence": "洗发测试",
+        },
+    )
+    product_id = _ingest_one(client, "commerce-patch.jpg")
+
+    patched = client.patch(
+        f"/api/products/{product_id}",
+        json={
+            "commerce": {
+                "price_label": "$24",
+                "inventory_label": "In stock",
+                "shipping_eta_label": "Ships in 2-4 business days",
+                "pack_size": {
+                    "label": "250 mL",
+                    "unit": "mL",
+                    "value": 250,
+                },
+            }
+        },
+    )
+    assert patched.status_code == 200
+    patched_body = patched.json()
+    assert patched_body["commerce"]["status"] == "ready"
+    assert patched_body["commerce"]["is_purchasable"] is True
+    assert patched_body["commerce"]["price_label"] == "$24"
+    assert patched_body["commerce"]["inventory_label"] == "In stock"
+    assert patched_body["commerce"]["shipping_eta_label"] == "Ships in 2-4 business days"
+    assert patched_body["commerce"]["pack_size"]["label"] == "250 mL"
+
+    detail = client.get(f"/api/products/{product_id}")
+    assert detail.status_code == 200
+    detail_body = detail.json()
+    assert detail_body["commerce"]["status"] == "ready"
+    assert detail_body["commerce"]["price_label"] == "$24"
+    assert detail_body["commerce"]["pack_size"]["label"] == "250 mL"
+
+    add_to_bag = client.post("/api/mobile/bag/items", json={"product_id": product_id, "quantity": 1})
+    assert add_to_bag.status_code == 200
+
+    bag = client.get("/api/mobile/bag/items")
+    assert bag.status_code == 200
+    bag_body = bag.json()
+    assert bag_body["items"][0]["product"]["commerce"]["status"] == "ready"
+    assert bag_body["items"][0]["product"]["commerce"]["price_label"] == "$24"
+
+
 def test_mobile_compare_stream_success_and_fetch_result(test_client, monkeypatch: pytest.MonkeyPatch):
     client, _ = test_client
     _install_fake_ingest_pipeline(
