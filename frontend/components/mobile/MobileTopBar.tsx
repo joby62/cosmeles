@@ -5,7 +5,10 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
-const MOBILE_BRAND_NAME = "予选";
+const MOBILE_TOPBAR_SLOGANS = [
+  "予选 · 浴室里的最终答案",
+  "省下挑花眼的时间，只留最合适的一件",
+] as const;
 
 function getSectionLabel(pathname: string | null): string {
   if (!pathname || pathname === "/m") return "个性测配";
@@ -26,10 +29,65 @@ function getSectionLabel(pathname: string | null): string {
   return "首页";
 }
 
+function getSloganLevel(pathname: string | null): number {
+  if (!pathname || pathname === "/m" || pathname.startsWith("/m/choose")) return 0;
+
+  if (
+    pathname.startsWith("/m/shampoo/start") ||
+    pathname.startsWith("/m/bodywash/start") ||
+    pathname.startsWith("/m/conditioner/start") ||
+    pathname.startsWith("/m/lotion/start") ||
+    pathname.startsWith("/m/cleanser/start")
+  ) {
+    return 1;
+  }
+
+  if (
+    pathname.startsWith("/m/shampoo/profile") ||
+    pathname.startsWith("/m/bodywash/profile") ||
+    pathname.startsWith("/m/conditioner/profile") ||
+    pathname.startsWith("/m/lotion/profile") ||
+    pathname.startsWith("/m/cleanser/profile")
+  ) {
+    return 2;
+  }
+
+  if (
+    pathname.startsWith("/m/shampoo/result") ||
+    pathname.startsWith("/m/shampoo/resolve") ||
+    pathname.startsWith("/m/bodywash/result") ||
+    pathname.startsWith("/m/bodywash/resolve") ||
+    pathname.startsWith("/m/conditioner/result") ||
+    pathname.startsWith("/m/conditioner/resolve") ||
+    pathname.startsWith("/m/lotion/result") ||
+    pathname.startsWith("/m/lotion/resolve") ||
+    pathname.startsWith("/m/cleanser/result") ||
+    pathname.startsWith("/m/cleanser/resolve")
+  ) {
+    return 3;
+  }
+
+  if (pathname === "/m/compare" || pathname.startsWith("/m/compare?")) return 0;
+  if (pathname.startsWith("/m/compare/result/")) return 1;
+
+  if (pathname === "/m/wiki" || pathname.startsWith("/m/wiki?")) return 0;
+  if (pathname.startsWith("/m/wiki/product/")) return 2;
+  if (/^\/m\/wiki\/[^/]+\/[^/]+/.test(pathname)) return 2;
+  if (/^\/m\/wiki\/[^/]+/.test(pathname)) return 1;
+
+  if (pathname === "/m/me" || pathname.startsWith("/m/me/use")) return 0;
+  if (pathname.startsWith("/m/me/history") || pathname.startsWith("/m/me/bag") || pathname.startsWith("/m/bag")) return 1;
+
+  if (pathname.startsWith("/m/about")) return 1;
+
+  return 0;
+}
+
 export default function MobileTopBar() {
   const pathname = usePathname();
   const section = getSectionLabel(pathname);
   const wikiPath = Boolean(pathname?.startsWith("/m/wiki"));
+  const topbarSlogan = MOBILE_TOPBAR_SLOGANS[getSloganLevel(pathname) % 2];
   const logoCandidates = [
     "/brand/logo.svg?v=20260226",
     "/brand/logo.png?v=20260226",
@@ -117,7 +175,7 @@ export default function MobileTopBar() {
       <div className="mx-auto flex h-12 max-w-[680px] items-center justify-between px-4">
         <Link
           href="/m"
-          className="m-pressable relative z-[1] inline-flex min-w-0 max-w-[58vw] items-center gap-1 rounded-full px-1 py-0.5 active:bg-[color:var(--m-press)]"
+          className="m-pressable relative z-[1] inline-flex min-w-0 max-w-[52vw] items-center gap-0.5 rounded-full px-1 py-0.5 active:bg-[color:var(--m-press)]"
           style={{ opacity: sectionOpacity }}
         >
           {!logoHidden ? (
@@ -137,7 +195,6 @@ export default function MobileTopBar() {
               }}
             />
           ) : null}
-          <span className="truncate text-[13px] font-medium tracking-[0.002em] text-[color:var(--m-topbar-sub)]">{MOBILE_BRAND_NAME}</span>
           <span className="text-[11px] leading-none text-[color:var(--m-topbar-dot)]">·</span>
           <span className="truncate text-[14px] font-semibold tracking-[0.005em] text-[color:var(--m-topbar-text)]">{section}</span>
         </Link>
@@ -149,7 +206,7 @@ export default function MobileTopBar() {
             transform: `translateY(${-sloganOffset}px)`,
           }}
         >
-          省下挑花眼的时间，只留最合适的一件。
+          {topbarSlogan}
         </p>
       </div>
     </div>
