@@ -98,7 +98,24 @@ export default function MobileTopBar() {
   const [logoHidden, setLogoHidden] = useState(false);
   const [inlineTitle, setInlineTitle] = useState("");
   const [collapseProgress, setCollapseProgress] = useState(0);
+  const [chromeVisible, setChromeVisible] = useState(true);
+  const [yielded, setYielded] = useState(false);
   const inlineTitleRef = useRef("");
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleChromeVisibility = (event: Event) => {
+      const detail = (event as CustomEvent<{ visible?: boolean; yielded?: boolean }>).detail || {};
+      setChromeVisible(detail.visible ?? true);
+      setYielded(Boolean(detail.yielded));
+    };
+
+    window.addEventListener("m-mobile-chrome-visibility", handleChromeVisibility as EventListener);
+    return () => {
+      window.removeEventListener("m-mobile-chrome-visibility", handleChromeVisibility as EventListener);
+    };
+  }, []);
 
   useEffect(() => {
     if (!wikiPath) {
@@ -161,59 +178,65 @@ export default function MobileTopBar() {
   }
 
   return (
-    <div className="m-topbar-shell relative h-12 border-b border-[color:var(--m-topbar-border)] bg-[color:var(--m-topbar-bg)] supports-[backdrop-filter]:bg-[color:var(--m-topbar-bg-strong)]">
-      {wikiPath ? (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-[92px]">
-          <span
-            className="line-clamp-1 w-full text-center text-[15px] font-semibold tracking-[0.004em] text-[color:var(--m-topbar-text)] transition-[opacity,transform] duration-200"
-            style={{
-              opacity: centerTitleOpacity,
-              transform: `translateY(${(1 - centerTitleOpacity) * 6}px)`,
-            }}
-          >
-            {inlineTitle || section}
-          </span>
-        </div>
-      ) : null}
-
-      <div className="mx-auto flex h-12 max-w-[680px] items-center justify-between px-4">
-        <Link
-          href="/m"
-          className="m-pressable relative z-[1] inline-flex items-center gap-0.5 rounded-full px-1 py-0.5 active:bg-[color:var(--m-press)]"
-          style={{ opacity: sectionOpacity }}
-        >
-          {!logoHidden ? (
-            <Image
-              key={logoCandidates[Math.min(logoIndex, logoCandidates.length - 1)]}
-              src={logoCandidates[Math.min(logoIndex, logoCandidates.length - 1)]}
-              alt="予选"
-              width={16}
-              height={16}
-              unoptimized
-              onError={() => {
-                if (logoIndex < logoCandidates.length - 1) {
-                  setLogoIndex((n) => n + 1);
-                  return;
-                }
-                setLogoHidden(true);
-              }}
-            />
+    <div
+      className={`m-mobile-topbar ${
+        yielded ? "m-mobile-topbar-yielded" : chromeVisible ? "m-mobile-topbar-visible" : "m-mobile-topbar-hidden"
+      }`}
+    >
+      <div className="mx-auto flex h-full max-w-[680px] px-4 pt-3">
+        <div className="m-topbar-shell relative flex h-12 w-full items-center justify-between rounded-[24px] border border-[color:var(--m-nav-border)] bg-[color:var(--m-topbar-bg)] px-4 supports-[backdrop-filter]:bg-[color:var(--m-topbar-bg-strong)]">
+          {wikiPath ? (
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-[92px]">
+              <span
+                className="line-clamp-1 w-full text-center text-[15px] font-semibold tracking-[0.004em] text-[color:var(--m-topbar-text)] transition-[opacity,transform] duration-200"
+                style={{
+                  opacity: centerTitleOpacity,
+                  transform: `translateY(${(1 - centerTitleOpacity) * 6}px)`,
+                }}
+              >
+                {inlineTitle || section}
+              </span>
+            </div>
           ) : null}
-          <span className="text-[11px] leading-none text-[color:var(--m-topbar-dot)]">·</span>
-          <span className="truncate text-[14px] font-semibold tracking-[0.005em] text-[color:var(--m-topbar-text)]">{section}</span>
-        </Link>
 
-        {!wikiPath ? (
-          <p
-            className="relative z-[1] max-w-[56vw] truncate text-right text-[11px] leading-none tracking-[0.01em] text-[color:var(--m-topbar-sub)] transition-[opacity,transform] duration-200 min-[430px]:text-[12px]"
-            style={{
-              opacity: sloganOpacity,
-              transform: `translateY(${-sloganOffset}px)`,
-            }}
+          <Link
+            href="/m"
+            className="m-pressable relative z-[1] inline-flex items-center gap-0.5 rounded-full px-1 py-0.5 active:bg-[color:var(--m-press)]"
+            style={{ opacity: sectionOpacity }}
           >
-            {topbarSlogan}
-          </p>
-        ) : null}
+            {!logoHidden ? (
+              <Image
+                key={logoCandidates[Math.min(logoIndex, logoCandidates.length - 1)]}
+                src={logoCandidates[Math.min(logoIndex, logoCandidates.length - 1)]}
+                alt="予选"
+                width={16}
+                height={16}
+                unoptimized
+                onError={() => {
+                  if (logoIndex < logoCandidates.length - 1) {
+                    setLogoIndex((n) => n + 1);
+                    return;
+                  }
+                  setLogoHidden(true);
+                }}
+              />
+            ) : null}
+            <span className="text-[11px] leading-none text-[color:var(--m-topbar-dot)]">·</span>
+            <span className="truncate text-[14px] font-semibold tracking-[0.005em] text-[color:var(--m-topbar-text)]">{section}</span>
+          </Link>
+
+          {!wikiPath ? (
+            <p
+              className="relative z-[1] max-w-[56vw] truncate text-right text-[11px] leading-none tracking-[0.01em] text-[color:var(--m-topbar-sub)] transition-[opacity,transform] duration-200 min-[430px]:text-[12px]"
+              style={{
+                opacity: sloganOpacity,
+                transform: `translateY(${-sloganOffset}px)`,
+              }}
+            >
+              {topbarSlogan}
+            </p>
+          ) : null}
+        </div>
       </div>
     </div>
   );

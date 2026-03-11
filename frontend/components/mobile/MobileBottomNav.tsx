@@ -72,6 +72,7 @@ export default function MobileBottomNav() {
   const useActive = pathname === "/m/me" || pathname.startsWith("/m/me/use");
   const historyActive = pathname.startsWith("/m/me/history");
   const bagActive = pathname.startsWith("/m/me/bag") || pathname.startsWith("/m/bag");
+  const chromeVisible = !isScrollable || navVisible;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -263,12 +264,24 @@ export default function MobileBottomNav() {
     };
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.dispatchEvent(
+      new CustomEvent("m-mobile-chrome-visibility", {
+        detail: {
+          visible: chromeVisible,
+          yielded,
+        },
+      }),
+    );
+  }, [chromeVisible, yielded]);
+
   return (
     <nav
       className={`m-mobile-bottom-nav fixed inset-x-0 z-[60] px-4 ${
         yielded
           ? "m-mobile-bottom-nav-yielded"
-          : !isScrollable || navVisible
+          : chromeVisible
             ? "m-mobile-bottom-nav-visible"
             : "m-mobile-bottom-nav-hidden"
       }`}
