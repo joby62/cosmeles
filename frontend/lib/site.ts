@@ -68,31 +68,31 @@ export const SHOP_CONCERNS: ConcernMeta[] = [
     key: "dryness",
     label: "Dryness",
     description: "Start with softer routines and recovery-minded texture choices.",
-    href: "/shop/lotion",
+    href: "/collections/dryness",
   },
   {
     key: "frizz",
     label: "Frizz",
     description: "Compare conditioners that reduce roughness without flattening the routine.",
-    href: "/shop/conditioner",
+    href: "/collections/frizz",
   },
   {
     key: "sensitivity",
     label: "Sensitivity",
     description: "Keep the product list tighter and the irritation load lower.",
-    href: "/shop/cleanser",
+    href: "/collections/sensitivity",
   },
   {
     key: "oil-control",
     label: "Oil control",
     description: "Prioritize cleaner reset options for scalp and skin routines.",
-    href: "/shop/shampoo",
+    href: "/collections/oil-control",
   },
   {
     key: "barrier-support",
     label: "Barrier support",
     description: "Center the routine around comfort, replenishment, and lower friction.",
-    href: "/shop/lotion",
+    href: "/collections/barrier-support",
   },
 ];
 
