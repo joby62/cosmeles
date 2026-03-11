@@ -181,6 +181,32 @@ def _set_featured_slot(client, category: str, target_type_key: str, product_id: 
     return pid
 
 
+def test_product_featured_slots_get_route_is_not_shadowed_by_product_detail(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, _ = test_client
+    _install_fake_ingest_pipeline(
+        monkeypatch,
+        {
+            "category": "shampoo",
+            "brand": "Dove",
+            "name": "Shampoo Featured Slot Route",
+            "one_sentence": "featured slot route test",
+        },
+    )
+    product_id = _ingest_one(client, "featured-slot-route.jpg")
+    _set_featured_slot(client, "shampoo", "moisture-balance", product_id)
+
+    resp = client.get("/api/products/featured-slots", params={"category": "shampoo"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body["category"] == "shampoo"
+    assert body["total"] >= 1
+    assert any(
+        item["product_id"] == product_id and item["target_type_key"] == "moisture-balance"
+        for item in body["items"]
+    )
+
+
 def test_mobile_selection_resolve_without_featured_slot_uses_fallback(test_client, monkeypatch: pytest.MonkeyPatch):
     client, _ = test_client
     _install_fake_ingest_pipeline(

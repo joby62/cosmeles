@@ -277,101 +277,6 @@ def category_counts(db: Session = Depends(get_db)):
     ).all()
     return [CategoryCount(category=category, count=count) for category, count in rows]
 
-@router.get("/products/{product_id}")
-def get_product(product_id: str, db: Session = Depends(get_db)):
-    rec = db.get(ProductIndex, product_id)
-    if not rec:
-        raise HTTPException(status_code=404, detail="Not found")
-    if not exists_rel_path(rec.json_path):
-        raise HTTPException(status_code=404, detail="Product json file is missing.")
-    doc = load_json(rec.json_path)
-    preferred_image_rel = preferred_image_rel_path(str(rec.image_path or "").strip())
-    if preferred_image_rel and isinstance(doc, dict):
-        evidence = doc.setdefault("evidence", {})
-        if isinstance(evidence, dict):
-            evidence["image_path"] = preferred_image_rel
-    return doc
-
-@router.patch("/products/{product_id}", response_model=ProductCard)
-def update_product(product_id: str, payload: ProductUpdateRequest, db: Session = Depends(get_db)):
-    rec = db.get(ProductIndex, product_id)
-    if not rec:
-        raise HTTPException(status_code=404, detail="Not found")
-
-    tags = None
-    if payload.tags is not None:
-        tags = _normalize_tags(payload.tags)
-        rec.tags_json = json.dumps(tags, ensure_ascii=False)
-
-    if payload.category is not None:
-        cat = payload.category.strip().lower()
-        if cat not in VALID_CATEGORIES:
-            raise HTTPException(status_code=400, detail=f"Invalid category: {cat}.")
-        rec.category = cat
-    if payload.brand is not None:
-        rec.brand = payload.brand.strip() or None
-    if payload.name is not None:
-        rec.name = payload.name.strip() or None
-    if payload.one_sentence is not None:
-        rec.one_sentence = payload.one_sentence.strip() or None
-
-    if exists_rel_path(rec.json_path):
-        doc = load_json(rec.json_path)
-        doc.setdefault("product", {})
-        doc.setdefault("summary", {})
-        if payload.category is not None:
-            doc["product"]["category"] = rec.category
-        if payload.brand is not None:
-            doc["product"]["brand"] = rec.brand
-        if payload.name is not None:
-            doc["product"]["name"] = rec.name
-        if payload.one_sentence is not None:
-            doc["summary"]["one_sentence"] = rec.one_sentence or ""
-        if tags is not None:
-            doc["tags"] = tags
-        save_json_at(rec.json_path, doc)
-
-    db.add(rec)
-    db.commit()
-    db.refresh(rec)
-    return _row_to_card(rec)
-
-@router.delete("/products/{product_id}")
-def delete_product(product_id: str, db: Session = Depends(get_db)):
-    rec = db.get(ProductIndex, product_id)
-    if not rec:
-        raise HTTPException(status_code=404, detail="Not found")
-
-    removed = 0
-    if remove_rel_path(rec.json_path):
-        removed += 1
-    image_removed, _ = remove_product_images(product_id=product_id, image_path=rec.image_path)
-    removed += image_removed
-    run_files, run_dirs = remove_rel_dir(f"doubao_runs/{product_id}")
-    removed += run_files + run_dirs
-    route_mapping_rec = db.get(ProductRouteMappingIndex, product_id)
-    if route_mapping_rec:
-        route_mapping_path = str(route_mapping_rec.storage_path or "").strip() or product_route_mapping_rel_path(
-            str(route_mapping_rec.category or ""),
-            product_id,
-        )
-        if route_mapping_path and remove_rel_path(route_mapping_path):
-            removed += 1
-        db.delete(route_mapping_rec)
-    try:
-        featured_slots = db.execute(
-            select(ProductFeaturedSlot).where(ProductFeaturedSlot.product_id == product_id)
-        ).scalars().all()
-    except OperationalError as exc:
-        raise _featured_slot_schema_http_error(exc) from exc
-    for slot in featured_slots:
-        db.delete(slot)
-
-    db.delete(rec)
-    db.commit()
-    return {"id": product_id, "status": "deleted", "removed_files": removed}
-
-
 @router.post("/products/dedup/suggest", response_model=ProductDedupSuggestResponse)
 def suggest_product_duplicates(payload: ProductDedupSuggestRequest, db: Session = Depends(get_db)):
     return _suggest_product_duplicates_impl(payload, db, event_callback=None)
@@ -1165,6 +1070,103 @@ def clear_product_featured_slot(
         target_type_key=target_type_key,
         deleted=deleted,
     )
+
+
+@router.get("/products/{product_id}")
+def get_product(product_id: str, db: Session = Depends(get_db)):
+    rec = db.get(ProductIndex, product_id)
+    if not rec:
+        raise HTTPException(status_code=404, detail="Not found")
+    if not exists_rel_path(rec.json_path):
+        raise HTTPException(status_code=404, detail="Product json file is missing.")
+    doc = load_json(rec.json_path)
+    preferred_image_rel = preferred_image_rel_path(str(rec.image_path or "").strip())
+    if preferred_image_rel and isinstance(doc, dict):
+        evidence = doc.setdefault("evidence", {})
+        if isinstance(evidence, dict):
+            evidence["image_path"] = preferred_image_rel
+    return doc
+
+
+@router.patch("/products/{product_id}", response_model=ProductCard)
+def update_product(product_id: str, payload: ProductUpdateRequest, db: Session = Depends(get_db)):
+    rec = db.get(ProductIndex, product_id)
+    if not rec:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    tags = None
+    if payload.tags is not None:
+        tags = _normalize_tags(payload.tags)
+        rec.tags_json = json.dumps(tags, ensure_ascii=False)
+
+    if payload.category is not None:
+        cat = payload.category.strip().lower()
+        if cat not in VALID_CATEGORIES:
+            raise HTTPException(status_code=400, detail=f"Invalid category: {cat}.")
+        rec.category = cat
+    if payload.brand is not None:
+        rec.brand = payload.brand.strip() or None
+    if payload.name is not None:
+        rec.name = payload.name.strip() or None
+    if payload.one_sentence is not None:
+        rec.one_sentence = payload.one_sentence.strip() or None
+
+    if exists_rel_path(rec.json_path):
+        doc = load_json(rec.json_path)
+        doc.setdefault("product", {})
+        doc.setdefault("summary", {})
+        if payload.category is not None:
+            doc["product"]["category"] = rec.category
+        if payload.brand is not None:
+            doc["product"]["brand"] = rec.brand
+        if payload.name is not None:
+            doc["product"]["name"] = rec.name
+        if payload.one_sentence is not None:
+            doc["summary"]["one_sentence"] = rec.one_sentence or ""
+        if tags is not None:
+            doc["tags"] = tags
+        save_json_at(rec.json_path, doc)
+
+    db.add(rec)
+    db.commit()
+    db.refresh(rec)
+    return _row_to_card(rec)
+
+
+@router.delete("/products/{product_id}")
+def delete_product(product_id: str, db: Session = Depends(get_db)):
+    rec = db.get(ProductIndex, product_id)
+    if not rec:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    removed = 0
+    if remove_rel_path(rec.json_path):
+        removed += 1
+    image_removed, _ = remove_product_images(product_id=product_id, image_path=rec.image_path)
+    removed += image_removed
+    run_files, run_dirs = remove_rel_dir(f"doubao_runs/{product_id}")
+    removed += run_files + run_dirs
+    route_mapping_rec = db.get(ProductRouteMappingIndex, product_id)
+    if route_mapping_rec:
+        route_mapping_path = str(route_mapping_rec.storage_path or "").strip() or product_route_mapping_rel_path(
+            str(route_mapping_rec.category or ""),
+            product_id,
+        )
+        if route_mapping_path and remove_rel_path(route_mapping_path):
+            removed += 1
+        db.delete(route_mapping_rec)
+    try:
+        featured_slots = db.execute(
+            select(ProductFeaturedSlot).where(ProductFeaturedSlot.product_id == product_id)
+        ).scalars().all()
+    except OperationalError as exc:
+        raise _featured_slot_schema_http_error(exc) from exc
+    for slot in featured_slots:
+        db.delete(slot)
+
+    db.delete(rec)
+    db.commit()
+    return {"id": product_id, "status": "deleted", "removed_files": removed}
 
 
 @router.post("/products/batch-delete", response_model=ProductBatchDeleteResponse)
