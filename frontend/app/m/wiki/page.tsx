@@ -18,6 +18,8 @@ type CategoryTheme = {
   heroClass: string;
   hazeClass: string;
   accentClass: string;
+  railCardClass: string;
+  railIconClass: string;
 };
 
 type NameParts = {
@@ -47,33 +49,48 @@ const ENTRY_TABS: Array<{ key: WikiEntryTab; label: string }> = [
 const CATEGORY_THEME: Record<WikiCategoryKey, CategoryTheme> = {
   shampoo: {
     heroClass:
-      "bg-[radial-gradient(circle_at_25%_18%,rgba(235,250,255,0.96),rgba(186,222,238,0.9)_45%,rgba(133,181,206,0.94)_100%)]",
-    hazeClass: "bg-[radial-gradient(circle_at_70%_80%,rgba(16,53,80,0.42),rgba(10,20,36,0)_64%)]",
-    accentClass: "bg-[#8fd3f2]",
+      "bg-[radial-gradient(circle_at_24%_16%,rgba(246,249,255,0.98),rgba(208,221,243,0.92)_44%,rgba(128,150,194,0.96)_100%)]",
+    hazeClass: "bg-[radial-gradient(circle_at_72%_82%,rgba(29,46,86,0.4),rgba(10,20,36,0)_64%)]",
+    accentClass: "bg-[#9fb7eb]",
+    railCardClass:
+      "border-[rgba(132,156,206,0.26)] bg-[linear-gradient(180deg,rgba(255,255,255,0.99),rgba(232,239,250,0.94))] text-[color:var(--m-wiki-text-strong)] shadow-[0_18px_34px_rgba(32,52,96,0.12),inset_0_1px_0_rgba(255,255,255,0.78)]",
+    railIconClass: "bg-[rgba(143,167,219,0.18)] shadow-[inset_0_0_0_1px_rgba(143,167,219,0.16)]",
   },
   bodywash: {
     heroClass:
       "bg-[radial-gradient(circle_at_70%_18%,rgba(242,248,255,0.96),rgba(194,211,246,0.9)_44%,rgba(121,143,210,0.94)_100%)]",
     hazeClass: "bg-[radial-gradient(circle_at_22%_82%,rgba(28,38,92,0.42),rgba(10,20,36,0)_64%)]",
     accentClass: "bg-[#9fb5ff]",
+    railCardClass:
+      "border-[rgba(137,160,231,0.24)] bg-[linear-gradient(180deg,rgba(255,255,255,0.99),rgba(234,240,252,0.94))] text-[color:var(--m-wiki-text-strong)] shadow-[0_18px_34px_rgba(42,60,116,0.1),inset_0_1px_0_rgba(255,255,255,0.78)]",
+    railIconClass: "bg-[rgba(159,181,255,0.18)] shadow-[inset_0_0_0_1px_rgba(159,181,255,0.16)]",
   },
   conditioner: {
     heroClass:
       "bg-[radial-gradient(circle_at_24%_16%,rgba(248,244,255,0.97),rgba(214,198,245,0.91)_44%,rgba(152,129,216,0.94)_100%)]",
     hazeClass: "bg-[radial-gradient(circle_at_72%_82%,rgba(56,24,102,0.42),rgba(10,20,36,0)_64%)]",
     accentClass: "bg-[#bea1ff]",
+    railCardClass:
+      "border-[rgba(181,154,244,0.24)] bg-[linear-gradient(180deg,rgba(255,255,255,0.99),rgba(241,234,252,0.94))] text-[color:var(--m-wiki-text-strong)] shadow-[0_18px_34px_rgba(72,36,132,0.1),inset_0_1px_0_rgba(255,255,255,0.78)]",
+    railIconClass: "bg-[rgba(190,161,255,0.18)] shadow-[inset_0_0_0_1px_rgba(190,161,255,0.16)]",
   },
   lotion: {
     heroClass:
       "bg-[radial-gradient(circle_at_24%_18%,rgba(255,248,232,0.97),rgba(246,220,173,0.91)_44%,rgba(217,168,96,0.94)_100%)]",
     hazeClass: "bg-[radial-gradient(circle_at_70%_82%,rgba(90,56,18,0.4),rgba(10,20,36,0)_64%)]",
     accentClass: "bg-[#e7bd72]",
+    railCardClass:
+      "border-[rgba(225,186,116,0.26)] bg-[linear-gradient(180deg,rgba(255,255,255,0.99),rgba(249,239,218,0.94))] text-[color:var(--m-wiki-text-strong)] shadow-[0_18px_34px_rgba(106,74,28,0.1),inset_0_1px_0_rgba(255,255,255,0.78)]",
+    railIconClass: "bg-[rgba(231,189,114,0.18)] shadow-[inset_0_0_0_1px_rgba(231,189,114,0.16)]",
   },
   cleanser: {
     heroClass:
       "bg-[radial-gradient(circle_at_24%_18%,rgba(242,252,255,0.97),rgba(189,223,236,0.9)_44%,rgba(117,176,203,0.94)_100%)]",
     hazeClass: "bg-[radial-gradient(circle_at_72%_82%,rgba(16,66,84,0.42),rgba(10,20,36,0)_64%)]",
     accentClass: "bg-[#87c7dd]",
+    railCardClass:
+      "border-[rgba(126,195,214,0.24)] bg-[linear-gradient(180deg,rgba(255,255,255,0.99),rgba(230,246,249,0.94))] text-[color:var(--m-wiki-text-strong)] shadow-[0_18px_34px_rgba(20,82,96,0.1),inset_0_1px_0_rgba(255,255,255,0.78)]",
+    railIconClass: "bg-[rgba(135,199,221,0.2)] shadow-[inset_0_0_0_1px_rgba(135,199,221,0.16)]",
   },
 };
 
@@ -614,6 +631,7 @@ function MobileWikiPageContent() {
               {WIKI_ORDER.map((key) => {
                 const item = WIKI_MAP[key];
                 const activeTag = key === active;
+                const categoryTheme = CATEGORY_THEME[key];
                 return (
                   <button
                     key={item.key}
@@ -621,18 +639,18 @@ function MobileWikiPageContent() {
                     onClick={() => {
                       switchCategory(key);
                     }}
-                    className={`m-wiki-category-card m-pressable relative inline-flex h-[56px] items-center gap-3.5 rounded-[28px] px-4.5 ${
-                      activeTag ? "m-wiki-category-card-active" : ""
+                    className={`m-wiki-category-card m-pressable relative inline-flex h-[62px] min-w-[138px] items-center gap-3 rounded-[31px] px-4.5 ${
+                      activeTag ? categoryTheme.railCardClass : ""
                     }`}
                   >
                     <span
-                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-[12px] transition-colors ${
-                        activeTag ? "bg-[rgba(10,132,255,0.12)] shadow-[inset_0_0_0_1px_rgba(10,132,255,0.08)]" : "bg-white/74"
+                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[15px] transition-colors ${
+                        activeTag ? categoryTheme.railIconClass : "bg-white/82 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]"
                       }`}
                     >
-                      <Image src={`/m/categories/${item.key}.png`} alt={item.label} width={22} height={22} className="h-[22px] w-[22px] rounded-[8px] object-cover" />
+                      <Image src={`/m/categories/${item.key}.png`} alt={item.label} width={24} height={24} className="h-[24px] w-[24px] rounded-[9px] object-cover" />
                     </span>
-                    <span className="text-[16px] font-semibold tracking-[-0.022em]">{item.label}</span>
+                    <span className="text-[17px] font-semibold tracking-[-0.024em]">{item.label}</span>
                   </button>
                 );
               })}
