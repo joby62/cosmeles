@@ -7,11 +7,11 @@ import { useEffect, useRef, useState } from "react";
 type DefaultNavKey = "wiki" | "choose" | "compare";
 
 const CATEGORY_TABS = [
-  { prefix: "/m/shampoo", label: "个性测配", href: "/m/shampoo/start" },
-  { prefix: "/m/bodywash", label: "个性测配", href: "/m/bodywash/start" },
-  { prefix: "/m/conditioner", label: "个性测配", href: "/m/conditioner/start" },
-  { prefix: "/m/lotion", label: "个性测配", href: "/m/lotion/start" },
-  { prefix: "/m/cleanser", label: "个性测配", href: "/m/cleanser/start" },
+  { prefix: "/m/shampoo", label: "个性测配", href: "/m/shampoo/profile?step=1" },
+  { prefix: "/m/bodywash", label: "个性测配", href: "/m/bodywash/profile?step=1" },
+  { prefix: "/m/conditioner", label: "个性测配", href: "/m/conditioner/profile?step=1" },
+  { prefix: "/m/lotion", label: "个性测配", href: "/m/lotion/profile?step=1" },
+  { prefix: "/m/cleanser", label: "个性测配", href: "/m/cleanser/profile?step=1" },
 ] as const;
 
 const NAV_HIDE_THRESHOLD = 26;

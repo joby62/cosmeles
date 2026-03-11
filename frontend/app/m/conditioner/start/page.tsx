@@ -1,5 +1,5 @@
-import MobileSelectionStartHero from "@/components/mobile/MobileSelectionStartHero";
+import { redirect } from "next/navigation";
 
 export default function ConditionerStart() {
-  return <MobileSelectionStartHero categoryLabel="护发素" startHref="/m/conditioner/profile?step=1" />;
+  redirect("/m/conditioner/profile?step=1");
 }

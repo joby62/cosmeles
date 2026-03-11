@@ -11,7 +11,7 @@ type Item = {
 };
 
 const ITEMS: Item[] = [
-  { key: "shampoo", label: "洗发水", short: "洗", href: "/m/shampoo/start" },
+  { key: "shampoo", label: "洗发水", short: "洗", href: "/m/shampoo/profile?step=1" },
   { key: "bodywash", label: "沐浴露", short: "沐" },
   { key: "conditioner", label: "护发素", short: "护" },
   { key: "lotion", label: "润肤霜", short: "润" },

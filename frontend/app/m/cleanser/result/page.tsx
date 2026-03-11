@@ -64,7 +64,7 @@ export default async function CleanserResultPage({
           </p>
           <div className="mt-4 flex flex-wrap gap-2.5">
             <Link
-              href="/m/cleanser/start"
+              href="/m/cleanser/profile?step=1"
               className="inline-flex h-10 items-center justify-center rounded-full bg-black px-4 text-[14px] font-semibold text-white"
             >
               重新开始
@@ -93,7 +93,7 @@ export default async function CleanserResultPage({
     <SelectionResultFlow
       titlePrefix="洗面奶决策"
       emptyImageLabel="Cleanser"
-      startHref="/m/cleanser/start"
+      startHref="/m/cleanser/profile?step=1"
       profileHref="/m/cleanser/profile"
       resolved={resolved}
       explanation={explanation?.item || null}

@@ -64,7 +64,7 @@ export default async function BodyWashResultPage({
           </p>
           <div className="mt-4 flex flex-wrap gap-2.5">
             <Link
-              href="/m/bodywash/start"
+              href="/m/bodywash/profile?step=1"
               className="inline-flex h-10 items-center justify-center rounded-full bg-black px-4 text-[14px] font-semibold text-white"
             >
               重新开始
@@ -93,7 +93,7 @@ export default async function BodyWashResultPage({
     <SelectionResultFlow
       titlePrefix="沐浴挑选"
       emptyImageLabel="Body Wash"
-      startHref="/m/bodywash/start"
+      startHref="/m/bodywash/profile?step=1"
       profileHref="/m/bodywash/profile"
       resolved={resolved}
       explanation={explanation?.item || null}

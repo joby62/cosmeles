@@ -64,7 +64,7 @@ export default async function LotionResultPage({
           </p>
           <div className="mt-4 flex flex-wrap gap-2.5">
             <Link
-              href="/m/lotion/start"
+              href="/m/lotion/profile?step=1"
               className="inline-flex h-10 items-center justify-center rounded-full bg-black px-4 text-[14px] font-semibold text-white"
             >
               重新开始
@@ -93,7 +93,7 @@ export default async function LotionResultPage({
     <SelectionResultFlow
       titlePrefix="润肤霜决策"
       emptyImageLabel="Lotion"
-      startHref="/m/lotion/start"
+      startHref="/m/lotion/profile?step=1"
       profileHref="/m/lotion/profile"
       resolved={resolved}
       explanation={explanation?.item || null}

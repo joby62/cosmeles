@@ -1,5 +1,5 @@
-import MobileSelectionStartHero from "@/components/mobile/MobileSelectionStartHero";
+import { redirect } from "next/navigation";
 
 export default function CleanserStart() {
-  return <MobileSelectionStartHero categoryLabel="洗面奶" startHref="/m/cleanser/profile?step=1" />;
+  redirect("/m/cleanser/profile?step=1");
 }

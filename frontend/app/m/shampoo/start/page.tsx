@@ -1,5 +1,5 @@
-import MobileSelectionStartHero from "@/components/mobile/MobileSelectionStartHero";
+import { redirect } from "next/navigation";
 
 export default function ShampooStart() {
-  return <MobileSelectionStartHero categoryLabel="洗发水" startHref="/m/shampoo/profile?step=1" />;
+  redirect("/m/shampoo/profile?step=1");
 }

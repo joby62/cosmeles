@@ -918,7 +918,7 @@ export default function MobileComparePage() {
     }
     if (step === 2) {
       if (!hasHistoryProfile) {
-        router.push(`/m/${category}/start`);
+        router.push(`/m/${category}/profile?step=1`);
         return;
       }
       goNextStep();

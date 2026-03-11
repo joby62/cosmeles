@@ -237,7 +237,7 @@ export default async function WikiCategoryPage({
 
       <div className="mt-8">
         <Link
-          href={`/m/${current.key}/start`}
+          href={`/m/${current.key}/profile?step=1`}
           className="m-pressable inline-flex h-11 items-center justify-center rounded-full border border-white/20 bg-white/[0.07] px-5 text-[15px] font-semibold text-white/90 backdrop-blur-xl active:bg-white/[0.12]"
         >
           进入{current.label}挑选

@@ -55,7 +55,7 @@ export default async function ConditionerResultPage({
           </p>
           <div className="mt-4 flex flex-wrap gap-2.5">
             <Link
-              href="/m/conditioner/start"
+              href="/m/conditioner/profile?step=1"
               className="inline-flex h-10 items-center justify-center rounded-full bg-black px-4 text-[14px] font-semibold text-white"
             >
               重新开始
@@ -84,7 +84,7 @@ export default async function ConditionerResultPage({
     <SelectionResultFlow
       titlePrefix="护发素决策"
       emptyImageLabel="Conditioner"
-      startHref="/m/conditioner/start"
+      startHref="/m/conditioner/profile?step=1"
       profileHref="/m/conditioner/profile"
       resolved={resolved}
       explanation={explanation?.item || null}

@@ -1,5 +1,5 @@
-import MobileSelectionStartHero from "@/components/mobile/MobileSelectionStartHero";
+import { redirect } from "next/navigation";
 
 export default function BodyWashStart() {
-  return <MobileSelectionStartHero categoryLabel="沐浴露" startHref="/m/bodywash/profile?step=1" />;
+  redirect("/m/bodywash/profile?step=1");
 }

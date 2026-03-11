@@ -57,7 +57,7 @@ export default async function ShampooResultPage({
           </p>
           <div className="mt-4 flex flex-wrap gap-2.5">
             <Link
-              href="/m/shampoo/start"
+              href="/m/shampoo/profile?step=1"
               className="inline-flex h-10 items-center justify-center rounded-full bg-black px-4 text-[14px] font-semibold text-white"
             >
               重新开始
@@ -86,7 +86,7 @@ export default async function ShampooResultPage({
     <SelectionResultFlow
       titlePrefix="洗发挑选"
       emptyImageLabel="Shampoo"
-      startHref="/m/shampoo/start"
+      startHref="/m/shampoo/profile?step=1"
       profileHref="/m/shampoo/profile"
       resolved={resolved}
       explanation={explanation?.item || null}
