@@ -145,19 +145,24 @@ function SearchIcon({ className = "h-5 w-5" }: { className?: string }) {
   );
 }
 
+function CloseIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden className={className}>
+      <path d="M7 7L17 17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M17 7L7 17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function WikiPageFallback() {
   return (
     <section className="m-wiki-page -mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[color:var(--m-wiki-canvas)] px-4 pb-36 pt-4 text-white">
       <div className="space-y-4">
-        <header className="space-y-3">
-          <p className="m-wiki-kicker text-[13px] text-[#4ea0ff]">结论前置</p>
-          <h1 data-m-large-title="产品百科" className="text-[34px] leading-[1.06] font-semibold tracking-[-0.03em]">
-            产品百科
-          </h1>
-          <p className="max-w-[34rem] text-[15px] leading-[1.55] text-white/68">正在恢复你上次的浏览状态...</p>
-        </header>
         <div className="m-wiki-control-rail rounded-[28px] p-3">
-          <div className="m-wiki-card-soft rounded-[24px] px-4 py-5 text-[14px] text-white/65">正在加载百科内容...</div>
+          <div className="flex items-center gap-2.5">
+            <div className="m-wiki-segmented grid h-11 min-w-0 flex-1 grid-cols-2 p-1" />
+            <div className="h-11 w-11 rounded-[22px] border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)]" />
+          </div>
         </div>
       </div>
     </section>
@@ -172,18 +177,19 @@ function MobileWikiPageContent() {
   const [entryTab, setEntryTab] = useState<WikiEntryTab>(() => initialState.entryTab);
   const [active, setActive] = useState<WikiCategoryKey>(() => initialState.active);
   const [query, setQuery] = useState(() => initialState.query);
+  const [searchOpen, setSearchOpen] = useState(() => Boolean(initialState.query));
   const [searchFocused, setSearchFocused] = useState(false);
   const [ingredientItems, setIngredientItems] = useState<IngredientLibraryListItem[]>([]);
   const [ingredientLoading, setIngredientLoading] = useState(() => initialState.entryTab === "ingredient");
   const [ingredientError, setIngredientError] = useState<string | null>(null);
   const [productItems, setProductItems] = useState<MobileWikiProductItem[]>([]);
-  const [productTotal, setProductTotal] = useState(0);
   const [productLoading, setProductLoading] = useState(() => initialState.entryTab === "product");
   const [productError, setProductError] = useState<string | null>(null);
 
   const normalizedQuery = query.trim();
   const theme = CATEGORY_THEME[active];
   const entryTabIndex = entryTab === "product" ? 0 : 1;
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const segmentThumbRef = useRef<HTMLSpanElement | null>(null);
   const previousEntryTabIndexRef = useRef(entryTabIndex);
   const hasRestoredInitialScrollRef = useRef(false);
@@ -239,11 +245,21 @@ function MobileWikiPageContent() {
   }, [scrollStorageKey]);
 
   useEffect(() => {
-    window.dispatchEvent(new CustomEvent("m-bottom-nav-yield", { detail: { active: searchFocused } }));
+    window.dispatchEvent(new CustomEvent("m-bottom-nav-yield", { detail: { active: searchOpen || searchFocused } }));
     return () => {
       window.dispatchEvent(new CustomEvent("m-bottom-nav-yield", { detail: { active: false } }));
     };
-  }, [searchFocused]);
+  }, [searchFocused, searchOpen]);
+
+  useEffect(() => {
+    if (!searchOpen) return;
+    const rafId = window.requestAnimationFrame(() => {
+      searchInputRef.current?.focus();
+    });
+    return () => {
+      window.cancelAnimationFrame(rafId);
+    };
+  }, [searchOpen]);
 
   useEffect(() => {
     const thumb = segmentThumbRef.current;
@@ -282,12 +298,10 @@ function MobileWikiPageContent() {
       .then((resp) => {
         if (cancelled) return;
         setProductItems(resp.items || []);
-        setProductTotal(resp.total || 0);
       })
       .catch((e) => {
         if (cancelled) return;
         setProductItems([]);
-        setProductTotal(0);
         setProductError(e instanceof Error ? e.message : String(e));
       })
       .finally(() => {
@@ -348,14 +362,6 @@ function MobileWikiPageContent() {
   const featuredIngredientName = featuredIngredientItem ? splitIngredientName(featuredIngredientItem.ingredient_name) : null;
   const ingredientListItems = featuredIngredientItem ? sortedIngredientItems.slice(1) : sortedIngredientItems;
 
-  const heroTitle = entryTab === "product" ? "产品百科" : "成分百科";
-  const heroKicker = entryTab === "product" ? "结论前置" : "先看一句话";
-  const heroSummary =
-    entryTab === "product"
-      ? `${WIKI_MAP[active].label} 当前收录 ${productTotal} 款产品，先把最值得打开的一款放到你面前。`
-      : `${WIKI_MAP[active].label} 当前已整理 ${sortedIngredientItems.length} 个成分条目，先给一句话重点，再决定是否展开。`;
-  const countLabel = entryTab === "product" ? `${productTotal} 款产品` : `${sortedIngredientItems.length} 个成分`;
-
   const beginProductLoad = () => {
     setProductLoading(true);
     setProductError(null);
@@ -396,111 +402,115 @@ function MobileWikiPageContent() {
     setQuery("");
   };
 
+  const collapseSearch = () => {
+    if (normalizedQuery) {
+      clearQuery();
+      return;
+    }
+    setSearchFocused(false);
+    setSearchOpen(false);
+  };
+
   return (
     <section className="m-wiki-page -mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[color:var(--m-wiki-canvas)] px-4 pb-36 pt-4 text-white">
       <div className="space-y-4">
-        <header className="space-y-3">
-          <p className="m-wiki-kicker text-[13px] text-[#4ea0ff]">{heroKicker}</p>
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              <h1 data-m-large-title={heroTitle} className="text-[34px] leading-[1.06] font-semibold tracking-[-0.03em]">
-                {heroTitle}
-              </h1>
-              <p className="mt-2 max-w-[34rem] text-[15px] leading-[1.55] text-white/68">{heroSummary}</p>
-            </div>
-            <Link
-              href={`/m/${active}/start`}
-              className="m-wiki-primary-cta m-pressable inline-flex h-11 shrink-0 items-center rounded-full px-4 text-[14px] font-semibold"
-            >
-              去测配
-            </Link>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <span className="m-wiki-meta-chip inline-flex h-8 items-center rounded-full px-3 text-[12px] font-medium">
-              当前品类 · {WIKI_MAP[active].label}
-            </span>
-            <span className="m-wiki-meta-chip inline-flex h-8 items-center rounded-full px-3 text-[12px] font-medium">
-              {countLabel}
-            </span>
-            <span className="m-wiki-meta-chip inline-flex h-8 max-w-full items-center rounded-full px-3 text-[12px] font-medium">
-              <span className="truncate">{normalizedQuery ? `搜索“${normalizedQuery}”` : "先看结论，再展开细节"}</span>
-            </span>
-          </div>
-        </header>
-
         <div className="sticky top-[3.55rem] z-20">
-          <div className={`m-wiki-control-rail rounded-[28px] p-3 ${searchFocused ? "shadow-[0_16px_36px_rgba(0,113,227,0.16)]" : ""}`}>
-            <div role="tablist" aria-label="百科类型" className="m-wiki-segmented relative grid grid-cols-2 p-1">
-              <span
-                aria-hidden
-                ref={segmentThumbRef}
-                className="m-wiki-segment-thumb absolute bottom-1 left-1 top-1"
-                style={{ width: "calc(50% - 4px)", transform: `translateX(${entryTabIndex * 100}%)` }}
-              />
-              {ENTRY_TABS.map((tab) => {
-                const activeTab = tab.key === entryTab;
-                return (
-                  <button
-                    key={tab.key}
-                    role="tab"
-                    aria-selected={activeTab}
-                    type="button"
-                    onClick={() => {
-                      switchTab(tab.key);
-                    }}
-                    className={`m-pressable relative z-[1] h-9 rounded-[11px] text-[13px] font-semibold transition-colors ${
-                      activeTab ? "text-white" : "text-white/68 active:text-white/90"
-                    }`}
-                  >
-                    {tab.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            <form
-              className="mt-3"
-              onSubmit={(e) => {
-                e.preventDefault();
-              }}
-            >
-              <div className="m-wiki-input-shell flex h-11 items-center rounded-2xl px-3 text-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)]">
-                <SearchIcon className="h-[17px] w-[17px] text-white/52" />
-                <input
-                  id="wiki-search"
-                  value={query}
-                  onFocus={() => {
-                    setSearchFocused(true);
-                  }}
-                  onBlur={() => {
-                    setSearchFocused(false);
-                  }}
-                  onChange={(e) => {
-                    const next = e.target.value;
-                    if (next.trim() !== normalizedQuery) {
-                      if (entryTab === "product") {
-                        beginProductLoad();
-                      } else {
-                        beginIngredientLoad();
-                      }
-                    }
-                    setQuery(next);
-                  }}
-                  placeholder={entryTab === "product" ? "搜索产品名称 / 品牌" : "搜索成分名称"}
-                  className="ml-2.5 h-full w-full bg-transparent text-[16px] text-white/92 outline-none placeholder:text-white/36"
+          <div className={`m-wiki-control-rail rounded-[28px] p-3 ${searchOpen || searchFocused ? "shadow-[0_16px_36px_rgba(0,113,227,0.12)]" : ""}`}>
+            <div className="flex items-center gap-2.5">
+              <div role="tablist" aria-label="百科类型" className="m-wiki-segmented relative min-w-0 flex-1 grid grid-cols-2 p-1">
+                <span
+                  aria-hidden
+                  ref={segmentThumbRef}
+                  className="m-wiki-segment-thumb absolute bottom-1 left-1 top-1"
+                  style={{ width: "calc(50% - 4px)", transform: `translateX(${entryTabIndex * 100}%)` }}
                 />
-                {query ? (
-                  <button
-                    type="button"
-                    onClick={clearQuery}
-                    className="m-pressable rounded-full bg-white/10 px-2.5 py-1 text-[12px] text-white/72 active:bg-white/18"
-                  >
-                    清除
-                  </button>
-                ) : null}
+                {ENTRY_TABS.map((tab) => {
+                  const activeTab = tab.key === entryTab;
+                  return (
+                    <button
+                      key={tab.key}
+                      role="tab"
+                      aria-selected={activeTab}
+                      type="button"
+                      onClick={() => {
+                        switchTab(tab.key);
+                      }}
+                      className={`m-pressable relative z-[1] h-9 rounded-[11px] text-[13px] font-semibold transition-colors ${
+                        activeTab ? "text-white" : "text-white/68 active:text-white/90"
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  );
+                })}
               </div>
-            </form>
+
+              <div
+                className={`relative h-11 shrink-0 overflow-hidden rounded-[22px] transition-[width,box-shadow,border-color,background-color] duration-300 ${
+                  searchOpen
+                    ? "m-wiki-input-shell w-[min(72vw,264px)] shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_12px_30px_rgba(12,22,38,0.12)]"
+                    : "w-11 border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)]"
+                }`}
+              >
+                <button
+                  type="button"
+                  aria-label="打开搜索"
+                  onClick={() => {
+                    setSearchOpen(true);
+                  }}
+                  className={`m-pressable absolute inset-0 z-[1] flex items-center justify-center text-[color:var(--m-wiki-text-mid)] transition-opacity duration-200 ${
+                    searchOpen ? "pointer-events-none opacity-0" : "opacity-100"
+                  }`}
+                >
+                  <SearchIcon className="h-[18px] w-[18px]" />
+                </button>
+
+                <form
+                  className={`absolute inset-0 flex items-center transition-[opacity,transform] duration-200 ${
+                    searchOpen ? "opacity-100" : "pointer-events-none opacity-0 translate-x-2"
+                  }`}
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                  }}
+                >
+                  <div className="flex h-full w-full items-center gap-2 px-3">
+                    <SearchIcon className="h-[17px] w-[17px] shrink-0 text-white/48" />
+                    <input
+                      ref={searchInputRef}
+                      id="wiki-search"
+                      value={query}
+                      onFocus={() => {
+                        setSearchFocused(true);
+                      }}
+                      onBlur={() => {
+                        setSearchFocused(false);
+                      }}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        if (next.trim() !== normalizedQuery) {
+                          if (entryTab === "product") {
+                            beginProductLoad();
+                          } else {
+                            beginIngredientLoad();
+                          }
+                        }
+                        setQuery(next);
+                      }}
+                      placeholder="搜索产品及成分"
+                      className="h-full min-w-0 flex-1 bg-transparent text-[15px] text-white/92 outline-none placeholder:text-white/36"
+                    />
+                    <button
+                      type="button"
+                      aria-label={normalizedQuery ? "清除搜索" : "收起搜索"}
+                      onClick={collapseSearch}
+                      className="m-pressable flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-white/62 active:bg-white/[0.14]"
+                    >
+                      <CloseIcon />
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
 
             <section className="mt-3 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <div className="flex min-w-max gap-2">
