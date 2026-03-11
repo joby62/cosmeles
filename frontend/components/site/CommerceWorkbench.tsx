@@ -43,6 +43,19 @@ type ImportRow = {
   };
 };
 
+const IMPORT_HEADERS = [
+  "product_id",
+  "price_label",
+  "inventory_label",
+  "shipping_eta_label",
+  "pack_size_label",
+  "pack_size_unit",
+  "pack_size_value",
+] as const;
+
+const TSV_TEMPLATE = `${IMPORT_HEADERS.join("\t")}
+replace-with-product-id\t$24\tIn stock\tShips in 2-4 business days\t250 mL\tmL\t250`;
+
 function makeEditorState(product: Product | null): EditorState {
   const commerce = product?.commerce || null;
   return {
@@ -87,49 +100,136 @@ function buildCommercePayload(state: EditorState): ProductCommerceUpdatePayload 
   return payload;
 }
 
-function parseImportPayload(raw: string): ImportRow[] {
-  const trimmed = raw.trim();
-  if (!trimmed) return [];
-  const parsed = JSON.parse(trimmed);
-  if (!Array.isArray(parsed)) {
-    throw new Error("Bulk import JSON must be an array.");
+function splitDelimitedLine(line: string, delimiter: "," | "\t"): string[] {
+  const cells: string[] = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    const next = line[index + 1];
+
+    if (char === "\"") {
+      if (inQuotes && next === "\"") {
+        current += "\"";
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (char === delimiter && !inQuotes) {
+      cells.push(current.trim());
+      current = "";
+      continue;
+    }
+
+    current += char;
   }
 
-  return parsed.map((item, index) => {
-    if (!item || typeof item !== "object") {
-      throw new Error(`Row ${index + 1} must be an object.`);
-    }
-    const record = item as Record<string, unknown>;
-    const productId = String(record.product_id || "").trim();
+  cells.push(current.trim());
+  return cells;
+}
+
+function parseDelimitedImport(raw: string): ImportRow[] {
+  const lines = raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length === 0) return [];
+
+  const headerLine = lines[0];
+  const delimiter: "," | "\t" = headerLine.includes("\t") ? "\t" : ",";
+  const headers = splitDelimitedLine(headerLine, delimiter).map((item) => item.trim());
+  if (!headers.includes("product_id")) {
+    throw new Error("Delimited import must include a product_id column.");
+  }
+
+  return lines.slice(1).map((line, index) => {
+    const cells = splitDelimitedLine(line, delimiter);
+    const record = new Map<string, string>();
+    headers.forEach((header, headerIndex) => {
+      record.set(header, String(cells[headerIndex] || "").trim());
+    });
+
+    const productId = String(record.get("product_id") || "").trim();
     if (!productId) {
-      throw new Error(`Row ${index + 1} is missing product_id.`);
+      throw new Error(`Row ${index + 2} is missing product_id.`);
     }
 
-    const packSizeRaw = record.pack_size;
-    let packSize: ImportRow["pack_size"];
-    if (packSizeRaw && typeof packSizeRaw === "object") {
-      const packSizeRecord = packSizeRaw as Record<string, unknown>;
-      packSize = {
-        label: packSizeRecord.label == null ? undefined : String(packSizeRecord.label),
-        unit: packSizeRecord.unit == null ? undefined : String(packSizeRecord.unit),
-        value:
-          packSizeRecord.value == null || packSizeRecord.value === ""
-            ? null
-            : Number(packSizeRecord.value),
-      };
-      if (packSize.value != null && !Number.isFinite(packSize.value)) {
-        throw new Error(`Row ${index + 1} has an invalid pack_size.value.`);
-      }
+    const packSizeValueRaw = String(record.get("pack_size_value") || "").trim();
+    const packSizeValue = packSizeValueRaw ? Number(packSizeValueRaw) : null;
+    if (packSizeValueRaw && !Number.isFinite(packSizeValue)) {
+      throw new Error(`Row ${index + 2} has an invalid pack_size_value.`);
     }
+
+    const packSizeLabel = String(record.get("pack_size_label") || "").trim();
+    const packSizeUnit = String(record.get("pack_size_unit") || "").trim();
 
     return {
       product_id: productId,
-      price_label: record.price_label == null ? undefined : String(record.price_label),
-      inventory_label: record.inventory_label == null ? undefined : String(record.inventory_label),
-      shipping_eta_label: record.shipping_eta_label == null ? undefined : String(record.shipping_eta_label),
-      pack_size: packSize,
+      price_label: String(record.get("price_label") || "").trim() || undefined,
+      inventory_label: String(record.get("inventory_label") || "").trim() || undefined,
+      shipping_eta_label: String(record.get("shipping_eta_label") || "").trim() || undefined,
+      pack_size:
+        packSizeLabel || packSizeUnit || packSizeValueRaw
+          ? {
+              label: packSizeLabel || undefined,
+              unit: packSizeUnit || undefined,
+              value: packSizeValue,
+            }
+          : undefined,
     };
   });
+}
+
+function parseImportPayload(raw: string): ImportRow[] {
+  const trimmed = raw.trim();
+  if (!trimmed) return [];
+  if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
+    const parsed = JSON.parse(trimmed);
+    if (!Array.isArray(parsed)) {
+      throw new Error("Bulk import JSON must be an array.");
+    }
+
+    return parsed.map((item, index) => {
+      if (!item || typeof item !== "object") {
+        throw new Error(`Row ${index + 1} must be an object.`);
+      }
+      const record = item as Record<string, unknown>;
+      const productId = String(record.product_id || "").trim();
+      if (!productId) {
+        throw new Error(`Row ${index + 1} is missing product_id.`);
+      }
+
+      const packSizeRaw = record.pack_size;
+      let packSize: ImportRow["pack_size"];
+      if (packSizeRaw && typeof packSizeRaw === "object") {
+        const packSizeRecord = packSizeRaw as Record<string, unknown>;
+        packSize = {
+          label: packSizeRecord.label == null ? undefined : String(packSizeRecord.label),
+          unit: packSizeRecord.unit == null ? undefined : String(packSizeRecord.unit),
+          value:
+            packSizeRecord.value == null || packSizeRecord.value === ""
+              ? null
+              : Number(packSizeRecord.value),
+        };
+        if (packSize.value != null && !Number.isFinite(packSize.value)) {
+          throw new Error(`Row ${index + 1} has an invalid pack_size.value.`);
+        }
+      }
+
+      return {
+        product_id: productId,
+        price_label: record.price_label == null ? undefined : String(record.price_label),
+        inventory_label: record.inventory_label == null ? undefined : String(record.inventory_label),
+        shipping_eta_label: record.shipping_eta_label == null ? undefined : String(record.shipping_eta_label),
+        pack_size: packSize,
+      };
+    });
+  }
+  return parseDelimitedImport(trimmed);
 }
 
 export default function CommerceWorkbench({ initialProducts }: CommerceWorkbenchProps) {
@@ -140,21 +240,7 @@ export default function CommerceWorkbench({ initialProducts }: CommerceWorkbench
   const [editor, setEditor] = useState<EditorState>(() => makeEditorState(initialProducts[0] || null));
   const [saveState, setSaveState] = useState<"idle" | "saving" | "done">("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [importDraft, setImportDraft] = useState(
-    JSON.stringify(
-      [
-        {
-          product_id: "replace-with-product-id",
-          price_label: "$24",
-          inventory_label: "In stock",
-          shipping_eta_label: "Ships in 2-4 business days",
-          pack_size: { label: "250 mL", unit: "mL", value: 250 },
-        },
-      ],
-      null,
-      2,
-    ),
-  );
+  const [importDraft, setImportDraft] = useState(TSV_TEMPLATE);
   const [importState, setImportState] = useState<"idle" | "running" | "done">("idle");
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const deferredQuery = useDeferredValue(searchQuery.trim().toLowerCase());
@@ -479,13 +565,46 @@ export default function CommerceWorkbench({ initialProducts }: CommerceWorkbench
           </article>
 
           <article className="rounded-[32px] border border-black/8 bg-[linear-gradient(180deg,#eef6ff_0%,#ffffff_100%)] p-6 shadow-[0_20px_46px_rgba(15,23,42,0.06)]">
-            <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-sky-700">Bulk JSON import</p>
+            <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-sky-700">Bulk import</p>
             <h2 className="mt-3 text-[30px] font-semibold tracking-[-0.04em] text-slate-950">
-              Apply multiple commerce updates without manual API calls.
+              Apply JSON, CSV, or TSV commerce updates without manual API calls.
             </h2>
             <p className="mt-3 text-[14px] leading-6 text-slate-600">
-              Paste a JSON array of commerce patches. Each row must include `product_id`. Empty strings clear a field.
+              Accepted headers: <span className="font-mono text-[12px]">{IMPORT_HEADERS.join(", ")}</span>. Each row must
+              include `product_id`. Empty strings clear a field.
             </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setImportDraft(TSV_TEMPLATE)}
+                className="rounded-full border border-black/10 bg-white px-4 py-2 text-[12px] font-medium text-slate-700"
+              >
+                Load TSV template
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setImportDraft(
+                    JSON.stringify(
+                      [
+                        {
+                          product_id: "replace-with-product-id",
+                          price_label: "$24",
+                          inventory_label: "In stock",
+                          shipping_eta_label: "Ships in 2-4 business days",
+                          pack_size: { label: "250 mL", unit: "mL", value: 250 },
+                        },
+                      ],
+                      null,
+                      2,
+                    ),
+                  )
+                }
+                className="rounded-full border border-black/10 bg-white px-4 py-2 text-[12px] font-medium text-slate-700"
+              >
+                Load JSON template
+              </button>
+            </div>
             <textarea
               value={importDraft}
               onChange={(event) => setImportDraft(event.target.value)}
