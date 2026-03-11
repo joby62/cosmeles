@@ -47,7 +47,7 @@ export default async function ShopCategoryPage({
           <p className="mt-3 text-[15px] leading-7 text-slate-500">{category.routineHint}</p>
           <div className="mt-7 flex flex-wrap gap-3">
             <Link
-              href="/match"
+              href={category.key === "shampoo" ? "/match" : `/match?category=${encodeURIComponent(category.key)}`}
               className="inline-flex h-12 items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-6 text-[14px] font-semibold text-white shadow-[0_14px_36px_rgba(0,113,227,0.28)]"
             >
               Find my match

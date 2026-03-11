@@ -214,20 +214,102 @@ export type MobileWikiProductDetailResponse = {
   };
 };
 
+export type MobileSelectionResolveRequest = {
+  category: CategoryKey;
+  answers: Record<string, string>;
+  reuse_existing?: boolean;
+};
+
+export type MobileSelectionChoice = {
+  key: string;
+  value: string;
+  label: string;
+};
+
+export type MobileSelectionRuleHit = {
+  rule: string;
+  effect: string;
+};
+
+export type MobileSelectionRecommendationSource =
+  | "featured_slot"
+  | "route_mapping"
+  | "category_fallback";
+
+export type MobileSelectionMatrixRouteScore = {
+  route_key: string;
+  route_title: string;
+  score_before_mask: number;
+  score_after_mask?: number | null;
+  is_excluded: boolean;
+  rank: number;
+  gap_from_best?: number | null;
+};
+
+export type MobileSelectionMatrixQuestionRouteDelta = {
+  route_key: string;
+  route_title: string;
+  delta: number;
+};
+
+export type MobileSelectionMatrixQuestionContribution = {
+  question_key: string;
+  question_title: string;
+  answer_value: string;
+  answer_label: string;
+  route_deltas: MobileSelectionMatrixQuestionRouteDelta[];
+};
+
+export type MobileSelectionMatrixVetoRoute = {
+  route_key: string;
+  route_title: string;
+};
+
+export type MobileSelectionMatrixTriggeredVeto = {
+  trigger: string;
+  note: string;
+  excluded_routes: MobileSelectionMatrixVetoRoute[];
+};
+
+export type MobileSelectionMatrixTopRoute = {
+  route_key: string;
+  route_title: string;
+  score_after_mask: number;
+};
+
+export type MobileSelectionMatrixAnalysis = {
+  routes: MobileSelectionMatrixRouteScore[];
+  question_contributions: MobileSelectionMatrixQuestionContribution[];
+  triggered_vetoes: MobileSelectionMatrixTriggeredVeto[];
+  top2: MobileSelectionMatrixTopRoute[];
+};
+
 export type MobileSelectionResolveResponse = {
   status: string;
   session_id: string;
+  reused: boolean;
+  is_pinned: boolean;
+  pinned_at?: string | null;
   category: CategoryKey;
+  rules_version: string;
   route: {
     key: string;
     title: string;
   };
+  choices: MobileSelectionChoice[];
+  rule_hits: MobileSelectionRuleHit[];
+  recommendation_source: MobileSelectionRecommendationSource;
+  matrix_analysis: MobileSelectionMatrixAnalysis;
   recommended_product: Product;
   links: {
     product: string;
     wiki: string;
   };
   created_at: string;
+};
+
+export type MobileSelectionPinRequest = {
+  pinned: boolean;
 };
 
 export type MobileCompareCategoryItem = {
@@ -677,6 +759,47 @@ export async function fetchMobileWikiProductDetail(productId: string): Promise<M
   if (!value) throw new Error("productId is required.");
   const response = await apiFetch<MobileWikiProductDetailResponse>(`/api/mobile/wiki/products/${encodeURIComponent(value)}`);
   return response.item;
+}
+
+export async function resolveMobileSelection(
+  payload: MobileSelectionResolveRequest,
+): Promise<MobileSelectionResolveResponse> {
+  return apiFetch<MobileSelectionResolveResponse>("/api/mobile/selection/resolve", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchMobileSelectionSession(sessionId: string): Promise<MobileSelectionResolveResponse> {
+  const value = sessionId.trim();
+  if (!value) throw new Error("sessionId is required.");
+  return apiFetch<MobileSelectionResolveResponse>(`/api/mobile/selection/sessions/${encodeURIComponent(value)}`);
+}
+
+export async function listMobileSelectionSessions(params?: {
+  category?: CategoryKey;
+  offset?: number;
+  limit?: number;
+}): Promise<MobileSelectionResolveResponse[]> {
+  const search = new URLSearchParams();
+  if (params?.category) search.set("category", params.category);
+  if (typeof params?.offset === "number") search.set("offset", String(params.offset));
+  if (typeof params?.limit === "number") search.set("limit", String(params.limit));
+  const query = search.toString();
+  const path = query ? `/api/mobile/selection/sessions?${query}` : "/api/mobile/selection/sessions";
+  return apiFetch<MobileSelectionResolveResponse[]>(path);
+}
+
+export async function pinMobileSelectionSession(
+  sessionId: string,
+  payload: MobileSelectionPinRequest,
+): Promise<MobileSelectionResolveResponse> {
+  const value = sessionId.trim();
+  if (!value) throw new Error("sessionId is required.");
+  return apiFetch<MobileSelectionResolveResponse>(`/api/mobile/selection/sessions/${encodeURIComponent(value)}/pin`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function fetchMobileBagItems(params?: {

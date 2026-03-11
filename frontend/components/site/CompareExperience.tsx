@@ -323,7 +323,7 @@ export default function CompareExperience({ initialCategory, initialPick = "" }:
               {!bootstrap.profile.has_history_profile ? (
                 <div className="mt-6 flex flex-wrap gap-3">
                   <Link
-                    href="/match"
+                    href={category === "shampoo" ? "/match" : `/match?category=${encodeURIComponent(category)}`}
                     className="inline-flex h-11 items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-5 text-[14px] font-semibold text-white"
                   >
                     Build compare basis

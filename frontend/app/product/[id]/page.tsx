@@ -144,7 +144,7 @@ export default async function ProductPage({
               Compare
             </Link>
             <Link
-              href="/match"
+              href={doc.product.category === "shampoo" ? "/match" : `/match?category=${encodeURIComponent(doc.product.category)}`}
               className="inline-flex h-11 items-center justify-center rounded-full border border-black/10 bg-white px-5 text-[13px] font-semibold text-slate-700"
             >
               Find my match
@@ -257,7 +257,7 @@ export default async function ProductPage({
                 Compare side by side
               </Link>
               <Link
-                href="/match"
+                href={doc.product.category === "shampoo" ? "/match" : `/match?category=${encodeURIComponent(doc.product.category)}`}
                 className="inline-flex h-11 items-center justify-center rounded-full border border-black/10 bg-white px-5 text-[13px] font-semibold text-slate-700"
               >
                 Get a match
