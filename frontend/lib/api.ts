@@ -103,6 +103,258 @@ type ProductAnalysisIndexListResponse = {
   items: ProductAnalysisIndexItem[];
 };
 
+export type IngredientLibraryListItem = {
+  ingredient_id: string;
+  category: string;
+  ingredient_name: string;
+  ingredient_name_en?: string | null;
+  summary: string;
+  source_count: number;
+  source_trace_ids: string[];
+  generated_at?: string | null;
+  storage_path: string;
+};
+
+type IngredientLibraryListResponse = {
+  status: string;
+  category?: string | null;
+  query?: string | null;
+  total: number;
+  offset: number;
+  limit: number;
+  items: IngredientLibraryListItem[];
+};
+
+export type MobileWikiFacet = {
+  key: string;
+  label: string;
+  count: number;
+};
+
+export type MobileWikiProductItem = {
+  product: Product;
+  category_label: string;
+  target_type_key?: string | null;
+  target_type_title?: string | null;
+  target_type_level: "subcategory" | "category" | "unknown";
+  mapping_ready: boolean;
+  primary_confidence?: number | null;
+  secondary_type_key?: string | null;
+  secondary_type_title?: string | null;
+  secondary_confidence?: number | null;
+  is_featured: boolean;
+};
+
+type MobileWikiProductListResponse = {
+  status: string;
+  category?: string | null;
+  target_type_key?: string | null;
+  query?: string | null;
+  total: number;
+  offset: number;
+  limit: number;
+  categories: MobileWikiFacet[];
+  subtypes: MobileWikiFacet[];
+  items: MobileWikiProductItem[];
+};
+
+export type MobileSelectionResolveResponse = {
+  status: string;
+  session_id: string;
+  category: CategoryKey;
+  route: {
+    key: string;
+    title: string;
+  };
+  recommended_product: Product;
+  links: {
+    product: string;
+    wiki: string;
+  };
+  created_at: string;
+};
+
+export type MobileCompareCategoryItem = {
+  key: CategoryKey;
+  label: string;
+  enabled: boolean;
+};
+
+export type MobileCompareProductLibraryItem = {
+  product: Product;
+  is_recommendation: boolean;
+  is_most_used: boolean;
+  usage_count: number;
+};
+
+export type MobileCompareBootstrapResponse = {
+  status: string;
+  trace_id: string;
+  categories: MobileCompareCategoryItem[];
+  selected_category: CategoryKey;
+  profile: {
+    has_history_profile: boolean;
+    basis: "none" | "latest" | "pinned";
+    can_skip: boolean;
+    last_completed_at?: string | null;
+    summary: string[];
+  };
+  recommendation: {
+    exists: boolean;
+    session_id?: string | null;
+    route_key?: string | null;
+    route_title?: string | null;
+    product?: Product | null;
+  };
+  product_library: {
+    recommendation_product_id?: string | null;
+    most_used_product_id?: string | null;
+    items: MobileCompareProductLibraryItem[];
+  };
+  source_guide: {
+    title: string;
+    value_points: string[];
+  };
+};
+
+export type MobileCompareJobTargetInput = {
+  source: "upload_new" | "history_product";
+  upload_id?: string | null;
+  product_id?: string | null;
+};
+
+export type MobileCompareJobRequest = {
+  category: CategoryKey;
+  profile_mode: "reuse_latest";
+  targets: MobileCompareJobTargetInput[];
+  options?: {
+    language?: string;
+    include_inci_order_diff?: boolean;
+    include_function_rank_diff?: boolean;
+  };
+};
+
+export type MobileCompareResultSection = {
+  key: "keep_benefits" | "keep_watchouts" | "ingredient_order_diff" | "profile_fit_advice";
+  title: string;
+  items: string[];
+};
+
+export type MobileCompareResult = {
+  status: string;
+  trace_id: string;
+  compare_id: string;
+  category: CategoryKey;
+  personalization: {
+    status: string;
+    basis: string;
+    missing_fields: string[];
+  };
+  verdict: {
+    decision: "keep" | "switch" | "hybrid";
+    headline: string;
+    confidence: number;
+  };
+  sections: MobileCompareResultSection[];
+  ingredient_diff: {
+    overlap: string[];
+    only_current: string[];
+    only_recommended: string[];
+    inci_order_diff: Array<{
+      ingredient: string;
+      current_rank: number;
+      recommended_rank: number;
+    }>;
+    function_rank_diff: Array<{
+      function: string;
+      current_score: number;
+      recommended_score: number;
+    }>;
+  };
+  transparency: {
+    model?: string | null;
+    warnings: string[];
+    missing_fields: string[];
+  };
+  recommendation: MobileSelectionResolveResponse;
+  current_product: ProductDoc;
+  recommended_product: ProductDoc;
+  products?: Array<{
+    target_id: string;
+    source: "upload_new" | "history_product";
+    brand?: string | null;
+    name?: string | null;
+    one_sentence?: string | null;
+  }>;
+  pair_results?: Array<{
+    pair_key: string;
+    left_target_id: string;
+    right_target_id: string;
+    left_title: string;
+    right_title: string;
+    verdict: {
+      decision: "keep" | "switch" | "hybrid";
+      headline: string;
+      confidence: number;
+    };
+    sections: MobileCompareResultSection[];
+    ingredient_diff: {
+      overlap: string[];
+      only_current: string[];
+      only_recommended: string[];
+      inci_order_diff: Array<{
+        ingredient: string;
+        current_rank: number;
+        recommended_rank: number;
+      }>;
+      function_rank_diff: Array<{
+        function: string;
+        current_score: number;
+        recommended_score: number;
+      }>;
+    };
+  }>;
+  overall?: {
+    decision: "keep" | "switch" | "hybrid";
+    headline: string;
+    confidence: number;
+    summary_items: string[];
+  } | null;
+  created_at: string;
+};
+
+export type MobileCompareSession = {
+  status: "running" | "done" | "failed";
+  compare_id: string;
+  category: CategoryKey | string;
+  created_at: string;
+  updated_at: string;
+  stage?: string | null;
+  stage_label?: string | null;
+  message?: string | null;
+  percent: number;
+  pair_index?: number | null;
+  pair_total?: number | null;
+  targets_snapshot?: MobileCompareJobTargetInput[];
+  result?: {
+    decision?: "keep" | "switch" | "hybrid" | null;
+    headline?: string | null;
+    confidence: number;
+    created_at?: string | null;
+  } | null;
+  error?: {
+    code: string;
+    detail: string;
+    http_status: number;
+    retryable: boolean;
+  } | null;
+};
+
+export type SSEEvent = {
+  event: string;
+  data: Record<string, unknown>;
+};
+
 export type MobileBagItem = {
   item_id: string;
   quantity: number;
@@ -195,6 +447,86 @@ async function apiFetch<T>(path: string, init?: ApiFetchInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+async function postSSE<T>(path: string, init: RequestInit, onEvent: (event: SSEEvent) => void): Promise<T> {
+  const base = getBaseForFetch();
+  const url = base ? new URL(path, base).toString() : path;
+  const headersValue = new Headers({
+    accept: "text/event-stream",
+  });
+
+  const initHeaders = new Headers(init.headers || {});
+  initHeaders.forEach((value, key) => {
+    headersValue.set(key, value);
+  });
+
+  const response = await fetch(url, {
+    ...init,
+    headers: headersValue,
+    credentials: "include",
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`${path} ${response.status}: ${text}`);
+  }
+
+  if (!response.body) {
+    throw new Error(`${path}: stream body is empty`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finalResult: T | null = null;
+  let finalError: string | null = null;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    buffer = buffer.replace(/\r\n/g, "\n");
+
+    while (true) {
+      const splitIndex = buffer.indexOf("\n\n");
+      if (splitIndex < 0) break;
+      const raw = buffer.slice(0, splitIndex).trim();
+      buffer = buffer.slice(splitIndex + 2);
+      if (!raw || raw.startsWith(":")) continue;
+
+      let event = "message";
+      const dataLines: string[] = [];
+      for (const line of raw.split("\n")) {
+        if (line.startsWith("event:")) event = line.slice(6).trim();
+        if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
+      }
+
+      const dataRaw = dataLines.join("\n");
+      let data: Record<string, unknown> = {};
+      try {
+        data = dataRaw ? (JSON.parse(dataRaw) as Record<string, unknown>) : {};
+      } catch {
+        data = { raw: dataRaw };
+      }
+
+      onEvent({ event, data });
+      if (event === "result") {
+        finalResult = data as T;
+      } else if (event === "error") {
+        finalError = typeof data.detail === "string" ? data.detail : JSON.stringify(data);
+      }
+    }
+  }
+
+  if (finalError) {
+    throw new Error(finalError);
+  }
+  if (finalResult == null) {
+    throw new Error(`${path}: stream ended without result`);
+  }
+  return finalResult;
+}
+
 function normalizePublicImagePath(path: string): string {
   if (!path) return "/placeholder-product.svg";
   if (path.startsWith("http://") || path.startsWith("https://")) return path;
@@ -239,6 +571,40 @@ export async function fetchProductAnalysisIndex(category?: string): Promise<Prod
   return response.items || [];
 }
 
+export async function fetchIngredientLibrary(params?: {
+  category?: string;
+  q?: string;
+  offset?: number;
+  limit?: number;
+}): Promise<IngredientLibraryListResponse> {
+  const search = new URLSearchParams();
+  if (params?.category) search.set("category", params.category);
+  if (params?.q) search.set("q", params.q);
+  if (typeof params?.offset === "number") search.set("offset", String(params.offset));
+  if (typeof params?.limit === "number") search.set("limit", String(params.limit));
+  const query = search.toString();
+  const path = query ? `/api/products/ingredients/library?${query}` : "/api/products/ingredients/library";
+  return apiFetch<IngredientLibraryListResponse>(path);
+}
+
+export async function fetchMobileWikiProducts(params?: {
+  category?: CategoryKey;
+  target_type_key?: string;
+  q?: string;
+  offset?: number;
+  limit?: number;
+}): Promise<MobileWikiProductListResponse> {
+  const search = new URLSearchParams();
+  if (params?.category) search.set("category", params.category);
+  if (params?.target_type_key) search.set("target_type_key", params.target_type_key);
+  if (params?.q) search.set("q", params.q);
+  if (typeof params?.offset === "number") search.set("offset", String(params.offset));
+  if (typeof params?.limit === "number") search.set("limit", String(params.limit));
+  const query = search.toString();
+  const path = query ? `/api/mobile/wiki/products?${query}` : "/api/mobile/wiki/products";
+  return apiFetch<MobileWikiProductListResponse>(path);
+}
+
 export async function fetchMobileBagItems(params?: {
   category?: CategoryKey;
   offset?: number;
@@ -273,6 +639,46 @@ export async function deleteMobileBagItem(itemId: string): Promise<{ status: str
     `/api/mobile/bag/items/${encodeURIComponent(value)}`,
     { method: "DELETE" },
   );
+}
+
+export async function fetchMobileCompareBootstrap(category?: CategoryKey): Promise<MobileCompareBootstrapResponse> {
+  const query = category ? `?category=${encodeURIComponent(category)}` : "";
+  return apiFetch<MobileCompareBootstrapResponse>(`/api/mobile/compare/bootstrap${query}`);
+}
+
+export async function runMobileCompareJobStream(
+  payload: MobileCompareJobRequest,
+  onEvent: (event: SSEEvent) => void,
+): Promise<MobileCompareResult> {
+  return postSSE<MobileCompareResult>(
+    "/api/mobile/compare/jobs/stream",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+      headers: { "content-type": "application/json" },
+    },
+    onEvent,
+  );
+}
+
+export async function fetchMobileCompareResult(compareId: string): Promise<MobileCompareResult> {
+  const value = compareId.trim();
+  if (!value) throw new Error("compareId is required.");
+  return apiFetch<MobileCompareResult>(`/api/mobile/compare/results/${encodeURIComponent(value)}`);
+}
+
+export async function listMobileCompareSessions(params?: {
+  category?: CategoryKey;
+  offset?: number;
+  limit?: number;
+}): Promise<MobileCompareSession[]> {
+  const search = new URLSearchParams();
+  if (params?.category) search.set("category", params.category);
+  if (typeof params?.offset === "number") search.set("offset", String(params.offset));
+  if (typeof params?.limit === "number") search.set("limit", String(params.limit));
+  const query = search.toString();
+  const path = query ? `/api/mobile/compare/sessions?${query}` : "/api/mobile/compare/sessions";
+  return apiFetch<MobileCompareSession[]>(path);
 }
 
 export function resolveImageUrl(product: Product): string {

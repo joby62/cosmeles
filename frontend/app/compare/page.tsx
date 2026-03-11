@@ -1,42 +1,35 @@
-import Link from "next/link";
+import CompareExperience from "@/components/site/CompareExperience";
 import FeatureShell from "@/components/site/FeatureShell";
+import { isCategoryKey, type CategoryKey } from "@/lib/site";
 
-const steps = [
-  {
-    title: "Choose a category first",
-    summary: "Compare works better when the routine layer stays focused.",
-    href: "/shop",
-  },
-  {
-    title: "Open the product profiles",
-    summary: "Use product pages to inspect ingredient and fit signals before comparing.",
-    href: "/search",
-  },
-  {
-    title: "Return to side-by-side decisions",
-    summary: "The rebuilt compare experience will land here as the new storefront catches up.",
-    href: "/match",
-  },
-];
+export const dynamic = "force-dynamic";
 
-export default function ComparePage() {
+type SearchParams = Record<string, string | string[] | undefined>;
+
+function firstValue(value: string | string[] | undefined): string {
+  return Array.isArray(value) ? String(value[0] || "").trim() : String(value || "").trim();
+}
+
+export default async function ComparePage({
+  searchParams,
+}: {
+  searchParams?: Promise<SearchParams> | SearchParams;
+}) {
+  const resolvedSearchParams = (await Promise.resolve(searchParams)) || {};
+  const categoryValue = firstValue(resolvedSearchParams.category);
+  const initialCategory: CategoryKey = isCategoryKey(categoryValue) ? categoryValue : "shampoo";
+  const initialPick = firstValue(resolvedSearchParams.pick);
+
   return (
     <FeatureShell
       eyebrow="Compare"
-      title="Side-by-side comparison is moving into the new storefront shell."
-      summary="The old compare engine already exists, but the public English storefront needs its own decision layout and copy structure. For now, use product profiles as the first review layer."
-      highlights={["Ingredient-led differences", "Clearer tradeoff language", "Reusable compare history later"]}
+      title="Compare products against your saved routine basis."
+      summary="Jeslect Compare now uses the live mobile compare engine inside the new storefront shell. Pick a category, choose 2 to 3 products, and read the decision in a calmer English layout."
+      highlights={["Live compare engine", "Saved compare history", "English result layout"]}
       primaryCta={{ href: "/shop", label: "Browse products" }}
-      secondaryCta={{ href: "/search", label: "Search profiles" }}
+      secondaryCta={{ href: "/search", label: "Search products" }}
     >
-      <div className="grid gap-3 md:grid-cols-3">
-        {steps.map((step) => (
-          <Link key={step.title} href={step.href} className="rounded-[24px] border border-black/8 bg-slate-50 px-4 py-4">
-            <h2 className="text-[18px] font-semibold tracking-[-0.03em] text-slate-950">{step.title}</h2>
-            <p className="mt-3 text-[14px] leading-6 text-slate-600">{step.summary}</p>
-          </Link>
-        ))}
-      </div>
+      <CompareExperience initialCategory={initialCategory} initialPick={initialPick} />
     </FeatureShell>
   );
 }

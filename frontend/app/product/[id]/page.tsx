@@ -138,7 +138,7 @@ export default async function ProductPage({
           <div className="mt-6 flex flex-wrap gap-3">
             <AddToBagButton productId={id} />
             <Link
-              href="/compare"
+              href={`/compare?category=${encodeURIComponent(doc.product.category)}&pick=${encodeURIComponent(id)}`}
               className="inline-flex h-11 items-center justify-center rounded-full border border-black/10 bg-white px-5 text-[13px] font-semibold text-slate-700"
             >
               Compare
