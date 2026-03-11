@@ -7,7 +7,7 @@ import type { Lang } from "@/lib/i18n";
 import { getInitialLang, setLang as setStoredLang, subscribeLang } from "@/lib/i18n";
 import { brandByLang } from "@/lib/brand";
 import { TOP_CATEGORIES, CATEGORY_CONFIG, type CategoryKey } from "@/lib/catalog";
-import { PRODUCT_MANAGEMENT_SECTIONS } from "@/lib/productManagementNav";
+import { PRODUCT_MANAGEMENT_FLYOUT_GROUPS } from "@/lib/productManagementNav";
 
 type FlyoutItem = { label: string; href: string };
 type FlyoutColumn = { title: string; items: FlyoutItem[] };
@@ -26,45 +26,13 @@ function getFlyout(category: NavFlyoutKey, lang: Lang): FlyoutColumn[] {
   const t = flyoutTitles(lang);
 
   if (category === "product") {
-    return [
-      {
-        title: lang === "zh" ? "工作区" : "Workspaces",
-        items: PRODUCT_MANAGEMENT_SECTIONS.map((item) => ({
-          label: lang === "zh" ? item.titleZh : item.navLabelEn,
-          href: item.href,
-        })),
-      },
-      {
-        title: lang === "zh" ? "产品" : "Products",
-        items:
-          lang === "zh"
-            ? [
-                { label: "上传与成分解析", href: "/product/pipeline" },
-                { label: "同品归并与类型映射", href: "/product/pipeline" },
-                { label: "展示与主推配置", href: "/product/governance" },
-              ]
-            : [
-                { label: "Upload & parsing", href: "/product/pipeline" },
-                { label: "Dedup & route mapping", href: "/product/pipeline" },
-                { label: "Catalog & featured slots", href: "/product/governance" },
-              ],
-      },
-      {
-        title: lang === "zh" ? "成分" : "Ingredients",
-        items:
-          lang === "zh"
-            ? [
-                { label: "成分分析构建", href: "/product/pipeline" },
-                { label: "成分可视化", href: "/product/ingredients" },
-                { label: "成分清理", href: "/product/ingredients" },
-              ]
-            : [
-                { label: "Ingredient build", href: "/product/pipeline" },
-                { label: "Ingredient visualization", href: "/product/ingredients" },
-                { label: "Ingredient cleanup", href: "/product/ingredients" },
-              ],
-      },
-    ];
+    return PRODUCT_MANAGEMENT_FLYOUT_GROUPS.map((group) => ({
+      title: lang === "zh" ? group.titleZh : group.titleEn,
+      items: group.items.map((item) => ({
+        label: lang === "zh" ? item.labelZh : item.labelEn,
+        href: item.href,
+      })),
+    }));
   }
 
   const routeDefs = CATEGORY_CONFIG[category].desktopRoutes;

@@ -24,7 +24,7 @@ export default async function IngredientGovernancePage() {
       aiMetrics={aiMetrics}
       issues={data.issues}
     >
-      <section id="ingredient-cleanup-workbench" className="mt-10 scroll-mt-6">
+      <section id="ingredient-cleanup-workbench" className="mt-10 scroll-mt-20">
         {products && routeMappings ? (
           <IngredientCleanupWorkbench initialProducts={products} initialRouteMappings={routeMappings} />
         ) : (

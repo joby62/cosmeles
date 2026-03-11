@@ -29,31 +29,31 @@ export default async function ProductPipelinePage() {
       aiMetrics={aiMetrics}
       issues={data.issues}
     >
-      <section id="product-ingest-workbench" className="mt-10 scroll-mt-6">
+      <section id="product-ingest-workbench" className="mt-10 scroll-mt-20">
         <ProductIngestWorkbench />
       </section>
-      <section id="product-dedup-manager" className="scroll-mt-6">
+      <section id="product-dedup-manager" className="scroll-mt-20">
         {products ? (
           <ProductDedupManager initialProducts={products} />
         ) : (
           <ProductManagementStageErrorCard title="同品归并台不可用" errors={productError ? [productError] : []} />
         )}
       </section>
-      <section id="ingredient-library-generator" className="scroll-mt-6">
+      <section id="ingredient-library-generator" className="scroll-mt-20">
         {products ? (
           <IngredientLibraryGenerator initialProducts={products} showCleanupConsole={false} />
         ) : (
           <ProductManagementStageErrorCard title="成分分析台不可用" errors={productError ? [productError] : []} />
         )}
       </section>
-      <section id="product-route-mapping-generator" className="scroll-mt-6">
+      <section id="product-route-mapping-generator" className="scroll-mt-20">
         {products ? (
           <ProductRouteMappingGenerator initialProducts={products} />
         ) : (
           <ProductManagementStageErrorCard title="产品类型映射台不可用" errors={productError ? [productError] : []} />
         )}
       </section>
-      <section id="product-analysis-generator" className="scroll-mt-6">
+      <section id="product-analysis-generator" className="scroll-mt-20">
         {products && analysisIndex ? (
           <ProductAnalysisGenerator initialProducts={products} initialAnalysisIndex={analysisIndex} />
         ) : (

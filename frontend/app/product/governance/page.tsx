@@ -27,7 +27,7 @@ export default async function ProductGovernancePage() {
       aiMetrics={aiMetrics}
       issues={data.issues}
     >
-      <section id="product-catalog-manager" className="mt-10 scroll-mt-6">
+      <section id="product-catalog-manager" className="mt-10 scroll-mt-20">
         {products && routeMappings && featuredSlots ? (
           <ProductCatalogManager
             initialProducts={products}
@@ -45,7 +45,7 @@ export default async function ProductGovernancePage() {
           />
         )}
       </section>
-      <section id="product-cleanup-workbench" className="scroll-mt-6">
+      <section id="product-cleanup-workbench" className="scroll-mt-20">
         {products ? (
           <ProductCleanupWorkbench initialProducts={products} />
         ) : (

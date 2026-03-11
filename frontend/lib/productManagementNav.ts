@@ -10,6 +10,19 @@ export type ProductManagementSectionDef = {
   bulletsZh: string[];
 };
 
+export type ProductManagementFlyoutFeatureDef = {
+  labelZh: string;
+  labelEn: string;
+  href: string;
+};
+
+export type ProductManagementFlyoutGroupDef = {
+  key: Exclude<ProductManagementSectionKey, "overview">;
+  titleZh: string;
+  titleEn: string;
+  items: ProductManagementFlyoutFeatureDef[];
+};
+
 export const PRODUCT_MANAGEMENT_SECTIONS: ProductManagementSectionDef[] = [
   {
     key: "overview",
@@ -54,3 +67,37 @@ export function getProductManagementSection(
 ): ProductManagementSectionDef {
   return PRODUCT_MANAGEMENT_SECTIONS.find((item) => item.key === key) || PRODUCT_MANAGEMENT_SECTIONS[0];
 }
+
+export const PRODUCT_MANAGEMENT_FLYOUT_GROUPS: ProductManagementFlyoutGroupDef[] = [
+  {
+    key: "pipeline",
+    titleZh: "产品生产流水线",
+    titleEn: "Pipeline",
+    items: [
+      { labelZh: "产品上传台", labelEn: "Upload", href: "/product/pipeline#product-ingest-workbench" },
+      { labelZh: "同品归并台", labelEn: "Dedup", href: "/product/pipeline#product-dedup-manager" },
+      { labelZh: "成分分析台", labelEn: "Ingredient Build", href: "/product/pipeline#ingredient-library-generator" },
+      { labelZh: "产品类型映射台", labelEn: "Route Mapping", href: "/product/pipeline#product-route-mapping-generator" },
+      { labelZh: "产品增强分析台", labelEn: "Product Analysis", href: "/product/pipeline#product-analysis-generator" },
+    ],
+  },
+  {
+    key: "governance",
+    titleZh: "产品治理",
+    titleEn: "Governance",
+    items: [
+      { labelZh: "产品展示筛选", labelEn: "Catalog Filter", href: "/product/governance#product-catalog-manager" },
+      { labelZh: "主推配置", labelEn: "Featured Slots", href: "/product/governance#product-catalog-manager" },
+      { labelZh: "产品清理台", labelEn: "Cleanup", href: "/product/governance#product-cleanup-workbench" },
+    ],
+  },
+  {
+    key: "ingredients",
+    titleZh: "成分治理",
+    titleEn: "Ingredients",
+    items: [
+      { labelZh: "成分可视化", labelEn: "Visualization", href: "/product/ingredients#ingredient-visualization-panel" },
+      { labelZh: "成分清理台", labelEn: "Cleanup", href: "/product/ingredients#ingredient-cleanup-panel" },
+    ],
+  },
+];
