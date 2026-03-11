@@ -20,6 +20,7 @@ export default function ProductManagementShell({
   aiMetrics,
   issues,
   children,
+  widthMode = "default",
 }: {
   activeSection: ProductManagementSectionKey;
   productsCount: number | null;
@@ -27,11 +28,16 @@ export default function ProductManagementShell({
   aiMetrics: AIMetricsSummary | null;
   issues?: ProductManagementDataError[];
   children: ReactNode;
+  widthMode?: "default" | "wide";
 }) {
   const current = getProductManagementSection(activeSection);
+  const widthClass =
+    widthMode === "wide"
+      ? "max-w-[1780px] px-6 xl:px-8 2xl:px-10"
+      : "max-w-[1180px] px-6 md:px-8";
 
   return (
-    <main className="mx-auto min-h-screen w-full max-w-[1180px] px-6 py-12">
+    <main className={`mx-auto min-h-screen w-full py-12 ${widthClass}`}>
       <section className="relative overflow-hidden rounded-[34px] border border-black/10 bg-gradient-to-br from-[#f7f9ff] via-white to-[#f2f6f1] px-8 py-9">
         <div className="pointer-events-none absolute -right-12 -top-12 h-44 w-44 rounded-full bg-[#2f7bf6]/10 blur-2xl" />
         <div className="pointer-events-none absolute -bottom-16 -left-8 h-48 w-48 rounded-full bg-[#00a86b]/10 blur-2xl" />

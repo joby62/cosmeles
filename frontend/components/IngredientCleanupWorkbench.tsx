@@ -665,9 +665,9 @@ function IngredientVisualizationPanel({
       </div>
 
       <div className="px-6 pb-6 pt-5 md:px-7">
-        <div className="sticky top-24 z-20 rounded-[28px] border border-black/10 bg-white/78 p-4 shadow-[0_18px_44px_rgba(15,23,42,0.08)] backdrop-blur-xl">
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-            <div className="space-y-3">
+        <div className="sticky top-24 z-20 rounded-[26px] border border-black/10 bg-white/82 p-4 shadow-[0_18px_44px_rgba(15,23,42,0.08)] backdrop-blur-xl">
+          <div className="space-y-3.5">
+            <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start">
               <div>
                 <div className="mb-2 text-[11px] font-semibold tracking-[0.12em] text-black/44 uppercase">一级品类</div>
                 <div className="flex flex-wrap gap-2.5">
@@ -697,40 +697,7 @@ function IngredientVisualizationPanel({
                 </div>
               </div>
 
-              {selectedCategory && subtypeOptions.length > 0 ? (
-                <div>
-                  <div className="mb-2 text-[11px] font-semibold tracking-[0.12em] text-black/44 uppercase">二级分类</div>
-                  <div className="flex flex-wrap gap-2.5">
-                    <button type="button" onClick={() => onSubtypeChange("")} className={filterTagClass(!selectedSubtype)}>
-                      全部二级分类
-                    </button>
-                    {subtypeOptions.map((item) => (
-                      <button
-                        key={item.key}
-                        type="button"
-                        onClick={() => onSubtypeChange(item.key)}
-                        className={filterTagClass(selectedSubtype === item.key)}
-                      >
-                        {item.title} ({item.count})
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              <div>
-                <div className="mb-2 text-[11px] font-semibold tracking-[0.12em] text-black/44 uppercase">关键词</div>
-                <input
-                  value={visualQuery}
-                  onChange={(event) => setVisualQuery(event.target.value)}
-                  placeholder="按成分名、英文名、摘要或二级分类检索"
-                  className="h-11 w-full rounded-2xl border border-black/12 bg-white px-4 text-[13px] text-black/82 outline-none transition focus:border-black/28 focus:shadow-[0_0_0_4px_rgba(15,23,42,0.04)]"
-                />
-              </div>
-            </div>
-
-            <div className="flex flex-col justify-between rounded-[24px] border border-black/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(246,250,255,0.96))] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)]">
-              <div>
+              <div className="rounded-[22px] border border-black/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(246,250,255,0.96))] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)]">
                 <div className="text-[11px] font-semibold tracking-[0.12em] text-black/44 uppercase">工具区</div>
                 <div className="mt-3 flex flex-wrap gap-2.5">
                   <button
@@ -752,7 +719,40 @@ function IngredientVisualizationPanel({
                   </button>
                 </div>
               </div>
-              <div className="mt-4 rounded-2xl border border-black/8 bg-white/84 px-3 py-3 text-[12px] leading-[1.65] text-black/58">
+            </div>
+
+            {selectedCategory && subtypeOptions.length > 0 ? (
+              <div>
+                <div className="mb-2 text-[11px] font-semibold tracking-[0.12em] text-black/44 uppercase">二级分类</div>
+                <div className="flex flex-wrap gap-2.5">
+                  <button type="button" onClick={() => onSubtypeChange("")} className={filterTagClass(!selectedSubtype)}>
+                    全部二级分类
+                  </button>
+                  {subtypeOptions.map((item) => (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => onSubtypeChange(item.key)}
+                      className={filterTagClass(selectedSubtype === item.key)}
+                    >
+                      {item.title} ({item.count})
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-center">
+              <div>
+                <div className="mb-2 text-[11px] font-semibold tracking-[0.12em] text-black/44 uppercase">关键词</div>
+                <input
+                  value={visualQuery}
+                  onChange={(event) => setVisualQuery(event.target.value)}
+                  placeholder="按成分名、英文名、摘要或二级分类检索"
+                  className="h-11 w-full rounded-2xl border border-black/12 bg-white px-4 text-[13px] text-black/82 outline-none transition focus:border-black/28 focus:shadow-[0_0_0_4px_rgba(15,23,42,0.04)]"
+                />
+              </div>
+              <div className="rounded-[20px] border border-black/8 bg-white/88 px-4 py-3 text-[12px] leading-[1.65] text-black/58">
                 当前展示 {formatCount(visibleIngredientTags.length)} 个成分。高频成分默认展开，低频长尾按{" "}
                 <span className="font-semibold text-black/76">{formatCount(twoHitTags.length)} 个 2 引用</span> 和{" "}
                 <span className="font-semibold text-black/76">{formatCount(oneHitTags.length)} 个 1 引用</span> 收起。
@@ -767,8 +767,8 @@ function IngredientVisualizationPanel({
           </div>
         ) : null}
 
-        <div className="mt-5 grid gap-5 xl:grid-cols-[300px_minmax(0,1fr)_340px] xl:items-start">
-          <aside className="space-y-4 xl:sticky xl:top-[172px] xl:self-start">
+        <div className="mt-5 grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)_360px] 2xl:grid-cols-[340px_minmax(0,1fr)_380px] xl:items-start">
+          <aside className="space-y-4 xl:sticky xl:top-[176px] xl:self-start">
             <section className="ingredient-preview-card overflow-hidden rounded-[28px] border border-black/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(245,249,255,0.96))] p-5 shadow-[0_22px_54px_rgba(16,24,40,0.1)]">
               <div className="ingredient-preview-glow" />
               <div className="relative">
@@ -828,17 +828,19 @@ function IngredientVisualizationPanel({
 
           <div className="space-y-5">
             <section className="rounded-[28px] border border-black/10 bg-white/88 p-4 shadow-[0_18px_44px_rgba(16,24,40,0.06)] md:p-5">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="text-[11px] font-semibold tracking-[0.12em] text-black/44 uppercase">High Frequency</div>
-                  <h3 className="mt-1 text-[24px] font-semibold tracking-[-0.02em] text-black/90">高频成分</h3>
-                  <p className="mt-1 text-[13px] leading-[1.6] text-black/58">
-                    优先展示引用次数更高的成分，适合先看主结构，再决定是否继续下钻。
-                  </p>
+              <div className="sticky top-[176px] z-10 rounded-[22px] border border-black/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,251,255,0.94))] px-4 py-4 shadow-[0_12px_32px_rgba(15,23,42,0.06)] backdrop-blur-xl">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[11px] font-semibold tracking-[0.12em] text-black/44 uppercase">High Frequency</div>
+                    <h3 className="mt-1 text-[24px] font-semibold tracking-[-0.02em] text-black/90">高频成分</h3>
+                    <p className="mt-1 text-[13px] leading-[1.6] text-black/58">
+                      优先展示引用次数更高的成分，适合先看主结构，再决定是否继续下钻。
+                    </p>
+                  </div>
+                  <span className="rounded-full border border-[#dbeafe] bg-[#f4f8ff] px-3 py-1 text-[12px] font-semibold text-[#2450a0]">
+                    {formatCount(highFrequencyTags.length)} 个高频 tag
+                  </span>
                 </div>
-                <span className="rounded-full border border-[#dbeafe] bg-[#f4f8ff] px-3 py-1 text-[12px] font-semibold text-[#2450a0]">
-                  {formatCount(highFrequencyTags.length)} 个高频 tag
-                </span>
               </div>
 
               {highFrequencyTags.length > 0 ? (
@@ -864,21 +866,23 @@ function IngredientVisualizationPanel({
             </section>
 
             <section className="rounded-[28px] border border-black/10 bg-white/88 p-4 shadow-[0_18px_44px_rgba(16,24,40,0.06)] md:p-5">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="text-[11px] font-semibold tracking-[0.12em] text-black/44 uppercase">Long Tail</div>
-                  <h3 className="mt-1 text-[24px] font-semibold tracking-[-0.02em] text-black/90">低频长尾</h3>
-                  <p className="mt-1 text-[13px] leading-[1.6] text-black/58">
-                    引用次数小于等于 2 的成分默认收起，避免长尾噪声淹没高频信息；需要时再展开完整浏览。
-                  </p>
+              <div className="sticky top-[176px] z-10 rounded-[22px] border border-black/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,251,255,0.94))] px-4 py-4 shadow-[0_12px_32px_rgba(15,23,42,0.06)] backdrop-blur-xl">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[11px] font-semibold tracking-[0.12em] text-black/44 uppercase">Long Tail</div>
+                    <h3 className="mt-1 text-[24px] font-semibold tracking-[-0.02em] text-black/90">低频长尾</h3>
+                    <p className="mt-1 text-[13px] leading-[1.6] text-black/58">
+                      引用次数小于等于 2 的成分默认收起，避免长尾噪声淹没高频信息；需要时再展开完整浏览。
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowLongTail((prev) => !prev)}
+                    className="inline-flex h-10 items-center justify-center rounded-full border border-black/12 bg-black/[0.02] px-4 text-[12px] font-semibold text-black/74 transition hover:bg-black/[0.05]"
+                  >
+                    {showLongTail ? "收起低频长尾" : `展开低频长尾 (${formatCount(lowFrequencyTags.length)})`}
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setShowLongTail((prev) => !prev)}
-                  className="inline-flex h-10 items-center justify-center rounded-full border border-black/12 bg-black/[0.02] px-4 text-[12px] font-semibold text-black/74 transition hover:bg-black/[0.05]"
-                >
-                  {showLongTail ? "收起低频长尾" : `展开低频长尾 (${formatCount(lowFrequencyTags.length)})`}
-                </button>
               </div>
 
               <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -912,7 +916,7 @@ function IngredientVisualizationPanel({
             </section>
           </div>
 
-          <aside className="space-y-4 xl:sticky xl:top-[172px] xl:self-start">
+          <aside className="space-y-4 xl:sticky xl:top-[176px] xl:self-start">
             <section className="rounded-[28px] border border-black/10 bg-white/90 p-5 shadow-[0_18px_44px_rgba(16,24,40,0.06)]">
               <div className="flex items-start justify-between gap-3">
                 <div>

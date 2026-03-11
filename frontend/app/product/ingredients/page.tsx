@@ -23,6 +23,7 @@ export default async function IngredientGovernancePage() {
       categoryStats={data.categoryStats}
       aiMetrics={aiMetrics}
       issues={data.issues}
+      widthMode="wide"
     >
       <section id="ingredient-cleanup-workbench" className="mt-10 scroll-mt-20">
         {products && routeMappings ? (
