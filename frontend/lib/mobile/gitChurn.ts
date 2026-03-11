@@ -227,6 +227,16 @@ function emptyModuleTotal(): GitChurnModuleTotal {
   return { commits: 0, insertions: 0, deletions: 0, net: 0 };
 }
 
+function startOfDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function addDayOffset(date: Date, offset: number): Date {
+  const next = startOfDay(date);
+  next.setDate(next.getDate() + offset);
+  return next;
+}
+
 function formatDayKey(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
@@ -324,7 +334,8 @@ export function getGitChurnDashboard(options: GitChurnOptions = {}): GitChurnDas
   const sinceDays = useAllHistory ? 0 : Math.max(1, Math.floor(sinceDaysInput));
   const maxCommits = Math.max(20, Math.floor(options.maxCommits ?? 140));
   const ref = options.ref?.trim();
-  const generatedAtIso = new Date().toISOString();
+  const generatedAt = new Date();
+  const generatedAtIso = generatedAt.toISOString();
 
   const base: GitChurnDashboard = {
     available: false,
@@ -397,6 +408,13 @@ export function getGitChurnDashboard(options: GitChurnOptions = {}): GitChurnDas
   const tail = finalizeState(current);
   if (tail) commits.push(tail);
 
+  const rangeStartDayKey = useAllHistory ? null : formatDayKey(addDayOffset(generatedAt, -(sinceDays - 1)));
+  const rangeEndDayKey = useAllHistory ? null : formatDayKey(startOfDay(generatedAt));
+  const scopedCommits =
+    useAllHistory || !rangeStartDayKey || !rangeEndDayKey
+      ? commits
+      : commits.filter((commit) => commit.dayKey >= rangeStartDayKey && commit.dayKey <= rangeEndDayKey);
+
   const dailyMap = new Map<string, GitChurnDay>();
   const heatmap = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0));
   const moduleTotals: Record<GitModuleBucket, GitChurnModuleTotal> = {
@@ -410,7 +428,7 @@ export function getGitChurnDashboard(options: GitChurnOptions = {}): GitChurnDas
   let totalDeletions = 0;
   let totalFiles = 0;
 
-  for (const commit of commits) {
+  for (const commit of scopedCommits) {
     totalInsertions += commit.insertions;
     totalDeletions += commit.deletions;
     totalFiles += commit.files;
@@ -439,17 +457,30 @@ export function getGitChurnDashboard(options: GitChurnOptions = {}): GitChurnDas
     }
   }
 
-  const daily = Array.from(dailyMap.values()).sort((a, b) => a.day.localeCompare(b.day));
+  const daily = useAllHistory || !rangeStartDayKey || !rangeEndDayKey
+    ? Array.from(dailyMap.values()).sort((a, b) => a.day.localeCompare(b.day))
+    : Array.from({ length: sinceDays }, (_, index) => {
+        const day = formatDayKey(addDayOffset(generatedAt, -(sinceDays - index - 1)));
+        return (
+          dailyMap.get(day) ?? {
+            day,
+            commits: 0,
+            insertions: 0,
+            deletions: 0,
+            net: 0,
+          }
+        );
+      });
 
   return {
     ...base,
     available: true,
-    commits,
+    commits: scopedCommits,
     daily,
     heatmap,
     moduleTotals,
     totals: {
-      commits: commits.length,
+      commits: scopedCommits.length,
       insertions: totalInsertions,
       deletions: totalDeletions,
       net: totalInsertions - totalDeletions,

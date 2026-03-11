@@ -562,6 +562,7 @@ export default function GitDashboardClient({
   const [isBranchPending, startBranchTransition] = useTransition();
   const [nowTick, setNowTick] = useState<Date>(() => new Date());
   const [activeHeatCell, setActiveHeatCell] = useState<HeatCell | null>(null);
+  const [activeTrendIndex, setActiveTrendIndex] = useState<number | null>(null);
 
   useEffect(() => {
     return subscribeLang(() => setLang(getInitialLang()));
@@ -573,6 +574,10 @@ export default function GitDashboardClient({
     }, 60_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    setActiveTrendIndex(null);
+  }, [range, filter, selectedRef]);
 
   const dataset = datasets[range];
   const weekdayLabels = WEEKDAY_LABELS[lang];
@@ -684,6 +689,26 @@ export default function GitDashboardClient({
   const plusLine = linePath(plusPoints);
   const minusLine = linePath(minusPoints);
   const labelStep = Math.max(1, Math.ceil(dailyForTrend.length / 9));
+  const activeTrendRow = activeTrendIndex == null ? null : dailyForTrend[activeTrendIndex] ?? null;
+  const activeTrendPlusPoint = activeTrendIndex == null ? null : plusPoints[activeTrendIndex] ?? null;
+  const activeTrendMinusPoint = activeTrendIndex == null ? null : minusPoints[activeTrendIndex] ?? null;
+  const trendHoverBandWidth =
+    dailyForTrend.length <= 1 ? Math.max(48, chartWidth - chartPadding * 2) : Math.max(18, chartStep);
+  const activeTrendBandLeft =
+    activeTrendPlusPoint == null
+      ? null
+      : clamp(chartPadding, activeTrendPlusPoint.x - trendHoverBandWidth / 2, chartWidth - chartPadding - trendHoverBandWidth);
+  const activeTrendTooltipWidth = 186;
+  const activeTrendTooltipX =
+    activeTrendPlusPoint == null
+      ? null
+      : clamp(12, activeTrendPlusPoint.x - activeTrendTooltipWidth / 2, chartWidth - activeTrendTooltipWidth - 12);
+  const activeTrendTooltipY =
+    activeTrendPlusPoint && activeTrendMinusPoint
+      ? Math.min(activeTrendPlusPoint.y, activeTrendMinusPoint.y) < 84
+        ? chartMid + 14
+        : 14
+      : 14;
 
   const onPanelDragStart = (panelId: PanelId) => (event: DragEvent<HTMLElement>) => {
     setDraggingId(panelId);
@@ -826,7 +851,7 @@ export default function GitDashboardClient({
         onDrop={onPanelDrop("trend")}
       >
         <div className="overflow-x-auto">
-          <div className="min-w-[760px]">
+          <div className="min-w-[760px]" onMouseLeave={() => setActiveTrendIndex(null)}>
             <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="h-[292px] w-full">
               <defs>
                 <linearGradient id="gitPlusGradient" x1="0%" y1="0%" x2="0%" y2="100%">
@@ -852,10 +877,79 @@ export default function GitDashboardClient({
               <path d={plusLine} fill="none" stroke="rgba(5,150,105,0.92)" strokeWidth="2.4" strokeLinecap="round" />
               <path d={minusLine} fill="none" stroke="rgba(225,29,72,0.9)" strokeWidth="2.4" strokeLinecap="round" />
 
+              {dailyForTrend.map((row, index) => {
+                const point = plusPoints[index];
+                const prevX = index === 0 ? chartPadding : (plusPoints[index - 1].x + point.x) / 2;
+                const nextX =
+                  index === dailyForTrend.length - 1 ? chartWidth - chartPadding : (point.x + plusPoints[index + 1].x) / 2;
+                return (
+                  <rect
+                    key={`${row.day}-hitbox`}
+                    x={prevX}
+                    y={8}
+                    width={Math.max(14, nextX - prevX)}
+                    height={chartHeight - 16}
+                    rx="12"
+                    fill="transparent"
+                    className="git-trend-hitbox"
+                    tabIndex={0}
+                    onMouseEnter={() => setActiveTrendIndex(index)}
+                    onFocus={() => setActiveTrendIndex(index)}
+                    onClick={() => setActiveTrendIndex(index)}
+                    onTouchStart={() => setActiveTrendIndex(index)}
+                  />
+                );
+              })}
+
+              {activeTrendRow && activeTrendPlusPoint && activeTrendMinusPoint && activeTrendBandLeft != null && activeTrendTooltipX != null ? (
+                <>
+                  <rect
+                    x={activeTrendBandLeft}
+                    y={10}
+                    width={trendHoverBandWidth}
+                    height={chartHeight - 20}
+                    rx="16"
+                    className="git-trend-focus-band"
+                  />
+                  <line
+                    x1={activeTrendPlusPoint.x}
+                    y1={12}
+                    x2={activeTrendPlusPoint.x}
+                    y2={chartHeight - 12}
+                    className="git-trend-focus-line"
+                  />
+                  <circle cx={activeTrendPlusPoint.x} cy={activeTrendPlusPoint.y} r="5.5" className="git-trend-marker git-trend-marker-plus" />
+                  <circle cx={activeTrendMinusPoint.x} cy={activeTrendMinusPoint.y} r="5.5" className="git-trend-marker git-trend-marker-minus" />
+                  <foreignObject x={activeTrendTooltipX} y={activeTrendTooltipY} width={activeTrendTooltipWidth} height={94}>
+                    <div className="git-trend-tooltip h-full rounded-[18px] border border-black/12 bg-white/96 px-3 py-2 shadow-[0_18px_38px_rgba(11,20,36,0.14)] backdrop-blur-xl">
+                      <div className="text-[11px] font-semibold tracking-[0.04em] text-black/56">{formatDayLabel(activeTrendRow.day, lang)}</div>
+                      <div className="mt-1 flex items-center justify-between text-[12px]">
+                        <span className="font-semibold text-emerald-700">+{fmtNum(activeTrendRow.insertions)}</span>
+                        <span className="font-semibold text-rose-700">-{fmtNum(activeTrendRow.deletions)}</span>
+                      </div>
+                      <div className="mt-1 text-[11px] text-black/60">
+                        {fmtNum(activeTrendRow.commits)} {pickLang(lang, "次提交", "commits")} · {pickLang(lang, "净变化", "net")} {fmtSigned(activeTrendRow.net)}
+                      </div>
+                      <div className="mt-1 text-[10px] text-black/48">
+                        {pickLang(lang, "当日 churn", "day churn")} {ratioLabel(churn(activeTrendRow.insertions, activeTrendRow.deletions), totalChurn)}
+                      </div>
+                    </div>
+                  </foreignObject>
+                </>
+              ) : null}
+
               {plusPoints.map((point, index) => {
                 const row = dailyForTrend[index];
+                const active = activeTrendIndex === index;
                 return (
-                  <circle key={row.day} cx={point.x} cy={point.y} r="2.1" fill="rgba(4,120,87,0.86)">
+                  <circle
+                    key={row.day}
+                    cx={point.x}
+                    cy={point.y}
+                    r={active ? 3.4 : 2.1}
+                    fill={active ? "rgba(4,120,87,0.96)" : "rgba(4,120,87,0.86)"}
+                    className={active ? "git-trend-base-dot" : undefined}
+                  >
                     <title>{`${row.day} +${fmtNum(row.insertions)} / -${fmtNum(row.deletions)}`}</title>
                   </circle>
                 );
@@ -868,11 +962,23 @@ export default function GitDashboardClient({
               {dailyForTrend.map((row, index) => (
                 <span
                   key={row.day}
-                  className={index % labelStep === 0 || index === dailyForTrend.length - 1 ? "opacity-100" : "opacity-0"}
+                  className={
+                    activeTrendIndex === index
+                      ? "font-semibold text-sky-700 opacity-100"
+                      : index % labelStep === 0 || index === dailyForTrend.length - 1
+                        ? "opacity-100"
+                        : "opacity-0"
+                  }
                 >
                   {shortDate(row.day)}
                 </span>
               ))}
+            </div>
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-black/52">
+              <span>{pickLang(lang, "已按日历日补齐空白日期；无提交的日期显示为 0。", "Empty calendar days are zero-filled.")}</span>
+              <span>
+                {pickLang(lang, "当前共", "Showing")} {fmtNum(dailyForTrend.length)} {pickLang(lang, "个日期桶", "daily buckets")}
+              </span>
             </div>
           </div>
         </div>
@@ -1346,6 +1452,26 @@ export default function GitDashboardClient({
           }
         }
 
+        @keyframes gitTrendTooltipIn {
+          0% {
+            opacity: 0;
+            transform: translate3d(0, 8px, 0) scale(0.98);
+          }
+          100% {
+            opacity: 1;
+            transform: translate3d(0, 0, 0) scale(1);
+          }
+        }
+
+        @keyframes gitTrendPulse {
+          0%, 100% {
+            transform: scale(1);
+          }
+          50% {
+            transform: scale(1.16);
+          }
+        }
+
         .git-panel-card {
           transition: transform 240ms cubic-bezier(0.22, 0.78, 0.2, 1), box-shadow 240ms cubic-bezier(0.22, 0.78, 0.2, 1), border-color 220ms ease;
           will-change: transform;
@@ -1394,6 +1520,48 @@ export default function GitDashboardClient({
 
         .git-heat-cell[data-current="true"] {
           animation: gitHeatBreathe 2.3s cubic-bezier(0.22, 0.78, 0.2, 1) infinite;
+        }
+
+        .git-trend-hitbox {
+          cursor: crosshair;
+        }
+
+        .git-trend-hitbox:focus-visible {
+          outline: none;
+        }
+
+        .git-trend-focus-band {
+          fill: rgba(14, 165, 233, 0.06);
+        }
+
+        .git-trend-focus-line {
+          stroke: rgba(14, 165, 233, 0.46);
+          stroke-width: 1.6;
+          stroke-dasharray: 4 6;
+        }
+
+        .git-trend-tooltip {
+          animation: gitTrendTooltipIn 180ms cubic-bezier(0.22, 0.78, 0.2, 1);
+        }
+
+        .git-trend-marker,
+        .git-trend-base-dot {
+          transform-box: fill-box;
+          transform-origin: center;
+        }
+
+        .git-trend-marker {
+          animation: gitTrendPulse 1.9s cubic-bezier(0.22, 0.78, 0.2, 1) infinite;
+        }
+
+        .git-trend-marker-plus {
+          fill: rgba(5, 150, 105, 0.96);
+          filter: drop-shadow(0 4px 10px rgba(5, 150, 105, 0.24));
+        }
+
+        .git-trend-marker-minus {
+          fill: rgba(225, 29, 72, 0.94);
+          filter: drop-shadow(0 4px 10px rgba(225, 29, 72, 0.2));
         }
       `}</style>
     </>
