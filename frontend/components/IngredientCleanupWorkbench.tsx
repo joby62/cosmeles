@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -29,6 +30,16 @@ type SubtypeSummary = {
 };
 
 type TopIngredient = { ingredient_id: string; name: string; source_count: number };
+type IngredientFilterOption = { key: string; title: string; count: number };
+type IngredientTagItem = {
+  ingredient_id: string;
+  category: string;
+  ingredient_name: string;
+  ingredient_name_en?: string | null;
+  source_count: number;
+  href: string;
+  summary: string;
+};
 type SubtypeBucket = {
   title: string;
   productSet: Set<string>;
@@ -134,6 +145,18 @@ export default function IngredientCleanupWorkbench({
     return Array.from(set).sort();
   }, [allIngredients, initialProducts]);
 
+  const visualizationCategoryOptions = useMemo<IngredientFilterOption[]>(() => {
+    const counts = new Map<string, number>();
+    for (const item of allIngredients) {
+      const category = String(item.category || "").trim().toLowerCase();
+      if (!category) continue;
+      counts.set(category, (counts.get(category) || 0) + 1);
+    }
+    return Array.from(counts.entries())
+      .map(([key, count]) => ({ key, title: categoryLabel(key), count }))
+      .sort((a, b) => b.count - a.count || a.title.localeCompare(b.title));
+  }, [allIngredients]);
+
   const subtypeOptionsByCategory = useMemo(() => {
     const out = new Map<string, Array<{ key: string; title: string; count: number }>>();
     const bucket = new Map<string, Map<string, { title: string; count: number }>>();
@@ -155,6 +178,43 @@ export default function IngredientCleanupWorkbench({
     }
     return out;
   }, [initialRouteMappings]);
+
+  const visualizationSubtypeOptionsByCategory = useMemo(() => {
+    const bucket = new Map<string, Map<string, { title: string; ingredientIds: Set<string> }>>();
+    for (const item of allIngredients) {
+      const category = String(item.category || "").trim().toLowerCase();
+      const ingredientId = String(item.ingredient_id || "").trim();
+      if (!category || !ingredientId) continue;
+      const subtypeHits = new Map<string, string>();
+      for (const productId of uniqueTraceIds(item.source_trace_ids)) {
+        const mapping = routeByProductId.get(productId);
+        if (!mapping) continue;
+        const mappedCategory = String(mapping.category || "").trim().toLowerCase();
+        const subtypeKey = String(mapping.primary_route_key || "").trim();
+        if (!subtypeKey || mappedCategory !== category) continue;
+        subtypeHits.set(subtypeKey, String(mapping.primary_route_title || subtypeKey).trim() || subtypeKey);
+      }
+      if (subtypeHits.size === 0) continue;
+      const categoryBucket = bucket.get(category) || new Map<string, { title: string; ingredientIds: Set<string> }>();
+      for (const [subtypeKey, subtypeTitle] of subtypeHits.entries()) {
+        const subtypeBucket = categoryBucket.get(subtypeKey) || { title: subtypeTitle, ingredientIds: new Set<string>() };
+        subtypeBucket.ingredientIds.add(ingredientId);
+        categoryBucket.set(subtypeKey, subtypeBucket);
+      }
+      bucket.set(category, categoryBucket);
+    }
+
+    const out = new Map<string, IngredientFilterOption[]>();
+    for (const [category, categoryBucket] of bucket.entries()) {
+      out.set(
+        category,
+        Array.from(categoryBucket.entries())
+          .map(([key, value]) => ({ key, title: value.title, count: value.ingredientIds.size }))
+          .sort((a, b) => b.count - a.count || a.title.localeCompare(b.title)),
+      );
+    }
+    return out;
+  }, [allIngredients, routeByProductId]);
 
   useEffect(() => {
     if (!detailCategory) {
@@ -262,6 +322,36 @@ export default function IngredientCleanupWorkbench({
     rows.sort((a, b) => b.product_count - a.product_count || a.category.localeCompare(b.category));
     return rows;
   }, [allIngredients, productById, routeByProductId]);
+
+  const visualizationSubtypeOptions = detailCategory ? visualizationSubtypeOptionsByCategory.get(detailCategory) || [] : [];
+
+  const visualizationIngredients = useMemo<IngredientTagItem[]>(() => {
+    const items = allIngredients.filter((item) => {
+      const category = String(item.category || "").trim().toLowerCase();
+      if (!category) return false;
+      if (detailCategory && category !== detailCategory) return false;
+      if (!detailSubtype) return true;
+      return uniqueTraceIds(item.source_trace_ids).some((id) => {
+        const mapping = routeByProductId.get(id);
+        if (!mapping) return false;
+        const mappedCategory = String(mapping.category || "").trim().toLowerCase();
+        const mappedKey = String(mapping.primary_route_key || "").trim();
+        return mappedCategory === category && mappedKey === detailSubtype;
+      });
+    });
+
+    return items
+      .map((item) => ({
+        ingredient_id: item.ingredient_id,
+        category: String(item.category || "").trim().toLowerCase(),
+        ingredient_name: ingredientDisplayName(item),
+        ingredient_name_en: item.ingredient_name_en || null,
+        source_count: Number(item.source_count || uniqueTraceIds(item.source_trace_ids).length || 0),
+        href: `/product/ingredients/${encodeURIComponent(String(item.category || "").trim().toLowerCase())}/${encodeURIComponent(item.ingredient_id)}`,
+        summary: item.summary || "",
+      }))
+      .sort((a, b) => b.source_count - a.source_count || a.ingredient_name.localeCompare(b.ingredient_name));
+  }, [allIngredients, detailCategory, detailSubtype, routeByProductId]);
 
   const filteredIngredients = useMemo(() => {
     const query = detailQuery.trim().toLowerCase();
@@ -371,7 +461,14 @@ export default function IngredientCleanupWorkbench({
         exportingCsv={exportingCsv}
         totalIngredients={allIngredients.length}
         error={error}
+        selectedCategory={detailCategory}
+        selectedSubtype={detailSubtype}
+        categoryOptions={visualizationCategoryOptions}
+        subtypeOptions={visualizationSubtypeOptions}
+        ingredientTags={visualizationIngredients}
         summaryRows={summaryRows}
+        onCategoryChange={setDetailCategory}
+        onSubtypeChange={setDetailSubtype}
         onRefresh={() => {
           void loadAllIngredients();
         }}
@@ -418,7 +515,14 @@ function IngredientVisualizationPanel({
   exportingCsv,
   totalIngredients,
   error,
+  selectedCategory,
+  selectedSubtype,
+  categoryOptions,
+  subtypeOptions,
+  ingredientTags,
   summaryRows,
+  onCategoryChange,
+  onSubtypeChange,
   onRefresh,
   onExport,
 }: {
@@ -426,7 +530,14 @@ function IngredientVisualizationPanel({
   exportingCsv: boolean;
   totalIngredients: number;
   error: string | null;
+  selectedCategory: string;
+  selectedSubtype: string;
+  categoryOptions: IngredientFilterOption[];
+  subtypeOptions: IngredientFilterOption[];
+  ingredientTags: IngredientTagItem[];
   summaryRows: CategorySummary[];
+  onCategoryChange: (value: string) => void;
+  onSubtypeChange: (value: string) => void;
   onRefresh: () => void;
   onExport: () => void;
 }) {
@@ -438,9 +549,53 @@ function IngredientVisualizationPanel({
         </span>
       </div>
       <h2 className="mt-3 text-[28px] font-semibold tracking-[-0.02em] text-black/90">成分可视化</h2>
-      <p className="mt-2 text-[14px] text-black/65">先看各一级/二级分类的成分分布、Top 成分和产品覆盖，再决定哪些成分需要清理。</p>
+      <p className="mt-2 text-[14px] text-black/65">参考产品展示筛选区，把成分按单个 tag 展开；先按一级/二级分类过滤，再按被产品引用次数查看高频成分。</p>
 
       <div className="mt-4 rounded-2xl border border-black/10 bg-[#f8fafc] p-4">
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              onCategoryChange("");
+              onSubtypeChange("");
+            }}
+            className={filterTagClass(!selectedCategory)}
+          >
+            全部成分 ({totalIngredients})
+          </button>
+          {categoryOptions.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => {
+                onCategoryChange(item.key);
+                onSubtypeChange("");
+              }}
+              className={filterTagClass(selectedCategory === item.key)}
+            >
+              {item.title} ({item.count})
+            </button>
+          ))}
+        </div>
+
+        {selectedCategory && subtypeOptions.length > 0 ? (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button type="button" onClick={() => onSubtypeChange("")} className={filterTagClass(!selectedSubtype)}>
+              全部二级分类
+            </button>
+            {subtypeOptions.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => onSubtypeChange(item.key)}
+                className={filterTagClass(selectedSubtype === item.key)}
+              >
+                {item.title} ({item.count})
+              </button>
+            ))}
+          </div>
+        ) : null}
+
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
@@ -459,47 +614,45 @@ function IngredientVisualizationPanel({
           >
             {exportingCsv ? "导出中..." : "导出全量 CSV"}
           </button>
-          <span className="text-[12px] text-black/58">成分总数 {totalIngredients} 条</span>
+          <span className="text-[12px] text-black/58">当前展示 {ingredientTags.length} 个成分 tag，按引用次数降序排列。</span>
         </div>
 
         {error ? <div className="mt-2 text-[13px] text-[#b42318]">{error}</div> : null}
 
-        <div className="mt-3 grid grid-cols-1 gap-2 xl:grid-cols-2">
-          {summaryRows.map((row) => (
-            <div key={row.category} className="rounded-xl border border-black/10 bg-white p-3">
-              <div className="text-[13px] font-semibold text-black/84">
-                {categoryLabel(row.category)} · 产品 {row.product_count} · 唯一成分 {row.ingredient_count}
-              </div>
-              <div className="mt-1 text-[12px] text-black/62">
-                一级 Top：{row.top_ingredients.slice(0, 4).map((item) => `${item.name}(${item.source_count})`).join(" · ") || "-"}
-              </div>
-
-              {row.subtype_summaries.length > 0 ? (
-                <details className="mt-2 rounded-lg border border-black/8 bg-[#fbfcff] p-2">
-                  <summary className="cursor-pointer text-[12px] font-semibold text-[#3151d8]">二级分类简况（已建立映射）</summary>
-                  <div className="mt-2 space-y-2">
-                    {row.subtype_summaries.slice(0, 6).map((sub) => (
-                      <div key={`${row.category}-${sub.key}`} className="rounded-lg border border-black/8 bg-white p-2">
-                        <div className="text-[12px] font-semibold text-black/82">
-                          {sub.title} · 产品 {sub.product_count} · 成分 {sub.ingredient_count}
-                        </div>
-                        <div className="mt-0.5 text-[11px] text-black/58">
-                          Top 成分：{sub.top_ingredients.slice(0, 3).map((item) => `${item.name}(${item.product_count})`).join(" · ") || "-"}
-                        </div>
-                        <div className="mt-0.5 text-[11px] text-black/58">
-                          产品使用最多：{sub.top_products.slice(0, 3).map((item, idx) => `#${idx + 1} ${item.title}(${item.ingredient_count})`).join(" · ") || "-"}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </details>
-              ) : (
-                <div className="mt-2 text-[11px] text-black/52">二级映射未建立，当前仅展示一级分类摘要。</div>
-              )}
-            </div>
+        <div className="mt-3 flex flex-wrap gap-2.5">
+          {ingredientTags.map((item) => (
+            <Link
+              key={item.ingredient_id}
+              href={item.href}
+              className="group inline-flex min-h-11 items-center gap-2 rounded-full border border-black/10 bg-white px-4 py-2 text-[13px] font-semibold text-black/82 transition hover:-translate-y-0.5 hover:border-black/18 hover:bg-black/[0.02]"
+              title={item.summary || item.ingredient_name}
+            >
+              <span className="max-w-[240px] truncate">{item.ingredient_name}</span>
+              <span className="rounded-full border border-[#d7e8ff] bg-[#f4f8ff] px-2 py-0.5 text-[11px] font-semibold text-[#2450a0]">
+                {item.source_count} 引用
+              </span>
+            </Link>
           ))}
-          {!loading && summaryRows.length === 0 ? <div className="text-[12px] text-black/52">暂无成分摘要数据。</div> : null}
+          {!loading && ingredientTags.length === 0 ? <div className="text-[12px] text-black/52">当前筛选无成分数据。</div> : null}
         </div>
+
+        {summaryRows.length > 0 ? (
+          <details className="mt-4 rounded-2xl border border-black/10 bg-white px-4 py-3">
+            <summary className="cursor-pointer text-[12px] font-semibold text-[#3151d8]">查看分类摘要</summary>
+            <div className="mt-3 grid grid-cols-1 gap-2 xl:grid-cols-2">
+              {summaryRows.map((row) => (
+                <div key={row.category} className="rounded-xl border border-black/10 bg-[#fbfcff] p-3">
+                  <div className="text-[13px] font-semibold text-black/84">
+                    {categoryLabel(row.category)} · 产品 {row.product_count} · 唯一成分 {row.ingredient_count}
+                  </div>
+                  <div className="mt-1 text-[12px] text-black/62">
+                    一级 Top：{row.top_ingredients.slice(0, 4).map((item) => `${item.name}(${item.source_count})`).join(" · ") || "-"}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </details>
+        ) : null}
       </div>
     </section>
   );
@@ -726,6 +879,12 @@ function categoryLabel(category?: string | null): string {
   if (!category) return "-";
   const key = category.toLowerCase() as keyof typeof CATEGORY_CONFIG;
   return CATEGORY_CONFIG[key]?.zh || category;
+}
+
+function filterTagClass(active: boolean): string {
+  return active
+    ? "rounded-full border border-black bg-black px-3 py-1.5 text-[12px] font-semibold text-white"
+    : "rounded-full border border-black/10 bg-white px-3 py-1.5 text-[12px] font-semibold text-black/68 hover:bg-black/[0.03]";
 }
 
 function formatErrorDetail(err: unknown): string {
