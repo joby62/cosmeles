@@ -558,6 +558,7 @@ function IngredientVisualizationPanel({
   const [visualQuery, setVisualQuery] = useState("");
   const [showLongTail, setShowLongTail] = useState(false);
   const [activeIngredientId, setActiveIngredientId] = useState<string | null>(null);
+  const [expandedOverviewCategories, setExpandedOverviewCategories] = useState<string[]>([]);
 
   const query = visualQuery.trim().toLowerCase();
   const visibleIngredientTags = useMemo(() => {
@@ -592,8 +593,12 @@ function IngredientVisualizationPanel({
     () => (selectedCategory ? summaryRows.find((row) => row.category === selectedCategory) || null : null),
     [selectedCategory, summaryRows],
   );
+  const selectedSubtypeSummary = useMemo(
+    () => (selectedSummaryRow && selectedSubtype ? selectedSummaryRow.subtype_summaries.find((item) => item.key === selectedSubtype) || null : null),
+    [selectedSubtype, selectedSummaryRow],
+  );
   const overviewRows = useMemo(
-    () => (selectedSummaryRow ? [selectedSummaryRow] : summaryRows.slice(0, 4)),
+    () => (selectedSummaryRow ? [selectedSummaryRow] : summaryRows),
     [selectedSummaryRow, summaryRows],
   );
   const activeIngredient = useMemo(
@@ -602,11 +607,38 @@ function IngredientVisualizationPanel({
   );
   const previewIngredient = activeIngredient || highFrequencyTags[0] || visibleIngredientTags[0] || null;
   const formatCount = (value: number) => new Intl.NumberFormat("zh-CN").format(value);
+  const overviewProductBase = useMemo(
+    () => Math.max(1, overviewRows.reduce((sum, row) => sum + row.product_count, 0)),
+    [overviewRows],
+  );
+  const overviewIngredientBase = useMemo(
+    () => Math.max(1, overviewRows.reduce((sum, row) => sum + row.ingredient_count, 0)),
+    [overviewRows],
+  );
+  const previewReferenceShare = previewIngredient ? ratioLabel(previewIngredient.source_count, Math.max(1, visibleReferenceTotal)) : "0%";
+  const previewScopeLabel = selectedSubtype
+    ? "占当前二级引用"
+    : selectedCategory
+      ? "占当前一级引用"
+      : "占当前视图引用";
+  const previewScopeTitle = selectedSubtypeSummary
+    ? `${categoryLabel(selectedCategory)} · ${selectedSubtypeSummary.title}`
+    : selectedSummaryRow
+      ? categoryLabel(selectedSummaryRow.category)
+      : "全部一级分类";
+  const expandedOverviewSet = useMemo(() => new Set(expandedOverviewCategories), [expandedOverviewCategories]);
+
+  function toggleOverviewCategory(category: string) {
+    if (!category) return;
+    setExpandedOverviewCategories((prev) =>
+      prev.includes(category) ? prev.filter((item) => item !== category) : [...prev, category],
+    );
+  }
 
   return (
     <section
       id="ingredient-visualization-panel"
-      className="ingredient-visual-shell scroll-mt-20 overflow-hidden rounded-[34px] border border-black/10 bg-[linear-gradient(180deg,#ffffff_0%,#f7fbff_52%,#fcfdff_100%)]"
+      className="ingredient-visual-shell scroll-mt-20 overflow-visible rounded-[34px] border border-black/10 bg-[linear-gradient(180deg,#ffffff_0%,#f7fbff_52%,#fcfdff_100%)]"
     >
       <div className="relative border-b border-black/8 px-6 py-6 md:px-7">
         <div className="ingredient-breathe-orb ingredient-breathe-orb-left" />
@@ -735,7 +767,65 @@ function IngredientVisualizationPanel({
           </div>
         ) : null}
 
-        <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="mt-5 grid gap-5 xl:grid-cols-[300px_minmax(0,1fr)_340px] xl:items-start">
+          <aside className="space-y-4 xl:sticky xl:top-[172px] xl:self-start">
+            <section className="ingredient-preview-card overflow-hidden rounded-[28px] border border-black/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(245,249,255,0.96))] p-5 shadow-[0_22px_54px_rgba(16,24,40,0.1)]">
+              <div className="ingredient-preview-glow" />
+              <div className="relative">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full border border-black/10 bg-white/86 px-3 py-1 text-[11px] font-semibold tracking-[0.08em] text-black/56 uppercase">
+                    即时预览
+                  </span>
+                  <span className="rounded-full border border-[#dbeafe] bg-[#f4f8ff] px-3 py-1 text-[11px] font-semibold text-[#2450a0]">
+                    悬浮中间标签可切换
+                  </span>
+                </div>
+
+                {previewIngredient ? (
+                  <>
+                    <h3 className="mt-4 text-[28px] font-semibold tracking-[-0.03em] text-black/90">
+                      {previewIngredient.ingredient_name}
+                    </h3>
+                    <p className="mt-2 text-[12px] font-semibold tracking-[0.06em] text-black/46 uppercase">{previewScopeTitle}</p>
+                    <p className="mt-3 text-[14px] leading-[1.7] text-black/64">
+                      {previewIngredient.summary || "打开详情页查看完整成分说明、收益风险与来源样本。"}
+                    </p>
+
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+                      <VisualizationStatStrip title="被引用次数" value={formatCount(previewIngredient.source_count)} note="按成分库 source_count 聚合" />
+                      <VisualizationStatStrip title={previewScopeLabel} value={previewReferenceShare} note="基于当前筛选范围计算" />
+                      <VisualizationStatStrip
+                        title="命中二级分类"
+                        value={formatCount(previewIngredient.subtype_titles.length)}
+                        note={previewIngredient.subtype_titles.slice(0, 3).join(" · ") || "当前范围内暂无二级分类标记"}
+                      />
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <span className="rounded-full border border-black/10 bg-white px-3 py-1 text-[12px] font-semibold text-black/70">
+                        {categoryLabel(previewIngredient.category)}
+                      </span>
+                      {previewIngredient.subtype_titles.slice(0, 3).map((title) => (
+                        <span key={title} className="rounded-full border border-black/10 bg-white px-3 py-1 text-[12px] font-semibold text-black/64">
+                          {title}
+                        </span>
+                      ))}
+                    </div>
+
+                    <Link
+                      href={previewIngredient.href}
+                      className="mt-5 inline-flex h-11 items-center justify-center rounded-full border border-black/12 bg-black px-5 text-[13px] font-semibold text-white transition hover:translate-y-[-1px] hover:bg-black/88"
+                    >
+                      查看成分详情
+                    </Link>
+                  </>
+                ) : (
+                  <div className="mt-4 text-[13px] leading-[1.7] text-black/58">当前筛选无可预览成分。</div>
+                )}
+              </div>
+            </section>
+          </aside>
+
           <div className="space-y-5">
             <section className="rounded-[28px] border border-black/10 bg-white/88 p-4 shadow-[0_18px_44px_rgba(16,24,40,0.06)] md:p-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -822,83 +912,115 @@ function IngredientVisualizationPanel({
             </section>
           </div>
 
-          <aside className="space-y-4 xl:sticky xl:top-[112px] xl:self-start">
-            <section className="ingredient-preview-card overflow-hidden rounded-[28px] border border-black/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(245,249,255,0.96))] p-5 shadow-[0_22px_54px_rgba(16,24,40,0.1)]">
-              <div className="ingredient-preview-glow" />
-              <div className="relative">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-full border border-black/10 bg-white/86 px-3 py-1 text-[11px] font-semibold tracking-[0.08em] text-black/56 uppercase">
-                    即时预览
-                  </span>
-                  <span className="rounded-full border border-[#dbeafe] bg-[#f4f8ff] px-3 py-1 text-[11px] font-semibold text-[#2450a0]">
-                    悬浮左侧标签可切换
-                  </span>
-                </div>
-
-                {previewIngredient ? (
-                  <>
-                    <h3 className="mt-4 text-[28px] font-semibold tracking-[-0.03em] text-black/90">
-                      {previewIngredient.ingredient_name}
-                    </h3>
-                    <p className="mt-3 text-[14px] leading-[1.7] text-black/64">
-                      {previewIngredient.summary || "打开详情页查看完整成分说明、收益风险与来源样本。"}
-                    </p>
-
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      <span className="rounded-full border border-[#dbeafe] bg-[#f4f8ff] px-3 py-1 text-[12px] font-semibold text-[#2450a0]">
-                        {previewIngredient.source_count} 引用
-                      </span>
-                      <span className="rounded-full border border-black/10 bg-white px-3 py-1 text-[12px] font-semibold text-black/70">
-                        {categoryLabel(previewIngredient.category)}
-                      </span>
-                      {previewIngredient.subtype_titles.slice(0, 2).map((title) => (
-                        <span key={title} className="rounded-full border border-black/10 bg-white px-3 py-1 text-[12px] font-semibold text-black/64">
-                          {title}
-                        </span>
-                      ))}
-                    </div>
-
-                    <Link
-                      href={previewIngredient.href}
-                      className="mt-5 inline-flex h-11 items-center justify-center rounded-full border border-black/12 bg-black px-5 text-[13px] font-semibold text-white transition hover:translate-y-[-1px] hover:bg-black/88"
-                    >
-                      查看成分详情
-                    </Link>
-                  </>
-                ) : (
-                  <div className="mt-4 text-[13px] leading-[1.7] text-black/58">当前筛选无可预览成分。</div>
-                )}
-              </div>
-            </section>
-
+          <aside className="space-y-4 xl:sticky xl:top-[172px] xl:self-start">
             <section className="rounded-[28px] border border-black/10 bg-white/90 p-5 shadow-[0_18px_44px_rgba(16,24,40,0.06)]">
-              <div className="text-[11px] font-semibold tracking-[0.12em] text-black/44 uppercase">
-                {selectedSummaryRow ? "当前品类概览" : "一级分布概览"}
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-[11px] font-semibold tracking-[0.12em] text-black/44 uppercase">
+                    {selectedSummaryRow ? "当前分布概览" : "一级分布概览"}
+                  </div>
+                  <h3 className="mt-1 text-[24px] font-semibold tracking-[-0.02em] text-black/90">
+                    {selectedSummaryRow ? categoryLabel(selectedSummaryRow.category) : "一级分布概览"}
+                  </h3>
+                  <p className="mt-1 text-[12px] leading-[1.6] text-black/58">
+                    {selectedSubtypeSummary
+                      ? `当前已筛到 ${selectedSubtypeSummary.title}，下方二级占比按 ${categoryLabel(selectedSummaryRow?.category)} 计算。`
+                      : selectedSummaryRow
+                        ? "当前二级展开占比按所选一级分类计算。"
+                        : "一级卡片展示当前视图占比，展开后可看二级分布。"}
+                  </p>
+                </div>
+                <span className="rounded-full border border-[#dbeafe] bg-[#f4f8ff] px-3 py-1 text-[11px] font-semibold text-[#2450a0]">
+                  {formatCount(overviewRows.length)} 个一级类目
+                </span>
               </div>
-              <div className="mt-3 space-y-3">
-                {overviewRows.length > 0 ? (
-                  overviewRows.map((row) => (
-                    <div key={row.category} className="rounded-[22px] border border-black/8 bg-[#fbfcff] px-4 py-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="text-[14px] font-semibold text-black/84">{categoryLabel(row.category)}</div>
-                        <span className="rounded-full border border-black/10 bg-white px-2.5 py-1 text-[11px] font-semibold text-black/62">
-                          产品 {row.product_count}
-                        </span>
+
+              {overviewRows.length > 0 ? (
+                <div className="mt-4 space-y-3">
+                  {overviewRows.map((row, index) => {
+                    const autoOpen = row.category === selectedCategory || (!selectedCategory && index === 0);
+                    const open = autoOpen || expandedOverviewSet.has(row.category);
+                    const productShare = ratioLabel(row.product_count, overviewProductBase);
+                    const ingredientShare = ratioLabel(row.ingredient_count, overviewIngredientBase);
+                    return (
+                      <div key={row.category} className={`rounded-[22px] border px-4 py-4 ${row.category === selectedCategory ? "border-sky-200 bg-[#f7fbff]" : "border-black/8 bg-[#fbfcff]"}`}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-[16px] font-semibold text-black/86">{categoryLabel(row.category)}</div>
+                            <div className="mt-1 text-[12px] text-black/56">
+                              产品 {formatCount(row.product_count)} · 唯一成分 {formatCount(row.ingredient_count)}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => toggleOverviewCategory(row.category)}
+                            className="inline-flex h-9 items-center justify-center rounded-full border border-black/10 bg-white px-3 text-[11px] font-semibold text-black/66 transition hover:bg-black/[0.03]"
+                          >
+                            {open ? "收起二级概览" : "展开二级概览"}
+                          </button>
+                        </div>
+
+                        <div className="mt-3 grid gap-2">
+                          <OverviewShareRow label="产品占当前视图" value={productShare} ratio={row.product_count / overviewProductBase} />
+                          <OverviewShareRow label="成分占当前视图" value={ingredientShare} ratio={row.ingredient_count / overviewIngredientBase} />
+                        </div>
+
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {row.top_ingredients.slice(0, 3).map((item) => (
+                            <span key={item.ingredient_id} className="rounded-full border border-black/10 bg-white px-3 py-1 text-[11px] font-semibold text-black/64">
+                              {item.name} · {item.source_count}
+                            </span>
+                          ))}
+                        </div>
+
+                        {open ? (
+                          <div className="mt-4 border-t border-black/8 pt-4">
+                            <div className="text-[11px] font-semibold tracking-[0.12em] text-black/42 uppercase">二级概览分布</div>
+                            <div className="mt-3 space-y-3">
+                              {row.subtype_summaries.length > 0 ? (
+                                row.subtype_summaries.map((subtype) => {
+                                  const subtypeProductShare = ratioLabel(subtype.product_count, Math.max(1, row.product_count));
+                                  const subtypeIngredientShare = ratioLabel(subtype.ingredient_count, Math.max(1, row.ingredient_count));
+                                  const highlighted = row.category === selectedCategory && subtype.key === selectedSubtype;
+                                  return (
+                                    <div
+                                      key={`${row.category}-${subtype.key}`}
+                                      className={`rounded-[18px] border px-3 py-3 ${highlighted ? "border-sky-200 bg-white shadow-[0_12px_26px_rgba(59,130,246,0.08)]" : "border-black/8 bg-white/92"}`}
+                                    >
+                                      <div className="flex items-center justify-between gap-2">
+                                        <div className="text-[13px] font-semibold text-black/82">{subtype.title}</div>
+                                        <span className="rounded-full border border-black/10 bg-black/[0.03] px-2.5 py-1 text-[11px] font-semibold text-black/62">
+                                          产品 {formatCount(subtype.product_count)}
+                                        </span>
+                                      </div>
+                                      <div className="mt-1 text-[12px] text-black/56">唯一成分 {formatCount(subtype.ingredient_count)}</div>
+                                      <div className="mt-3 grid gap-2">
+                                        <OverviewShareRow label="产品占当前一级" value={subtypeProductShare} ratio={subtype.product_count / Math.max(1, row.product_count)} />
+                                        <OverviewShareRow label="成分占当前一级" value={subtypeIngredientShare} ratio={subtype.ingredient_count / Math.max(1, row.ingredient_count)} />
+                                      </div>
+                                      <div className="mt-3 flex flex-wrap gap-2">
+                                        {subtype.top_ingredients.slice(0, 2).map((item) => (
+                                          <span key={item.ingredient_id} className="rounded-full border border-black/10 bg-[#fbfcff] px-2.5 py-1 text-[11px] font-semibold text-black/60">
+                                            {item.name} · {item.product_count}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  );
+                                })
+                              ) : (
+                                <div className="text-[12px] text-black/54">当前一级分类暂无二级概览数据。</div>
+                              )}
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
-                      <div className="mt-1 text-[12px] text-black/58">唯一成分 {formatCount(row.ingredient_count)}</div>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {row.top_ingredients.slice(0, 3).map((item) => (
-                          <span key={item.ingredient_id} className="rounded-full border border-black/10 bg-white px-3 py-1 text-[11px] font-semibold text-black/64">
-                            {item.name} · {item.source_count}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-[13px] text-black/56">暂无分类摘要。</div>
-                )}
-              </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="mt-3 text-[13px] text-black/56">暂无分类摘要。</div>
+              )}
             </section>
           </aside>
         </div>
@@ -1055,6 +1177,32 @@ function VisualizationStatStrip({
         <div className="text-[15px] font-semibold text-black/86">{value}</div>
       </div>
       <div className="mt-1 text-[12px] leading-[1.6] text-black/56">{note}</div>
+    </div>
+  );
+}
+
+function OverviewShareRow({
+  label,
+  value,
+  ratio,
+}: {
+  label: string;
+  value: string;
+  ratio: number;
+}) {
+  const width = `${Math.max(6, Math.min(ratio * 100, 100)).toFixed(1)}%`;
+  return (
+    <div className="rounded-[18px] border border-black/8 bg-white/88 px-3 py-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-[11px] font-semibold text-black/56">{label}</div>
+        <div className="text-[11px] font-semibold text-black/74">{value}</div>
+      </div>
+      <div className="mt-2 h-2 rounded-full bg-black/[0.06]">
+        <div
+          className="h-full rounded-full bg-[linear-gradient(90deg,rgba(96,165,250,0.95),rgba(59,130,246,0.72))]"
+          style={{ width }}
+        />
+      </div>
     </div>
   );
 }
@@ -1376,6 +1524,11 @@ function categoryLabel(category?: string | null): string {
   if (!category) return "-";
   const key = category.toLowerCase() as keyof typeof CATEGORY_CONFIG;
   return CATEGORY_CONFIG[key]?.zh || category;
+}
+
+function ratioLabel(value: number, total: number): string {
+  if (!Number.isFinite(value) || !Number.isFinite(total) || total <= 0) return "0%";
+  return `${((value / total) * 100).toFixed(1)}%`;
 }
 
 function filterTagClass(active: boolean): string {
