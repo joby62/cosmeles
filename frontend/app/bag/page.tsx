@@ -1,6 +1,6 @@
 import BagPanel from "@/components/site/BagPanel";
 import Link from "next/link";
-import { BAG_SUPPORT_LINKS, BAG_TRUST_POINTS } from "@/lib/storefrontTrust";
+import { BAG_RELEASE_NOTES, BAG_SUPPORT_LINKS, BAG_TRUST_POINTS } from "@/lib/storefrontTrust";
 
 export default function BagPage() {
   return (
@@ -14,7 +14,7 @@ export default function BagPage() {
         </h1>
         <p className="mt-5 max-w-3xl text-[17px] leading-8 text-slate-600">
           Jeslect Bag is where saved products stay close to product detail, compare, learn, shipping, returns, and support.
-          The goal is simple: no hidden basics and no lost shortlist.
+          The goal is simple: no hidden basics, no lost shortlist, and no fake checkout signals before real commerce data exists.
         </p>
 
         <div className="mt-7 grid gap-3 md:grid-cols-3">
@@ -36,10 +36,17 @@ export default function BagPage() {
 
         <div className="space-y-6">
           <article className="rounded-[32px] border border-black/8 bg-white/92 p-6 shadow-[0_20px_46px_rgba(15,23,42,0.06)]">
-            <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-500">Before you place an order</p>
+            <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-500">Current bag role</p>
             <h2 className="mt-3 text-[30px] font-semibold tracking-[-0.04em] text-slate-950">
-              Delivery, returns, and support should stay visible from here.
+              Keep the shortlist recoverable before checkout goes live.
             </h2>
+            <div className="mt-5 space-y-2">
+              {BAG_RELEASE_NOTES.map((item) => (
+                <p key={item} className="text-[14px] leading-6 text-slate-700">
+                  {item}
+                </p>
+              ))}
+            </div>
             <div className="mt-5 space-y-3">
               {BAG_SUPPORT_LINKS.map((item) => (
                 <Link
@@ -60,7 +67,7 @@ export default function BagPage() {
               Use Match or Compare before you finalize the shortlist.
             </h2>
             <p className="mt-3 text-[15px] leading-7 text-slate-600">
-              Match narrows the route. Compare tests close candidates side by side. Bag keeps the surviving products visible.
+              Match narrows the route. Compare tests close candidates side by side. Bag keeps the surviving products visible while checkout and pricing are still out of scope.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <Link

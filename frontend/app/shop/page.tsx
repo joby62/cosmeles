@@ -4,7 +4,7 @@ import TrustStrip from "@/components/site/TrustStrip";
 import { getMatchConfig } from "@/lib/match";
 import { fetchAllProducts, type Product } from "@/lib/api";
 import { categoryHref, CATEGORIES, SHOP_CONCERNS, TRUST_ITEMS, type CategoryKey } from "@/lib/site";
-import { SHOP_SUPPORT_LINKS } from "@/lib/storefrontTrust";
+import { LAUNCH_STATUS_POINTS, SHOP_SUPPORT_LINKS } from "@/lib/storefrontTrust";
 
 export default async function ShopHubPage() {
   let products: Product[] = [];
@@ -47,6 +47,10 @@ export default async function ShopHubPage() {
             Start with the routine problem you want to solve, then narrow down through category pages with clearer product
             signals and ingredient visibility.
           </p>
+          <div className="mt-5 rounded-[24px] border border-amber-200 bg-amber-50/70 px-4 py-4 text-[14px] leading-6 text-slate-700">
+            The current US shop layer is live for discovery, fit, compare, and saved shortlist behavior. Price, stock,
+            checkout, and final delivery ETA are not in the product feed yet.
+          </div>
           <div className="mt-7 flex flex-wrap gap-3">
             <Link
               href="/search"
@@ -158,6 +162,13 @@ export default async function ShopHubPage() {
           <h2 className="mt-3 text-[32px] font-semibold tracking-[-0.04em] text-slate-950">
             Shipping, returns, and support should stay close to discovery.
           </h2>
+          <div className="mt-5 space-y-2">
+            {LAUNCH_STATUS_POINTS.slice(0, 2).map((item) => (
+              <p key={item} className="text-[14px] leading-6 text-slate-700">
+                {item}
+              </p>
+            ))}
+          </div>
           <div className="mt-5 space-y-3">
             {SHOP_SUPPORT_LINKS.map((item) => (
               <Link

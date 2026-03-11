@@ -13,7 +13,7 @@ import {
 } from "@/lib/api";
 import { getMatchRouteMeta } from "@/lib/match";
 import { getCategoryMeta, TRUST_ITEMS } from "@/lib/site";
-import { PDP_SUPPORT_LINKS, PDP_TRUST_NOTES } from "@/lib/storefrontTrust";
+import { PDP_SUPPORT_LINKS, PDP_TRUST_NOTES, PRODUCT_RELEASE_NOTES } from "@/lib/storefrontTrust";
 
 function mergeUnique(items: string[]): string[] {
   return Array.from(new Set(items.map((item) => item.trim()).filter(Boolean)));
@@ -149,6 +149,9 @@ export default async function ProductPage({
                 {routeMeta?.title || profile.route_title}
               </span>
             ) : null}
+            <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-medium text-amber-700">
+              Catalog live
+            </span>
             {typeof profile?.confidence === "number" ? (
               <span className="rounded-full border border-black/8 bg-slate-50 px-3 py-1 text-[11px] font-medium text-slate-600">
                 Confidence {profile.confidence}%
@@ -176,13 +179,21 @@ export default async function ProductPage({
           </div>
           <TrustStrip items={TRUST_ITEMS} className="mt-6" />
           <div className="mt-6 rounded-[24px] border border-black/8 bg-slate-50 px-4 py-4">
-            <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-slate-500">Shopping basics</p>
+            <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-slate-500">Current release status</p>
             <div className="mt-3 space-y-2">
-              {PDP_TRUST_NOTES.slice(0, 2).map((item) => (
+              {PRODUCT_RELEASE_NOTES.map((item) => (
                 <p key={item} className="text-[13px] leading-6 text-slate-700">
                   {item}
                 </p>
               ))}
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Link href="/bag" className="rounded-full border border-black/8 bg-white px-4 py-2 text-[13px] font-medium text-slate-700">
+                Saved shortlist
+              </Link>
+              <Link href="/support/faq" className="rounded-full border border-black/8 bg-white px-4 py-2 text-[13px] font-medium text-slate-700">
+                Why no price yet
+              </Link>
             </div>
           </div>
         </article>

@@ -7,7 +7,7 @@ export default function FaqPage() {
       eyebrow="FAQ"
       title="Put the common questions in front of the customer early."
       summary="Jeslect FAQ is structured around the pre-purchase confidence layer: saved bag behavior, match and compare logic, and where support information stays visible."
-      highlights={["Shopping confidence", "Bag behavior", "Support visibility"]}
+      highlights={["Shopping confidence", "Catalog-only honesty", "Support visibility"]}
       primaryCta={{ href: "/bag", label: "Open bag" }}
       secondaryCta={{ href: "/support/contact", label: "Contact support" }}
     >

@@ -3,6 +3,7 @@ import ProductCard from "@/components/site/ProductCard";
 import TrustStrip from "@/components/site/TrustStrip";
 import { fetchAllProducts, type Product } from "@/lib/api";
 import { categoryHref, CATEGORIES, LEARN_TOPICS, SHOP_CONCERNS, TRUST_ITEMS, type CategoryKey } from "@/lib/site";
+import { LAUNCH_STATUS_POINTS } from "@/lib/storefrontTrust";
 
 function pickHighlights(products: Product[]) {
   const byCategory = new Map<CategoryKey, Product>();
@@ -52,6 +53,12 @@ export default async function HomePage() {
               Jeslect is rebuilding the shopping journey around clear product fit, lower-friction comparison, and calmer
               routine decisions for hair, body, and skin.
             </p>
+            <div className="mt-5 rounded-[24px] border border-amber-200 bg-amber-50/70 px-4 py-4">
+              <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-amber-800">US launch status</p>
+              <p className="mt-2 text-[14px] leading-6 text-slate-700">
+                The current storefront is live for discovery and fit. Price, stock, checkout, and final delivery ETA are not published yet.
+              </p>
+            </div>
             <div className="mt-7 flex flex-wrap gap-3">
               <Link
                 href="/match"
@@ -199,6 +206,13 @@ export default async function HomePage() {
               Contact Jeslect
             </Link>
           </div>
+        </div>
+        <div className="mt-6 grid gap-3 md:grid-cols-3">
+          {LAUNCH_STATUS_POINTS.map((item) => (
+            <div key={item} className="rounded-[24px] border border-black/8 bg-white px-4 py-4 text-[14px] leading-6 text-slate-700">
+              {item}
+            </div>
+          ))}
         </div>
       </section>
     </div>

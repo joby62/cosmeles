@@ -82,6 +82,16 @@ export const FAQ_ITEMS = [
     answer: "Yes. The bag is stored on this device so you can come back without rebuilding the shortlist from scratch.",
   },
   {
+    question: "Can I check out on Jeslect right now?",
+    answer:
+      "Not yet. The current US storefront is live for product discovery, fit, compare, learn, and saved bag behavior. Checkout, payment, and order flow are not published yet.",
+  },
+  {
+    question: "Why do some product pages not show price, stock, or delivery dates yet?",
+    answer:
+      "Because the current product data feed does not publish those commerce fields yet. Jeslect shows product fit, ingredient clarity, and support paths now instead of inventing pricing or availability details.",
+  },
+  {
     question: "How does Match connect to Compare?",
     answer: "Match saves a route decision for the category you answered. Compare then reuses that saved basis to judge products against your current fit.",
   },
@@ -169,6 +179,24 @@ export const SEARCH_TRUST_POINTS = [
   "Search should narrow the field, then hand you off cleanly to Match, Compare, or the right category page.",
   "Support links stay visible from search so users do not have to guess where shipping and returns live.",
   "Saved bag continuity matters here too: search is part of the decision path, not a dead-end results page.",
+] as const;
+
+export const LAUNCH_STATUS_POINTS = [
+  "Live now: product fit, ingredients, Match, Compare, Learn, Bag, and Saved recovery.",
+  "Not published yet: product price, live stock, checkout, payment, and final delivery ETA per item.",
+  "Bag currently acts as a saved shortlist so decisions stay recoverable while commerce fields are still being added.",
+] as const;
+
+export const PRODUCT_RELEASE_NOTES = [
+  "This product page is live for fit, ingredient clarity, compare, and bag continuity.",
+  "Price, stock, and shipping ETA are not in the current product response yet, so Jeslect does not guess them.",
+  "Use this page to decide fit first, then keep the shortlist saved while commerce data is being added.",
+] as const;
+
+export const BAG_RELEASE_NOTES = [
+  "Bag is currently a saved shortlist layer, not a checkout cart.",
+  "Products you save here stay connected to Match, Compare, Learn, shipping, returns, and support.",
+  "Commerce fields like price, stock, and final shipping ETA will need a real backend feed before they appear here.",
 ] as const;
 
 export const SAVED_TRUST_POINTS = [
