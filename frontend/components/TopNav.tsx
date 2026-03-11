@@ -67,82 +67,35 @@ function getFlyout(category: NavFlyoutKey, lang: Lang): FlyoutColumn[] {
     ];
   }
 
-  if (category === "shampoo") {
-    return [
-      {
-        title: t.explore,
-        items:
-          lang === "zh"
-            ? [
-                { label: "控油清爽", href: "/c/shampoo" },
-                { label: "去屑止痒", href: "/c/shampoo" },
-                { label: "修护受损", href: "/c/shampoo" },
-                { label: "蓬松丰盈", href: "/c/shampoo" },
-              ]
-            : [
-                { label: "Oil control & fresh", href: "/c/shampoo" },
-                { label: "Anti-dandruff & itch", href: "/c/shampoo" },
-                { label: "Repair damaged hair", href: "/c/shampoo" },
-                { label: "Volume & lift", href: "/c/shampoo" },
-              ],
-      },
-      {
-        title: t.forWho,
-        items:
-          lang === "zh"
-            ? [
-                { label: "油性头皮", href: "/c/shampoo" },
-                { label: "敏感头皮", href: "/c/shampoo" },
-                { label: "染烫受损", href: "/c/shampoo" },
-              ]
-            : [
-                { label: "Oily scalp", href: "/c/shampoo" },
-                { label: "Sensitive scalp", href: "/c/shampoo" },
-                { label: "Colored & permed hair", href: "/c/shampoo" },
-              ],
-      },
-      {
-        title: t.more,
-        items:
-          lang === "zh"
-            ? [
-                { label: "产品管理台", href: "/product" },
-                { label: "如何选择洗发水", href: "/c/shampoo" },
-              ]
-            : [
-                { label: "Product management", href: "/product" },
-                { label: "How to choose shampoo", href: "/c/shampoo" },
-              ],
-      },
-    ];
-  }
+  const routeDefs = CATEGORY_CONFIG[category].desktopRoutes;
+  const splitIndex = Math.ceil(routeDefs.length / 2);
+  const firstRoutes = routeDefs.slice(0, splitIndex);
+  const secondRoutes = routeDefs.slice(splitIndex);
 
-  // 其他品类：最小可用，保证 zh/en 都完整
   return [
     {
       title: t.explore,
-      items: [
-        {
-          label:
-            lang === "zh"
-              ? `查看${CATEGORY_CONFIG[category].zh}`
-              : `View ${CATEGORY_CONFIG[category].en}`,
-          href: `/c/${category}`,
-        },
-      ],
+      items: firstRoutes.map((item) => ({
+        label: item.title,
+        href: `/c/${category}?focus=${encodeURIComponent(item.key)}`,
+      })),
     },
     {
-      title: t.forWho,
-      items: [
-        {
-          label: lang === "zh" ? "敏感 / 日常 / 长期" : "Sensitive / Daily / Long-term",
-          href: `/c/${category}`,
-        },
-      ],
+      title: lang === "zh" ? "矩阵分类" : "Matrix routes",
+      items: secondRoutes.map((item) => ({
+        label: item.title,
+        href: `/c/${category}?focus=${encodeURIComponent(item.key)}`,
+      })),
     },
     {
       title: t.more,
-      items: [{ label: lang === "zh" ? "产品管理" : "Product management", href: "/product" }],
+      items: [
+        {
+          label: lang === "zh" ? `查看全部${CATEGORY_CONFIG[category].zh}` : `View all ${CATEGORY_CONFIG[category].en}`,
+          href: `/c/${category}`,
+        },
+        { label: lang === "zh" ? "进入产品管理" : "Product management", href: "/product" },
+      ],
     },
   ];
 }
