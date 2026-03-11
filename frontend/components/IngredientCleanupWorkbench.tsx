@@ -16,6 +16,7 @@ type CategorySummary = {
   category: string;
   product_count: number;
   ingredient_count: number;
+  reference_total: number;
   top_ingredients: Array<{ ingredient_id: string; name: string; source_count: number }>;
   subtype_summaries: SubtypeSummary[];
 };
@@ -25,21 +26,29 @@ type SubtypeSummary = {
   title: string;
   product_count: number;
   ingredient_count: number;
+  reference_total: number;
   top_ingredients: Array<{ ingredient_id: string; name: string; product_count: number }>;
   top_products: Array<{ product_id: string; title: string; ingredient_count: number }>;
 };
 
 type TopIngredient = { ingredient_id: string; name: string; source_count: number };
 type IngredientFilterOption = { key: string; title: string; count: number };
+type IngredientSubtypeHit = {
+  key: string;
+  title: string;
+  product_count: number;
+};
 type IngredientTagItem = {
   ingredient_id: string;
   category: string;
   ingredient_name: string;
   ingredient_name_en?: string | null;
   source_count: number;
+  source_ids: string[];
   href: string;
   summary: string;
   subtype_titles: string[];
+  subtype_hits: IngredientSubtypeHit[];
 };
 type SubtypeBucket = {
   title: string;
@@ -307,6 +316,7 @@ export default function IngredientCleanupWorkbench({
           title: subtype.title,
           product_count: subtype.productSet.size,
           ingredient_count: subtype.ingredientIdSet.size,
+          reference_total: Array.from(subtype.ingredientCoverage.values()).reduce((sum, value) => sum + value.productSet.size, 0),
           top_ingredients: topSubIngredients,
           top_products: topProducts,
         });
@@ -316,6 +326,7 @@ export default function IngredientCleanupWorkbench({
         category,
         product_count: bucket.productSet.size,
         ingredient_count: topIngredients.length > 0 ? dedupeTopIngredients(bucket.topIngredients).length : 0,
+        reference_total: bucket.topIngredients.reduce((sum, item) => sum + item.source_count, 0),
         top_ingredients: topIngredients,
         subtype_summaries: subtypeSummaries,
       });
@@ -344,13 +355,21 @@ export default function IngredientCleanupWorkbench({
     return items
       .map((item) => {
         const category = String(item.category || "").trim().toLowerCase();
+        const sourceIds = uniqueTraceIds(item.source_trace_ids);
         const subtypeTitles = new Set<string>();
-        for (const sourceId of uniqueTraceIds(item.source_trace_ids)) {
+        const subtypeHitMap = new Map<string, { title: string; productIds: Set<string> }>();
+        for (const sourceId of sourceIds) {
           const mapping = routeByProductId.get(sourceId);
           if (!mapping) continue;
           const mappedCategory = String(mapping.category || "").trim().toLowerCase();
           if (mappedCategory !== category) continue;
-          const subtypeTitle = String(mapping.primary_route_title || mapping.primary_route_key || "").trim();
+          const subtypeKey = String(mapping.primary_route_key || "").trim();
+          const subtypeTitle = String(mapping.primary_route_title || subtypeKey || "").trim();
+          if (subtypeKey) {
+            const subtypeHit = subtypeHitMap.get(subtypeKey) || { title: subtypeTitle || subtypeKey, productIds: new Set<string>() };
+            subtypeHit.productIds.add(sourceId);
+            subtypeHitMap.set(subtypeKey, subtypeHit);
+          }
           if (subtypeTitle) subtypeTitles.add(subtypeTitle);
         }
         return {
@@ -358,10 +377,18 @@ export default function IngredientCleanupWorkbench({
           category,
           ingredient_name: ingredientDisplayName(item),
           ingredient_name_en: item.ingredient_name_en || null,
-          source_count: Number(item.source_count || uniqueTraceIds(item.source_trace_ids).length || 0),
+          source_count: Number(item.source_count || sourceIds.length || 0),
+          source_ids: sourceIds,
           href: `/product/ingredients/${encodeURIComponent(category)}/${encodeURIComponent(item.ingredient_id)}`,
           summary: item.summary || "",
           subtype_titles: Array.from(subtypeTitles).sort((a, b) => a.localeCompare(b)),
+          subtype_hits: Array.from(subtypeHitMap.entries())
+            .map(([key, value]) => ({
+              key,
+              title: value.title,
+              product_count: value.productIds.size,
+            }))
+            .sort((a, b) => b.product_count - a.product_count || a.title.localeCompare(b.title)),
         };
       })
       .sort((a, b) => b.source_count - a.source_count || a.ingredient_name.localeCompare(b.ingredient_name));
@@ -558,7 +585,6 @@ function IngredientVisualizationPanel({
   const [visualQuery, setVisualQuery] = useState("");
   const [showLongTail, setShowLongTail] = useState(false);
   const [activeIngredientId, setActiveIngredientId] = useState<string | null>(null);
-  const [expandedOverviewCategories, setExpandedOverviewCategories] = useState<string[]>([]);
 
   const query = visualQuery.trim().toLowerCase();
   const visibleIngredientTags = useMemo(() => {
@@ -597,24 +623,12 @@ function IngredientVisualizationPanel({
     () => (selectedSummaryRow && selectedSubtype ? selectedSummaryRow.subtype_summaries.find((item) => item.key === selectedSubtype) || null : null),
     [selectedSubtype, selectedSummaryRow],
   );
-  const overviewRows = useMemo(
-    () => (selectedSummaryRow ? [selectedSummaryRow] : summaryRows),
-    [selectedSummaryRow, summaryRows],
-  );
   const activeIngredient = useMemo(
     () => visibleIngredientTags.find((item) => item.ingredient_id === activeIngredientId) || null,
     [activeIngredientId, visibleIngredientTags],
   );
   const previewIngredient = activeIngredient || highFrequencyTags[0] || visibleIngredientTags[0] || null;
   const formatCount = (value: number) => new Intl.NumberFormat("zh-CN").format(value);
-  const overviewProductBase = useMemo(
-    () => Math.max(1, overviewRows.reduce((sum, row) => sum + row.product_count, 0)),
-    [overviewRows],
-  );
-  const overviewIngredientBase = useMemo(
-    () => Math.max(1, overviewRows.reduce((sum, row) => sum + row.ingredient_count, 0)),
-    [overviewRows],
-  );
   const previewReferenceShare = previewIngredient ? ratioLabel(previewIngredient.source_count, Math.max(1, visibleReferenceTotal)) : "0%";
   const previewScopeLabel = selectedSubtype
     ? "占当前二级引用"
@@ -626,14 +640,55 @@ function IngredientVisualizationPanel({
     : selectedSummaryRow
       ? categoryLabel(selectedSummaryRow.category)
       : "全部一级分类";
-  const expandedOverviewSet = useMemo(() => new Set(expandedOverviewCategories), [expandedOverviewCategories]);
-
-  function toggleOverviewCategory(category: string) {
-    if (!category) return;
-    setExpandedOverviewCategories((prev) =>
-      prev.includes(category) ? prev.filter((item) => item !== category) : [...prev, category],
-    );
-  }
+  const previewCategorySummary = useMemo(
+    () => (previewIngredient ? summaryRows.find((row) => row.category === previewIngredient.category) || null : null),
+    [previewIngredient, summaryRows],
+  );
+  const previewCategoryProductShare = previewIngredient && previewCategorySummary
+    ? ratioLabel(previewIngredient.source_ids.length, Math.max(1, previewCategorySummary.product_count))
+    : "0%";
+  const previewCategoryReferenceShare = previewIngredient && previewCategorySummary
+    ? ratioLabel(previewIngredient.source_count, Math.max(1, previewCategorySummary.reference_total))
+    : "0%";
+  const previewSubtypeDistribution = useMemo(() => {
+    if (!previewIngredient || !previewCategorySummary) return [];
+    const subtypeSummaryByKey = new Map(previewCategorySummary.subtype_summaries.map((item) => [item.key, item]));
+    const hitRows = previewIngredient.subtype_hits.map((hit) => {
+      const subtypeSummary = subtypeSummaryByKey.get(hit.key) || null;
+      return {
+        key: hit.key,
+        title: hit.title,
+        product_count: hit.product_count,
+        subtype_product_count: subtypeSummary?.product_count || 0,
+        subtype_reference_total: subtypeSummary?.reference_total || 0,
+        subtype_product_share_ratio: hit.product_count / Math.max(1, subtypeSummary?.product_count || 0),
+        subtype_reference_share_ratio: hit.product_count / Math.max(1, subtypeSummary?.reference_total || 0),
+        subtype_product_share_label: ratioLabel(hit.product_count, Math.max(1, subtypeSummary?.product_count || 0)),
+        subtype_reference_share_label: ratioLabel(hit.product_count, Math.max(1, subtypeSummary?.reference_total || 0)),
+      };
+    });
+    const seen = new Set(hitRows.map((item) => item.key));
+    const extraRows = previewCategorySummary.subtype_summaries
+      .filter((item) => !seen.has(item.key))
+      .map((item) => ({
+        key: item.key,
+        title: item.title,
+        product_count: 0,
+        subtype_product_count: item.product_count,
+        subtype_reference_total: item.reference_total,
+        subtype_product_share_ratio: 0,
+        subtype_reference_share_ratio: 0,
+        subtype_product_share_label: "0%",
+        subtype_reference_share_label: "0%",
+      }));
+    const rows = [...hitRows, ...extraRows];
+    if (selectedSubtype) {
+      rows.sort((a, b) => Number(b.key === selectedSubtype) - Number(a.key === selectedSubtype) || b.product_count - a.product_count || a.title.localeCompare(b.title));
+    } else {
+      rows.sort((a, b) => b.product_count - a.product_count || a.title.localeCompare(b.title));
+    }
+    return rows;
+  }, [previewCategorySummary, previewIngredient, selectedSubtype]);
 
   return (
     <section
@@ -851,7 +906,7 @@ function IngredientVisualizationPanel({
                     </div>
 
                     {highFrequencyTags.length > 0 ? (
-                      <div className="mt-4 grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+                      <div className="mt-4 space-y-3">
                         {highFrequencyTags.map((item) => (
                           <IngredientVisualizationCard
                             key={item.ingredient_id}
@@ -930,111 +985,99 @@ function IngredientVisualizationPanel({
                 <div className="ingredient-pane-head border-b border-black/8 px-5 py-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <div className="text-[11px] font-semibold tracking-[0.12em] text-black/44 uppercase">
-                        {selectedSummaryRow ? "当前分布概览" : "一级分布概览"}
-                      </div>
-                      <h3 className="mt-1 text-[24px] font-semibold tracking-[-0.02em] text-black/90">
-                        {selectedSummaryRow ? categoryLabel(selectedSummaryRow.category) : "一级分布概览"}
-                      </h3>
+                      <div className="text-[11px] font-semibold tracking-[0.12em] text-black/44 uppercase">当前成分分布概览</div>
+                      <h3 className="mt-1 text-[24px] font-semibold tracking-[-0.02em] text-black/90">当前成分分布概览</h3>
                       <p className="mt-1 text-[12px] leading-[1.6] text-black/58">
-                        {selectedSubtypeSummary
-                          ? `当前已筛到 ${selectedSubtypeSummary.title}，下方二级占比按 ${categoryLabel(selectedSummaryRow?.category)} 计算。`
-                          : selectedSummaryRow
-                            ? "当前二级展开占比按所选一级分类计算。"
-                            : "一级卡片展示当前视图占比，展开后可看二级分布。"}
+                        跟随当前触摸成分实时更新，统计它在所属一级分类和二级分类中被产品使用的覆盖率与来源分布。
                       </p>
                     </div>
                     <span className="rounded-full border border-[#dbeafe] bg-[#f4f8ff] px-3 py-1 text-[11px] font-semibold text-[#2450a0]">
-                      {formatCount(overviewRows.length)} 个一级类目
+                      {previewIngredient ? "实时跟随" : "等待成分"}
                     </span>
                   </div>
                 </div>
                 <div className="ingredient-pane-body ingredient-side-scroll px-5 py-5">
-                  {overviewRows.length > 0 ? (
+                  {previewIngredient && previewCategorySummary ? (
                     <div className="space-y-3">
-                      {overviewRows.map((row, index) => {
-                        const autoOpen = row.category === selectedCategory || (!selectedCategory && index === 0);
-                        const open = autoOpen || expandedOverviewSet.has(row.category);
-                        const productShare = ratioLabel(row.product_count, overviewProductBase);
-                        const ingredientShare = ratioLabel(row.ingredient_count, overviewIngredientBase);
-                        return (
-                          <div key={row.category} className={`rounded-[22px] border px-4 py-4 ${row.category === selectedCategory ? "border-sky-200 bg-[#f7fbff]" : "border-black/8 bg-[#fbfcff]"}`}>
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <div className="text-[16px] font-semibold text-black/86">{categoryLabel(row.category)}</div>
-                                <div className="mt-1 text-[12px] text-black/56">
-                                  产品 {formatCount(row.product_count)} · 唯一成分 {formatCount(row.ingredient_count)}
-                                </div>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => toggleOverviewCategory(row.category)}
-                                className="inline-flex h-9 items-center justify-center rounded-full border border-black/10 bg-white px-3 text-[11px] font-semibold text-black/66 transition hover:bg-black/[0.03]"
-                              >
-                                {open ? "收起二级概览" : "展开二级概览"}
-                              </button>
+                      <div className="rounded-[22px] border border-sky-200 bg-[#f7fbff] px-4 py-4 shadow-[0_12px_28px_rgba(59,130,246,0.08)]">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-[16px] font-semibold text-black/86">{categoryLabel(previewIngredient.category)}</div>
+                            <div className="mt-1 text-[12px] text-black/56">
+                              当前成分被 {formatCount(previewIngredient.source_ids.length)} 个产品使用 · 一级总产品 {formatCount(previewCategorySummary.product_count)}
                             </div>
-
-                            <div className="mt-3 grid gap-2">
-                              <OverviewShareRow label="产品占当前视图" value={productShare} ratio={row.product_count / overviewProductBase} />
-                              <OverviewShareRow label="成分占当前视图" value={ingredientShare} ratio={row.ingredient_count / overviewIngredientBase} />
-                            </div>
-
-                            <div className="mt-3 flex flex-wrap gap-2">
-                              {row.top_ingredients.slice(0, 3).map((item) => (
-                                <span key={item.ingredient_id} className="rounded-full border border-black/10 bg-white px-3 py-1 text-[11px] font-semibold text-black/64">
-                                  {item.name} · {item.source_count}
-                                </span>
-                              ))}
-                            </div>
-
-                            {open ? (
-                              <div className="mt-4 border-t border-black/8 pt-4">
-                                <div className="text-[11px] font-semibold tracking-[0.12em] text-black/42 uppercase">二级概览分布</div>
-                                <div className="mt-3 space-y-3">
-                                  {row.subtype_summaries.length > 0 ? (
-                                    row.subtype_summaries.map((subtype) => {
-                                      const subtypeProductShare = ratioLabel(subtype.product_count, Math.max(1, row.product_count));
-                                      const subtypeIngredientShare = ratioLabel(subtype.ingredient_count, Math.max(1, row.ingredient_count));
-                                      const highlighted = row.category === selectedCategory && subtype.key === selectedSubtype;
-                                      return (
-                                        <div
-                                          key={`${row.category}-${subtype.key}`}
-                                          className={`rounded-[18px] border px-3 py-3 ${highlighted ? "border-sky-200 bg-white shadow-[0_12px_26px_rgba(59,130,246,0.08)]" : "border-black/8 bg-white/92"}`}
-                                        >
-                                          <div className="flex items-center justify-between gap-2">
-                                            <div className="text-[13px] font-semibold text-black/82">{subtype.title}</div>
-                                            <span className="rounded-full border border-black/10 bg-black/[0.03] px-2.5 py-1 text-[11px] font-semibold text-black/62">
-                                              产品 {formatCount(subtype.product_count)}
-                                            </span>
-                                          </div>
-                                          <div className="mt-1 text-[12px] text-black/56">唯一成分 {formatCount(subtype.ingredient_count)}</div>
-                                          <div className="mt-3 grid gap-2">
-                                            <OverviewShareRow label="产品占当前一级" value={subtypeProductShare} ratio={subtype.product_count / Math.max(1, row.product_count)} />
-                                            <OverviewShareRow label="成分占当前一级" value={subtypeIngredientShare} ratio={subtype.ingredient_count / Math.max(1, row.ingredient_count)} />
-                                          </div>
-                                          <div className="mt-3 flex flex-wrap gap-2">
-                                            {subtype.top_ingredients.slice(0, 2).map((item) => (
-                                              <span key={item.ingredient_id} className="rounded-full border border-black/10 bg-[#fbfcff] px-2.5 py-1 text-[11px] font-semibold text-black/60">
-                                                {item.name} · {item.product_count}
-                                              </span>
-                                            ))}
-                                          </div>
-                                        </div>
-                                      );
-                                    })
-                                  ) : (
-                                    <div className="text-[12px] text-black/54">当前一级分类暂无二级概览数据。</div>
-                                  )}
-                                </div>
-                              </div>
-                            ) : null}
                           </div>
-                        );
-                      })}
+                          <span className="rounded-full border border-black/10 bg-white px-2.5 py-1 text-[11px] font-semibold text-black/62">
+                            {previewIngredient.source_count} 引用
+                          </span>
+                        </div>
+                        <div className="mt-3 grid gap-2">
+                          <OverviewShareRow
+                            label="占所属一级产品"
+                            value={previewCategoryProductShare}
+                            ratio={previewIngredient.source_ids.length / Math.max(1, previewCategorySummary.product_count)}
+                          />
+                          <OverviewShareRow
+                            label="占所属一级引用"
+                            value={previewCategoryReferenceShare}
+                            ratio={previewIngredient.source_count / Math.max(1, previewCategorySummary.reference_total)}
+                          />
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <span className="rounded-full border border-black/10 bg-white px-3 py-1 text-[11px] font-semibold text-black/64">
+                            {previewIngredient.ingredient_name}
+                          </span>
+                          {previewIngredient.subtype_titles.slice(0, 3).map((title) => (
+                            <span key={title} className="rounded-full border border-black/10 bg-white px-3 py-1 text-[11px] font-semibold text-black/60">
+                              {title}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="rounded-[22px] border border-black/8 bg-[#fbfcff] px-4 py-4">
+                        <div className="text-[11px] font-semibold tracking-[0.12em] text-black/42 uppercase">二级分类使用分布</div>
+                        <div className="mt-3 space-y-3">
+                          {previewSubtypeDistribution.length > 0 ? (
+                            previewSubtypeDistribution.map((subtype) => {
+                              const highlighted = subtype.key === selectedSubtype;
+                              return (
+                                <div
+                                  key={`${previewIngredient.ingredient_id}-${subtype.key}`}
+                                  className={`rounded-[18px] border px-3 py-3 ${highlighted ? "border-sky-200 bg-white shadow-[0_12px_26px_rgba(59,130,246,0.08)]" : "border-black/8 bg-white/92"}`}
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="text-[13px] font-semibold text-black/82">{subtype.title}</div>
+                                    <span className="rounded-full border border-black/10 bg-black/[0.03] px-2.5 py-1 text-[11px] font-semibold text-black/62">
+                                      使用产品 {formatCount(subtype.product_count)}
+                                    </span>
+                                  </div>
+                                  <div className="mt-1 text-[12px] text-black/56">
+                                    二级总产品 {formatCount(subtype.subtype_product_count)}
+                                  </div>
+                                  <div className="mt-3 grid gap-2">
+                                    <OverviewShareRow
+                                      label="占该二级产品"
+                                      value={subtype.subtype_product_share_label}
+                                      ratio={subtype.subtype_product_share_ratio}
+                                    />
+                                    <OverviewShareRow
+                                      label="占该二级引用"
+                                      value={subtype.subtype_reference_share_label}
+                                      ratio={subtype.subtype_reference_share_ratio}
+                                    />
+                                  </div>
+                                </div>
+                              );
+                            })
+                          ) : (
+                            <div className="text-[12px] text-black/54">当前成分暂无可用二级分类分布。</div>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   ) : (
-                    <div className="text-[13px] text-black/56">暂无分类摘要。</div>
+                    <div className="text-[13px] text-black/56">当前筛选无可预览成分，无法计算分布概览。</div>
                   )}
                 </div>
               </div>
