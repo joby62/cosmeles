@@ -216,6 +216,12 @@ export default function CompareResultView({ compareId }: CompareResultViewProps)
           >
             Run another compare
           </Link>
+          <Link
+            href="/saved"
+            className="inline-flex h-11 items-center justify-center rounded-full border border-black/10 bg-white px-5 text-[14px] font-semibold text-slate-700"
+          >
+            Open saved
+          </Link>
           {recommendedProductId ? (
             <Link
               href={`/product/${encodeURIComponent(recommendedProductId)}`}

@@ -48,6 +48,12 @@ export default function SiteHeader() {
               Search
             </Link>
             <Link
+              href="/saved"
+              className="inline-flex h-10 items-center justify-center rounded-full border border-black/10 bg-white/90 px-4 text-[13px] font-medium text-slate-700 transition hover:bg-white hover:text-slate-950"
+            >
+              Saved
+            </Link>
+            <Link
               href="/bag"
               className="inline-flex h-10 items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-4 text-[13px] font-semibold text-white shadow-[0_12px_30px_rgba(0,113,227,0.28)] transition hover:brightness-[1.03]"
             >

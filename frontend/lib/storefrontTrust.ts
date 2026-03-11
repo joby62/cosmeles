@@ -170,3 +170,27 @@ export const SEARCH_TRUST_POINTS = [
   "Support links stay visible from search so users do not have to guess where shipping and returns live.",
   "Saved bag continuity matters here too: search is part of the decision path, not a dead-end results page.",
 ] as const;
+
+export const SAVED_TRUST_POINTS = [
+  "Bag, Match, Compare, and recent product views should remain recoverable without rebuilding the same shortlist.",
+  "Saved state should be useful before account and checkout exist, not postponed until later phases.",
+  "Shipping, returns, and support still need to stay visible inside the recovery layer.",
+] as const;
+
+export const SAVED_SUPPORT_LINKS = [
+  {
+    title: "Shipping expectations",
+    summary: "Keep delivery timing, processing windows, and tracking expectations close while you revisit saved choices.",
+    href: "/support/shipping",
+  },
+  {
+    title: "Returns clarity",
+    summary: "Review return timing and condition rules before you bring a saved shortlist back into the bag.",
+    href: "/support/returns",
+  },
+  {
+    title: "Contact path",
+    summary: "Keep support routing visible if a saved product, compare result, or route basis raises questions.",
+    href: "/support/contact",
+  },
+] as const;

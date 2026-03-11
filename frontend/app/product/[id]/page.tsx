@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import AddToBagButton from "@/components/site/AddToBagButton";
 import ProductCard from "@/components/site/ProductCard";
+import RecentProductTracker from "@/components/site/RecentProductTracker";
 import TrustStrip from "@/components/site/TrustStrip";
 import {
   fetchAllProducts,
@@ -101,6 +102,21 @@ export default async function ProductPage({
 
   return (
     <div className="mx-auto max-w-7xl px-4 pb-16 pt-8">
+      {category ? (
+        <RecentProductTracker
+          snapshot={{
+            productId: id,
+            category: category.key,
+            name: productName,
+            brand: productBrand,
+            summary: summaryText,
+            imageUrl: imageSrc,
+            routeTitle,
+            routeSummary,
+          }}
+        />
+      ) : null}
+
       <section className="grid gap-6 lg:grid-cols-[1fr_0.92fr] lg:items-start">
         <article className="overflow-hidden rounded-[36px] border border-black/8 bg-white/92 shadow-[0_28px_72px_rgba(15,23,42,0.08)]">
           <div className="relative aspect-[4/4.6] bg-[linear-gradient(180deg,#f8fbff_0%,#edf4fb_100%)]">
@@ -361,6 +377,9 @@ export default async function ProductPage({
               <div className="mt-4 flex flex-wrap gap-2">
                 <Link href="/bag" className="rounded-full border border-black/8 bg-white px-4 py-2 text-[13px] font-medium text-slate-700">
                   Open bag
+                </Link>
+                <Link href="/saved" className="rounded-full border border-black/8 bg-white px-4 py-2 text-[13px] font-medium text-slate-700">
+                  Saved activity
                 </Link>
                 <Link href="/support/faq" className="rounded-full border border-black/8 bg-white px-4 py-2 text-[13px] font-medium text-slate-700">
                   More FAQ

@@ -283,6 +283,12 @@ export default function MatchResultView({ sessionId }: MatchResultViewProps) {
               >
                 View product details
               </Link>
+              <Link
+                href="/saved"
+                className="inline-flex h-11 items-center justify-center rounded-full border border-black/10 bg-white px-5 text-[13px] font-semibold text-slate-700"
+              >
+                Open saved
+              </Link>
               <button
                 type="button"
                 onClick={togglePin}
