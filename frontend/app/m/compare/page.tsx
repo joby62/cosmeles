@@ -7,7 +7,6 @@ import { useRouter } from "next/navigation";
 import {
   fetchMobileCompareBootstrap,
   fetchMobileCompareSession,
-  recordMobileCompareEvent,
   runMobileCompareJobStream,
   type MobileCompareJobTargetInput,
   type MobileCompareProductLibraryItem,
@@ -15,6 +14,8 @@ import {
   type MobileSelectionCategory,
   uploadMobileCompareCurrentProduct,
 } from "@/lib/api";
+import MobilePageAnalytics from "@/components/mobile/MobilePageAnalytics";
+import { trackMobileEvent } from "@/lib/mobileAnalytics";
 import { describeMobileRouteFocus, getMobileCategoryLabel } from "@/lib/mobile/routeCopy";
 
 const CATEGORY_ORDER: MobileSelectionCategory[] = ["shampoo", "bodywash", "conditioner", "lotion", "cleanser"];
@@ -1461,6 +1462,7 @@ export default function MobileComparePage() {
 
   return (
     <section className={`m-compare-page pb-10 ${step === 3 ? "m-compare-page-selection" : ""}`}>
+      <MobilePageAnalytics page="mobile_compare" route="/m/compare" source="m_compare" category={category} />
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-[26px] leading-[1.15] font-semibold tracking-[-0.02em] text-black/90">开始对比</h1>
         <button
@@ -2139,7 +2141,7 @@ function describeCompareTarget(
 
 async function safeTrack(name: string, props: Record<string, unknown>) {
   try {
-    await recordMobileCompareEvent(name, props);
+    await trackMobileEvent(name, props);
   } catch {
     // 埋点失败不阻塞主流程
   }

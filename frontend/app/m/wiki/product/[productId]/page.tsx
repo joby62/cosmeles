@@ -1,6 +1,9 @@
 import Image from "next/image";
 import Link from "next/link";
 import AddToBagButton from "@/components/mobile/AddToBagButton";
+import MobileEventBeacon from "@/components/mobile/MobileEventBeacon";
+import MobilePageAnalytics from "@/components/mobile/MobilePageAnalytics";
+import MobileTrackedLink from "@/components/mobile/MobileTrackedLink";
 import { fetchMobileWikiProductAnalysis, fetchMobileWikiProductDetail, resolveImageUrl } from "@/lib/api";
 import { formatRuntimeError } from "@/lib/error";
 
@@ -144,6 +147,13 @@ export default async function MobileWikiProductDetailPage({
 
   return (
     <section className="pb-28">
+      <MobilePageAnalytics
+        page="wiki_product_detail"
+        route={`/m/wiki/product/${product.id}`}
+        source="wiki_product_detail"
+        category={product.category}
+        productId={product.id}
+      />
       <Link
         href={returnHref}
         className="inline-flex h-9 items-center rounded-full border border-black/15 bg-white px-4 text-[12px] font-semibold text-black/75 active:bg-black/[0.03]"
@@ -180,12 +190,32 @@ export default async function MobileWikiProductDetailPage({
           </h1>
           <p className="mt-1 text-[14px] text-black/58">{product.brand || "品牌未识别"}</p>
           <div className="mt-3">
-            <Link
+            <MobileEventBeacon
+              name="wiki_upload_cta_expose"
+              props={{
+                page: "wiki_product_detail",
+                route: `/m/wiki/product/${product.id}`,
+                source: "wiki_product_detail",
+                category: product.category,
+                product_id: product.id,
+                target_path: "/m/me/use",
+              }}
+            />
+            <MobileTrackedLink
               href={uploadCtaHref}
+              eventName="wiki_upload_cta_click"
+              eventProps={{
+                page: "wiki_product_detail",
+                route: `/m/wiki/product/${product.id}`,
+                source: "wiki_product_detail",
+                category: product.category,
+                product_id: product.id,
+                target_path: "/m/me/use",
+              }}
               className="inline-flex max-w-full items-center rounded-full border border-[#cfe2ff] bg-[linear-gradient(180deg,#f7faff_0%,#eef5ff_100%)] px-4 py-2 text-[12px] font-semibold leading-[1.45] text-[#2450a3] shadow-[0_8px_22px_rgba(36,80,163,0.08)] active:translate-y-[1px]"
             >
               没有你的产品？点击上传一键分析
-            </Link>
+            </MobileTrackedLink>
           </div>
           <p className="mt-3 text-[14px] leading-[1.55] text-black/68">
             {product.one_sentence || "暂无一句话摘要。"}

@@ -2057,11 +2057,15 @@ export async function deleteMobileCompareSessionsBatch(
   });
 }
 
-export async function recordMobileCompareEvent(name: string, props: Record<string, unknown> = {}): Promise<{ status: string; trace_id: string }> {
+export async function recordMobileEvent(name: string, props: Record<string, unknown> = {}): Promise<{ status: string; trace_id: string }> {
   return apiFetch<{ status: string; trace_id: string }>("/api/mobile/compare/events", {
     method: "POST",
     body: JSON.stringify({ name, props }),
   });
+}
+
+export async function recordMobileCompareEvent(name: string, props: Record<string, unknown> = {}): Promise<{ status: string; trace_id: string }> {
+  return recordMobileEvent(name, props);
 }
 
 function normalizePublicImagePath(path: string): string {
