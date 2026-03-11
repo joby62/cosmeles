@@ -1803,13 +1803,20 @@ html[data-nav-open="1"] #app-main{
 
 .m-wiki-card-soft {
   border: 1px solid var(--m-wiki-border);
-  background: var(--m-wiki-soft-bg);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.88), rgba(246,248,252,0.82)),
+    var(--m-wiki-soft-bg);
+  box-shadow:
+    0 14px 28px rgba(16,29,52,0.05),
+    inset 0 1px 0 rgba(255,255,255,0.52);
 }
 
 .m-wiki-hero-card {
   border: 1px solid var(--m-wiki-border);
   background: var(--m-wiki-card-solid);
-  box-shadow: var(--m-wiki-hero-shadow);
+  box-shadow:
+    0 22px 44px rgba(19,36,64,0.12),
+    inset 0 1px 0 rgba(255,255,255,0.28);
 }
 
 .m-wiki-input-shell {
@@ -1886,40 +1893,6 @@ html[data-nav-open="1"] #app-main{
   transform: translateY(-1px);
 }
 
-.m-wiki-primary-cta {
-  background: linear-gradient(180deg, rgba(51,154,255,0.98), rgba(0,113,227,0.98));
-  color: white;
-  box-shadow:
-    0 14px 28px rgba(0,113,227,0.22),
-    inset 0 1px 0 rgba(255,255,255,0.26);
-}
-
-.m-wiki-primary-cta:active {
-  box-shadow:
-    0 8px 18px rgba(0,113,227,0.18),
-    inset 0 1px 0 rgba(255,255,255,0.22);
-}
-
-.m-wiki-segmented {
-  border: 1px solid var(--m-wiki-border);
-  background: var(--m-wiki-frost);
-  background: color-mix(in srgb, var(--m-wiki-frost) 74%, transparent);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.22);
-  backdrop-filter: saturate(175%) blur(18px);
-  -webkit-backdrop-filter: saturate(175%) blur(18px);
-}
-
-.m-wiki-segment-thumb {
-  border-radius: 26px;
-  background: linear-gradient(180deg, rgba(41,151,255,0.92), rgba(0,113,227,0.9));
-  box-shadow:
-    0 12px 24px rgba(0,113,227,0.24),
-    inset 0 1px 0 rgba(255,255,255,0.34);
-  transform-origin: center center;
-  will-change: transform;
-  transition: transform 420ms cubic-bezier(0.16, 1.18, 0.3, 1);
-}
-
 @keyframes mSheetIn {
   from {
     opacity: 0;
@@ -1950,10 +1923,6 @@ html[data-nav-open="1"] #app-main{
 
   .m-wiki-pane {
     animation: none !important;
-  }
-
-  .m-wiki-segment-thumb {
-    transition: none !important;
   }
 
   .m-compare-check-selected {

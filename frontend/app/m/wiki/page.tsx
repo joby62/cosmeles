@@ -231,6 +231,14 @@ function CloseIcon({ className = "h-4 w-4" }: { className?: string }) {
   );
 }
 
+function ChevronRightIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden className={className}>
+      <path d="M9 6L15 12L9 18" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function WikiPageFallback() {
   return (
     <section className="m-wiki-page -mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[color:var(--m-wiki-canvas)] px-4 pb-36 pt-4 text-white">
@@ -685,50 +693,53 @@ function MobileWikiPageContent() {
               {featuredProductItem ? (
                 <Link
                   href={buildReturnHref(`/m/wiki/product/${encodeURIComponent(featuredProductItem.product.id)}`, returnTo)}
-                  className="m-wiki-hero-card m-pressable block overflow-hidden rounded-[32px] transition-transform active:scale-[0.996]"
+                  className="m-wiki-hero-card m-pressable block overflow-hidden rounded-[34px] transition-transform active:scale-[0.996]"
                 >
-                  <div className={`${theme.heroClass} relative overflow-hidden px-5 py-5`}>
-                    <div className={`absolute inset-0 ${theme.hazeClass}`} />
-                    <div className={`absolute right-[-42px] top-[-36px] h-[170px] w-[170px] rounded-full ${theme.accentClass} opacity-30 blur-3xl`} />
-                    <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.16)_0%,rgba(255,255,255,0)_34%,rgba(0,0,0,0.38)_100%)]" />
+                  <div className={`${theme.heroClass} relative overflow-hidden px-5 pb-5 pt-5`}>
+                    <div className={`absolute inset-0 ${theme.hazeClass} opacity-70`} />
+                    <div className={`absolute right-[-34px] top-[-28px] h-[164px] w-[164px] rounded-full ${theme.accentClass} opacity-22 blur-3xl`} />
+                    <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.26)_0%,rgba(255,255,255,0.06)_32%,rgba(255,255,255,0)_100%)]" />
 
                     <div className="relative z-[1] flex items-start justify-between gap-4">
                       <div className="min-w-0 flex-1">
-                        <div className="inline-flex rounded-full border border-white/32 bg-white/12 px-2.5 py-1 text-[12px] font-medium text-white/86 backdrop-blur-lg">
+                        <div className="inline-flex rounded-full border border-white/26 bg-white/14 px-2.5 py-1 text-[12px] font-medium text-white/84 backdrop-blur-lg">
                           {featuredProductItem.target_type_title || featuredProductItem.category_label}
                         </div>
-                        <p className="m-wiki-kicker mt-4 text-[12px] text-white/76">先看这款</p>
-                        <h2 className="mt-1 line-clamp-2 text-[28px] leading-[1.08] font-semibold tracking-[-0.03em] text-white">
+                        <p className="m-wiki-kicker mt-4 text-[11px] text-white/68">推荐你先看</p>
+                        <h2 className="mt-1 line-clamp-2 text-[27px] leading-[1.1] font-semibold tracking-[-0.03em] text-white">
                           {featuredProductHeadline}
                         </h2>
-                        <p className="mt-2 line-clamp-2 text-[14px] leading-[1.5] text-white/82">{featuredProductTitle}</p>
+                        <p className="mt-2 line-clamp-2 text-[14px] leading-[1.48] text-white/76">{featuredProductTitle}</p>
                         <div className="mt-4 flex flex-wrap gap-2">
-                          <span className="inline-flex h-7 items-center rounded-full border border-white/20 bg-white/[0.08] px-3 text-[11px] text-white/84">
+                          <span className="inline-flex h-7 items-center rounded-full border border-white/18 bg-white/[0.08] px-3 text-[11px] text-white/78">
                             {featuredProductItem.mapping_ready ? "映射已完成" : "映射进行中"}
                           </span>
                           {typeof featuredProductItem.primary_confidence === "number" ? (
-                            <span className="inline-flex h-7 items-center rounded-full border border-[#89c1ff]/44 bg-[#2f5e9f]/30 px-3 text-[11px] text-[#d6eaff]">
+                            <span className="inline-flex h-7 items-center rounded-full border border-[#89c1ff]/28 bg-[#2f5e9f]/16 px-3 text-[11px] text-[#d6eaff]">
                               置信度 {featuredProductItem.primary_confidence}%
                             </span>
                           ) : null}
                         </div>
                       </div>
 
-                      <div className="relative h-[96px] w-[96px] shrink-0 overflow-hidden rounded-[26px] border border-white/24 bg-white/12 shadow-[0_18px_34px_rgba(0,0,0,0.22)]">
+                      <div className="relative h-[108px] w-[108px] shrink-0 overflow-hidden rounded-[28px] border border-white/20 bg-white/12 shadow-[0_16px_28px_rgba(0,0,0,0.14)]">
                         <Image
                           src={resolveImageUrl(featuredProductItem.product)}
                           alt={featuredProductItem.product.name || featuredProductItem.product.id}
                           fill
-                          sizes="96px"
+                          sizes="108px"
                           className="object-cover"
                         />
                       </div>
                     </div>
 
-                    <div className="relative z-[1] mt-5 flex items-center justify-between gap-3 rounded-[22px] border border-white/12 bg-black/24 px-4 py-3 backdrop-blur-2xl">
-                      <p className="min-w-0 flex-1 text-[13px] leading-[1.45] text-white/76">查看完整分析、成分拆解与使用建议</p>
-                      <span className="m-wiki-primary-cta inline-flex h-10 shrink-0 items-center rounded-full px-4 text-[14px] font-semibold">
-                        查看完整分析
+                    <div className="relative z-[1] mt-5 flex items-center justify-between gap-3 rounded-[22px] border border-white/10 bg-white/[0.08] px-4 py-3 backdrop-blur-xl">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[13px] font-medium text-white/86">完整分析</p>
+                        <p className="mt-0.5 text-[12px] leading-[1.45] text-white/62">点开看成分拆解、适配建议与使用结论</p>
+                      </div>
+                      <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/12 bg-white/[0.12] text-white/74">
+                        <ChevronRightIcon />
                       </span>
                     </div>
                   </div>
@@ -742,35 +753,40 @@ function MobileWikiPageContent() {
                   <Link
                     key={product.id}
                     href={buildReturnHref(`/m/wiki/product/${encodeURIComponent(product.id)}`, returnTo)}
-                    className="m-wiki-card-soft m-pressable group block overflow-hidden rounded-[26px] border border-white/10 px-4 py-4 transition-transform active:scale-[0.997]"
+                    className="m-wiki-card-soft m-pressable group block overflow-hidden rounded-[28px] border border-white/10 px-4 py-4 transition-transform active:scale-[0.997]"
                   >
                     <div className="flex items-start gap-3.5">
-                      <div className="relative h-[84px] w-[84px] shrink-0 overflow-hidden rounded-[18px] bg-white/10">
+                      <div className="relative h-[86px] w-[86px] shrink-0 overflow-hidden rounded-[20px] border border-white/8 bg-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.16)]">
                         <Image
                           src={resolveImageUrl(product)}
                           alt={product.name || product.id}
                           fill
-                          sizes="84px"
+                          sizes="86px"
                           className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
                         />
                       </div>
 
                       <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap gap-1.5">
-                          <span className="inline-flex h-6 items-center rounded-full border border-white/16 bg-white/[0.08] px-2.5 text-[11px] text-white/78">
-                            {item.target_type_title || item.category_label}
-                          </span>
-                          {typeof item.primary_confidence === "number" ? (
-                            <span className="inline-flex h-6 items-center rounded-full border border-[#89c1ff]/35 bg-[#2f5e9f]/24 px-2.5 text-[11px] text-[#d6eaff]">
-                              {item.primary_confidence}%
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex flex-wrap gap-1.5">
+                            <span className="inline-flex h-6 items-center rounded-full border border-white/14 bg-white/[0.08] px-2.5 text-[11px] text-white/72">
+                              {item.target_type_title || item.category_label}
                             </span>
-                          ) : null}
+                            {typeof item.primary_confidence === "number" ? (
+                              <span className="inline-flex h-6 items-center rounded-full border border-[#89c1ff]/25 bg-[#2f5e9f]/14 px-2.5 text-[11px] text-[#d6eaff]">
+                                {item.primary_confidence}%
+                              </span>
+                            ) : null}
+                          </div>
+                          <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-white/52 transition-colors group-hover:bg-white/[0.14] group-hover:text-white/72">
+                            <ChevronRightIcon className="h-[15px] w-[15px]" />
+                          </span>
                         </div>
-                        <p className="mt-2 line-clamp-2 text-[17px] leading-[1.35] font-semibold text-white/92">
+                        <p className="mt-2 line-clamp-2 text-[17px] leading-[1.34] font-semibold text-white/92">
                           {summaryFocus(product.one_sentence)}
                         </p>
-                        <p className="mt-1 line-clamp-1 text-[13px] text-white/64">{productTitle}</p>
-                        <p className="mt-2 text-[12px] text-white/54">{item.mapping_ready ? "映射已完成，可直接查看分析" : "映射尚未完成，先查看基础信息"}</p>
+                        <p className="mt-1 line-clamp-1 text-[13px] text-white/60">{productTitle}</p>
+                        <p className="mt-2 text-[12px] text-white/50">{item.mapping_ready ? "直接看完整分析" : "先看基础信息，分析仍在补充"}</p>
                       </div>
                     </div>
                   </Link>
@@ -798,40 +814,43 @@ function MobileWikiPageContent() {
               {featuredIngredientItem && featuredIngredientName ? (
                 <Link
                   href={buildReturnHref(`/m/wiki/${active}/${featuredIngredientItem.ingredient_id}`, returnTo)}
-                  className="m-wiki-hero-card m-pressable block overflow-hidden rounded-[32px] transition-transform active:scale-[0.996]"
+                  className="m-wiki-hero-card m-pressable block overflow-hidden rounded-[34px] transition-transform active:scale-[0.996]"
                 >
-                  <div className={`${theme.heroClass} relative overflow-hidden px-5 py-5`}>
-                    <div className={`absolute inset-0 ${theme.hazeClass}`} />
-                    <div className={`absolute right-[-42px] top-[-36px] h-[170px] w-[170px] rounded-full ${theme.accentClass} opacity-30 blur-3xl`} />
-                    <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.16)_0%,rgba(255,255,255,0)_34%,rgba(0,0,0,0.38)_100%)]" />
+                  <div className={`${theme.heroClass} relative overflow-hidden px-5 pb-5 pt-5`}>
+                    <div className={`absolute inset-0 ${theme.hazeClass} opacity-70`} />
+                    <div className={`absolute right-[-34px] top-[-28px] h-[164px] w-[164px] rounded-full ${theme.accentClass} opacity-22 blur-3xl`} />
+                    <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.26)_0%,rgba(255,255,255,0.06)_32%,rgba(255,255,255,0)_100%)]" />
 
                     <div className="relative z-[1] flex items-start justify-between gap-4">
                       <div className="min-w-0 flex-1">
-                        <div className="inline-flex rounded-full border border-white/32 bg-white/12 px-2.5 py-1 text-[12px] font-medium text-white/86 backdrop-blur-lg">
+                        <div className="inline-flex rounded-full border border-white/26 bg-white/14 px-2.5 py-1 text-[12px] font-medium text-white/84 backdrop-blur-lg">
                           {WIKI_MAP[active].label}
                         </div>
-                        <p className="m-wiki-kicker mt-4 text-[12px] text-white/76">一句话重点</p>
-                        <h2 className="mt-1 line-clamp-2 text-[28px] leading-[1.08] font-semibold tracking-[-0.03em] text-white">
+                        <p className="m-wiki-kicker mt-4 text-[11px] text-white/68">一句话重点</p>
+                        <h2 className="mt-1 line-clamp-2 text-[27px] leading-[1.1] font-semibold tracking-[-0.03em] text-white">
                           {summaryFocus(featuredIngredientItem.summary)}
                         </h2>
-                        <p className="mt-2 line-clamp-1 text-[15px] font-semibold text-white/88">{featuredIngredientName.main}</p>
-                        {featuredIngredientName.sub ? <p className="mt-0.5 line-clamp-1 text-[13px] text-white/68">{featuredIngredientName.sub}</p> : null}
+                        <p className="mt-2 line-clamp-1 text-[15px] font-semibold text-white/84">{featuredIngredientName.main}</p>
+                        {featuredIngredientName.sub ? <p className="mt-0.5 line-clamp-1 text-[13px] text-white/62">{featuredIngredientName.sub}</p> : null}
                         <div className="mt-4 flex flex-wrap gap-2">
-                          <span className="inline-flex h-7 items-center rounded-full border border-white/20 bg-white/[0.08] px-3 text-[11px] text-white/84">
+                          <span className="inline-flex h-7 items-center rounded-full border border-white/18 bg-white/[0.08] px-3 text-[11px] text-white/78">
                             来源样本 {featuredIngredientItem.source_count} 条
                           </span>
                         </div>
                       </div>
 
-                      <div className="relative flex h-[82px] w-[82px] shrink-0 items-center justify-center rounded-[24px] border border-white/22 bg-white/12 shadow-[0_18px_34px_rgba(0,0,0,0.22)]">
-                        <Image src={`/m/categories/${active}.png`} alt={WIKI_MAP[active].label} width={54} height={54} className="h-[54px] w-[54px] rounded-[18px] object-cover" />
+                      <div className="relative flex h-[96px] w-[96px] shrink-0 items-center justify-center rounded-[28px] border border-white/20 bg-white/12 shadow-[0_16px_28px_rgba(0,0,0,0.14)]">
+                        <Image src={`/m/categories/${active}.png`} alt={WIKI_MAP[active].label} width={58} height={58} className="h-[58px] w-[58px] rounded-[18px] object-cover" />
                       </div>
                     </div>
 
-                    <div className="relative z-[1] mt-5 flex items-center justify-between gap-3 rounded-[22px] border border-white/12 bg-black/24 px-4 py-3 backdrop-blur-2xl">
-                      <p className="min-w-0 flex-1 text-[13px] leading-[1.45] text-white/76">先看一句话，再展开完整收益、风险与使用建议</p>
-                      <span className="m-wiki-primary-cta inline-flex h-10 shrink-0 items-center rounded-full px-4 text-[14px] font-semibold">
-                        查看详情
+                    <div className="relative z-[1] mt-5 flex items-center justify-between gap-3 rounded-[22px] border border-white/10 bg-white/[0.08] px-4 py-3 backdrop-blur-xl">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[13px] font-medium text-white/86">继续查看</p>
+                        <p className="mt-0.5 text-[12px] leading-[1.45] text-white/62">展开完整收益、风险边界与使用方式</p>
+                      </div>
+                      <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/12 bg-white/[0.12] text-white/74">
+                        <ChevronRightIcon />
                       </span>
                     </div>
                   </div>
@@ -844,27 +863,32 @@ function MobileWikiPageContent() {
                   <Link
                     key={item.ingredient_id}
                     href={buildReturnHref(`/m/wiki/${active}/${item.ingredient_id}`, returnTo)}
-                    className="m-wiki-card-soft m-pressable block overflow-hidden rounded-[26px] border border-white/10 px-4 py-4 transition-transform active:scale-[0.997]"
+                    className="m-wiki-card-soft m-pressable group block overflow-hidden rounded-[28px] border border-white/10 px-4 py-4 transition-transform active:scale-[0.997]"
                   >
                     <div className="flex items-start gap-3.5">
-                      <div className="flex h-[72px] w-[72px] shrink-0 items-center justify-center overflow-hidden rounded-[18px] bg-white/10">
+                      <div className="flex h-[74px] w-[74px] shrink-0 items-center justify-center overflow-hidden rounded-[20px] border border-white/8 bg-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.16)]">
                         <Image src={`/m/categories/${active}.png`} alt={WIKI_MAP[active].label} width={42} height={42} className="h-[42px] w-[42px] rounded-[14px] object-cover" />
                       </div>
 
                       <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap gap-1.5">
-                          <span className="inline-flex h-6 items-center rounded-full border border-white/16 bg-white/[0.08] px-2.5 text-[11px] text-white/78">
-                            {WIKI_MAP[active].label}
-                          </span>
-                          <span className="inline-flex h-6 items-center rounded-full border border-white/16 bg-white/[0.08] px-2.5 text-[11px] text-white/62">
-                            {item.source_count} 条样本
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex flex-wrap gap-1.5">
+                            <span className="inline-flex h-6 items-center rounded-full border border-white/14 bg-white/[0.08] px-2.5 text-[11px] text-white/72">
+                              {WIKI_MAP[active].label}
+                            </span>
+                            <span className="inline-flex h-6 items-center rounded-full border border-white/14 bg-white/[0.08] px-2.5 text-[11px] text-white/62">
+                              {item.source_count} 条样本
+                            </span>
+                          </div>
+                          <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-white/52 transition-colors group-hover:bg-white/[0.14] group-hover:text-white/72">
+                            <ChevronRightIcon className="h-[15px] w-[15px]" />
                           </span>
                         </div>
-                        <p className="mt-2 line-clamp-2 text-[17px] leading-[1.35] font-semibold text-white/92">
+                        <p className="mt-2 line-clamp-2 text-[17px] leading-[1.34] font-semibold text-white/92">
                           {summaryFocus(item.summary)}
                         </p>
-                        <p className="mt-1 line-clamp-1 text-[13px] text-white/68">{name.main}</p>
-                        {name.sub ? <p className="mt-0.5 line-clamp-1 text-[12px] text-white/52">{name.sub}</p> : null}
+                        <p className="mt-1 line-clamp-1 text-[13px] text-white/62">{name.main}</p>
+                        {name.sub ? <p className="mt-0.5 line-clamp-1 text-[12px] text-white/48">{name.sub}</p> : null}
                       </div>
                     </div>
                   </Link>
