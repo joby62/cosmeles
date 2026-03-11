@@ -1,22 +1,24 @@
-import "./globals.css";
 import type { Metadata } from "next";
-import { BRAND } from "@/lib/brand";
-import DesktopTopNavGate from "@/components/DesktopTopNavGate";
+import "./globals.css";
+import SiteFooter from "@/components/site/SiteFooter";
+import SiteHeader from "@/components/site/SiteHeader";
 
 export const metadata: Metadata = {
-  title: `${BRAND.appNameZh} · ${BRAND.sloganZh}`,
-  description: BRAND.heroSublineZh,
+  metadataBase: new URL("https://jeslect.com"),
+  title: "Jeslect | Build a clearer routine",
+  description:
+    "Jeslect is building an English-first skincare, body care, and hair care storefront around product clarity, routine fit, and calmer shopping decisions.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="zh-CN">
+    <html lang="en-US">
       <body>
-        {/* Desktop 才显示顶部导航；/m 独立移动壳层 */}
-        <DesktopTopNavGate />
-
-        {/* ✅ 只虚化 main（不影响 top nav / flyout） */}
-        <main id="app-main">{children}</main>
+        <div className="site-shell">
+          <SiteHeader />
+          <main className="site-main">{children}</main>
+          <SiteFooter />
+        </div>
       </body>
     </html>
   );
