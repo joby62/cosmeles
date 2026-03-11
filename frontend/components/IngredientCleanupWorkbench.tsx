@@ -665,7 +665,7 @@ function IngredientVisualizationPanel({
       </div>
 
       <div className="px-6 pb-6 pt-5 md:px-7">
-        <div className="ingredient-dock sticky top-24 z-20 rounded-[22px] border border-black/10 bg-white/86 px-5 py-4 shadow-[0_14px_32px_rgba(15,23,42,0.08)] backdrop-blur-xl">
+        <div className="ingredient-dock rounded-[22px] border border-black/10 bg-white/86 px-5 py-4 shadow-[0_14px_32px_rgba(15,23,42,0.08)] backdrop-blur-xl">
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
             <div className="space-y-3">
               <div>
@@ -767,9 +767,9 @@ function IngredientVisualizationPanel({
           </div>
         ) : null}
 
-        <div className="ingredient-workbench mt-5 overflow-hidden rounded-[30px] border border-black/10 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] shadow-[0_22px_58px_rgba(15,23,42,0.08)]">
-          <div className="ingredient-workbench-grid grid xl:grid-cols-[320px_minmax(0,1fr)_360px] 2xl:grid-cols-[340px_minmax(0,1fr)_380px] xl:h-[calc(100vh-248px)] xl:min-h-[760px] xl:max-h-[1120px]">
-            <section className="ingredient-pane border-b border-black/8 bg-[linear-gradient(180deg,rgba(247,250,255,0.9),rgba(255,255,255,0.95))] xl:border-b-0 xl:border-r">
+        <div className="ingredient-workbench mt-5 overflow-visible rounded-[30px] border border-black/10 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] shadow-[0_22px_58px_rgba(15,23,42,0.08)]">
+          <div className="ingredient-workbench-grid grid xl:grid-cols-[320px_minmax(0,1fr)_360px] 2xl:grid-cols-[340px_minmax(0,1fr)_380px]">
+            <section className="ingredient-pane ingredient-side-pane border-b border-black/8 bg-[linear-gradient(180deg,rgba(247,250,255,0.9),rgba(255,255,255,0.95))] xl:border-b-0 xl:border-r">
               <div className="ingredient-pane-frame">
                 <div className="ingredient-pane-head border-b border-black/8 px-5 py-4">
                   <div className="flex flex-wrap items-center gap-2">
@@ -789,7 +789,7 @@ function IngredientVisualizationPanel({
                     <h3 className="mt-4 text-[24px] font-semibold tracking-[-0.03em] text-black/90">即时预览</h3>
                   )}
                 </div>
-                <div className="ingredient-pane-body ingredient-scroll px-5 py-5">
+                <div className="ingredient-pane-body ingredient-side-scroll px-5 py-5">
                   {previewIngredient ? (
                     <>
                       <p className="text-[14px] leading-[1.7] text-black/64">
@@ -831,9 +831,9 @@ function IngredientVisualizationPanel({
               </div>
             </section>
 
-            <section className="ingredient-pane border-b border-black/8 bg-white/92 xl:border-b-0 xl:border-r">
+            <section className="ingredient-pane ingredient-main-pane border-b border-black/8 bg-white/92 xl:border-b-0 xl:border-r">
               <div className="ingredient-pane-frame">
-                <div className="ingredient-pane-body ingredient-scroll px-4 py-4 md:px-5">
+                <div className="ingredient-pane-body px-4 py-4 md:px-5">
                   <section>
                     <div className="ingredient-section-head sticky top-0 z-10 rounded-[20px] border border-black/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,251,255,0.94))] px-4 py-4 shadow-[0_10px_28px_rgba(15,23,42,0.06)] backdrop-blur-xl">
                       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -925,7 +925,7 @@ function IngredientVisualizationPanel({
               </div>
             </section>
 
-            <section className="ingredient-pane bg-[linear-gradient(180deg,rgba(247,250,255,0.9),rgba(255,255,255,0.95))]">
+            <section className="ingredient-pane ingredient-side-pane bg-[linear-gradient(180deg,rgba(247,250,255,0.9),rgba(255,255,255,0.95))]">
               <div className="ingredient-pane-frame">
                 <div className="ingredient-pane-head border-b border-black/8 px-5 py-4">
                   <div className="flex items-start justify-between gap-3">
@@ -949,7 +949,7 @@ function IngredientVisualizationPanel({
                     </span>
                   </div>
                 </div>
-                <div className="ingredient-pane-body ingredient-scroll px-5 py-5">
+                <div className="ingredient-pane-body ingredient-side-scroll px-5 py-5">
                   {overviewRows.length > 0 ? (
                     <div className="space-y-3">
                       {overviewRows.map((row, index) => {
@@ -1130,21 +1130,15 @@ function IngredientVisualizationPanel({
         }
 
         .ingredient-workbench-grid {
-          align-items: stretch;
-          min-height: 0;
-          height: 100%;
+          align-items: start;
         }
 
         .ingredient-pane {
           min-width: 0;
-          min-height: 0;
-          height: 100%;
         }
 
         .ingredient-pane-frame {
           display: flex;
-          min-height: 0;
-          height: 100%;
           flex-direction: column;
         }
 
@@ -1155,38 +1149,50 @@ function IngredientVisualizationPanel({
         }
 
         .ingredient-pane-body {
-          flex: 1 1 0%;
           min-height: 0;
-          height: 0;
         }
 
         .ingredient-section-head {
           isolation: isolate;
         }
 
-        .ingredient-scroll {
-          overflow: visible;
-          overflow-x: hidden;
-        }
-
         @media (min-width: 1280px) {
-          .ingredient-scroll {
+          .ingredient-side-pane {
+            position: sticky;
+            top: 72px;
+            align-self: start;
+          }
+
+          .ingredient-side-pane .ingredient-pane-frame {
+            max-height: calc(100vh - 88px);
+            overflow: hidden;
+          }
+
+          .ingredient-side-scroll {
+            flex: 1 1 auto;
+            min-height: 0;
             overflow-y: auto;
             overscroll-behavior: contain;
+            -webkit-overflow-scrolling: touch;
+            overflow-x: hidden;
             scrollbar-width: thin;
             scrollbar-color: rgba(15, 23, 42, 0.18) rgba(15, 23, 42, 0.04);
           }
 
-          .ingredient-scroll::-webkit-scrollbar {
+          .ingredient-main-pane .ingredient-section-head {
+            top: 72px;
+          }
+
+          .ingredient-side-scroll::-webkit-scrollbar {
             width: 10px;
           }
 
-          .ingredient-scroll::-webkit-scrollbar-track {
+          .ingredient-side-scroll::-webkit-scrollbar-track {
             background: rgba(15, 23, 42, 0.04);
             border-radius: 9999px;
           }
 
-          .ingredient-scroll::-webkit-scrollbar-thumb {
+          .ingredient-side-scroll::-webkit-scrollbar-thumb {
             background: rgba(15, 23, 42, 0.18);
             border-radius: 9999px;
             border: 2px solid rgba(255, 255, 255, 0.75);
