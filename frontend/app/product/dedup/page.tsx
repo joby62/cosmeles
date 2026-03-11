@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function ProductDedupPage() {
-  redirect("/product");
+  redirect("/product/pipeline");
 }

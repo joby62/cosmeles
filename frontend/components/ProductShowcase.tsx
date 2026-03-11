@@ -26,10 +26,10 @@ export default function ProductShowcase({
         <div className="pointer-events-none absolute -left-14 -bottom-16 h-56 w-56 rounded-full bg-[#00a86b]/10 blur-2xl" />
         <div className="relative">
           <div className="flex flex-wrap items-center gap-2">
-            <Link href="/product" className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/68 transition-colors hover:bg-black/[0.03]">
-              返回产品列表
+            <Link href="/product/governance" className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/68 transition-colors hover:bg-black/[0.03]">
+              返回产品治理
             </Link>
-            <Link href="/product#product-ingest-workbench" className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/68 transition-colors hover:bg-black/[0.03]">
+            <Link href="/product/pipeline#product-ingest-workbench" className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/68 transition-colors hover:bg-black/[0.03]">
               继续上传解析
             </Link>
             <span className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/62">ID: {id}</span>

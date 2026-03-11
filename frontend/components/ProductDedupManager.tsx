@@ -174,8 +174,8 @@ export default function ProductDedupManager({
     <section className="mt-8 rounded-[30px] border border-black/10 bg-gradient-to-br from-[#f8fbff] via-white to-[#f2f8f1] p-6">
       <div className="flex flex-wrap items-center gap-2">
         {showBackLink ? (
-          <Link href="/product" className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/70 hover:bg-black/[0.03]">
-            返回产品列表
+          <Link href="/product/pipeline" className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/70 hover:bg-black/[0.03]">
+            返回产品流水线
           </Link>
         ) : null}
         <span className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/62">

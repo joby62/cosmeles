@@ -7,9 +7,11 @@ import type { Lang } from "@/lib/i18n";
 import { getInitialLang, setLang as setStoredLang, subscribeLang } from "@/lib/i18n";
 import { brandByLang } from "@/lib/brand";
 import { TOP_CATEGORIES, CATEGORY_CONFIG, type CategoryKey } from "@/lib/catalog";
+import { PRODUCT_MANAGEMENT_SECTIONS } from "@/lib/productManagementNav";
 
 type FlyoutItem = { label: string; href: string };
 type FlyoutColumn = { title: string; items: FlyoutItem[] };
+type NavFlyoutKey = CategoryKey | "product";
 
 function cx(...arr: Array<string | false | null | undefined>) {
   return arr.filter(Boolean).join(" ");
@@ -20,8 +22,50 @@ function flyoutTitles(lang: Lang) {
   return { explore: "Explore", forWho: "For who", more: "More" };
 }
 
-function getFlyout(category: CategoryKey, lang: Lang): FlyoutColumn[] {
+function getFlyout(category: NavFlyoutKey, lang: Lang): FlyoutColumn[] {
   const t = flyoutTitles(lang);
+
+  if (category === "product") {
+    return [
+      {
+        title: lang === "zh" ? "工作区" : "Workspaces",
+        items: PRODUCT_MANAGEMENT_SECTIONS.map((item) => ({
+          label: lang === "zh" ? item.titleZh : item.navLabelEn,
+          href: item.href,
+        })),
+      },
+      {
+        title: lang === "zh" ? "产品" : "Products",
+        items:
+          lang === "zh"
+            ? [
+                { label: "上传与成分解析", href: "/product/pipeline" },
+                { label: "同品归并与类型映射", href: "/product/pipeline" },
+                { label: "展示与主推配置", href: "/product/governance" },
+              ]
+            : [
+                { label: "Upload & parsing", href: "/product/pipeline" },
+                { label: "Dedup & route mapping", href: "/product/pipeline" },
+                { label: "Catalog & featured slots", href: "/product/governance" },
+              ],
+      },
+      {
+        title: lang === "zh" ? "成分" : "Ingredients",
+        items:
+          lang === "zh"
+            ? [
+                { label: "成分分析构建", href: "/product/pipeline" },
+                { label: "成分可视化", href: "/product/ingredients" },
+                { label: "成分清理", href: "/product/ingredients" },
+              ]
+            : [
+                { label: "Ingredient build", href: "/product/pipeline" },
+                { label: "Ingredient visualization", href: "/product/ingredients" },
+                { label: "Ingredient cleanup", href: "/product/ingredients" },
+              ],
+      },
+    ];
+  }
 
   if (category === "shampoo") {
     return [
@@ -111,7 +155,7 @@ export default function TopNav() {
     return subscribeLang(() => setLangState(getInitialLang()));
   }, []);
 
-  const [openKey, setOpenKey] = useState<CategoryKey | null>(null);
+  const [openKey, setOpenKey] = useState<NavFlyoutKey | null>(null);
   const openTimer = useRef<number | null>(null);
   const closeTimer = useRef<number | null>(null);
 
@@ -137,7 +181,7 @@ export default function TopNav() {
     closeTimer.current = null;
   }, []);
 
-  function requestOpen(k: CategoryKey) {
+  function requestOpen(k: NavFlyoutKey) {
     clearTimers();
     openTimer.current = window.setTimeout(() => setOpenKey(k), 120);
   }
@@ -208,7 +252,11 @@ export default function TopNav() {
                 </Link>
               ))}
 
-              <Link href="/product" className="nav-item" onPointerEnter={() => requestClose()}>
+              <Link
+                href="/product"
+                className={cx("nav-item", openKey === "product" && "nav-item-active")}
+                onPointerEnter={() => requestOpen("product")}
+              >
                 {lang === "zh" ? "产品管理" : "Product Mgmt"}
               </Link>
               <Link href="/matrix-test" className="nav-item" onPointerEnter={() => requestClose()}>
