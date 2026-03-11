@@ -3,6 +3,7 @@ import Link from "next/link";
 import { type Product, resolveImageUrl } from "@/lib/api";
 import { getCategoryMeta } from "@/lib/site";
 import AddToBagButton from "@/components/site/AddToBagButton";
+import { commerceBadgeLabel, commercePackSizeLabel } from "@/lib/productCommerce";
 
 type ProductCardProps = {
   product: Product;
@@ -17,6 +18,8 @@ export default function ProductCard({ product, headline, routeTitle, routeSummar
   const productName = product.name || "Untitled product";
   const productBrand = product.brand || category?.label || "Jeslect";
   const summary = headline || product.one_sentence || product.description || "Open the full profile for details.";
+  const packSizeLabel = commercePackSizeLabel(product.commerce);
+  const statusLabel = commerceBadgeLabel(product.commerce);
 
   return (
     <article className="group overflow-hidden rounded-[28px] border border-black/8 bg-white/92 shadow-[0_20px_46px_rgba(15,23,42,0.07)]">
@@ -43,6 +46,14 @@ export default function ProductCard({ product, headline, routeTitle, routeSummar
           {routeTitle ? (
             <span className="inline-flex rounded-full border border-sky-100 bg-sky-50 px-3 py-1 text-[11px] font-medium text-sky-700">
               {routeTitle}
+            </span>
+          ) : null}
+          <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-medium text-amber-700">
+            {statusLabel}
+          </span>
+          {packSizeLabel ? (
+            <span className="inline-flex rounded-full border border-black/8 bg-slate-50 px-3 py-1 text-[11px] font-medium text-slate-600">
+              {packSizeLabel}
             </span>
           ) : null}
         </div>

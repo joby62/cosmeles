@@ -43,6 +43,8 @@ from app.db.models import (
     MobileCompareUsageStat,
 )
 from app.settings import settings
+from app.services.parser import normalize_doc
+from app.services.storefront_commerce import derive_product_commerce
 from app.services.storage import (
     load_json,
     read_rel_bytes,
@@ -65,6 +67,7 @@ from app.services.storage import (
 )
 from app.schemas import (
     ProductCard,
+    ProductDoc,
     ProductListResponse,
     ProductListMeta,
     CategoryCount,
@@ -1072,20 +1075,25 @@ def clear_product_featured_slot(
     )
 
 
-@router.get("/products/{product_id}")
+@router.get("/products/{product_id}", response_model=ProductDoc)
 def get_product(product_id: str, db: Session = Depends(get_db)):
     rec = db.get(ProductIndex, product_id)
     if not rec:
         raise HTTPException(status_code=404, detail="Not found")
     if not exists_rel_path(rec.json_path):
         raise HTTPException(status_code=404, detail="Product json file is missing.")
-    doc = load_json(rec.json_path)
+    raw_doc = load_json(rec.json_path)
     preferred_image_rel = preferred_image_rel_path(str(rec.image_path or "").strip())
-    if preferred_image_rel and isinstance(doc, dict):
-        evidence = doc.setdefault("evidence", {})
+    doubao_raw = ""
+    if isinstance(raw_doc, dict):
+        evidence = raw_doc.get("evidence")
         if isinstance(evidence, dict):
-            evidence["image_path"] = preferred_image_rel
-    return doc
+            doubao_raw = str(evidence.get("doubao_raw") or "")
+    return normalize_doc(
+        raw_doc,
+        image_rel_path=preferred_image_rel,
+        doubao_raw=doubao_raw,
+    )
 
 
 @router.patch("/products/{product_id}", response_model=ProductCard)
@@ -6787,6 +6795,7 @@ def _row_to_card(r: ProductIndex) -> ProductCard:
         tags = []
 
     preferred_image_rel = preferred_image_rel_path(str(r.image_path or "").strip())
+    commerce = derive_product_commerce(load_json(r.json_path) if exists_rel_path(str(r.json_path or "").strip()) else {})
     return ProductCard(
         id=r.id,
         category=r.category,
@@ -6796,4 +6805,5 @@ def _row_to_card(r: ProductIndex) -> ProductCard:
         tags=tags,
         image_url=f"/{preferred_image_rel}" if preferred_image_rel else None,
         created_at=r.created_at,
+        commerce=commerce,
     )

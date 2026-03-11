@@ -147,6 +147,29 @@ def test_mobile_compare_bootstrap_without_history(test_client):
     assert body["product_library"]["most_used_product_id"] is None
 
 
+def test_product_detail_exposes_catalog_commerce_status(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, _ = test_client
+    _install_fake_ingest_pipeline(
+        monkeypatch,
+        {
+            "category": "shampoo",
+            "brand": "Dove",
+            "name": "Shampoo A",
+            "one_sentence": "洗发测试",
+        },
+    )
+    product_id = _ingest_one(client, "commerce-product.jpg")
+
+    resp = client.get(f"/api/products/{product_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["commerce"]["status"] == "catalog_only"
+    assert body["commerce"]["is_purchasable"] is False
+    assert "price" in body["commerce"]["missing_fields"]
+    assert "inventory" in body["commerce"]["missing_fields"]
+    assert "shipping_eta" in body["commerce"]["missing_fields"]
+
+
 def test_mobile_compare_stream_success_and_fetch_result(test_client, monkeypatch: pytest.MonkeyPatch):
     client, _ = test_client
     _install_fake_ingest_pipeline(
@@ -258,6 +281,10 @@ def test_mobile_compare_stream_success_and_fetch_result(test_client, monkeypatch
     assert "result" in by_event
     assert "partial_text" not in by_event
     result = by_event["result"][0]
+    assert result["current_product"]["commerce"]["status"] == "catalog_only"
+    assert result["recommended_product"]["commerce"]["status"] == "catalog_only"
+    assert "price" in result["current_product"]["commerce"]["missing_fields"]
+    assert "price" in result["recommended_product"]["commerce"]["missing_fields"]
     assert result["status"] == "ok"
     assert result["verdict"]["decision"] == "switch"
     assert result["pair_results"][0]["sections"][0]["key"] == "keep_benefits"

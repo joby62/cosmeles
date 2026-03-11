@@ -108,6 +108,7 @@ from app.services.matrix_decision import (
 )
 from app.services.parser import normalize_doc
 from app.services.selection_fit import RouteDiagnosticRule, get_route_diagnostic_rules
+from app.services.storefront_commerce import derive_product_commerce
 from app.services.storage import (
     copy_user_image_to_product,
     exists_rel_path,
@@ -3024,7 +3025,18 @@ def _load_product_doc_payload_by_id(
                 "trace_id": trace_id,
             },
         )
-    return load_json(rec.json_path)
+    raw_doc = load_json(rec.json_path)
+    preferred_image_rel = preferred_image_rel_path(str(rec.image_path or "").strip())
+    doubao_raw = ""
+    if isinstance(raw_doc, dict):
+        evidence = raw_doc.get("evidence")
+        if isinstance(evidence, dict):
+            doubao_raw = str(evidence.get("doubao_raw") or "")
+    return normalize_doc(
+        raw_doc,
+        image_rel_path=preferred_image_rel,
+        doubao_raw=doubao_raw,
+    )
 
 
 def _emit_mobile_compare_ai_event(
@@ -5110,6 +5122,9 @@ def _row_to_product_card(row: ProductIndex) -> ProductCard:
                 tags = [str(item).strip() for item in parsed if str(item).strip()]
         except Exception:
             tags = []
+    commerce = derive_product_commerce(
+        load_json(row.json_path) if exists_rel_path(str(row.json_path or "").strip()) else {}
+    )
     return ProductCard(
         id=str(row.id),
         category=str(row.category),
@@ -5119,6 +5134,7 @@ def _row_to_product_card(row: ProductIndex) -> ProductCard:
         tags=tags,
         image_url=image_url,
         created_at=row.created_at,
+        commerce=commerce,
     )
 
 

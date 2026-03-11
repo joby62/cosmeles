@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { deleteMobileBagItem, fetchMobileBagItems, resolveImageUrl, type MobileBagItem } from "@/lib/api";
+import { commerceBadgeLabel, commercePackSizeLabel, commerceMissingFieldsLabel } from "@/lib/productCommerce";
 
 export default function BagPanel() {
   const [items, setItems] = useState<MobileBagItem[]>([]);
@@ -54,6 +55,8 @@ export default function BagPanel() {
             const product = item.product;
             const productName = product.name || "Untitled product";
             const productBrand = product.brand || "Jeslect";
+            const packSizeLabel = commercePackSizeLabel(product.commerce);
+            const statusLabel = commerceBadgeLabel(product.commerce);
             return (
               <article
                 key={item.item_id}
@@ -78,6 +81,14 @@ export default function BagPanel() {
                       <span className="rounded-full border border-black/8 bg-slate-50 px-3 py-1 text-[11px] font-medium text-slate-600">
                         Quantity {item.quantity}
                       </span>
+                      <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-medium text-amber-700">
+                        {statusLabel}
+                      </span>
+                      {packSizeLabel ? (
+                        <span className="rounded-full border border-black/8 bg-slate-50 px-3 py-1 text-[11px] font-medium text-slate-600">
+                          {packSizeLabel}
+                        </span>
+                      ) : null}
                       {item.target_type_title ? (
                         <span className="rounded-full border border-sky-100 bg-sky-50 px-3 py-1 text-[11px] font-medium text-sky-700">
                           {item.target_type_title}
@@ -91,6 +102,7 @@ export default function BagPanel() {
                     <p className="mt-3 text-[14px] leading-6 text-slate-600">
                       {product.one_sentence || "Open the full product profile for ingredient and routine details."}
                     </p>
+                    <p className="mt-2 text-[13px] leading-6 text-slate-500">{commerceMissingFieldsLabel(product.commerce)}</p>
 
                     <div className="mt-5 flex flex-wrap gap-2">
                       <Link

@@ -11,15 +11,15 @@ class ProductInfo(BaseModel):
 
 class Summary(BaseModel):
     one_sentence: str
-    pros: List[str] = []
-    cons: List[str] = []
-    who_for: List[str] = []
-    who_not_for: List[str] = []
+    pros: List[str] = Field(default_factory=list)
+    cons: List[str] = Field(default_factory=list)
+    who_for: List[str] = Field(default_factory=list)
+    who_not_for: List[str] = Field(default_factory=list)
 
 class Ingredient(BaseModel):
     name: str
     type: str
-    functions: List[str] = []
+    functions: List[str] = Field(default_factory=list)
     risk: RiskLevel = "low"
     notes: str = ""
     rank: Optional[int] = Field(default=None, ge=1)
@@ -34,11 +34,30 @@ class Evidence(BaseModel):
     doubao_models: Optional[dict[str, str]] = None
     doubao_artifacts: Optional[dict[str, str]] = None
 
+
+class ProductCommercePackSize(BaseModel):
+    label: str
+    unit: Optional[str] = None
+    value: Optional[float] = None
+    source: Literal["doc", "derived_name", "derived_text"] = "doc"
+
+
+class ProductCommerceInfo(BaseModel):
+    status: Literal["catalog_only", "partial", "ready"] = "catalog_only"
+    is_purchasable: bool = False
+    available_fields: List[str] = Field(default_factory=list)
+    missing_fields: List[str] = Field(default_factory=list)
+    price_label: Optional[str] = None
+    inventory_label: Optional[str] = None
+    shipping_eta_label: Optional[str] = None
+    pack_size: Optional[ProductCommercePackSize] = None
+
 class ProductDoc(BaseModel):
     product: ProductInfo
     summary: Summary
-    ingredients: List[Ingredient] = []
+    ingredients: List[Ingredient] = Field(default_factory=list)
     evidence: Evidence
+    commerce: ProductCommerceInfo = Field(default_factory=ProductCommerceInfo)
 
 class ProductCard(BaseModel):
     id: str
@@ -46,9 +65,10 @@ class ProductCard(BaseModel):
     brand: Optional[str] = None
     name: Optional[str] = None
     one_sentence: Optional[str] = None
-    tags: List[str] = []
+    tags: List[str] = Field(default_factory=list)
     image_url: Optional[str] = None
     created_at: str
+    commerce: ProductCommerceInfo = Field(default_factory=ProductCommerceInfo)
 
 class ProductRouteMappingIndexItem(BaseModel):
     product_id: str

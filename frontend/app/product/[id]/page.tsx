@@ -12,6 +12,7 @@ import {
   type Product,
 } from "@/lib/api";
 import { getMatchRouteMeta } from "@/lib/match";
+import { commerceBadgeLabel, commerceMissingFieldsLabel, commercePackSizeLabel } from "@/lib/productCommerce";
 import { getCategoryMeta, TRUST_ITEMS } from "@/lib/site";
 import { PDP_SUPPORT_LINKS, PDP_TRUST_NOTES, PRODUCT_RELEASE_NOTES } from "@/lib/storefrontTrust";
 
@@ -99,6 +100,10 @@ export default async function ProductPage({
   const routeSummary = routeMeta?.summary || null;
   const fitHeadline = profile?.headline || null;
   const fitReason = profile?.confidence_reason || null;
+  const commerce = doc.commerce || null;
+  const packSizeLabel = commercePackSizeLabel(commerce);
+  const statusLabel = commerceBadgeLabel(commerce);
+  const missingFieldsLabel = commerceMissingFieldsLabel(commerce);
 
   return (
     <div className="mx-auto max-w-7xl px-4 pb-16 pt-8">
@@ -150,8 +155,13 @@ export default async function ProductPage({
               </span>
             ) : null}
             <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-medium text-amber-700">
-              Catalog live
+              {statusLabel}
             </span>
+            {packSizeLabel ? (
+              <span className="rounded-full border border-black/8 bg-slate-50 px-3 py-1 text-[11px] font-medium text-slate-600">
+                {packSizeLabel}
+              </span>
+            ) : null}
             {typeof profile?.confidence === "number" ? (
               <span className="rounded-full border border-black/8 bg-slate-50 px-3 py-1 text-[11px] font-medium text-slate-600">
                 Confidence {profile.confidence}%
@@ -181,6 +191,7 @@ export default async function ProductPage({
           <div className="mt-6 rounded-[24px] border border-black/8 bg-slate-50 px-4 py-4">
             <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-slate-500">Current release status</p>
             <div className="mt-3 space-y-2">
+              <p className="text-[13px] leading-6 text-slate-700">{missingFieldsLabel}</p>
               {PRODUCT_RELEASE_NOTES.map((item) => (
                 <p key={item} className="text-[13px] leading-6 text-slate-700">
                   {item}

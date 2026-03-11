@@ -10,6 +10,7 @@ export type Product = {
   tags?: string[] | null;
   image_url?: string | null;
   created_at?: string | null;
+  commerce?: ProductCommerceInfo | null;
 };
 
 type ProductListMeta = {
@@ -52,6 +53,25 @@ export type ProductDoc = {
     doubao_vision_text?: string | null;
     doubao_pipeline_mode?: string | null;
   };
+  commerce?: ProductCommerceInfo | null;
+};
+
+export type ProductCommercePackSize = {
+  label: string;
+  unit?: string | null;
+  value?: number | null;
+  source: "doc" | "derived_name" | "derived_text";
+};
+
+export type ProductCommerceInfo = {
+  status: "catalog_only" | "partial" | "ready";
+  is_purchasable: boolean;
+  available_fields: string[];
+  missing_fields: string[];
+  price_label?: string | null;
+  inventory_label?: string | null;
+  shipping_eta_label?: string | null;
+  pack_size?: ProductCommercePackSize | null;
 };
 
 export type ProductAnalysisKeyIngredient = {
