@@ -197,30 +197,14 @@ export default function MobileComparePage() {
     return names;
   }, [hasUpload, productTitleById, selectedProductIds]);
 
-  const selectedDraftItems = useMemo(() => {
-    const out: Array<{ key: string; label: string; source: "upload_new" | "history_product" }> = [];
-    if (hasUpload) {
-      const uploadLabel = [brand.trim(), name.trim()].filter(Boolean).join(" ").trim() || file?.name || "我在用的产品";
-      out.push({ key: "upload", label: uploadLabel, source: "upload_new" });
-    }
-    for (const productId of selectedProductIds) {
-      const label = productTitleById.get(productId);
-      if (!label) continue;
-      out.push({ key: productId, label, source: "history_product" });
-    }
-    return out;
-  }, [brand, file?.name, hasUpload, name, productTitleById, selectedProductIds]);
+  const selectionHeroTitle =
+    recommendationReady && priorityLibraryItems.length > 0 ? "先从更贴近你的几款开始" : "先从下面挑 2 款开始";
 
-  const selectionStatusText = useMemo(() => {
-    if (totalSelectedCount <= 0) return "还没选择产品";
-    if (totalSelectedCount === 1) return "再选 1 款即可继续";
-    if (totalSelectedCount === 2) return "已选 2 款，可以下一步";
-    return "已选满 3 款，可直接下一步";
-  }, [totalSelectedCount]);
-
-  const selectionAssistText = hasUpload
-    ? `已包含在用产品；还可从产品库选 ${maxLibrarySelection} 款。`
-    : "想判断现在这瓶是否值得继续用，再把它加进来。";
+  const selectionHeroNote = hasUploadSignal
+    ? "你正在用的产品会一起参与判断，底部会持续显示已选状态。"
+    : recommendationReady && priorityLibraryItems.length > 0
+      ? "更贴近你已有结论的产品已经排在前面；想判断现在这瓶该不该继续用，再把它加进来。"
+      : "先选 2 款做第一轮判断；想判断现在这瓶该不该继续用，再把它加进来。";
 
   const uploadSectionSummary = hasUpload
     ? "已加入你正在用的产品。"
@@ -1126,47 +1110,11 @@ export default function MobileComparePage() {
         <div className="m-compare-selection-hero mt-5">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <div className="m-compare-selection-hero-kicker">已选 {totalSelectedCount}/{MAX_TOTAL_SELECTION}</div>
-              <div className="m-compare-selection-hero-title">{selectionStatusText}</div>
-              <div className="m-compare-selection-hero-note">{selectionAssistText}</div>
+              <div className="m-compare-selection-hero-kicker">先做第一轮筛选</div>
+              <div className="m-compare-selection-hero-title">{selectionHeroTitle}</div>
+              <div className="m-compare-selection-hero-note">{selectionHeroNote}</div>
             </div>
-            {totalSelectedCount > 0 ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedProductIds([]);
-                  clearUploadDraft();
-                  setSelectionNotice(null);
-                }}
-                className="inline-flex h-8 shrink-0 items-center rounded-full border border-black/12 px-3 text-[12px] font-medium text-black/64 active:bg-black/[0.04]"
-              >
-                清空
-              </button>
-            ) : null}
           </div>
-          {selectedDraftItems.length > 0 ? (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {selectedDraftItems.map((item) => (
-                <button
-                  key={item.key}
-                  type="button"
-                  onClick={() => {
-                    if (item.source === "upload_new") {
-                      clearUploadDraft();
-                      return;
-                    }
-                    toggleSelected(item.key);
-                  }}
-                  className="m-compare-selection-chip inline-flex h-8 items-center gap-1 rounded-full border px-3 text-[12px] font-medium"
-                >
-                  <span className="max-w-[170px] truncate">{item.label}</span>
-                  <span aria-hidden>×</span>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="mt-3 text-[12px] text-black/52">还没选择产品，先从下面挑 2 款开始。</div>
-          )}
         </div>
         {selectionNotice ? (
           <div className="mt-2 rounded-xl border border-[#ffd596]/70 bg-[#fff6e6] px-3 py-2 text-[12px] text-[#8b5a12] dark:border-[#c99345]/58 dark:bg-[#4f391b]/60 dark:text-[#ffdca3]">
@@ -1555,6 +1503,12 @@ export default function MobileComparePage() {
           selectedItems={selectedProductSummary}
           chromeVisible={chromeVisible}
           chromeYielded={chromeYielded}
+          canClear={totalSelectedCount > 0}
+          onClear={() => {
+            setSelectedProductIds([]);
+            clearUploadDraft();
+            setSelectionNotice(null);
+          }}
           primaryLabel={primaryActionLabel}
           primaryDisabled={primaryDisabled}
           onPrimary={() => {
@@ -1844,6 +1798,8 @@ function CompareSelectionDock({
   selectedItems,
   chromeVisible,
   chromeYielded,
+  canClear,
+  onClear,
   primaryLabel,
   primaryDisabled,
   onPrimary,
@@ -1855,6 +1811,8 @@ function CompareSelectionDock({
   selectedItems: string[];
   chromeVisible: boolean;
   chromeYielded: boolean;
+  canClear: boolean;
+  onClear: () => void;
   primaryLabel: string;
   primaryDisabled: boolean;
   onPrimary: () => void;
@@ -1873,6 +1831,15 @@ function CompareSelectionDock({
               <div className="m-compare-selection-dock-kicker">已选 {count}/{max}</div>
               <div className="m-compare-selection-dock-title">{label}</div>
             </div>
+            {canClear ? (
+              <button
+                type="button"
+                onClick={onClear}
+                className="inline-flex h-8 shrink-0 items-center rounded-full border border-black/12 px-3 text-[12px] font-medium text-black/64 active:bg-black/[0.04]"
+              >
+                清空
+              </button>
+            ) : null}
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             {selectedItems.length > 0 ? (
