@@ -8,10 +8,11 @@ type ProductCardProps = {
   product: Product;
   headline?: string | null;
   routeTitle?: string | null;
+  routeSummary?: string | null;
   priority?: boolean;
 };
 
-export default function ProductCard({ product, headline, routeTitle, priority = false }: ProductCardProps) {
+export default function ProductCard({ product, headline, routeTitle, routeSummary, priority = false }: ProductCardProps) {
   const category = getCategoryMeta(product.category);
   const productName = product.name || "Untitled product";
   const productBrand = product.brand || category?.label || "Jeslect";
@@ -49,6 +50,7 @@ export default function ProductCard({ product, headline, routeTitle, priority = 
         <p className="mt-4 text-[12px] font-medium uppercase tracking-[0.18em] text-slate-500">{productBrand}</p>
         <h3 className="mt-2 text-[22px] font-semibold leading-[1.15] tracking-[-0.03em] text-slate-950">{productName}</h3>
         <p className="mt-3 line-clamp-3 text-[14px] leading-6 text-slate-600">{summary}</p>
+        {routeSummary ? <p className="mt-3 line-clamp-2 text-[13px] leading-6 text-slate-500">{routeSummary}</p> : null}
 
         <div className="mt-5 flex flex-wrap items-center gap-2">
           <Link

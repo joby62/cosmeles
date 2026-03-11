@@ -137,3 +137,36 @@ export const PDP_SUPPORT_LINKS = [
     href: "/support/contact",
   },
 ] as const;
+
+export const SHOP_SUPPORT_LINKS = [
+  {
+    title: "Shipping visibility",
+    summary: "See how Jeslect keeps processing windows and delivery timing visible before checkout exists.",
+    href: "/support/shipping",
+  },
+  {
+    title: "Returns clarity",
+    summary: "Review return expectations before you commit to a product path.",
+    href: "/support/returns",
+  },
+  {
+    title: "Support routing",
+    summary: "Know where product-fit and order questions should go before support volume grows.",
+    href: "/support/contact",
+  },
+] as const;
+
+export const SEARCH_SUGGESTIONS = [
+  { label: "dryness", query: "dryness" },
+  { label: "frizz", query: "frizz" },
+  { label: "sensitive", query: "sensitive" },
+  { label: "oil control", query: "oil" },
+  { label: "barrier", query: "barrier" },
+  { label: "cleanser", query: "cleanser" },
+] as const;
+
+export const SEARCH_TRUST_POINTS = [
+  "Search should narrow the field, then hand you off cleanly to Match, Compare, or the right category page.",
+  "Support links stay visible from search so users do not have to guess where shipping and returns live.",
+  "Saved bag continuity matters here too: search is part of the decision path, not a dead-end results page.",
+] as const;

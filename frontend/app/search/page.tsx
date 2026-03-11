@@ -1,6 +1,9 @@
+import Link from "next/link";
 import ProductCard from "@/components/site/ProductCard";
-import { fetchAllProducts, type Product } from "@/lib/api";
-import { CATEGORIES } from "@/lib/site";
+import { fetchAllProducts, fetchProductAnalysisIndex, type Product } from "@/lib/api";
+import { getMatchRouteMeta } from "@/lib/match";
+import { CATEGORIES, normalizeCategoryKey } from "@/lib/site";
+import { SEARCH_SUGGESTIONS, SEARCH_TRUST_POINTS, SHOP_SUPPORT_LINKS } from "@/lib/storefrontTrust";
 
 export const dynamic = "force-dynamic";
 
@@ -33,14 +36,22 @@ export default async function SearchPage({
   const query = firstValue(resolvedSearchParams.q);
 
   let products: Product[] = [];
+  let analysisItems: Awaited<ReturnType<typeof fetchProductAnalysisIndex>> = [];
   let loadError: string | null = null;
   try {
-    products = await fetchAllProducts();
+    [products, analysisItems] = await Promise.all([
+      fetchAllProducts(),
+      fetchProductAnalysisIndex().catch(() => []),
+    ]);
   } catch (err) {
     loadError = err instanceof Error ? err.message : String(err);
   }
 
+  const analysisById = new Map(analysisItems.map((item) => [item.product_id, item]));
   const results = query ? products.filter((product) => matchesQuery(product, query)).slice(0, 18) : [];
+  const resultCategories = Array.from(
+    new Set(results.map((product) => normalizeCategoryKey(product.category)).filter(Boolean)),
+  );
 
   return (
     <div className="mx-auto max-w-7xl px-4 pb-16 pt-8">
@@ -73,16 +84,36 @@ export default async function SearchPage({
           </div>
         </form>
         {!query ? (
-          <div className="mt-6 flex flex-wrap gap-2">
-            {CATEGORIES.map((category) => (
-              <a
-                key={category.key}
-                href={`/shop/${category.key}`}
-                className="rounded-full border border-black/8 bg-slate-50 px-4 py-2 text-[13px] font-medium text-slate-700"
-              >
-                {category.label}
-              </a>
-            ))}
+          <div className="mt-6 space-y-5">
+            <div>
+              <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-slate-500">Suggested searches</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {SEARCH_SUGGESTIONS.map((item) => (
+                  <Link
+                    key={item.query}
+                    href={`/search?q=${encodeURIComponent(item.query)}`}
+                    className="rounded-full border border-black/8 bg-slate-50 px-4 py-2 text-[13px] font-medium text-slate-700"
+                  >
+                    {item.label}
+                  </Link>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-slate-500">Category shortcuts</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {CATEGORIES.map((category) => (
+                  <Link
+                    key={category.key}
+                    href={`/shop/${category.key}`}
+                    className="rounded-full border border-black/8 bg-slate-50 px-4 py-2 text-[13px] font-medium text-slate-700"
+                  >
+                    {category.label}
+                  </Link>
+                ))}
+              </div>
+            </div>
           </div>
         ) : null}
       </section>
@@ -94,16 +125,96 @@ export default async function SearchPage({
       ) : null}
 
       {!loadError && query ? (
-        <section className="mt-10">
+        <section className="mt-10 space-y-10">
           <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-500">Results</p>
           <h2 className="mt-3 text-[32px] font-semibold tracking-[-0.04em] text-slate-950">
             {results.length} matches for &quot;{query}&quot;
           </h2>
+
+          <div className="grid gap-6 xl:grid-cols-[1.02fr_0.98fr]">
+            <article className="rounded-[32px] border border-black/8 bg-white/92 p-6 shadow-[0_20px_46px_rgba(15,23,42,0.06)]">
+              <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-500">Search guidance</p>
+              <h3 className="mt-3 text-[30px] font-semibold tracking-[-0.04em] text-slate-950">
+                Search should narrow the field, then push you toward the right next step.
+              </h3>
+              <div className="mt-5 space-y-3">
+                {SEARCH_TRUST_POINTS.map((item) => (
+                  <div key={item} className="rounded-[24px] border border-black/8 bg-slate-50 px-4 py-4 text-[14px] leading-6 text-slate-700">
+                    {item}
+                  </div>
+                ))}
+              </div>
+              <div className="mt-6 flex flex-wrap gap-3">
+                <Link
+                  href="/match"
+                  className="inline-flex h-11 items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-5 text-[14px] font-semibold text-white"
+                >
+                  Open match
+                </Link>
+                <Link
+                  href="/compare"
+                  className="inline-flex h-11 items-center justify-center rounded-full border border-black/10 bg-white px-5 text-[14px] font-semibold text-slate-700"
+                >
+                  Open compare
+                </Link>
+              </div>
+            </article>
+
+            <article className="rounded-[32px] border border-black/8 bg-[linear-gradient(180deg,#eef6ff_0%,#ffffff_100%)] p-6 shadow-[0_20px_46px_rgba(15,23,42,0.06)]">
+              <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-sky-700">Trust layer</p>
+              <h3 className="mt-3 text-[30px] font-semibold tracking-[-0.04em] text-slate-950">
+                Keep support visible while you search.
+              </h3>
+              <div className="mt-5 space-y-3">
+                {SHOP_SUPPORT_LINKS.map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className="block rounded-[24px] border border-black/8 bg-white px-4 py-4 transition hover:-translate-y-[1px] hover:shadow-[0_12px_28px_rgba(15,23,42,0.05)]"
+                  >
+                    <h4 className="text-[17px] font-semibold tracking-[-0.02em] text-slate-950">{item.title}</h4>
+                    <p className="mt-2 text-[14px] leading-6 text-slate-600">{item.summary}</p>
+                  </Link>
+                ))}
+              </div>
+            </article>
+          </div>
+
+          {resultCategories.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {resultCategories.map((categoryKey) => {
+                const category = CATEGORIES.find((item) => item.key === categoryKey);
+                if (!category) return null;
+                return (
+                  <Link
+                    key={category.key}
+                    href={`/shop/${category.key}`}
+                    className="rounded-full border border-black/8 bg-slate-50 px-4 py-2 text-[13px] font-medium text-slate-700"
+                  >
+                    Browse {category.label}
+                  </Link>
+                );
+              })}
+            </div>
+          ) : null}
+
           {results.length > 0 ? (
             <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-              {results.map((product) => (
-                <ProductCard key={product.id} product={product} />
-              ))}
+              {results.map((product) => {
+                const analysis = analysisById.get(product.id);
+                const categoryKey = normalizeCategoryKey(product.category);
+                const routeMeta =
+                  analysis && categoryKey ? getMatchRouteMeta(categoryKey, analysis.route_key) : null;
+                return (
+                  <ProductCard
+                    key={product.id}
+                    product={product}
+                    headline={analysis?.headline || product.one_sentence}
+                    routeTitle={routeMeta?.title || analysis?.route_title}
+                    routeSummary={routeMeta?.summary || null}
+                  />
+                );
+              })}
             </div>
           ) : (
             <article className="mt-6 rounded-[28px] border border-black/8 bg-white/92 px-5 py-5 text-[15px] leading-6 text-slate-600">

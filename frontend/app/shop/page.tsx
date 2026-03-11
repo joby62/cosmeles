@@ -1,8 +1,10 @@
 import Link from "next/link";
 import ProductCard from "@/components/site/ProductCard";
 import TrustStrip from "@/components/site/TrustStrip";
+import { getMatchConfig } from "@/lib/match";
 import { fetchAllProducts, type Product } from "@/lib/api";
 import { categoryHref, CATEGORIES, SHOP_CONCERNS, TRUST_ITEMS, type CategoryKey } from "@/lib/site";
+import { SHOP_SUPPORT_LINKS } from "@/lib/storefrontTrust";
 
 export default async function ShopHubPage() {
   let products: Product[] = [];
@@ -26,6 +28,10 @@ export default async function ShopHubPage() {
   const firstEdit = CATEGORIES.map((category) =>
     products.find((product) => String(product.category || "").trim().toLowerCase() === category.key),
   ).filter((item): item is Product => Boolean(item));
+  const routePreview = CATEGORIES.map((category) => {
+    const routes = Object.values(getMatchConfig(category.key).routes).slice(0, 2);
+    return { category, routes };
+  });
 
   return (
     <div className="mx-auto max-w-7xl px-4 pb-16 pt-8">
@@ -122,6 +128,49 @@ export default async function ShopHubPage() {
             ))}
           </div>
         )}
+      </section>
+
+      <section className="mt-12 grid gap-6 xl:grid-cols-[1.02fr_0.98fr]">
+        <article className="rounded-[32px] border border-black/8 bg-white/92 p-6 shadow-[0_20px_46px_rgba(15,23,42,0.06)]">
+          <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-500">How to browse this storefront</p>
+          <h2 className="mt-3 text-[32px] font-semibold tracking-[-0.04em] text-slate-950">
+            Start with a concern, then let the route language do the narrowing.
+          </h2>
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            {routePreview.map(({ category, routes }) => (
+              <article key={category.key} className="rounded-[24px] border border-black/8 bg-slate-50 px-4 py-4">
+                <div className="text-[12px] font-semibold uppercase tracking-[0.16em] text-slate-500">{category.label}</div>
+                <div className="mt-3 space-y-3">
+                  {routes.map((route) => (
+                    <div key={route.key}>
+                      <div className="text-[15px] font-semibold tracking-[-0.02em] text-slate-950">{route.title}</div>
+                      <p className="mt-1 text-[13px] leading-6 text-slate-600">{route.summary}</p>
+                    </div>
+                  ))}
+                </div>
+              </article>
+            ))}
+          </div>
+        </article>
+
+        <article className="rounded-[32px] border border-black/8 bg-[linear-gradient(180deg,#eef6ff_0%,#ffffff_100%)] p-6 shadow-[0_20px_46px_rgba(15,23,42,0.06)]">
+          <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-sky-700">Trust layer</p>
+          <h2 className="mt-3 text-[32px] font-semibold tracking-[-0.04em] text-slate-950">
+            Shipping, returns, and support should stay close to discovery.
+          </h2>
+          <div className="mt-5 space-y-3">
+            {SHOP_SUPPORT_LINKS.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="block rounded-[24px] border border-black/8 bg-white px-4 py-4 transition hover:-translate-y-[1px] hover:shadow-[0_12px_28px_rgba(15,23,42,0.05)]"
+              >
+                <h3 className="text-[17px] font-semibold tracking-[-0.02em] text-slate-950">{item.title}</h3>
+                <p className="mt-2 text-[14px] leading-6 text-slate-600">{item.summary}</p>
+              </Link>
+            ))}
+          </div>
+        </article>
       </section>
     </div>
   );
