@@ -6,6 +6,7 @@ type FeatureShellProps = {
   title: string;
   summary: string;
   highlights: string[];
+  metaNote?: string;
   primaryCta?: { href: string; label: string };
   secondaryCta?: { href: string; label: string };
   children?: ReactNode;
@@ -16,6 +17,7 @@ export default function FeatureShell({
   title,
   summary,
   highlights,
+  metaNote,
   primaryCta,
   secondaryCta,
   children,
@@ -30,6 +32,9 @@ export default function FeatureShell({
           {title}
         </h1>
         <p className="mt-4 max-w-3xl text-[16px] leading-7 text-slate-600">{summary}</p>
+        {metaNote ? (
+          <p className="mt-3 max-w-3xl text-[13px] leading-6 text-slate-500">{metaNote}</p>
+        ) : null}
 
         <div className="mt-6 flex flex-wrap gap-2">
           {highlights.map((item) => (

@@ -189,10 +189,13 @@ export default async function HomePage() {
             <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-sky-700">Support</p>
             <h2 className="mt-3 text-[32px] font-semibold tracking-[-0.04em] text-slate-950">Simple shipping. Clear returns. No buried basics.</h2>
             <p className="mt-4 max-w-2xl text-[15px] leading-7 text-slate-600">
-              US launch pages need shipping, returns, FAQ, and contact paths visible before checkout ever enters the picture.
+              US launch pages need shipping, returns, FAQ, contact, and policy scope visible before checkout ever enters the picture.
             </p>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
+            <Link href="/support" className="rounded-[24px] border border-black/8 bg-white px-4 py-4 text-[14px] font-medium text-slate-700">
+              Support hub
+            </Link>
             <Link href="/support/shipping" className="rounded-[24px] border border-black/8 bg-white px-4 py-4 text-[14px] font-medium text-slate-700">
               Shipping policy
             </Link>

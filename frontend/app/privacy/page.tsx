@@ -1,25 +1,28 @@
 import FeatureShell from "@/components/site/FeatureShell";
-
-const privacyPoints = [
-  "Privacy choices should be readable, not buried in dense legal language.",
-  "Cookie and data handling notices need explicit user-facing surfaces.",
-  "US privacy expectations are the first baseline for the new storefront.",
-];
+import { POLICY_SCOPE_NOTE, PRIVACY_SECTIONS } from "@/lib/storefrontPolicies";
 
 export default function PrivacyPage() {
   return (
     <FeatureShell
       eyebrow="Privacy"
-      title="Privacy pages should explain customer rights in plain language."
-      summary="Jeslect will publish a cleaner privacy experience for the US launch, including the data paths that matter most to storefront browsing, saved bags, and support."
-      highlights={["Readable privacy copy", "Visible data choices", "US baseline first"]}
+      title="Privacy should explain the current data scope without hiding behind legal fog."
+      summary="This page covers what the current Jeslect US storefront uses to run browsing, saved state, fit tools, and support-layer visibility. It also clarifies what this build does not collect yet."
+      metaNote={POLICY_SCOPE_NOTE}
+      highlights={["Current data scope", "No checkout data yet", "Readable US baseline"]}
       primaryCta={{ href: "/cookies", label: "Cookie choices" }}
-      secondaryCta={{ href: "/support/contact", label: "Contact support" }}
+      secondaryCta={{ href: "/support", label: "Support hub" }}
     >
-      <div className="space-y-3">
-        {privacyPoints.map((item) => (
-          <article key={item} className="rounded-[24px] border border-black/8 bg-slate-50 px-4 py-4 text-[14px] leading-6 text-slate-700">
-            {item}
+      <div className="space-y-4">
+        {PRIVACY_SECTIONS.map((section) => (
+          <article key={section.title} className="rounded-[28px] border border-black/8 bg-slate-50 px-5 py-5">
+            <h2 className="text-[20px] font-semibold tracking-[-0.03em] text-slate-950">{section.title}</h2>
+            <div className="mt-4 space-y-2">
+              {section.items.map((item) => (
+                <p key={item} className="text-[14px] leading-6 text-slate-700">
+                  {item}
+                </p>
+              ))}
+            </div>
           </article>
         ))}
       </div>

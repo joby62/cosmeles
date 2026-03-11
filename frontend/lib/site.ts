@@ -111,6 +111,7 @@ export const PRIMARY_NAV = [
 ] as const;
 
 export const SUPPORT_NAV = [
+  { href: "/support", label: "Support" },
   { href: "/support/shipping", label: "Shipping" },
   { href: "/support/returns", label: "Returns" },
   { href: "/support/faq", label: "FAQ" },

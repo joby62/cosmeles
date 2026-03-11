@@ -1,25 +1,28 @@
 import FeatureShell from "@/components/site/FeatureShell";
-
-const cookiePoints = [
-  "Necessary storefront state should remain separate from optional analytics choices.",
-  "Cookie choices should be visible and revisitable from the support footer.",
-  "Consent language should stay readable on mobile first, not only on desktop popups.",
-];
+import { COOKIE_SECTIONS, POLICY_SCOPE_NOTE } from "@/lib/storefrontPolicies";
 
 export default function CookiesPage() {
   return (
     <FeatureShell
       eyebrow="Cookies"
-      title="Cookie choices should feel understandable on the first read."
-      summary="Jeslect will separate necessary storefront state from optional tracking choices so the consent layer stays clearer for US users and future regional expansion."
-      highlights={["Necessary vs optional", "Revisitable choices", "Mobile-readable consent"]}
+      title="Cookie explanations should separate required storefront state from everything optional."
+      summary="Jeslect currently relies on necessary state to keep Bag, Saved, Match, and Compare recoverable. Optional analytics or advertising tools should remain separate and readable if they are added later."
+      metaNote={POLICY_SCOPE_NOTE}
+      highlights={["Necessary state first", "Optional tools separate", "Mobile-readable choices"]}
       primaryCta={{ href: "/privacy", label: "Privacy page" }}
-      secondaryCta={{ href: "/shop", label: "Back to shop" }}
+      secondaryCta={{ href: "/support", label: "Support hub" }}
     >
-      <div className="space-y-3">
-        {cookiePoints.map((item) => (
-          <article key={item} className="rounded-[24px] border border-black/8 bg-slate-50 px-4 py-4 text-[14px] leading-6 text-slate-700">
-            {item}
+      <div className="space-y-4">
+        {COOKIE_SECTIONS.map((section) => (
+          <article key={section.title} className="rounded-[28px] border border-black/8 bg-slate-50 px-5 py-5">
+            <h2 className="text-[20px] font-semibold tracking-[-0.03em] text-slate-950">{section.title}</h2>
+            <div className="mt-4 space-y-2">
+              {section.items.map((item) => (
+                <p key={item} className="text-[14px] leading-6 text-slate-700">
+                  {item}
+                </p>
+              ))}
+            </div>
           </article>
         ))}
       </div>

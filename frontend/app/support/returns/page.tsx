@@ -1,18 +1,19 @@
 import FeatureShell from "@/components/site/FeatureShell";
-import { RETURNS_SECTIONS } from "@/lib/storefrontTrust";
+import { POLICY_SCOPE_NOTE, RETURNS_POLICY_SECTIONS } from "@/lib/storefrontPolicies";
 
 export default function ReturnsPage() {
   return (
     <FeatureShell
       eyebrow="Returns"
-      title="Returns language should reduce hesitation, not create more of it."
-      summary="Jeslect returns trust is built around three things: visible timing, understandable condition rules, and no surprise exceptions hidden at the very end."
-      highlights={["Visible return window", "Refund timing clarity", "Named exceptions"]}
-      primaryCta={{ href: "/bag", label: "Open bag" }}
+      title="Returns language should reduce hesitation before ordering opens."
+      summary="This page sets the current Jeslect return baseline for the US storefront: what should already be understandable today, how return trust fits into product and bag decisions, and which pieces still depend on live commerce operations."
+      metaNote={POLICY_SCOPE_NOTE}
+      highlights={["Visible timing", "Readable conditions", "No hidden exceptions"]}
+      primaryCta={{ href: "/support", label: "Support hub" }}
       secondaryCta={{ href: "/support/contact", label: "Contact support" }}
     >
       <div className="space-y-4">
-        {RETURNS_SECTIONS.map((section) => (
+        {RETURNS_POLICY_SECTIONS.map((section) => (
           <article key={section.title} className="rounded-[28px] border border-black/8 bg-slate-50 px-5 py-5">
             <h2 className="text-[20px] font-semibold tracking-[-0.03em] text-slate-950">{section.title}</h2>
             <div className="mt-4 space-y-2">
