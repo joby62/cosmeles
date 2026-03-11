@@ -665,9 +665,9 @@ function IngredientVisualizationPanel({
       </div>
 
       <div className="px-6 pb-6 pt-5 md:px-7">
-        <div className="sticky top-24 z-20 rounded-[26px] border border-black/10 bg-white/82 p-4 shadow-[0_18px_44px_rgba(15,23,42,0.08)] backdrop-blur-xl">
-          <div className="space-y-3.5">
-            <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start">
+        <div className="ingredient-dock sticky top-24 z-20 rounded-[22px] border border-black/10 bg-white/86 px-5 py-4 shadow-[0_14px_32px_rgba(15,23,42,0.08)] backdrop-blur-xl">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="space-y-3">
               <div>
                 <div className="mb-2 text-[11px] font-semibold tracking-[0.12em] text-black/44 uppercase">一级品类</div>
                 <div className="flex flex-wrap gap-2.5">
@@ -697,9 +697,32 @@ function IngredientVisualizationPanel({
                 </div>
               </div>
 
-              <div className="rounded-[22px] border border-black/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(246,250,255,0.96))] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.65)]">
-                <div className="text-[11px] font-semibold tracking-[0.12em] text-black/44 uppercase">工具区</div>
-                <div className="mt-3 flex flex-wrap gap-2.5">
+              {selectedCategory && subtypeOptions.length > 0 ? (
+                <div>
+                  <div className="mb-2 text-[11px] font-semibold tracking-[0.12em] text-black/44 uppercase">二级分类</div>
+                  <div className="flex flex-wrap gap-2.5">
+                    <button type="button" onClick={() => onSubtypeChange("")} className={filterTagClass(!selectedSubtype)}>
+                      全部二级分类
+                    </button>
+                    {subtypeOptions.map((item) => (
+                      <button
+                        key={item.key}
+                        type="button"
+                        onClick={() => onSubtypeChange(item.key)}
+                        className={filterTagClass(selectedSubtype === item.key)}
+                      >
+                        {item.title} ({item.count})
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <div className="mb-2 text-[11px] font-semibold tracking-[0.12em] text-black/44 uppercase">工具区</div>
+                <div className="flex flex-wrap gap-2.5">
                   <button
                     type="button"
                     onClick={onRefresh}
@@ -719,45 +742,22 @@ function IngredientVisualizationPanel({
                   </button>
                 </div>
               </div>
-            </div>
-
-            {selectedCategory && subtypeOptions.length > 0 ? (
-              <div>
-                <div className="mb-2 text-[11px] font-semibold tracking-[0.12em] text-black/44 uppercase">二级分类</div>
-                <div className="flex flex-wrap gap-2.5">
-                  <button type="button" onClick={() => onSubtypeChange("")} className={filterTagClass(!selectedSubtype)}>
-                    全部二级分类
-                  </button>
-                  {subtypeOptions.map((item) => (
-                    <button
-                      key={item.key}
-                      type="button"
-                      onClick={() => onSubtypeChange(item.key)}
-                      className={filterTagClass(selectedSubtype === item.key)}
-                    >
-                      {item.title} ({item.count})
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-center">
-              <div>
-                <div className="mb-2 text-[11px] font-semibold tracking-[0.12em] text-black/44 uppercase">关键词</div>
-                <input
-                  value={visualQuery}
-                  onChange={(event) => setVisualQuery(event.target.value)}
-                  placeholder="按成分名、英文名、摘要或二级分类检索"
-                  className="h-11 w-full rounded-2xl border border-black/12 bg-white px-4 text-[13px] text-black/82 outline-none transition focus:border-black/28 focus:shadow-[0_0_0_4px_rgba(15,23,42,0.04)]"
-                />
-              </div>
-              <div className="rounded-[20px] border border-black/8 bg-white/88 px-4 py-3 text-[12px] leading-[1.65] text-black/58">
+              <div className="rounded-[18px] border border-black/8 bg-white/88 px-4 py-3 text-[12px] leading-[1.65] text-black/58">
                 当前展示 {formatCount(visibleIngredientTags.length)} 个成分。高频成分默认展开，低频长尾按{" "}
                 <span className="font-semibold text-black/76">{formatCount(twoHitTags.length)} 个 2 引用</span> 和{" "}
                 <span className="font-semibold text-black/76">{formatCount(oneHitTags.length)} 个 1 引用</span> 收起。
               </div>
             </div>
+          </div>
+
+          <div className="mt-3">
+            <div className="mb-2 text-[11px] font-semibold tracking-[0.12em] text-black/44 uppercase">关键词</div>
+            <input
+              value={visualQuery}
+              onChange={(event) => setVisualQuery(event.target.value)}
+              placeholder="按成分名、英文名、摘要或二级分类检索"
+              className="h-11 w-full rounded-2xl border border-black/12 bg-white px-4 text-[13px] text-black/82 outline-none transition focus:border-black/28 focus:shadow-[0_0_0_4px_rgba(15,23,42,0.04)]"
+            />
           </div>
         </div>
 
@@ -767,266 +767,279 @@ function IngredientVisualizationPanel({
           </div>
         ) : null}
 
-        <div className="mt-5 grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)_360px] 2xl:grid-cols-[340px_minmax(0,1fr)_380px] xl:items-start">
-          <aside className="space-y-4 xl:sticky xl:top-[176px] xl:self-start">
-            <section className="ingredient-preview-card overflow-hidden rounded-[28px] border border-black/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(245,249,255,0.96))] p-5 shadow-[0_22px_54px_rgba(16,24,40,0.1)]">
-              <div className="ingredient-preview-glow" />
-              <div className="relative">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-full border border-black/10 bg-white/86 px-3 py-1 text-[11px] font-semibold tracking-[0.08em] text-black/56 uppercase">
-                    即时预览
-                  </span>
-                  <span className="rounded-full border border-[#dbeafe] bg-[#f4f8ff] px-3 py-1 text-[11px] font-semibold text-[#2450a0]">
-                    悬浮中间标签可切换
-                  </span>
+        <div className="ingredient-workbench mt-5 overflow-hidden rounded-[30px] border border-black/10 bg-[linear-gradient(180deg,#ffffff_0%,#f8fbff_100%)] shadow-[0_22px_58px_rgba(15,23,42,0.08)]">
+          <div className="ingredient-workbench-grid grid xl:grid-cols-[320px_minmax(0,1fr)_360px] 2xl:grid-cols-[340px_minmax(0,1fr)_380px] xl:h-[calc(100vh-248px)] xl:min-h-[760px] xl:max-h-[1120px]">
+            <section className="ingredient-pane border-b border-black/8 bg-[linear-gradient(180deg,rgba(247,250,255,0.9),rgba(255,255,255,0.95))] xl:border-b-0 xl:border-r">
+              <div className="ingredient-pane-frame">
+                <div className="ingredient-pane-head border-b border-black/8 px-5 py-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full border border-black/10 bg-white/86 px-3 py-1 text-[11px] font-semibold tracking-[0.08em] text-black/56 uppercase">
+                      即时预览
+                    </span>
+                    <span className="rounded-full border border-[#dbeafe] bg-[#f4f8ff] px-3 py-1 text-[11px] font-semibold text-[#2450a0]">
+                      悬浮中栏标签切换
+                    </span>
+                  </div>
+                  {previewIngredient ? (
+                    <>
+                      <h3 className="mt-4 text-[28px] font-semibold tracking-[-0.03em] text-black/90">{previewIngredient.ingredient_name}</h3>
+                      <p className="mt-2 text-[12px] font-semibold tracking-[0.06em] text-black/46 uppercase">{previewScopeTitle}</p>
+                    </>
+                  ) : (
+                    <h3 className="mt-4 text-[24px] font-semibold tracking-[-0.03em] text-black/90">即时预览</h3>
+                  )}
                 </div>
+                <div className="ingredient-pane-body ingredient-scroll px-5 py-5">
+                  {previewIngredient ? (
+                    <>
+                      <p className="text-[14px] leading-[1.7] text-black/64">
+                        {previewIngredient.summary || "打开详情页查看完整成分说明、收益风险与来源样本。"}
+                      </p>
 
-                {previewIngredient ? (
-                  <>
-                    <h3 className="mt-4 text-[28px] font-semibold tracking-[-0.03em] text-black/90">
-                      {previewIngredient.ingredient_name}
-                    </h3>
-                    <p className="mt-2 text-[12px] font-semibold tracking-[0.06em] text-black/46 uppercase">{previewScopeTitle}</p>
-                    <p className="mt-3 text-[14px] leading-[1.7] text-black/64">
-                      {previewIngredient.summary || "打开详情页查看完整成分说明、收益风险与来源样本。"}
-                    </p>
+                      <div className="mt-4 grid gap-3">
+                        <VisualizationStatStrip title="被引用次数" value={formatCount(previewIngredient.source_count)} note="按成分库 source_count 聚合" />
+                        <VisualizationStatStrip title={previewScopeLabel} value={previewReferenceShare} note="基于当前筛选范围计算" />
+                        <VisualizationStatStrip
+                          title="命中二级分类"
+                          value={formatCount(previewIngredient.subtype_titles.length)}
+                          note={previewIngredient.subtype_titles.slice(0, 3).join(" · ") || "当前范围内暂无二级分类标记"}
+                        />
+                      </div>
 
-                    <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-                      <VisualizationStatStrip title="被引用次数" value={formatCount(previewIngredient.source_count)} note="按成分库 source_count 聚合" />
-                      <VisualizationStatStrip title={previewScopeLabel} value={previewReferenceShare} note="基于当前筛选范围计算" />
-                      <VisualizationStatStrip
-                        title="命中二级分类"
-                        value={formatCount(previewIngredient.subtype_titles.length)}
-                        note={previewIngredient.subtype_titles.slice(0, 3).join(" · ") || "当前范围内暂无二级分类标记"}
-                      />
-                    </div>
-
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      <span className="rounded-full border border-black/10 bg-white px-3 py-1 text-[12px] font-semibold text-black/70">
-                        {categoryLabel(previewIngredient.category)}
-                      </span>
-                      {previewIngredient.subtype_titles.slice(0, 3).map((title) => (
-                        <span key={title} className="rounded-full border border-black/10 bg-white px-3 py-1 text-[12px] font-semibold text-black/64">
-                          {title}
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <span className="rounded-full border border-black/10 bg-white px-3 py-1 text-[12px] font-semibold text-black/70">
+                          {categoryLabel(previewIngredient.category)}
                         </span>
-                      ))}
+                        {previewIngredient.subtype_titles.map((title) => (
+                          <span key={title} className="rounded-full border border-black/10 bg-white px-3 py-1 text-[12px] font-semibold text-black/64">
+                            {title}
+                          </span>
+                        ))}
+                      </div>
+
+                      <Link
+                        href={previewIngredient.href}
+                        className="mt-5 inline-flex h-11 items-center justify-center rounded-full border border-black/12 bg-black px-5 text-[13px] font-semibold text-white transition hover:translate-y-[-1px] hover:bg-black/88"
+                      >
+                        查看成分详情
+                      </Link>
+                    </>
+                  ) : (
+                    <div className="text-[13px] leading-[1.7] text-black/58">当前筛选无可预览成分。</div>
+                  )}
+                </div>
+              </div>
+            </section>
+
+            <section className="ingredient-pane border-b border-black/8 bg-white/92 xl:border-b-0 xl:border-r">
+              <div className="ingredient-pane-frame">
+                <div className="ingredient-pane-body ingredient-scroll px-4 py-4 md:px-5">
+                  <section>
+                    <div className="ingredient-section-head sticky top-0 z-10 rounded-[20px] border border-black/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,251,255,0.94))] px-4 py-4 shadow-[0_10px_28px_rgba(15,23,42,0.06)] backdrop-blur-xl">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div className="text-[11px] font-semibold tracking-[0.12em] text-black/44 uppercase">High Frequency</div>
+                          <h3 className="mt-1 text-[24px] font-semibold tracking-[-0.02em] text-black/90">高频成分</h3>
+                          <p className="mt-1 text-[13px] leading-[1.6] text-black/58">
+                            优先展示引用次数更高的成分，适合先看主结构，再决定是否继续下钻。
+                          </p>
+                        </div>
+                        <span className="rounded-full border border-[#dbeafe] bg-[#f4f8ff] px-3 py-1 text-[12px] font-semibold text-[#2450a0]">
+                          {formatCount(highFrequencyTags.length)} 个高频 tag
+                        </span>
+                      </div>
                     </div>
 
-                    <Link
-                      href={previewIngredient.href}
-                      className="mt-5 inline-flex h-11 items-center justify-center rounded-full border border-black/12 bg-black px-5 text-[13px] font-semibold text-white transition hover:translate-y-[-1px] hover:bg-black/88"
-                    >
-                      查看成分详情
-                    </Link>
-                  </>
-                ) : (
-                  <div className="mt-4 text-[13px] leading-[1.7] text-black/58">当前筛选无可预览成分。</div>
-                )}
+                    {highFrequencyTags.length > 0 ? (
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
+                        {highFrequencyTags.map((item) => (
+                          <IngredientVisualizationCard
+                            key={item.ingredient_id}
+                            item={item}
+                            active={previewIngredient?.ingredient_id === item.ingredient_id}
+                            onActivate={() => setActiveIngredientId(item.ingredient_id)}
+                          />
+                        ))}
+                      </div>
+                    ) : lowFrequencyTags.length > 0 ? (
+                      <div className="mt-4 rounded-[24px] border border-dashed border-black/14 bg-[#fbfcfe] px-4 py-4 text-[13px] leading-[1.65] text-black/60">
+                        当前筛选下没有 <span className="font-semibold text-black/76">&gt;2 引用</span> 的高频成分，结果都落在低频长尾中。你可以展开下方长尾区继续查看。
+                      </div>
+                    ) : (
+                      <div className="mt-4 rounded-[24px] border border-dashed border-black/14 bg-[#fbfcfe] px-4 py-4 text-[13px] leading-[1.65] text-black/60">
+                        当前筛选无成分数据。
+                      </div>
+                    )}
+                  </section>
+
+                  <section className="mt-5">
+                    <div className="ingredient-section-head sticky top-0 z-10 rounded-[20px] border border-black/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,251,255,0.94))] px-4 py-4 shadow-[0_10px_28px_rgba(15,23,42,0.06)] backdrop-blur-xl">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div className="text-[11px] font-semibold tracking-[0.12em] text-black/44 uppercase">Long Tail</div>
+                          <h3 className="mt-1 text-[24px] font-semibold tracking-[-0.02em] text-black/90">低频长尾</h3>
+                          <p className="mt-1 text-[13px] leading-[1.6] text-black/58">
+                            引用次数小于等于 2 的成分默认收起，避免长尾噪声淹没高频信息；需要时再展开完整浏览。
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setShowLongTail((prev) => !prev)}
+                          className="inline-flex h-10 items-center justify-center rounded-full border border-black/12 bg-black/[0.02] px-4 text-[12px] font-semibold text-black/74 transition hover:bg-black/[0.05]"
+                        >
+                          {showLongTail ? "收起低频长尾" : `展开低频长尾 (${formatCount(lowFrequencyTags.length)})`}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      <VisualizationStatStrip title="2 引用" value={formatCount(twoHitTags.length)} note="相对可复现，适合继续观察是否需要归一。" />
+                      <VisualizationStatStrip title="1 引用" value={formatCount(oneHitTags.length)} note="更偏单点样本，默认收起避免页面过密。" />
+                    </div>
+
+                    {showLongTail ? (
+                      <div className="mt-4 space-y-4">
+                        <VisualizationPillGroup
+                          title="2 引用"
+                          description="先看两次引用的长尾成分。"
+                          items={twoHitTags}
+                          activeIngredientId={previewIngredient?.ingredient_id || null}
+                          onActivate={setActiveIngredientId}
+                        />
+                        <VisualizationPillGroup
+                          title="1 引用"
+                          description="单次引用的极长尾成分。"
+                          items={oneHitTags}
+                          activeIngredientId={previewIngredient?.ingredient_id || null}
+                          onActivate={setActiveIngredientId}
+                        />
+                      </div>
+                    ) : (
+                      <div className="mt-4 rounded-[24px] border border-dashed border-black/14 bg-[#fbfcfe] px-4 py-4 text-[13px] leading-[1.7] text-black/58">
+                        当前已折叠 {formatCount(lowFrequencyTags.length)} 个低频成分。
+                        {lowFrequencyTags.length > 0 ? " 需要时展开即可查看完整长尾列表。" : " 当前筛选下没有低频长尾成分。"}
+                      </div>
+                    )}
+                  </section>
+                </div>
               </div>
             </section>
-          </aside>
 
-          <div className="space-y-5">
-            <section className="rounded-[28px] border border-black/10 bg-white/88 p-4 shadow-[0_18px_44px_rgba(16,24,40,0.06)] md:p-5">
-              <div className="sticky top-[176px] z-10 rounded-[22px] border border-black/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,251,255,0.94))] px-4 py-4 shadow-[0_12px_32px_rgba(15,23,42,0.06)] backdrop-blur-xl">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <div className="text-[11px] font-semibold tracking-[0.12em] text-black/44 uppercase">High Frequency</div>
-                    <h3 className="mt-1 text-[24px] font-semibold tracking-[-0.02em] text-black/90">高频成分</h3>
-                    <p className="mt-1 text-[13px] leading-[1.6] text-black/58">
-                      优先展示引用次数更高的成分，适合先看主结构，再决定是否继续下钻。
-                    </p>
+            <section className="ingredient-pane bg-[linear-gradient(180deg,rgba(247,250,255,0.9),rgba(255,255,255,0.95))]">
+              <div className="ingredient-pane-frame">
+                <div className="ingredient-pane-head border-b border-black/8 px-5 py-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-[11px] font-semibold tracking-[0.12em] text-black/44 uppercase">
+                        {selectedSummaryRow ? "当前分布概览" : "一级分布概览"}
+                      </div>
+                      <h3 className="mt-1 text-[24px] font-semibold tracking-[-0.02em] text-black/90">
+                        {selectedSummaryRow ? categoryLabel(selectedSummaryRow.category) : "一级分布概览"}
+                      </h3>
+                      <p className="mt-1 text-[12px] leading-[1.6] text-black/58">
+                        {selectedSubtypeSummary
+                          ? `当前已筛到 ${selectedSubtypeSummary.title}，下方二级占比按 ${categoryLabel(selectedSummaryRow?.category)} 计算。`
+                          : selectedSummaryRow
+                            ? "当前二级展开占比按所选一级分类计算。"
+                            : "一级卡片展示当前视图占比，展开后可看二级分布。"}
+                      </p>
+                    </div>
+                    <span className="rounded-full border border-[#dbeafe] bg-[#f4f8ff] px-3 py-1 text-[11px] font-semibold text-[#2450a0]">
+                      {formatCount(overviewRows.length)} 个一级类目
+                    </span>
                   </div>
-                  <span className="rounded-full border border-[#dbeafe] bg-[#f4f8ff] px-3 py-1 text-[12px] font-semibold text-[#2450a0]">
-                    {formatCount(highFrequencyTags.length)} 个高频 tag
-                  </span>
+                </div>
+                <div className="ingredient-pane-body ingredient-scroll px-5 py-5">
+                  {overviewRows.length > 0 ? (
+                    <div className="space-y-3">
+                      {overviewRows.map((row, index) => {
+                        const autoOpen = row.category === selectedCategory || (!selectedCategory && index === 0);
+                        const open = autoOpen || expandedOverviewSet.has(row.category);
+                        const productShare = ratioLabel(row.product_count, overviewProductBase);
+                        const ingredientShare = ratioLabel(row.ingredient_count, overviewIngredientBase);
+                        return (
+                          <div key={row.category} className={`rounded-[22px] border px-4 py-4 ${row.category === selectedCategory ? "border-sky-200 bg-[#f7fbff]" : "border-black/8 bg-[#fbfcff]"}`}>
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="text-[16px] font-semibold text-black/86">{categoryLabel(row.category)}</div>
+                                <div className="mt-1 text-[12px] text-black/56">
+                                  产品 {formatCount(row.product_count)} · 唯一成分 {formatCount(row.ingredient_count)}
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => toggleOverviewCategory(row.category)}
+                                className="inline-flex h-9 items-center justify-center rounded-full border border-black/10 bg-white px-3 text-[11px] font-semibold text-black/66 transition hover:bg-black/[0.03]"
+                              >
+                                {open ? "收起二级概览" : "展开二级概览"}
+                              </button>
+                            </div>
+
+                            <div className="mt-3 grid gap-2">
+                              <OverviewShareRow label="产品占当前视图" value={productShare} ratio={row.product_count / overviewProductBase} />
+                              <OverviewShareRow label="成分占当前视图" value={ingredientShare} ratio={row.ingredient_count / overviewIngredientBase} />
+                            </div>
+
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {row.top_ingredients.slice(0, 3).map((item) => (
+                                <span key={item.ingredient_id} className="rounded-full border border-black/10 bg-white px-3 py-1 text-[11px] font-semibold text-black/64">
+                                  {item.name} · {item.source_count}
+                                </span>
+                              ))}
+                            </div>
+
+                            {open ? (
+                              <div className="mt-4 border-t border-black/8 pt-4">
+                                <div className="text-[11px] font-semibold tracking-[0.12em] text-black/42 uppercase">二级概览分布</div>
+                                <div className="mt-3 space-y-3">
+                                  {row.subtype_summaries.length > 0 ? (
+                                    row.subtype_summaries.map((subtype) => {
+                                      const subtypeProductShare = ratioLabel(subtype.product_count, Math.max(1, row.product_count));
+                                      const subtypeIngredientShare = ratioLabel(subtype.ingredient_count, Math.max(1, row.ingredient_count));
+                                      const highlighted = row.category === selectedCategory && subtype.key === selectedSubtype;
+                                      return (
+                                        <div
+                                          key={`${row.category}-${subtype.key}`}
+                                          className={`rounded-[18px] border px-3 py-3 ${highlighted ? "border-sky-200 bg-white shadow-[0_12px_26px_rgba(59,130,246,0.08)]" : "border-black/8 bg-white/92"}`}
+                                        >
+                                          <div className="flex items-center justify-between gap-2">
+                                            <div className="text-[13px] font-semibold text-black/82">{subtype.title}</div>
+                                            <span className="rounded-full border border-black/10 bg-black/[0.03] px-2.5 py-1 text-[11px] font-semibold text-black/62">
+                                              产品 {formatCount(subtype.product_count)}
+                                            </span>
+                                          </div>
+                                          <div className="mt-1 text-[12px] text-black/56">唯一成分 {formatCount(subtype.ingredient_count)}</div>
+                                          <div className="mt-3 grid gap-2">
+                                            <OverviewShareRow label="产品占当前一级" value={subtypeProductShare} ratio={subtype.product_count / Math.max(1, row.product_count)} />
+                                            <OverviewShareRow label="成分占当前一级" value={subtypeIngredientShare} ratio={subtype.ingredient_count / Math.max(1, row.ingredient_count)} />
+                                          </div>
+                                          <div className="mt-3 flex flex-wrap gap-2">
+                                            {subtype.top_ingredients.slice(0, 2).map((item) => (
+                                              <span key={item.ingredient_id} className="rounded-full border border-black/10 bg-[#fbfcff] px-2.5 py-1 text-[11px] font-semibold text-black/60">
+                                                {item.name} · {item.product_count}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      );
+                                    })
+                                  ) : (
+                                    <div className="text-[12px] text-black/54">当前一级分类暂无二级概览数据。</div>
+                                  )}
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-[13px] text-black/56">暂无分类摘要。</div>
+                  )}
                 </div>
               </div>
-
-              {highFrequencyTags.length > 0 ? (
-                <div className="mt-4 grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
-                  {highFrequencyTags.map((item) => (
-                    <IngredientVisualizationCard
-                      key={item.ingredient_id}
-                      item={item}
-                      active={previewIngredient?.ingredient_id === item.ingredient_id}
-                      onActivate={() => setActiveIngredientId(item.ingredient_id)}
-                    />
-                  ))}
-                </div>
-              ) : lowFrequencyTags.length > 0 ? (
-                <div className="mt-4 rounded-[24px] border border-dashed border-black/14 bg-[#fbfcfe] px-4 py-4 text-[13px] leading-[1.65] text-black/60">
-                  当前筛选下没有 <span className="font-semibold text-black/76">&gt;2 引用</span> 的高频成分，结果都落在低频长尾中。你可以展开下方长尾区继续查看。
-                </div>
-              ) : (
-                <div className="mt-4 rounded-[24px] border border-dashed border-black/14 bg-[#fbfcfe] px-4 py-4 text-[13px] leading-[1.65] text-black/60">
-                  当前筛选无成分数据。
-                </div>
-              )}
-            </section>
-
-            <section className="rounded-[28px] border border-black/10 bg-white/88 p-4 shadow-[0_18px_44px_rgba(16,24,40,0.06)] md:p-5">
-              <div className="sticky top-[176px] z-10 rounded-[22px] border border-black/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,251,255,0.94))] px-4 py-4 shadow-[0_12px_32px_rgba(15,23,42,0.06)] backdrop-blur-xl">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <div className="text-[11px] font-semibold tracking-[0.12em] text-black/44 uppercase">Long Tail</div>
-                    <h3 className="mt-1 text-[24px] font-semibold tracking-[-0.02em] text-black/90">低频长尾</h3>
-                    <p className="mt-1 text-[13px] leading-[1.6] text-black/58">
-                      引用次数小于等于 2 的成分默认收起，避免长尾噪声淹没高频信息；需要时再展开完整浏览。
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowLongTail((prev) => !prev)}
-                    className="inline-flex h-10 items-center justify-center rounded-full border border-black/12 bg-black/[0.02] px-4 text-[12px] font-semibold text-black/74 transition hover:bg-black/[0.05]"
-                  >
-                    {showLongTail ? "收起低频长尾" : `展开低频长尾 (${formatCount(lowFrequencyTags.length)})`}
-                  </button>
-                </div>
-              </div>
-
-              <div className="mt-4 grid gap-3 md:grid-cols-2">
-                <VisualizationStatStrip title="2 引用" value={formatCount(twoHitTags.length)} note="相对可复现，适合继续观察是否需要归一。" />
-                <VisualizationStatStrip title="1 引用" value={formatCount(oneHitTags.length)} note="更偏单点样本，默认收起避免页面过密。" />
-              </div>
-
-              {showLongTail ? (
-                <div className="mt-4 space-y-4">
-                  <VisualizationPillGroup
-                    title="2 引用"
-                    description="先看两次引用的长尾成分。"
-                    items={twoHitTags}
-                    activeIngredientId={previewIngredient?.ingredient_id || null}
-                    onActivate={setActiveIngredientId}
-                  />
-                  <VisualizationPillGroup
-                    title="1 引用"
-                    description="单次引用的极长尾成分。"
-                    items={oneHitTags}
-                    activeIngredientId={previewIngredient?.ingredient_id || null}
-                    onActivate={setActiveIngredientId}
-                  />
-                </div>
-              ) : (
-                <div className="mt-4 rounded-[24px] border border-dashed border-black/14 bg-[#fbfcfe] px-4 py-4 text-[13px] leading-[1.7] text-black/58">
-                  当前已折叠 {formatCount(lowFrequencyTags.length)} 个低频成分。
-                  {lowFrequencyTags.length > 0 ? " 需要时展开即可查看完整长尾列表。" : " 当前筛选下没有低频长尾成分。"}
-                </div>
-              )}
             </section>
           </div>
-
-          <aside className="space-y-4 xl:sticky xl:top-[176px] xl:self-start">
-            <section className="rounded-[28px] border border-black/10 bg-white/90 p-5 shadow-[0_18px_44px_rgba(16,24,40,0.06)]">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-[11px] font-semibold tracking-[0.12em] text-black/44 uppercase">
-                    {selectedSummaryRow ? "当前分布概览" : "一级分布概览"}
-                  </div>
-                  <h3 className="mt-1 text-[24px] font-semibold tracking-[-0.02em] text-black/90">
-                    {selectedSummaryRow ? categoryLabel(selectedSummaryRow.category) : "一级分布概览"}
-                  </h3>
-                  <p className="mt-1 text-[12px] leading-[1.6] text-black/58">
-                    {selectedSubtypeSummary
-                      ? `当前已筛到 ${selectedSubtypeSummary.title}，下方二级占比按 ${categoryLabel(selectedSummaryRow?.category)} 计算。`
-                      : selectedSummaryRow
-                        ? "当前二级展开占比按所选一级分类计算。"
-                        : "一级卡片展示当前视图占比，展开后可看二级分布。"}
-                  </p>
-                </div>
-                <span className="rounded-full border border-[#dbeafe] bg-[#f4f8ff] px-3 py-1 text-[11px] font-semibold text-[#2450a0]">
-                  {formatCount(overviewRows.length)} 个一级类目
-                </span>
-              </div>
-
-              {overviewRows.length > 0 ? (
-                <div className="mt-4 space-y-3">
-                  {overviewRows.map((row, index) => {
-                    const autoOpen = row.category === selectedCategory || (!selectedCategory && index === 0);
-                    const open = autoOpen || expandedOverviewSet.has(row.category);
-                    const productShare = ratioLabel(row.product_count, overviewProductBase);
-                    const ingredientShare = ratioLabel(row.ingredient_count, overviewIngredientBase);
-                    return (
-                      <div key={row.category} className={`rounded-[22px] border px-4 py-4 ${row.category === selectedCategory ? "border-sky-200 bg-[#f7fbff]" : "border-black/8 bg-[#fbfcff]"}`}>
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <div className="text-[16px] font-semibold text-black/86">{categoryLabel(row.category)}</div>
-                            <div className="mt-1 text-[12px] text-black/56">
-                              产品 {formatCount(row.product_count)} · 唯一成分 {formatCount(row.ingredient_count)}
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => toggleOverviewCategory(row.category)}
-                            className="inline-flex h-9 items-center justify-center rounded-full border border-black/10 bg-white px-3 text-[11px] font-semibold text-black/66 transition hover:bg-black/[0.03]"
-                          >
-                            {open ? "收起二级概览" : "展开二级概览"}
-                          </button>
-                        </div>
-
-                        <div className="mt-3 grid gap-2">
-                          <OverviewShareRow label="产品占当前视图" value={productShare} ratio={row.product_count / overviewProductBase} />
-                          <OverviewShareRow label="成分占当前视图" value={ingredientShare} ratio={row.ingredient_count / overviewIngredientBase} />
-                        </div>
-
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {row.top_ingredients.slice(0, 3).map((item) => (
-                            <span key={item.ingredient_id} className="rounded-full border border-black/10 bg-white px-3 py-1 text-[11px] font-semibold text-black/64">
-                              {item.name} · {item.source_count}
-                            </span>
-                          ))}
-                        </div>
-
-                        {open ? (
-                          <div className="mt-4 border-t border-black/8 pt-4">
-                            <div className="text-[11px] font-semibold tracking-[0.12em] text-black/42 uppercase">二级概览分布</div>
-                            <div className="mt-3 space-y-3">
-                              {row.subtype_summaries.length > 0 ? (
-                                row.subtype_summaries.map((subtype) => {
-                                  const subtypeProductShare = ratioLabel(subtype.product_count, Math.max(1, row.product_count));
-                                  const subtypeIngredientShare = ratioLabel(subtype.ingredient_count, Math.max(1, row.ingredient_count));
-                                  const highlighted = row.category === selectedCategory && subtype.key === selectedSubtype;
-                                  return (
-                                    <div
-                                      key={`${row.category}-${subtype.key}`}
-                                      className={`rounded-[18px] border px-3 py-3 ${highlighted ? "border-sky-200 bg-white shadow-[0_12px_26px_rgba(59,130,246,0.08)]" : "border-black/8 bg-white/92"}`}
-                                    >
-                                      <div className="flex items-center justify-between gap-2">
-                                        <div className="text-[13px] font-semibold text-black/82">{subtype.title}</div>
-                                        <span className="rounded-full border border-black/10 bg-black/[0.03] px-2.5 py-1 text-[11px] font-semibold text-black/62">
-                                          产品 {formatCount(subtype.product_count)}
-                                        </span>
-                                      </div>
-                                      <div className="mt-1 text-[12px] text-black/56">唯一成分 {formatCount(subtype.ingredient_count)}</div>
-                                      <div className="mt-3 grid gap-2">
-                                        <OverviewShareRow label="产品占当前一级" value={subtypeProductShare} ratio={subtype.product_count / Math.max(1, row.product_count)} />
-                                        <OverviewShareRow label="成分占当前一级" value={subtypeIngredientShare} ratio={subtype.ingredient_count / Math.max(1, row.ingredient_count)} />
-                                      </div>
-                                      <div className="mt-3 flex flex-wrap gap-2">
-                                        {subtype.top_ingredients.slice(0, 2).map((item) => (
-                                          <span key={item.ingredient_id} className="rounded-full border border-black/10 bg-[#fbfcff] px-2.5 py-1 text-[11px] font-semibold text-black/60">
-                                            {item.name} · {item.product_count}
-                                          </span>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  );
-                                })
-                              ) : (
-                                <div className="text-[12px] text-black/54">当前一级分类暂无二级概览数据。</div>
-                              )}
-                            </div>
-                          </div>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="mt-3 text-[13px] text-black/56">暂无分类摘要。</div>
-              )}
-            </section>
-          </aside>
         </div>
       </div>
 
@@ -1108,9 +1121,73 @@ function IngredientVisualizationPanel({
           opacity: 0.45;
         }
 
+        .ingredient-dock {
+          isolation: isolate;
+        }
+
+        .ingredient-workbench {
+          position: relative;
+        }
+
+        .ingredient-workbench-grid {
+          align-items: stretch;
+        }
+
+        .ingredient-pane {
+          min-width: 0;
+        }
+
+        .ingredient-pane-frame {
+          display: flex;
+          min-height: 100%;
+          flex-direction: column;
+        }
+
+        .ingredient-pane-head {
+          flex-shrink: 0;
+          background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 251, 255, 0.94));
+          backdrop-filter: blur(16px);
+        }
+
+        .ingredient-pane-body {
+          flex: 1 1 auto;
+          min-height: 0;
+        }
+
+        .ingredient-section-head {
+          isolation: isolate;
+        }
+
+        .ingredient-scroll {
+          overflow: visible;
+        }
+
+        @media (min-width: 1280px) {
+          .ingredient-scroll {
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(15, 23, 42, 0.18) rgba(15, 23, 42, 0.04);
+          }
+
+          .ingredient-scroll::-webkit-scrollbar {
+            width: 10px;
+          }
+
+          .ingredient-scroll::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.04);
+            border-radius: 9999px;
+          }
+
+          .ingredient-scroll::-webkit-scrollbar-thumb {
+            background: rgba(15, 23, 42, 0.18);
+            border-radius: 9999px;
+            border: 2px solid rgba(255, 255, 255, 0.75);
+          }
+        }
+
         .ingredient-preview-card {
           position: relative;
-          overflow: hidden;
         }
 
         .ingredient-preview-glow {
