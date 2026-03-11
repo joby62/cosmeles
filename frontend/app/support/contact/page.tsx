@@ -1,25 +1,27 @@
 import FeatureShell from "@/components/site/FeatureShell";
-
-const supportBlocks = [
-  "Launch contact channels will live here as part of the public support stack.",
-  "Response expectations should be visible before customers submit a request.",
-  "Order, product, and returns help will be separated so support paths stay clearer.",
-];
+import { CONTACT_SECTIONS } from "@/lib/storefrontTrust";
 
 export default function ContactPage() {
   return (
     <FeatureShell
       eyebrow="Contact"
       title="Support contact belongs inside the storefront trust layer."
-      summary="Jeslect contact paths are being rebuilt alongside the storefront so users can see how support works before they ever place an order."
+      summary="Jeslect contact trust is built around clear routing. Customers should know where product questions, shipping questions, and returns questions belong before they ever submit a request."
       highlights={["Visible support path", "Response expectations", "Lower-friction help routing"]}
       primaryCta={{ href: "/support/faq", label: "Read FAQ first" }}
-      secondaryCta={{ href: "/shop", label: "Back to shop" }}
+      secondaryCta={{ href: "/bag", label: "Open bag" }}
     >
-      <div className="space-y-3">
-        {supportBlocks.map((item) => (
-          <article key={item} className="rounded-[24px] border border-black/8 bg-slate-50 px-4 py-4 text-[14px] leading-6 text-slate-700">
-            {item}
+      <div className="space-y-4">
+        {CONTACT_SECTIONS.map((section) => (
+          <article key={section.title} className="rounded-[28px] border border-black/8 bg-slate-50 px-5 py-5">
+            <h2 className="text-[20px] font-semibold tracking-[-0.03em] text-slate-950">{section.title}</h2>
+            <div className="mt-4 space-y-2">
+              {section.items.map((item) => (
+                <p key={item} className="text-[14px] leading-6 text-slate-700">
+                  {item}
+                </p>
+              ))}
+            </div>
           </article>
         ))}
       </div>

@@ -1,25 +1,27 @@
 import FeatureShell from "@/components/site/FeatureShell";
-
-const returnPoints = [
-  "Return eligibility should be visible before checkout starts.",
-  "Refund timing and item condition rules need plain-language summaries.",
-  "Exceptions, if any, should be named directly instead of hidden in dense policy text.",
-];
+import { RETURNS_SECTIONS } from "@/lib/storefrontTrust";
 
 export default function ReturnsPage() {
   return (
     <FeatureShell
       eyebrow="Returns"
       title="Returns language should reduce hesitation, not create more of it."
-      summary="The new storefront is setting up a visible return path so customers understand the return window, refund timing, and category exceptions without digging through hidden legal copy."
+      summary="Jeslect returns trust is built around three things: visible timing, understandable condition rules, and no surprise exceptions hidden at the very end."
       highlights={["Visible return window", "Refund timing clarity", "Named exceptions"]}
-      primaryCta={{ href: "/shop", label: "Back to shop" }}
+      primaryCta={{ href: "/bag", label: "Open bag" }}
       secondaryCta={{ href: "/support/contact", label: "Contact support" }}
     >
-      <div className="space-y-3">
-        {returnPoints.map((item) => (
-          <article key={item} className="rounded-[24px] border border-black/8 bg-slate-50 px-4 py-4 text-[14px] leading-6 text-slate-700">
-            {item}
+      <div className="space-y-4">
+        {RETURNS_SECTIONS.map((section) => (
+          <article key={section.title} className="rounded-[28px] border border-black/8 bg-slate-50 px-5 py-5">
+            <h2 className="text-[20px] font-semibold tracking-[-0.03em] text-slate-950">{section.title}</h2>
+            <div className="mt-4 space-y-2">
+              {section.items.map((item) => (
+                <p key={item} className="text-[14px] leading-6 text-slate-700">
+                  {item}
+                </p>
+              ))}
+            </div>
           </article>
         ))}
       </div>

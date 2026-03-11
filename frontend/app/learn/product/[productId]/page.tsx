@@ -5,6 +5,7 @@ import {
   fetchProductAnalysis,
   resolveStoredImageUrl,
 } from "@/lib/api";
+import { getMatchRouteMeta } from "@/lib/match";
 import { categoryHref, getCategoryMeta, normalizeCategoryKey } from "@/lib/site";
 
 function mergeUnique(items: string[]): string[] {
@@ -63,6 +64,7 @@ export default async function LearnProductDetailPage({
   const productBrand = item.product.brand || "Jeslect";
   const imageSrc = resolveStoredImageUrl(item.doc.evidence.image_path);
   const profile = analysis?.item.profile || null;
+  const routeMeta = profile ? getMatchRouteMeta(profile.category, profile.route_key) : null;
   const summaryText =
     profile?.positioning_summary || item.doc.summary.one_sentence || "Open the shopping profile when you want the storefront version.";
   const bestFor = mergeUnique(profile?.best_for || item.doc.summary.who_for || []);
@@ -115,13 +117,14 @@ export default async function LearnProductDetailPage({
             ) : null}
             {profile?.route_title ? (
               <span className="rounded-full border border-black/8 bg-slate-50 px-3 py-1 text-[11px] font-medium text-slate-600">
-                {profile.route_title}
+                {routeMeta?.title || profile.route_title}
               </span>
             ) : null}
           </div>
           <p className="mt-4 text-[12px] font-medium uppercase tracking-[0.18em] text-slate-500">{productBrand}</p>
           <h1 className="mt-2 text-[38px] font-semibold leading-[0.98] tracking-[-0.05em] text-slate-950">{productName}</h1>
           <p className="mt-4 text-[16px] leading-7 text-slate-600">{summaryText}</p>
+          {routeMeta?.summary ? <p className="mt-3 text-[14px] leading-6 text-slate-500">{routeMeta.summary}</p> : null}
 
           <div className="mt-6 flex flex-wrap gap-3">
             <Link

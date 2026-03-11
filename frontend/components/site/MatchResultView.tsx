@@ -5,9 +5,11 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import AddToBagButton from "@/components/site/AddToBagButton";
 import {
+  fetchProductAnalysis,
   fetchMobileSelectionSession,
   pinMobileSelectionSession,
   resolveImageUrl,
+  type ProductAnalysisProfile,
   type MobileSelectionResolveResponse,
 } from "@/lib/api";
 import { getMatchChoice, getMatchConfig, getMatchRouteMeta } from "@/lib/match";
@@ -50,10 +52,12 @@ function buildMatchHref(category: CategoryKey): string {
 
 export default function MatchResultView({ sessionId }: MatchResultViewProps) {
   const [result, setResult] = useState<MobileSelectionResolveResponse | null>(null);
+  const [productProfile, setProductProfile] = useState<ProductAnalysisProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pinning, setPinning] = useState(false);
   const [pinError, setPinError] = useState<string | null>(null);
+  const recommendedProductId = result?.recommended_product.id || null;
 
   useEffect(() => {
     let cancelled = false;
@@ -62,6 +66,7 @@ export default function MatchResultView({ sessionId }: MatchResultViewProps) {
       try {
         setLoading(true);
         setLoadError(null);
+        setProductProfile(null);
         const response = await fetchMobileSelectionSession(sessionId);
         if (cancelled) return;
         setResult(response);
@@ -79,6 +84,27 @@ export default function MatchResultView({ sessionId }: MatchResultViewProps) {
       cancelled = true;
     };
   }, [sessionId]);
+
+  useEffect(() => {
+    if (typeof recommendedProductId !== "string" || !recommendedProductId) return;
+    const productId: string = recommendedProductId;
+    let cancelled = false;
+
+    async function loadProductProfile() {
+      try {
+        const response = await fetchProductAnalysis(productId);
+        if (cancelled) return;
+        setProductProfile(response.item.profile);
+      } catch {
+        if (!cancelled) setProductProfile(null);
+      }
+    }
+
+    void loadProductProfile();
+    return () => {
+      cancelled = true;
+    };
+  }, [recommendedProductId]);
 
   const derived = useMemo(() => {
     if (!result) return null;
@@ -215,6 +241,10 @@ export default function MatchResultView({ sessionId }: MatchResultViewProps) {
   const categoryMeta = getCategoryMeta(derived.category);
   const productId = result.recommended_product.id;
   const recommendedName = productName(result);
+  const productRouteMeta =
+    productProfile ? getMatchRouteMeta(productProfile.category, productProfile.route_key) : derived.routeMeta;
+  const productBestFor = (productProfile?.best_for || []).filter(Boolean).slice(0, 3);
+  const productWatchouts = (productProfile?.watchouts || []).filter(Boolean).slice(0, 3);
 
   return (
     <div className="mx-auto max-w-6xl px-4 pb-16 pt-8">
@@ -297,8 +327,10 @@ export default function MatchResultView({ sessionId }: MatchResultViewProps) {
                 </h2>
                 <p className="mt-2 text-[16px] leading-7 text-slate-700">{recommendedName}</p>
                 <p className="mt-3 text-[14px] leading-6 text-slate-600">
-                  Use this saved match as the compare basis for {categoryMeta?.label.toLowerCase() || derived.category}.
+                  {productProfile?.positioning_summary ||
+                    `Use this saved match as the compare basis for ${categoryMeta?.label.toLowerCase() || derived.category}.`}
                 </p>
+                {productRouteMeta?.summary ? <p className="mt-2 text-[13px] leading-6 text-slate-500">{productRouteMeta.summary}</p> : null}
               </div>
             </div>
 
@@ -360,6 +392,70 @@ export default function MatchResultView({ sessionId }: MatchResultViewProps) {
                   This saved match does not have enough question-level scoring detail to rank the top signals yet.
                 </p>
               )}
+            </div>
+          </article>
+
+          <article className="rounded-[32px] border border-black/8 bg-white/94 p-6 shadow-[0_20px_46px_rgba(15,23,42,0.06)]">
+            <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-500">Why this product fits</p>
+            <h2 className="mt-3 text-[30px] font-semibold tracking-[-0.04em] text-slate-950">
+              Keep the product explanation aligned with the route.
+            </h2>
+            <p className="mt-3 text-[15px] leading-7 text-slate-600">
+              {productProfile?.positioning_summary ||
+                "Jeslect uses product-level analysis when it exists so the matched route and the recommended product keep telling the same story."}
+            </p>
+
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <div className="rounded-[24px] border border-emerald-100 bg-emerald-50 px-4 py-4">
+                <div className="text-[12px] font-semibold uppercase tracking-[0.16em] text-emerald-700">Best for</div>
+                <div className="mt-3 space-y-2">
+                  {productBestFor.length > 0 ? (
+                    productBestFor.map((item) => (
+                      <p key={item} className="text-[14px] leading-6 text-slate-700">
+                        {item}
+                      </p>
+                    ))
+                  ) : (
+                    <p className="text-[14px] leading-6 text-slate-600">Product-level best-for guidance is still being mapped.</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-[24px] border border-amber-100 bg-amber-50 px-4 py-4">
+                <div className="text-[12px] font-semibold uppercase tracking-[0.16em] text-amber-700">Watchouts</div>
+                <div className="mt-3 space-y-2">
+                  {productWatchouts.length > 0 ? (
+                    productWatchouts.map((item) => (
+                      <p key={item} className="text-[14px] leading-6 text-slate-700">
+                        {item}
+                      </p>
+                    ))
+                  ) : (
+                    <p className="text-[14px] leading-6 text-slate-600">No structured watchouts were exposed for this product yet.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Link
+                href={`/product/${encodeURIComponent(productId)}`}
+                className="inline-flex h-11 items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-5 text-[13px] font-semibold text-white"
+              >
+                Open matched product profile
+              </Link>
+              <Link
+                href={`/learn/product/${encodeURIComponent(productId)}`}
+                className="inline-flex h-11 items-center justify-center rounded-full border border-black/10 bg-white px-5 text-[13px] font-semibold text-slate-700"
+              >
+                Read the learn explanation
+              </Link>
+              <Link
+                href={`/compare?category=${encodeURIComponent(derived.category)}&pick=${encodeURIComponent(productId)}`}
+                className="inline-flex h-11 items-center justify-center rounded-full border border-black/10 bg-white px-5 text-[13px] font-semibold text-slate-700"
+              >
+                Compare within this route
+              </Link>
             </div>
           </article>
         </div>

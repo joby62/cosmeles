@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { fetchMobileCompareResult, resolveImageUrl, resolveStoredImageUrl, type MobileCompareResult } from "@/lib/api";
+import { getMatchRouteMeta } from "@/lib/match";
 import { getCategoryMeta } from "@/lib/site";
 
 type CompareResultViewProps = {
@@ -154,6 +155,7 @@ export default function CompareResultView({ compareId }: CompareResultViewProps)
   }
 
   const category = getCategoryMeta(result.category);
+  const routeMeta = getMatchRouteMeta(result.category, result.recommendation.route.key);
   const currentProductTitle = productTitle(result.current_product.product.brand, result.current_product.product.name, "Current product");
   const recommendedProductTitle = productTitle(
     result.recommendation.recommended_product.brand,
@@ -179,6 +181,11 @@ export default function CompareResultView({ compareId }: CompareResultViewProps)
           <span className="rounded-full border border-black/8 bg-slate-50 px-3 py-1 text-[11px] font-medium text-slate-600">
             Confidence {overallConfidence}%
           </span>
+          {routeMeta ? (
+            <span className="rounded-full border border-sky-100 bg-sky-50 px-3 py-1 text-[11px] font-medium text-sky-700">
+              {routeMeta.title}
+            </span>
+          ) : null}
           <span className="rounded-full border border-black/8 bg-slate-50 px-3 py-1 text-[11px] font-medium text-slate-600">
             Saved {formatDateTime(result.created_at)}
           </span>
@@ -190,6 +197,7 @@ export default function CompareResultView({ compareId }: CompareResultViewProps)
         <p className="mt-4 max-w-3xl text-[16px] leading-7 text-slate-600">
           This compare reused your saved profile basis and distilled the key tradeoffs into one English storefront result.
         </p>
+        {routeMeta?.summary ? <p className="mt-3 max-w-3xl text-[14px] leading-6 text-slate-500">{routeMeta.summary}</p> : null}
 
         {overallItems.length > 0 ? (
           <div className="mt-6 grid gap-3 md:grid-cols-2">
@@ -249,6 +257,13 @@ export default function CompareResultView({ compareId }: CompareResultViewProps)
         <div className="space-y-6">
           <article className="rounded-[32px] border border-black/8 bg-white/92 p-6 shadow-[0_20px_46px_rgba(15,23,42,0.06)]">
             <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-500">Why this result landed here</p>
+            {routeMeta ? (
+              <div className="mt-4 rounded-[24px] border border-sky-100 bg-sky-50 px-4 py-4">
+                <div className="text-[12px] font-semibold uppercase tracking-[0.16em] text-sky-700">Saved route basis</div>
+                <div className="mt-2 text-[18px] font-semibold tracking-[-0.03em] text-slate-950">{routeMeta.title}</div>
+                <p className="mt-2 text-[14px] leading-6 text-slate-700">{routeMeta.summary}</p>
+              </div>
+            ) : null}
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               {result.sections.map((section) => (
                 <article key={section.key} className="rounded-[24px] border border-black/8 bg-slate-50 px-4 py-4">
