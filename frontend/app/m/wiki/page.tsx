@@ -40,8 +40,8 @@ type SearchParamsLike = {
 const ALL_SECONDARY_KEY = "all";
 
 const ENTRY_TABS: Array<{ key: WikiEntryTab; label: string }> = [
-  { key: "product", label: "产品百科" },
-  { key: "ingredient", label: "成分百科" },
+  { key: "product", label: "产品" },
+  { key: "ingredient", label: "成分" },
 ];
 
 const CATEGORY_THEME: Record<WikiCategoryKey, CategoryTheme> = {
@@ -211,6 +211,17 @@ function SearchIcon({ className = "h-5 w-5" }: { className?: string }) {
   );
 }
 
+function SwitchIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden className={className}>
+      <path d="M7 7H20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M7 7L11 3.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M7 17H20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M20 17L16 20.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function CloseIcon({ className = "h-4 w-4" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" aria-hidden className={className}>
@@ -225,12 +236,15 @@ function WikiPageFallback() {
     <section className="m-wiki-page -mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[color:var(--m-wiki-canvas)] px-4 pb-36 pt-4 text-white">
       <div className="space-y-3">
         <div className="flex items-start gap-3">
-          <div className="m-wiki-segmented h-[58px] min-w-0 flex-1 rounded-[32px] p-1.5" />
-          <div className="h-[58px] w-[58px] rounded-[29px] border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)]" />
+          <div className="min-w-0 flex-1 space-y-3">
+            <div className="h-8 w-24 rounded-2xl bg-white/40" />
+            <div className="h-8 w-40 rounded-full border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)]" />
+          </div>
+          <div className="h-[52px] w-[52px] rounded-[26px] border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)]" />
         </div>
         <div className="flex gap-3 overflow-hidden pb-1">
-          <div className="h-[58px] w-[126px] rounded-[30px] border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)]" />
-          <div className="h-[58px] w-[126px] rounded-[30px] border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)]" />
+          <div className="h-[54px] w-[124px] rounded-[27px] border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)]" />
+          <div className="h-[54px] w-[124px] rounded-[27px] border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)]" />
         </div>
       </div>
     </section>
@@ -259,10 +273,7 @@ function MobileWikiPageContent() {
 
   const normalizedQuery = query.trim();
   const theme = CATEGORY_THEME[active];
-  const entryTabIndex = entryTab === "product" ? 0 : 1;
   const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const segmentThumbRef = useRef<HTMLSpanElement | null>(null);
-  const previousEntryTabIndexRef = useRef(entryTabIndex);
   const hasRestoredInitialScrollRef = useRef(false);
 
   const stateQueryString = useMemo(
@@ -333,31 +344,6 @@ function MobileWikiPageContent() {
       window.cancelAnimationFrame(rafId);
     };
   }, [searchOpen]);
-
-  useEffect(() => {
-    const thumb = segmentThumbRef.current;
-    const previousIndex = previousEntryTabIndexRef.current;
-    if (!thumb || previousIndex === entryTabIndex) {
-      previousEntryTabIndexRef.current = entryTabIndex;
-      return;
-    }
-    if (typeof thumb.animate === "function") {
-      const fromX = `${previousIndex * 100}%`;
-      const toX = `${entryTabIndex * 100}%`;
-      thumb.animate(
-        [
-          { transform: `translateX(${fromX}) scale(0.96,0.92)` },
-          { transform: `translateX(${toX}) scale(1.03,1.03)`, offset: 0.72 },
-          { transform: `translateX(${toX}) scale(1,1)` },
-        ],
-        {
-          duration: 420,
-          easing: "cubic-bezier(0.22, 1, 0.36, 1)",
-        },
-      );
-    }
-    previousEntryTabIndexRef.current = entryTabIndex;
-  }, [entryTabIndex]);
 
   useEffect(() => {
     if (entryTab !== "product") return;
@@ -532,41 +518,46 @@ function MobileWikiPageContent() {
       <div className="space-y-5">
         <div className="space-y-3">
           <div className="flex items-start gap-3">
-            <div role="tablist" aria-label="百科类型" className="m-wiki-segmented relative min-w-0 flex-1 rounded-[32px] p-1.5">
-              <span
-                aria-hidden
-                ref={segmentThumbRef}
-                className="m-wiki-segment-thumb absolute bottom-1.5 left-1.5 top-1.5"
-                style={{ width: "calc(50% - 6px)", transform: `translateX(${entryTabIndex * 100}%)` }}
-              />
-              <div className="grid grid-cols-2 gap-1.5">
-                {ENTRY_TABS.map((tab) => {
+            <div className="min-w-0 flex-1">
+              <h1 data-m-large-title="百科" className="text-[28px] leading-[1.08] font-semibold tracking-[-0.03em] text-[color:var(--m-wiki-text-strong)]">
+                百科
+              </h1>
+              <div
+                role="tablist"
+                aria-label="百科类型"
+                className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)] px-3 py-2 text-[13px] shadow-[0_8px_20px_rgba(16,29,52,0.05)] backdrop-blur-xl"
+              >
+                <SwitchIcon className="h-[15px] w-[15px] text-[color:var(--m-wiki-text-soft)]" />
+                <span className="text-[12px] font-medium text-[color:var(--m-wiki-text-soft)]">切换</span>
+                {ENTRY_TABS.map((tab, index) => {
                   const activeTab = tab.key === entryTab;
                   return (
-                    <button
-                      key={tab.key}
-                      role="tab"
-                      aria-selected={activeTab}
-                      type="button"
-                      onClick={() => {
-                        switchTab(tab.key);
-                      }}
-                      className={`m-pressable relative z-[1] flex h-[58px] items-center justify-center rounded-[26px] px-4 text-center transition-colors ${
-                        activeTab ? "text-white" : "text-[color:var(--m-wiki-text-soft)] active:text-[color:var(--m-wiki-text-mid)]"
-                      }`}
-                    >
-                      <span className={`tracking-[-0.03em] ${activeTab ? "text-[24px] font-semibold" : "text-[17px] font-semibold"}`}>{tab.label}</span>
-                    </button>
+                    <span key={tab.key} className="contents">
+                      {index > 0 ? <span className="text-[12px] font-medium text-[color:var(--m-wiki-text-soft)]">|</span> : null}
+                      <button
+                        role="tab"
+                        aria-selected={activeTab}
+                        type="button"
+                        onClick={() => {
+                          switchTab(tab.key);
+                        }}
+                        className={`m-pressable inline-flex items-center rounded-full px-1 py-0.5 text-[14px] font-semibold tracking-[-0.01em] transition-colors ${
+                          activeTab ? "text-[color:var(--m-wiki-text-strong)]" : "text-[color:var(--m-wiki-text-soft)]"
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    </span>
                   );
                 })}
               </div>
             </div>
 
             <div
-              className={`relative h-[58px] shrink-0 overflow-hidden rounded-[29px] transition-[width,box-shadow,border-color,background-color] duration-300 ${
+              className={`relative h-[52px] shrink-0 overflow-hidden rounded-[26px] transition-[width,box-shadow,border-color,background-color] duration-300 ${
                 searchOpen
                   ? "m-wiki-input-shell w-[min(72vw,276px)] shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_12px_30px_rgba(12,22,38,0.12)]"
-                  : "w-[58px] border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)] shadow-[0_10px_28px_rgba(16,29,52,0.08)]"
+                  : "w-[52px] border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)] shadow-[0_10px_24px_rgba(16,29,52,0.06)]"
               }`}
             >
               <button
@@ -579,7 +570,7 @@ function MobileWikiPageContent() {
                   searchOpen ? "pointer-events-none opacity-0" : "opacity-100"
                 }`}
               >
-                <SearchIcon className="h-[20px] w-[20px]" />
+                <SearchIcon className="h-[18px] w-[18px]" />
               </button>
 
               <form
@@ -614,7 +605,7 @@ function MobileWikiPageContent() {
                       setQuery(next);
                     }}
                     placeholder="搜索产品及成分"
-                    className="h-full min-w-0 flex-1 bg-transparent text-[15px] text-white/92 outline-none placeholder:text-white/36"
+                    className="h-full min-w-0 flex-1 bg-transparent text-[14px] text-white/92 outline-none placeholder:text-white/36"
                   />
                   <button
                     type="button"
@@ -630,7 +621,7 @@ function MobileWikiPageContent() {
           </div>
 
           <section className="overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            <div className="flex min-w-max gap-3 pb-1">
+            <div className="flex min-w-max gap-3.5 pb-1 pt-0.5">
               {WIKI_ORDER.map((key) => {
                 const item = WIKI_MAP[key];
                 const activeTag = key === active;
@@ -641,13 +632,18 @@ function MobileWikiPageContent() {
                     onClick={() => {
                       switchCategory(key);
                     }}
-                    className={`m-wiki-category-card m-pressable relative inline-flex h-[58px] items-center gap-3 rounded-[30px] px-4 ${
+                    className={`m-wiki-category-card m-pressable relative inline-flex h-[56px] items-center gap-3.5 rounded-[28px] px-4.5 ${
                       activeTag ? "m-wiki-category-card-active" : ""
                     }`}
                   >
-                    {activeTag ? <span className="absolute right-3 top-3 h-2.5 w-2.5 rounded-full bg-[#0071e3]" /> : null}
-                    <Image src={`/m/categories/${item.key}.png`} alt={item.label} width={32} height={32} className="h-8 w-8 rounded-[12px] object-cover" />
-                    <span className="text-[17px] font-semibold tracking-[-0.02em]">{item.label}</span>
+                    <span
+                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-[12px] transition-colors ${
+                        activeTag ? "bg-[rgba(10,132,255,0.12)] shadow-[inset_0_0_0_1px_rgba(10,132,255,0.08)]" : "bg-white/74"
+                      }`}
+                    >
+                      <Image src={`/m/categories/${item.key}.png`} alt={item.label} width={22} height={22} className="h-[22px] w-[22px] rounded-[8px] object-cover" />
+                    </span>
+                    <span className="text-[16px] font-semibold tracking-[-0.022em]">{item.label}</span>
                   </button>
                 );
               })}
@@ -655,7 +651,7 @@ function MobileWikiPageContent() {
           </section>
 
           <section className="overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            <div className="flex min-w-max gap-2 pb-1">
+            <div className="flex min-w-max gap-2.5 pb-1">
               {(entryTab === "product" ? productSecondaryOptions : ingredientSecondaryOptions).map((item) => {
                 const activeSecondary = entryTab === "product" ? productSubtypeKey === item.key : ingredientFilterKey === item.key;
                 return (
@@ -669,10 +665,10 @@ function MobileWikiPageContent() {
                       }
                       setIngredientFilterKey(item.key);
                     }}
-                    className={`m-pressable inline-flex h-9 items-center rounded-full border px-4 text-[13px] font-medium transition-colors ${
+                    className={`m-pressable inline-flex h-8 items-center rounded-full border px-4 text-[13px] font-medium transition-colors ${
                       activeSecondary
-                        ? "border-[#0071e3] bg-[#0071e3] text-white shadow-[0_10px_22px_rgba(0,113,227,0.22)]"
-                        : "border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)] text-[color:var(--m-wiki-text-mid)] active:bg-white/90"
+                        ? "border-[rgba(10,132,255,0.18)] bg-[rgba(10,132,255,0.10)] text-[#0a84ff] shadow-none"
+                        : "border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)] text-[color:var(--m-wiki-text-soft)] active:bg-white/90"
                     }`}
                   >
                     {item.label}
