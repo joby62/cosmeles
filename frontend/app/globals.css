@@ -1765,6 +1765,21 @@ html[data-nav-open="1"] #app-main{
   -webkit-backdrop-filter: saturate(180%) blur(22px);
 }
 
+.m-wiki-category-card {
+  border: 1px solid var(--m-wiki-border);
+  background: color-mix(in srgb, var(--m-wiki-frost) 88%, transparent);
+  color: var(--m-wiki-text-mid);
+  box-shadow: 0 10px 24px rgba(16,29,52,0.06);
+  backdrop-filter: saturate(180%) blur(18px);
+  -webkit-backdrop-filter: saturate(180%) blur(18px);
+}
+
+.m-wiki-category-card-active {
+  background: var(--m-wiki-card-solid);
+  color: var(--m-wiki-text-strong);
+  box-shadow: 0 16px 30px rgba(15,34,66,0.14);
+}
+
 .m-wiki-primary-cta {
   background: linear-gradient(180deg, rgba(51,154,255,0.98), rgba(0,113,227,0.98));
   color: white;
@@ -1789,10 +1804,10 @@ html[data-nav-open="1"] #app-main{
 }
 
 .m-wiki-segment-thumb {
-  border-radius: 11px;
+  border-radius: 26px;
   background: linear-gradient(180deg, rgba(41,151,255,0.92), rgba(0,113,227,0.9));
   box-shadow:
-    0 8px 20px rgba(0,113,227,0.28),
+    0 12px 24px rgba(0,113,227,0.24),
     inset 0 1px 0 rgba(255,255,255,0.34);
   transform-origin: center center;
   will-change: transform;

@@ -156,6 +156,10 @@ export default function MobileTopBar() {
   const sloganOpacity = wikiPath ? Math.max(0.26, 1 - collapseProgress * 1.18) : 1;
   const sloganOffset = wikiPath ? collapseProgress * 4 : 0;
 
+  if (wikiPath) {
+    return null;
+  }
+
   return (
     <div className="m-topbar-shell relative h-12 border-b border-[color:var(--m-topbar-border)] bg-[color:var(--m-topbar-bg)] supports-[backdrop-filter]:bg-[color:var(--m-topbar-bg-strong)]">
       {wikiPath ? (

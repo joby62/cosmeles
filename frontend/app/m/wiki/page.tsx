@@ -4,7 +4,14 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { fetchIngredientLibrary, fetchMobileWikiProducts, resolveImageUrl, type IngredientLibraryListItem, type MobileWikiProductItem } from "@/lib/api";
+import {
+  fetchIngredientLibrary,
+  fetchMobileWikiProducts,
+  resolveImageUrl,
+  type IngredientLibraryListItem,
+  type MobileWikiFacet,
+  type MobileWikiProductItem,
+} from "@/lib/api";
 import { isWikiCategoryKey, WIKI_MAP, WIKI_ORDER, type WikiCategoryKey } from "@/lib/mobile/ingredientWiki";
 
 type CategoryTheme = {
@@ -12,6 +19,30 @@ type CategoryTheme = {
   hazeClass: string;
   accentClass: string;
 };
+
+type NameParts = {
+  main: string;
+  sub: string | null;
+};
+
+type WikiEntryTab = "product" | "ingredient";
+
+type IngredientSecondaryFilter = {
+  key: string;
+  label: string;
+  keywords: string[];
+};
+
+type SearchParamsLike = {
+  get(name: string): string | null;
+} | null | undefined;
+
+const ALL_SECONDARY_KEY = "all";
+
+const ENTRY_TABS: Array<{ key: WikiEntryTab; label: string }> = [
+  { key: "product", label: "产品百科" },
+  { key: "ingredient", label: "成分百科" },
+];
 
 const CATEGORY_THEME: Record<WikiCategoryKey, CategoryTheme> = {
   shampoo: {
@@ -46,21 +77,42 @@ const CATEGORY_THEME: Record<WikiCategoryKey, CategoryTheme> = {
   },
 };
 
-type NameParts = {
-  main: string;
-  sub: string | null;
+const INGREDIENT_SECONDARY_FILTERS: Record<WikiCategoryKey, IngredientSecondaryFilter[]> = {
+  shampoo: [
+    { key: "oil-control", label: "深层控油", keywords: ["控油", "净油", "去油", "水杨酸", "锌"] },
+    { key: "dandruff", label: "去屑止痒", keywords: ["去屑", "止痒", "oct", "zpt", "薄荷"] },
+    { key: "soothing", label: "温和舒缓", keywords: ["舒缓", "温和", "积雪草", "泛醇", "红没药醇"] },
+    { key: "strength", label: "防脱强韧", keywords: ["防脱", "强韧", "咖啡因", "生物素", "多肽"] },
+    { key: "balance", label: "水油平衡", keywords: ["保湿", "平衡", "神经酰胺", "甘油", "甜菜碱"] },
+  ],
+  bodywash: [
+    { key: "repair", label: "舒缓修护", keywords: ["修护", "舒缓", "脂类", "屏障"] },
+    { key: "acne", label: "控油净痘", keywords: ["控油", "净痘", "痘", "水杨酸"] },
+    { key: "renew", label: "角质更新", keywords: ["焕肤", "角质", "乳酸", "尿素"] },
+    { key: "bright", label: "亮肤提光", keywords: ["亮肤", "提亮", "烟酰胺"] },
+    { key: "fragrance", label: "香氛氛围", keywords: ["香氛", "留香", "香味"] },
+  ],
+  conditioner: [
+    { key: "smooth", label: "柔顺抗躁", keywords: ["柔顺", "顺滑", "抗躁", "解结"] },
+    { key: "repair", label: "结构修护", keywords: ["修护", "蛋白", "角蛋白", "修复"] },
+    { key: "light", label: "轻盈蓬松", keywords: ["轻盈", "蓬松", "不压"] },
+    { key: "hydrate", label: "基础保湿", keywords: ["保湿", "滋润", "泛醇"] },
+    { key: "color", label: "锁色固色", keywords: ["锁色", "固色"] },
+  ],
+  lotion: [
+    { key: "light", label: "轻盈保湿", keywords: ["轻盈", "保湿", "补水"] },
+    { key: "repair", label: "重度修护", keywords: ["修护", "厚重", "屏障"] },
+    { key: "renew", label: "焕肤净痘", keywords: ["焕肤", "净痘", "aha", "bha"] },
+    { key: "bright", label: "亮肤提光", keywords: ["亮肤", "提亮"] },
+    { key: "fragrance", label: "留香氛围", keywords: ["香氛", "留香"] },
+  ],
+  cleanser: [
+    { key: "apg", label: "APG舒缓", keywords: ["apg", "舒缓"] },
+    { key: "amino", label: "氨基酸温和", keywords: ["氨基酸", "温和"] },
+    { key: "deep-clean", label: "净肤清洁", keywords: ["净肤", "清洁", "皂", "泥", "bha"] },
+    { key: "polish", label: "抛光焕亮", keywords: ["酵素", "抛光", "焕亮"] },
+  ],
 };
-
-type WikiEntryTab = "product" | "ingredient";
-
-const ENTRY_TABS: Array<{ key: WikiEntryTab; label: string }> = [
-  { key: "product", label: "产品百科" },
-  { key: "ingredient", label: "成分百科" },
-];
-
-type SearchParamsLike = {
-  get(name: string): string | null;
-} | null | undefined;
 
 function normalizeLine(value: string): string {
   return value.replace(/\s+/g, " ").trim();
@@ -89,6 +141,8 @@ function parseWikiState(searchParams: SearchParamsLike): {
   entryTab: WikiEntryTab;
   active: WikiCategoryKey;
   query: string;
+  productSubtypeKey: string;
+  ingredientFilterKey: string;
 } {
   const tabValue = searchParams?.get("tab");
   const categoryValue = searchParams?.get("category") || "";
@@ -96,6 +150,8 @@ function parseWikiState(searchParams: SearchParamsLike): {
     entryTab: tabValue === "ingredient" ? "ingredient" : "product",
     active: isWikiCategoryKey(categoryValue) ? categoryValue : "shampoo",
     query: normalizeLine(searchParams?.get("q") || ""),
+    productSubtypeKey: normalizeLine(searchParams?.get("p_sub") || "") || ALL_SECONDARY_KEY,
+    ingredientFilterKey: normalizeLine(searchParams?.get("i_sub") || "") || ALL_SECONDARY_KEY,
   };
 }
 
@@ -103,11 +159,15 @@ function buildWikiQueryString(state: {
   entryTab: WikiEntryTab;
   active: WikiCategoryKey;
   query: string;
+  productSubtypeKey: string;
+  ingredientFilterKey: string;
 }): string {
   const params = new URLSearchParams();
   if (state.entryTab !== "product") params.set("tab", state.entryTab);
   if (state.active !== "shampoo") params.set("category", state.active);
   if (state.query.trim()) params.set("q", state.query.trim());
+  if (state.productSubtypeKey !== ALL_SECONDARY_KEY) params.set("p_sub", state.productSubtypeKey);
+  if (state.ingredientFilterKey !== ALL_SECONDARY_KEY) params.set("i_sub", state.ingredientFilterKey);
   return params.toString();
 }
 
@@ -136,6 +196,12 @@ function writeStoredScroll(key: string, y: number): void {
   }
 }
 
+function matchesIngredientSecondary(item: IngredientLibraryListItem, filter: IngredientSecondaryFilter | undefined): boolean {
+  if (!filter) return true;
+  const haystack = `${item.ingredient_name} ${item.ingredient_name_en || ""} ${item.summary}`.toLowerCase();
+  return filter.keywords.some((keyword) => haystack.includes(keyword.toLowerCase()));
+}
+
 function SearchIcon({ className = "h-5 w-5" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" aria-hidden className={className}>
@@ -157,12 +223,14 @@ function CloseIcon({ className = "h-4 w-4" }: { className?: string }) {
 function WikiPageFallback() {
   return (
     <section className="m-wiki-page -mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[color:var(--m-wiki-canvas)] px-4 pb-36 pt-4 text-white">
-      <div className="space-y-4">
-        <div className="m-wiki-control-rail rounded-[28px] p-3">
-          <div className="flex items-center gap-2.5">
-            <div className="m-wiki-segmented grid h-11 min-w-0 flex-1 grid-cols-2 p-1" />
-            <div className="h-11 w-11 rounded-[22px] border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)]" />
-          </div>
+      <div className="space-y-3">
+        <div className="flex items-start gap-3">
+          <div className="m-wiki-segmented h-[58px] min-w-0 flex-1 rounded-[32px] p-1.5" />
+          <div className="h-[58px] w-[58px] rounded-[29px] border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)]" />
+        </div>
+        <div className="flex gap-3 overflow-hidden pb-1">
+          <div className="h-[58px] w-[126px] rounded-[30px] border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)]" />
+          <div className="h-[58px] w-[126px] rounded-[30px] border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)]" />
         </div>
       </div>
     </section>
@@ -177,12 +245,15 @@ function MobileWikiPageContent() {
   const [entryTab, setEntryTab] = useState<WikiEntryTab>(() => initialState.entryTab);
   const [active, setActive] = useState<WikiCategoryKey>(() => initialState.active);
   const [query, setQuery] = useState(() => initialState.query);
+  const [productSubtypeKey, setProductSubtypeKey] = useState(() => initialState.productSubtypeKey);
+  const [ingredientFilterKey, setIngredientFilterKey] = useState(() => initialState.ingredientFilterKey);
   const [searchOpen, setSearchOpen] = useState(() => Boolean(initialState.query));
   const [searchFocused, setSearchFocused] = useState(false);
   const [ingredientItems, setIngredientItems] = useState<IngredientLibraryListItem[]>([]);
   const [ingredientLoading, setIngredientLoading] = useState(() => initialState.entryTab === "ingredient");
   const [ingredientError, setIngredientError] = useState<string | null>(null);
   const [productItems, setProductItems] = useState<MobileWikiProductItem[]>([]);
+  const [productSubtypes, setProductSubtypes] = useState<MobileWikiFacet[]>([]);
   const [productLoading, setProductLoading] = useState(() => initialState.entryTab === "product");
   const [productError, setProductError] = useState<string | null>(null);
 
@@ -200,8 +271,10 @@ function MobileWikiPageContent() {
         entryTab,
         active,
         query: normalizedQuery,
+        productSubtypeKey,
+        ingredientFilterKey,
       }),
-    [active, entryTab, normalizedQuery],
+    [active, entryTab, ingredientFilterKey, normalizedQuery, productSubtypeKey],
   );
   const currentQueryString = searchParams.toString();
   const returnTo = stateQueryString ? `${pathname}?${stateQueryString}` : pathname;
@@ -274,7 +347,7 @@ function MobileWikiPageContent() {
       thumb.animate(
         [
           { transform: `translateX(${fromX}) scale(0.96,0.92)` },
-          { transform: `translateX(${toX}) scale(1.04,1.04)`, offset: 0.72 },
+          { transform: `translateX(${toX}) scale(1.03,1.03)`, offset: 0.72 },
           { transform: `translateX(${toX}) scale(1,1)` },
         ],
         {
@@ -298,10 +371,12 @@ function MobileWikiPageContent() {
       .then((resp) => {
         if (cancelled) return;
         setProductItems(resp.items || []);
+        setProductSubtypes(resp.subtypes || []);
       })
       .catch((e) => {
         if (cancelled) return;
         setProductItems([]);
+        setProductSubtypes([]);
         setProductError(e instanceof Error ? e.message : String(e));
       })
       .finally(() => {
@@ -348,8 +423,47 @@ function MobileWikiPageContent() {
     });
   }, [ingredientItems]);
 
-  const featuredProductItem = productItems[0] || null;
-  const listProductItems = featuredProductItem ? productItems.slice(1) : productItems;
+  const ingredientSecondaryOptions = useMemo(() => {
+    return [
+      { key: ALL_SECONDARY_KEY, label: "全部分类" },
+      ...INGREDIENT_SECONDARY_FILTERS[active].map((item) => ({
+        key: item.key,
+        label: item.label,
+      })),
+    ];
+  }, [active]);
+
+  const activeIngredientSecondary = useMemo(
+    () => INGREDIENT_SECONDARY_FILTERS[active].find((item) => item.key === ingredientFilterKey),
+    [active, ingredientFilterKey],
+  );
+
+  const filteredIngredientItems = useMemo(() => {
+    if (ingredientFilterKey === ALL_SECONDARY_KEY) return sortedIngredientItems;
+    return sortedIngredientItems.filter((item) => matchesIngredientSecondary(item, activeIngredientSecondary));
+  }, [activeIngredientSecondary, ingredientFilterKey, sortedIngredientItems]);
+
+  const productSecondaryOptions = useMemo(() => {
+    const facets = productSubtypes
+      .filter((item) => normalizeLine(item.label))
+      .map((item) => ({
+        key: item.key,
+        label: item.label,
+      }));
+    return [{ key: ALL_SECONDARY_KEY, label: "全部分类" }, ...facets];
+  }, [productSubtypes]);
+
+  const filteredProductItems = useMemo(() => {
+    if (productSubtypeKey === ALL_SECONDARY_KEY) return productItems;
+    return productItems.filter((item) => {
+      const targetTypeKey = normalizeLine(item.target_type_key || "");
+      const secondaryTypeKey = normalizeLine(item.secondary_type_key || "");
+      return targetTypeKey === productSubtypeKey || secondaryTypeKey === productSubtypeKey;
+    });
+  }, [productItems, productSubtypeKey]);
+
+  const featuredProductItem = filteredProductItems[0] || null;
+  const listProductItems = featuredProductItem ? filteredProductItems.slice(1) : filteredProductItems;
   const featuredProductTitle =
     featuredProductItem
       ? [featuredProductItem.product.brand, featuredProductItem.product.name].filter(Boolean).join(" ").trim() ||
@@ -358,9 +472,9 @@ function MobileWikiPageContent() {
       : "";
   const featuredProductHeadline = summaryFocus(featuredProductItem?.product.one_sentence);
 
-  const featuredIngredientItem = sortedIngredientItems[0] || null;
+  const featuredIngredientItem = filteredIngredientItems[0] || null;
   const featuredIngredientName = featuredIngredientItem ? splitIngredientName(featuredIngredientItem.ingredient_name) : null;
-  const ingredientListItems = featuredIngredientItem ? sortedIngredientItems.slice(1) : sortedIngredientItems;
+  const ingredientListItems = featuredIngredientItem ? filteredIngredientItems.slice(1) : filteredIngredientItems;
 
   const beginProductLoad = () => {
     setProductLoading(true);
@@ -390,6 +504,8 @@ function MobileWikiPageContent() {
       beginIngredientLoad();
     }
     setActive(nextCategory);
+    setProductSubtypeKey(ALL_SECONDARY_KEY);
+    setIngredientFilterKey(ALL_SECONDARY_KEY);
   };
 
   const clearQuery = () => {
@@ -413,17 +529,17 @@ function MobileWikiPageContent() {
 
   return (
     <section className="m-wiki-page -mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[color:var(--m-wiki-canvas)] px-4 pb-36 pt-4 text-white">
-      <div className="space-y-4">
-        <div className="sticky top-[3.55rem] z-20">
-          <div className={`m-wiki-control-rail rounded-[28px] p-3 ${searchOpen || searchFocused ? "shadow-[0_16px_36px_rgba(0,113,227,0.12)]" : ""}`}>
-            <div className="flex items-center gap-2.5">
-              <div role="tablist" aria-label="百科类型" className="m-wiki-segmented relative min-w-0 flex-1 grid grid-cols-2 p-1">
-                <span
-                  aria-hidden
-                  ref={segmentThumbRef}
-                  className="m-wiki-segment-thumb absolute bottom-1 left-1 top-1"
-                  style={{ width: "calc(50% - 4px)", transform: `translateX(${entryTabIndex * 100}%)` }}
-                />
+      <div className="space-y-5">
+        <div className="space-y-3">
+          <div className="flex items-start gap-3">
+            <div role="tablist" aria-label="百科类型" className="m-wiki-segmented relative min-w-0 flex-1 rounded-[32px] p-1.5">
+              <span
+                aria-hidden
+                ref={segmentThumbRef}
+                className="m-wiki-segment-thumb absolute bottom-1.5 left-1.5 top-1.5"
+                style={{ width: "calc(50% - 6px)", transform: `translateX(${entryTabIndex * 100}%)` }}
+              />
+              <div className="grid grid-cols-2 gap-1.5">
                 {ENTRY_TABS.map((tab) => {
                   const activeTab = tab.key === entryTab;
                   return (
@@ -435,109 +551,136 @@ function MobileWikiPageContent() {
                       onClick={() => {
                         switchTab(tab.key);
                       }}
-                      className={`m-pressable relative z-[1] h-9 rounded-[11px] text-[13px] font-semibold transition-colors ${
-                        activeTab ? "text-white" : "text-white/68 active:text-white/90"
+                      className={`m-pressable relative z-[1] flex h-[58px] items-center justify-center rounded-[26px] px-4 text-center transition-colors ${
+                        activeTab ? "text-white" : "text-[color:var(--m-wiki-text-soft)] active:text-[color:var(--m-wiki-text-mid)]"
                       }`}
                     >
-                      {tab.label}
+                      <span className={`tracking-[-0.03em] ${activeTab ? "text-[24px] font-semibold" : "text-[17px] font-semibold"}`}>{tab.label}</span>
                     </button>
                   );
                 })}
-              </div>
-
-              <div
-                className={`relative h-11 shrink-0 overflow-hidden rounded-[22px] transition-[width,box-shadow,border-color,background-color] duration-300 ${
-                  searchOpen
-                    ? "m-wiki-input-shell w-[min(72vw,264px)] shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_12px_30px_rgba(12,22,38,0.12)]"
-                    : "w-11 border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)]"
-                }`}
-              >
-                <button
-                  type="button"
-                  aria-label="打开搜索"
-                  onClick={() => {
-                    setSearchOpen(true);
-                  }}
-                  className={`m-pressable absolute inset-0 z-[1] flex items-center justify-center text-[color:var(--m-wiki-text-mid)] transition-opacity duration-200 ${
-                    searchOpen ? "pointer-events-none opacity-0" : "opacity-100"
-                  }`}
-                >
-                  <SearchIcon className="h-[18px] w-[18px]" />
-                </button>
-
-                <form
-                  className={`absolute inset-0 flex items-center transition-[opacity,transform] duration-200 ${
-                    searchOpen ? "opacity-100" : "pointer-events-none opacity-0 translate-x-2"
-                  }`}
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                  }}
-                >
-                  <div className="flex h-full w-full items-center gap-2 px-3">
-                    <SearchIcon className="h-[17px] w-[17px] shrink-0 text-white/48" />
-                    <input
-                      ref={searchInputRef}
-                      id="wiki-search"
-                      value={query}
-                      onFocus={() => {
-                        setSearchFocused(true);
-                      }}
-                      onBlur={() => {
-                        setSearchFocused(false);
-                      }}
-                      onChange={(e) => {
-                        const next = e.target.value;
-                        if (next.trim() !== normalizedQuery) {
-                          if (entryTab === "product") {
-                            beginProductLoad();
-                          } else {
-                            beginIngredientLoad();
-                          }
-                        }
-                        setQuery(next);
-                      }}
-                      placeholder="搜索产品及成分"
-                      className="h-full min-w-0 flex-1 bg-transparent text-[15px] text-white/92 outline-none placeholder:text-white/36"
-                    />
-                    <button
-                      type="button"
-                      aria-label={normalizedQuery ? "清除搜索" : "收起搜索"}
-                      onClick={collapseSearch}
-                      className="m-pressable flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-white/62 active:bg-white/[0.14]"
-                    >
-                      <CloseIcon />
-                    </button>
-                  </div>
-                </form>
               </div>
             </div>
 
-            <section className="mt-3 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              <div className="flex min-w-max gap-2">
-                {WIKI_ORDER.map((key) => {
-                  const item = WIKI_MAP[key];
-                  const activeTag = key === active;
-                  return (
-                    <button
-                      key={item.key}
-                      type="button"
-                      onClick={() => {
-                        switchCategory(key);
-                      }}
-                      className={`m-pressable inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12px] transition-colors ${
-                        activeTag
-                          ? "border-white/36 bg-white/16 text-white"
-                          : "border-white/12 bg-white/[0.03] text-white/72 active:bg-white/[0.08]"
-                      }`}
-                    >
-                      <Image src={`/m/categories/${item.key}.png`} alt={item.label} width={18} height={18} className="h-[18px] w-[18px] rounded-full object-cover" />
-                      {item.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
+            <div
+              className={`relative h-[58px] shrink-0 overflow-hidden rounded-[29px] transition-[width,box-shadow,border-color,background-color] duration-300 ${
+                searchOpen
+                  ? "m-wiki-input-shell w-[min(72vw,276px)] shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_12px_30px_rgba(12,22,38,0.12)]"
+                  : "w-[58px] border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)] shadow-[0_10px_28px_rgba(16,29,52,0.08)]"
+              }`}
+            >
+              <button
+                type="button"
+                aria-label="打开搜索"
+                onClick={() => {
+                  setSearchOpen(true);
+                }}
+                className={`m-pressable absolute inset-0 z-[1] flex items-center justify-center text-[color:var(--m-wiki-text-mid)] transition-opacity duration-200 ${
+                  searchOpen ? "pointer-events-none opacity-0" : "opacity-100"
+                }`}
+              >
+                <SearchIcon className="h-[20px] w-[20px]" />
+              </button>
+
+              <form
+                className={`absolute inset-0 flex items-center transition-[opacity,transform] duration-200 ${
+                  searchOpen ? "opacity-100" : "pointer-events-none translate-x-2 opacity-0"
+                }`}
+                onSubmit={(e) => {
+                  e.preventDefault();
+                }}
+              >
+                <div className="flex h-full w-full items-center gap-2 px-4">
+                  <SearchIcon className="h-[18px] w-[18px] shrink-0 text-white/48" />
+                  <input
+                    ref={searchInputRef}
+                    id="wiki-search"
+                    value={query}
+                    onFocus={() => {
+                      setSearchFocused(true);
+                    }}
+                    onBlur={() => {
+                      setSearchFocused(false);
+                    }}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      if (next.trim() !== normalizedQuery) {
+                        if (entryTab === "product") {
+                          beginProductLoad();
+                        } else {
+                          beginIngredientLoad();
+                        }
+                      }
+                      setQuery(next);
+                    }}
+                    placeholder="搜索产品及成分"
+                    className="h-full min-w-0 flex-1 bg-transparent text-[15px] text-white/92 outline-none placeholder:text-white/36"
+                  />
+                  <button
+                    type="button"
+                    aria-label={normalizedQuery ? "清除搜索" : "收起搜索"}
+                    onClick={collapseSearch}
+                    className="m-pressable flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-white/62 active:bg-white/[0.14]"
+                  >
+                    <CloseIcon />
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
+
+          <section className="overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="flex min-w-max gap-3 pb-1">
+              {WIKI_ORDER.map((key) => {
+                const item = WIKI_MAP[key];
+                const activeTag = key === active;
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => {
+                      switchCategory(key);
+                    }}
+                    className={`m-wiki-category-card m-pressable relative inline-flex h-[58px] items-center gap-3 rounded-[30px] px-4 ${
+                      activeTag ? "m-wiki-category-card-active" : ""
+                    }`}
+                  >
+                    {activeTag ? <span className="absolute right-3 top-3 h-2.5 w-2.5 rounded-full bg-[#0071e3]" /> : null}
+                    <Image src={`/m/categories/${item.key}.png`} alt={item.label} width={32} height={32} className="h-8 w-8 rounded-[12px] object-cover" />
+                    <span className="text-[17px] font-semibold tracking-[-0.02em]">{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="flex min-w-max gap-2 pb-1">
+              {(entryTab === "product" ? productSecondaryOptions : ingredientSecondaryOptions).map((item) => {
+                const activeSecondary = entryTab === "product" ? productSubtypeKey === item.key : ingredientFilterKey === item.key;
+                return (
+                  <button
+                    key={`${entryTab}-${item.key}`}
+                    type="button"
+                    onClick={() => {
+                      if (entryTab === "product") {
+                        setProductSubtypeKey(item.key);
+                        return;
+                      }
+                      setIngredientFilterKey(item.key);
+                    }}
+                    className={`m-pressable inline-flex h-9 items-center rounded-full border px-4 text-[13px] font-medium transition-colors ${
+                      activeSecondary
+                        ? "border-[#0071e3] bg-[#0071e3] text-white shadow-[0_10px_22px_rgba(0,113,227,0.22)]"
+                        : "border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)] text-[color:var(--m-wiki-text-mid)] active:bg-white/90"
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
         </div>
 
         <div key={entryTab} className="m-wiki-pane pt-1">
@@ -648,9 +791,9 @@ function MobileWikiPageContent() {
                 </div>
               ) : null}
 
-              {!productLoading && !productError && productItems.length === 0 ? (
+              {!productLoading && !productError && filteredProductItems.length === 0 ? (
                 <div className="m-wiki-card-soft rounded-[24px] px-4 py-5 text-[14px] text-white/65">
-                  当前分类暂无匹配产品，请调整关键词或切换分类。
+                  当前分类暂无匹配产品，请调整关键词、一级分类或二级分类。
                 </div>
               ) : null}
             </section>
@@ -742,9 +885,9 @@ function MobileWikiPageContent() {
                 </div>
               ) : null}
 
-              {!ingredientLoading && !ingredientError && sortedIngredientItems.length === 0 ? (
+              {!ingredientLoading && !ingredientError && filteredIngredientItems.length === 0 ? (
                 <div className="m-wiki-card-soft rounded-[24px] px-4 py-5 text-[14px] text-white/65">
-                  当前分类暂无匹配成分，请先在后台构建成分库或更换关键词。
+                  当前分类暂无匹配成分，请调整关键词、一级分类或二级分类。
                 </div>
               ) : null}
             </section>
