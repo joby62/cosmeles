@@ -125,6 +125,47 @@ type IngredientLibraryListResponse = {
   items: IngredientLibraryListItem[];
 };
 
+export type IngredientLibrarySourceSample = {
+  trace_id: string;
+  brand: string;
+  name: string;
+  one_sentence: string;
+  ingredient: Record<string, unknown>;
+};
+
+export type IngredientLibraryProfile = {
+  summary: string;
+  benefits: string[];
+  risks: string[];
+  usage_tips: string[];
+  suitable_for: string[];
+  avoid_for: string[];
+  confidence: number;
+  reason: string;
+  analysis_text: string;
+};
+
+export type IngredientLibraryDetailItem = {
+  ingredient_id: string;
+  category: string;
+  ingredient_name: string;
+  ingredient_name_en?: string | null;
+  ingredient_key?: string | null;
+  source_count: number;
+  source_trace_ids: string[];
+  source_samples: IngredientLibrarySourceSample[];
+  source_json: Record<string, unknown>;
+  generated_at?: string | null;
+  generator: Record<string, unknown>;
+  profile: IngredientLibraryProfile;
+  storage_path: string;
+};
+
+type IngredientLibraryDetailResponse = {
+  status: string;
+  item: IngredientLibraryDetailItem;
+};
+
 export type MobileWikiFacet = {
   key: string;
   label: string;
@@ -156,6 +197,21 @@ type MobileWikiProductListResponse = {
   categories: MobileWikiFacet[];
   subtypes: MobileWikiFacet[];
   items: MobileWikiProductItem[];
+};
+
+export type MobileWikiProductDetailResponse = {
+  status: string;
+  item: MobileWikiProductItem & {
+    doc: ProductDoc;
+    ingredient_refs: Array<{
+      index: number;
+      name: string;
+      ingredient_id?: string | null;
+      status: "resolved" | "unresolved" | "conflict";
+      matched_alias?: string | null;
+      reason?: string | null;
+    }>;
+  };
 };
 
 export type MobileSelectionResolveResponse = {
@@ -587,6 +643,17 @@ export async function fetchIngredientLibrary(params?: {
   return apiFetch<IngredientLibraryListResponse>(path);
 }
 
+export async function fetchIngredientLibraryItem(category: string, ingredientId: string): Promise<IngredientLibraryDetailItem> {
+  const categoryValue = category.trim();
+  const ingredientValue = ingredientId.trim();
+  if (!categoryValue || !ingredientValue) {
+    throw new Error("category and ingredientId are required.");
+  }
+  const path = `/api/products/ingredients/library/${encodeURIComponent(categoryValue)}/${encodeURIComponent(ingredientValue)}`;
+  const response = await apiFetch<IngredientLibraryDetailResponse>(path);
+  return response.item;
+}
+
 export async function fetchMobileWikiProducts(params?: {
   category?: CategoryKey;
   target_type_key?: string;
@@ -603,6 +670,13 @@ export async function fetchMobileWikiProducts(params?: {
   const query = search.toString();
   const path = query ? `/api/mobile/wiki/products?${query}` : "/api/mobile/wiki/products";
   return apiFetch<MobileWikiProductListResponse>(path);
+}
+
+export async function fetchMobileWikiProductDetail(productId: string): Promise<MobileWikiProductDetailResponse["item"]> {
+  const value = productId.trim();
+  if (!value) throw new Error("productId is required.");
+  const response = await apiFetch<MobileWikiProductDetailResponse>(`/api/mobile/wiki/products/${encodeURIComponent(value)}`);
+  return response.item;
 }
 
 export async function fetchMobileBagItems(params?: {
