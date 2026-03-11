@@ -91,6 +91,12 @@ export default function ShampooProfilePage() {
   const urlStep = useMemo(() => parseStep(searchParams.get("step")), [searchParams]);
   const urlSignals = useMemo(() => signalsFromSearchParams(searchParams), [searchParams]);
   const signals = urlSignals;
+  const answeredChoices = (["q1", "q2", "q3"] as StepKey[])
+    .map((key) => {
+      const value = signals[key];
+      return value ? shampooChoiceLabel(key, value) : null;
+    })
+    .filter((value): value is string => Boolean(value));
 
   const scrollToStep = useCallback((index: number, behavior: ScrollBehavior = "smooth") => {
     if (typeof window === "undefined") return;
@@ -242,27 +248,23 @@ export default function ShampooProfilePage() {
         );
       })}
 
-      <div className="m-profile-summary">
-        <div className="text-[14px] font-semibold tracking-[-0.01em]">你已完成</div>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {(["q1", "q2", "q3"] as StepKey[]).map((key) => {
-            const value = signals[key];
-            if (!value) return null;
-            return (
-              <span key={`${key}-${value}`} className="m-profile-chip">
-                {key.toUpperCase()} · {value} · {shampooChoiceLabel(key, value)}
+      {answeredChoices.length > 0 ? (
+        <div className="m-profile-summary">
+          <div className="m-profile-summary-head">
+            <div className="m-profile-summary-count">已答 {answeredChoices.length}/{STEPS.length}</div>
+            <button type="button" onClick={resetAll} className="m-profile-summary-reset">
+              重新开始
+            </button>
+          </div>
+          <div className="m-profile-summary-list">
+            {answeredChoices.map((label) => (
+              <span key={label} className="m-profile-chip">
+                {label}
               </span>
-            );
-          })}
-          {!signals.q1 && !signals.q2 && !signals.q3 ? (
-            <span className="m-profile-chip">从第一题开始，30 秒左右就能拿到结果。</span>
-          ) : null}
+            ))}
+          </div>
         </div>
-
-        <button type="button" onClick={resetAll} className="m-profile-secondary-btn mt-4">
-          重新开始
-        </button>
-      </div>
+      ) : null}
     </section>
   );
 }
