@@ -1,6 +1,12 @@
 import Link from "next/link";
-import ProductManagementShell from "@/components/ProductManagementShell";
-import { loadProductManagementData } from "@/lib/productManagementData";
+import ProductManagementShell, {
+  ProductManagementStageErrorCard,
+} from "@/components/ProductManagementShell";
+import {
+  getProductManagementError,
+  hasProductManagementData,
+  loadProductManagementData,
+} from "@/lib/productManagementData";
 import {
   PRODUCT_MANAGEMENT_SECTIONS,
   type ProductManagementSectionKey,
@@ -9,14 +15,21 @@ import {
 export default async function ProductManagementOverviewPage() {
   const data = await loadProductManagementData();
   const sections = PRODUCT_MANAGEMENT_SECTIONS.filter((item) => item.key !== "overview");
+  const productsCount = hasProductManagementData(data.products) ? data.products.data.length : null;
+  const aiMetrics = hasProductManagementData(data.aiMetrics) ? data.aiMetrics.data : null;
+  const productError = getProductManagementError(data.products);
 
   return (
     <ProductManagementShell
       activeSection="overview"
-      productsCount={data.products.length}
+      productsCount={productsCount}
       categoryStats={data.categoryStats}
-      aiMetrics={data.aiMetrics}
+      aiMetrics={aiMetrics}
+      issues={data.issues}
     >
+      {!hasProductManagementData(data.products) && productError ? (
+        <ProductManagementStageErrorCard title="产品总览缺少产品主数据" errors={[productError]} />
+      ) : null}
       <section className="mt-10 grid gap-4 lg:grid-cols-3">
         {sections.map((section) => (
           <SectionCard

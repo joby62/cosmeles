@@ -197,7 +197,7 @@ export default function TopNav() {
               {TOP_CATEGORIES.map((k) => (
                 <Link
                   key={k}
-                  href={`/${k}`}
+                  href={`/c/${k}`}
                   className={cx("nav-item", openKey === k && "nav-item-active")}
                   onPointerEnter={() => requestOpen(k)}
                 >
