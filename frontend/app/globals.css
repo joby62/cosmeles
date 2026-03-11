@@ -1618,10 +1618,19 @@ html[data-nav-open="1"] #app-main{
 .m-compare-selection-dock {
   position: fixed;
   inset-inline: 0;
-  bottom: calc(88px + max(env(safe-area-inset-bottom), 0px) + var(--m-chrome-bottom-inset));
   z-index: 55;
   padding: 0 16px;
   pointer-events: none;
+  will-change: bottom;
+  transition: bottom 310ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.m-compare-selection-dock-with-nav {
+  bottom: calc(88px + max(env(safe-area-inset-bottom), 0px) + var(--m-chrome-bottom-inset));
+}
+
+.m-compare-selection-dock-bottomed {
+  bottom: calc(12px + max(env(safe-area-inset-bottom), 0px) + var(--m-chrome-bottom-inset));
 }
 
 .m-compare-selection-dock-inner {

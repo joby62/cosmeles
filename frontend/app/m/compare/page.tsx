@@ -111,6 +111,8 @@ export default function MobileComparePage() {
   const [pendingDraft, setPendingDraft] = useState<StoredCompareDraft | null>(null);
   const [uploadSectionExpanded, setUploadSectionExpanded] = useState(false);
   const [needsUploadReattach, setNeedsUploadReattach] = useState(false);
+  const [chromeVisible, setChromeVisible] = useState(true);
+  const [chromeYielded, setChromeYielded] = useState(false);
   const activeCompareIdRef = useRef<string | null>(null);
 
   const recommendationReady = Boolean(bootstrap?.recommendation?.exists);
@@ -232,6 +234,21 @@ export default function MobileComparePage() {
       : selectionShortfall === 1
         ? "再选 1 款即可继续"
         : "先选 2 款对比产品";
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleChromeVisibility = (event: Event) => {
+      const detail = (event as CustomEvent<{ visible?: boolean; yielded?: boolean }>).detail || {};
+      setChromeVisible(detail.visible ?? true);
+      setChromeYielded(Boolean(detail.yielded));
+    };
+
+    window.addEventListener("m-mobile-chrome-visibility", handleChromeVisibility as EventListener);
+    return () => {
+      window.removeEventListener("m-mobile-chrome-visibility", handleChromeVisibility as EventListener);
+    };
+  }, []);
 
   const retryTargetsSnapshot = useMemo(
     () => normalizeCompareTargetSnapshot(activeSession?.targets_snapshot || []),
@@ -1001,6 +1018,106 @@ export default function MobileComparePage() {
       </div>
     );
   } else if (step === 3) {
+    const uploadDisclosure = (
+      <div className={`m-compare-upload-disclosure ${uploadSectionBodyVisible ? "m-compare-upload-disclosure-open" : ""}`}>
+        <button
+          type="button"
+          disabled={running}
+          onClick={() => {
+            if (hasUploadSignal) return;
+            setUploadSectionExpanded((prev) => !prev);
+          }}
+          className="m-compare-upload-disclosure-trigger"
+        >
+          <div>
+            <div className="m-compare-upload-disclosure-kicker">可选增强</div>
+            <div className="m-compare-upload-disclosure-title">加入我正在用的产品</div>
+            <div className="m-compare-upload-disclosure-note">{uploadSectionSummary}</div>
+          </div>
+          <div className={`m-compare-upload-disclosure-arrow ${uploadSectionBodyVisible ? "m-compare-upload-disclosure-arrow-open" : ""}`} aria-hidden>
+            <svg viewBox="0 0 20 20" className="h-4 w-4 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5.5 7.5L10 12l4.5-4.5" />
+            </svg>
+          </div>
+        </button>
+
+        {uploadSectionBodyVisible ? (
+          <div className="mt-4 space-y-4">
+            {needsUploadReattach ? (
+              <div className="m-compare-upload-restore rounded-[18px] border px-4 py-3 text-[12px] leading-[1.6]">
+                已为你保留已选产品和填写信息，还差重新补传在用产品图片。
+              </div>
+            ) : null}
+
+            <div className="flex gap-3 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <UploadProductCard
+                selected={hasUpload}
+                disabled={running}
+                needsReattach={needsUploadReattach}
+                fileName={file?.name || ""}
+                fileSize={file?.size || 0}
+                previewUrl={uploadPreviewUrl}
+                onPick={openUploadPicker}
+              />
+            </div>
+
+            {hasUpload || needsUploadReattach ? (
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 gap-3">
+                  <input
+                    value={brand}
+                    onChange={(e) => setBrand(e.target.value)}
+                    disabled={running}
+                    placeholder="品牌（可选）"
+                    className="m-compare-upload-input h-10 rounded-xl border px-3 text-[13px] outline-none"
+                  />
+                  <input
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    disabled={running}
+                    placeholder="产品名（可选）"
+                    className="m-compare-upload-input h-10 rounded-xl border px-3 text-[13px] outline-none"
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={openUploadPicker}
+                    disabled={running}
+                    className="inline-flex h-9 items-center rounded-full border border-[#0a84ff]/28 bg-[#eef6ff] px-4 text-[13px] font-medium text-[#1f61ba] active:bg-[#e0efff] dark:border-[#69adff]/35 dark:bg-[#1f3658]/78 dark:text-[#b6d9ff]"
+                  >
+                    {hasUpload ? "重新上传" : "补传图片"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearUploadDraft();
+                      setUploadSectionExpanded(false);
+                    }}
+                    disabled={running}
+                    className="inline-flex h-9 items-center rounded-full border border-black/12 px-4 text-[13px] font-medium text-black/65 active:bg-black/[0.04]"
+                  >
+                    先不加入
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {(uploadValuePoints.length ? uploadValuePoints : ["加入在用品后，可判断是否继续用", "不上传也能先完成产品库专业对比"]).map((item, idx) => (
+                  <span
+                    key={`${idx}-${item}`}
+                    className="m-compare-upload-point inline-flex rounded-full border px-3 py-1 text-[11px] font-medium"
+                  >
+                    {item}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : null}
+      </div>
+    );
+
     stepBody = (
       <div>
         <h2 className="text-[26px] leading-[1.18] font-semibold tracking-[-0.02em] text-black/90">先选 2 款对比产品</h2>
@@ -1122,6 +1239,8 @@ export default function MobileComparePage() {
               </CompareProductRail>
             ) : null}
 
+            {uploadDisclosure}
+
             {standardLibraryItems.length > 0 ? (
               <CompareProductRail title={priorityLibraryItems.length > 0 ? "更多可选" : "可选产品"} note="左右滑动浏览，整卡点按即可选择或取消。">
                 {standardLibraryItems.map((item) => {
@@ -1152,104 +1271,7 @@ export default function MobileComparePage() {
             ) : null}
           </div>
         )}
-
-        <div className={`m-compare-upload-disclosure mt-5 ${uploadSectionBodyVisible ? "m-compare-upload-disclosure-open" : ""}`}>
-          <button
-            type="button"
-            disabled={running}
-            onClick={() => {
-              if (hasUploadSignal) return;
-              setUploadSectionExpanded((prev) => !prev);
-            }}
-            className="m-compare-upload-disclosure-trigger"
-          >
-            <div>
-              <div className="m-compare-upload-disclosure-kicker">可选增强</div>
-              <div className="m-compare-upload-disclosure-title">加入我正在用的产品</div>
-              <div className="m-compare-upload-disclosure-note">{uploadSectionSummary}</div>
-            </div>
-            <div className={`m-compare-upload-disclosure-arrow ${uploadSectionBodyVisible ? "m-compare-upload-disclosure-arrow-open" : ""}`} aria-hidden>
-              <svg viewBox="0 0 20 20" className="h-4 w-4 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M5.5 7.5L10 12l4.5-4.5" />
-              </svg>
-            </div>
-          </button>
-
-          {uploadSectionBodyVisible ? (
-            <div className="mt-4 space-y-4">
-              {needsUploadReattach ? (
-                <div className="m-compare-upload-restore rounded-[18px] border px-4 py-3 text-[12px] leading-[1.6]">
-                  已为你保留已选产品和填写信息，还差重新补传在用产品图片。
-                </div>
-              ) : null}
-
-              <div className="flex gap-3 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-                <UploadProductCard
-                  selected={hasUpload}
-                  disabled={running}
-                  needsReattach={needsUploadReattach}
-                  fileName={file?.name || ""}
-                  fileSize={file?.size || 0}
-                  previewUrl={uploadPreviewUrl}
-                  onPick={openUploadPicker}
-                />
-              </div>
-
-              {hasUpload || needsUploadReattach ? (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-1 gap-3">
-                    <input
-                      value={brand}
-                      onChange={(e) => setBrand(e.target.value)}
-                      disabled={running}
-                      placeholder="品牌（可选）"
-                      className="m-compare-upload-input h-10 rounded-xl border px-3 text-[13px] outline-none"
-                    />
-                    <input
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      disabled={running}
-                      placeholder="产品名（可选）"
-                      className="m-compare-upload-input h-10 rounded-xl border px-3 text-[13px] outline-none"
-                    />
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={openUploadPicker}
-                      disabled={running}
-                      className="inline-flex h-9 items-center rounded-full border border-[#0a84ff]/28 bg-[#eef6ff] px-4 text-[13px] font-medium text-[#1f61ba] active:bg-[#e0efff] dark:border-[#69adff]/35 dark:bg-[#1f3658]/78 dark:text-[#b6d9ff]"
-                    >
-                      {hasUpload ? "重新上传" : "补传图片"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        clearUploadDraft();
-                        setUploadSectionExpanded(false);
-                      }}
-                      disabled={running}
-                      className="inline-flex h-9 items-center rounded-full border border-black/12 px-4 text-[13px] font-medium text-black/65 active:bg-black/[0.04]"
-                    >
-                      先不加入
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {(uploadValuePoints.length ? uploadValuePoints : ["加入在用品后，可判断是否继续用", "不上传也能先完成产品库专业对比"]).map((item, idx) => (
-                    <span
-                      key={`${idx}-${item}`}
-                      className="m-compare-upload-point inline-flex rounded-full border px-3 py-1 text-[11px] font-medium"
-                    >
-                      {item}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : null}
-        </div>
+        {bootstrapLoading || bootstrapError || orderedLibraryItems.length === 0 ? <div className="mt-5">{uploadDisclosure}</div> : null}
       </div>
     );
   } else {
@@ -1483,7 +1505,7 @@ export default function MobileComparePage() {
           </div>
         </article>
         <div className="mt-4 rounded-[20px] border border-black/8 bg-white/68 px-4 py-3 text-[12px] leading-[1.55] text-black/56 dark:border-white/12 dark:bg-[rgba(21,30,46,0.82)] dark:text-[#cbdaf2]/72">
-          之后是分步流程：每一步只处理一个决定，信息更少、看起来更轻。
+          先帮你缩小范围；补充在用品后，还会直接判断该继续用、替换，还是分场景混用。
         </div>
       </section>
     );
@@ -1531,6 +1553,8 @@ export default function MobileComparePage() {
           max={MAX_TOTAL_SELECTION}
           label={selectionDockLabel}
           selectedItems={selectedProductSummary}
+          chromeVisible={chromeVisible}
+          chromeYielded={chromeYielded}
           primaryLabel={primaryActionLabel}
           primaryDisabled={primaryDisabled}
           onPrimary={() => {
@@ -1818,6 +1842,8 @@ function CompareSelectionDock({
   max,
   label,
   selectedItems,
+  chromeVisible,
+  chromeYielded,
   primaryLabel,
   primaryDisabled,
   onPrimary,
@@ -1827,13 +1853,19 @@ function CompareSelectionDock({
   max: number;
   label: string;
   selectedItems: string[];
+  chromeVisible: boolean;
+  chromeYielded: boolean;
   primaryLabel: string;
   primaryDisabled: boolean;
   onPrimary: () => void;
   onPrev: () => void;
 }) {
   return (
-    <div className="m-compare-selection-dock">
+    <div
+      className={`m-compare-selection-dock ${
+        chromeVisible && !chromeYielded ? "m-compare-selection-dock-with-nav" : "m-compare-selection-dock-bottomed"
+      }`}
+    >
       <div className="m-compare-selection-dock-inner">
         <div className="m-compare-selection-dock-surface">
           <div className="flex items-start justify-between gap-3">
