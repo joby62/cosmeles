@@ -199,15 +199,17 @@ export default function MobileTopBar() {
           <span className="truncate text-[14px] font-semibold tracking-[0.005em] text-[color:var(--m-topbar-text)]">{section}</span>
         </Link>
 
-        <p
-          className="relative z-[1] max-w-[56vw] truncate text-right text-[11px] leading-none tracking-[0.01em] text-[color:var(--m-topbar-sub)] transition-[opacity,transform] duration-200 min-[430px]:text-[12px]"
-          style={{
-            opacity: sloganOpacity,
-            transform: `translateY(${-sloganOffset}px)`,
-          }}
-        >
-          {topbarSlogan}
-        </p>
+        {!wikiPath ? (
+          <p
+            className="relative z-[1] max-w-[56vw] truncate text-right text-[11px] leading-none tracking-[0.01em] text-[color:var(--m-topbar-sub)] transition-[opacity,transform] duration-200 min-[430px]:text-[12px]"
+            style={{
+              opacity: sloganOpacity,
+              transform: `translateY(${-sloganOffset}px)`,
+            }}
+          >
+            {topbarSlogan}
+          </p>
+        ) : null}
       </div>
     </div>
   );

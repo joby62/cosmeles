@@ -132,6 +132,10 @@ export default async function WikiCategoryPage({
   const focusKey = queryValue(search.focus);
   const focus = current.key === "shampoo" && focusKey ? SHAMPOO_FOCUS_MAP[focusKey] : undefined;
   const query = queryValue(search.q);
+  const returnQuery = new URLSearchParams();
+  if (focusKey) returnQuery.set("focus", focusKey);
+  if (query) returnQuery.set("q", query);
+  const returnTo = returnQuery.toString() ? `/m/wiki/${category}?${returnQuery.toString()}` : `/m/wiki/${category}`;
   const library = await fetchIngredientLibrary({
     category,
     q: query,
@@ -189,7 +193,7 @@ export default async function WikiCategoryPage({
           return (
             <Link
               key={item.ingredient_id}
-              href={`/m/wiki/${category}/${item.ingredient_id}`}
+              href={`/m/wiki/${category}/${item.ingredient_id}?return_to=${encodeURIComponent(returnTo)}`}
               className="m-wiki-hero-card m-pressable block overflow-hidden rounded-[28px] transition-transform active:scale-[0.997]"
             >
               <div className={`${theme.heroClass} relative h-[164px] w-full`}>

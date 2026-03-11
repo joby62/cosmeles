@@ -54,6 +54,7 @@ export default function MobileBottomNav() {
   const [chromeBottomInset, setChromeBottomInset] = useState(0);
   const [navVisible, setNavVisible] = useState(true);
   const [isScrollable, setIsScrollable] = useState(false);
+  const [yielded, setYielded] = useState(false);
   const navVisibleRef = useRef(true);
   const scrollableRef = useRef(false);
   const lastScrollYRef = useRef(0);
@@ -248,10 +249,28 @@ export default function MobileBottomNav() {
     };
   }, [pathname]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleYieldChange = (event: Event) => {
+      const active = Boolean((event as CustomEvent<{ active?: boolean }>).detail?.active);
+      setYielded(active);
+    };
+
+    window.addEventListener("m-bottom-nav-yield", handleYieldChange as EventListener);
+    return () => {
+      window.removeEventListener("m-bottom-nav-yield", handleYieldChange as EventListener);
+    };
+  }, []);
+
   return (
     <nav
       className={`m-mobile-bottom-nav fixed inset-x-0 z-[60] px-4 ${
-        !isScrollable || navVisible ? "m-mobile-bottom-nav-visible" : "m-mobile-bottom-nav-hidden"
+        yielded
+          ? "m-mobile-bottom-nav-yielded"
+          : !isScrollable || navVisible
+            ? "m-mobile-bottom-nav-visible"
+            : "m-mobile-bottom-nav-hidden"
       }`}
       style={{ bottom: `calc(12px + max(env(safe-area-inset-bottom), 0px) + ${chromeBottomInset}px)` }}
     >

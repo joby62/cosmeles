@@ -71,12 +71,21 @@ function fmtTime(value?: string | null): string {
   }).format(date);
 }
 
+function queryValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
 export default async function MobileWikiProductDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ productId: string }> | { productId: string };
+  searchParams?: Promise<Record<string, string | string[] | undefined>> | Record<string, string | string[] | undefined>;
 }) {
   const { productId } = await Promise.resolve(params);
+  const search = (await Promise.resolve(searchParams)) || {};
+  const returnTo = queryValue(search.return_to);
+  const returnHref = returnTo && returnTo.startsWith("/m/wiki") ? returnTo : "/m/wiki";
 
   let data: Awaited<ReturnType<typeof fetchMobileWikiProductDetail>> | null = null;
   let loadError: string | null = null;
@@ -109,7 +118,7 @@ export default async function MobileWikiProductDetailPage({
           </p>
           <div className="mt-3 flex gap-2">
             <Link
-              href="/m/wiki"
+              href={returnHref}
               className="inline-flex h-9 items-center rounded-full border border-black/15 bg-white px-4 text-[12px] font-semibold text-black/75"
             >
               返回百科
@@ -136,7 +145,7 @@ export default async function MobileWikiProductDetailPage({
   return (
     <section className="pb-28">
       <Link
-        href="/m/wiki"
+        href={returnHref}
         className="inline-flex h-9 items-center rounded-full border border-black/15 bg-white px-4 text-[12px] font-semibold text-black/75 active:bg-black/[0.03]"
       >
         返回百科

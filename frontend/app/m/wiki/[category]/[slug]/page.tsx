@@ -7,6 +7,7 @@ import { InsightSheetCard } from "./insight-sheet-card";
 
 type Params = { category: string; slug: string };
 const INGREDIENT_ID_PATTERN = /^ing-[a-f0-9]{20}$/;
+type Search = Record<string, string | string[] | undefined>;
 
 type CategoryTheme = {
   heroClass: string;
@@ -171,18 +172,27 @@ function phraseTags(lines: string[], max = 6): string[] {
   return takeUnique(tokens.map((token) => shortText(token, 18)), max);
 }
 
+function queryValue(v: string | string[] | undefined): string | undefined {
+  return Array.isArray(v) ? v[0] : v;
+}
+
 export default async function IngredientDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<Params>;
+  searchParams?: Promise<Search>;
 }) {
   const raw = await Promise.resolve(params);
+  const search = (await Promise.resolve(searchParams)) || {};
 
   if (!isWikiCategoryKey(raw.category)) {
     notFound();
   }
 
   const category = raw.category;
+  const returnTo = queryValue(search.return_to);
+  const returnHref = returnTo && returnTo.startsWith("/m/wiki") ? returnTo : `/m/wiki/${category}`;
   const ingredientId = raw.slug.trim().toLowerCase();
   if (!INGREDIENT_ID_PATTERN.test(ingredientId)) {
     notFound();
@@ -239,7 +249,7 @@ export default async function IngredientDetailPage({
     <section className="m-wiki-page -mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[color:var(--m-wiki-canvas)] pb-40 pt-4 text-white">
       <div className="px-4">
         <Link
-          href="/m/wiki"
+          href={returnHref}
           className="m-pressable inline-flex h-10 items-center rounded-full border border-white/16 bg-white/10 px-4 text-[13px] font-medium text-white/86 backdrop-blur-xl active:bg-white/15"
         >
           返回成份百科

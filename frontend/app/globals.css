@@ -720,6 +720,13 @@ html[data-nav-open="1"] #app-main{
   pointer-events: none;
 }
 
+.m-mobile-bottom-nav-yielded {
+  transform: translate3d(0, calc(100% + env(safe-area-inset-bottom) + 14px), 0) scale(0.985);
+  opacity: 0;
+  filter: saturate(0.88) blur(1px);
+  pointer-events: none;
+}
+
 .m-pressable {
   -webkit-tap-highlight-color: transparent;
   transition:
@@ -1746,6 +1753,38 @@ html[data-nav-open="1"] #app-main{
 
 .m-wiki-pane {
   animation: mWikiPaneIn 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.m-wiki-control-rail {
+  border: 1px solid var(--m-wiki-border);
+  background: color-mix(in srgb, var(--m-wiki-frost) 90%, transparent);
+  box-shadow:
+    0 10px 28px rgba(16,29,52,0.08),
+    inset 0 1px 0 rgba(255,255,255,0.22);
+  backdrop-filter: saturate(180%) blur(22px);
+  -webkit-backdrop-filter: saturate(180%) blur(22px);
+}
+
+.m-wiki-meta-chip {
+  border: 1px solid var(--m-wiki-border);
+  background: color-mix(in srgb, var(--m-wiki-frost) 72%, transparent);
+  color: var(--m-wiki-text-mid);
+  backdrop-filter: saturate(170%) blur(18px);
+  -webkit-backdrop-filter: saturate(170%) blur(18px);
+}
+
+.m-wiki-primary-cta {
+  background: linear-gradient(180deg, rgba(51,154,255,0.98), rgba(0,113,227,0.98));
+  color: white;
+  box-shadow:
+    0 14px 28px rgba(0,113,227,0.22),
+    inset 0 1px 0 rgba(255,255,255,0.26);
+}
+
+.m-wiki-primary-cta:active {
+  box-shadow:
+    0 8px 18px rgba(0,113,227,0.18),
+    inset 0 1px 0 rgba(255,255,255,0.22);
 }
 
 .m-wiki-segmented {
