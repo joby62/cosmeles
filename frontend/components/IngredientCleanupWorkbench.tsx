@@ -1131,15 +1131,20 @@ function IngredientVisualizationPanel({
 
         .ingredient-workbench-grid {
           align-items: stretch;
+          min-height: 0;
+          height: 100%;
         }
 
         .ingredient-pane {
           min-width: 0;
+          min-height: 0;
+          height: 100%;
         }
 
         .ingredient-pane-frame {
           display: flex;
-          min-height: 100%;
+          min-height: 0;
+          height: 100%;
           flex-direction: column;
         }
 
@@ -1150,8 +1155,9 @@ function IngredientVisualizationPanel({
         }
 
         .ingredient-pane-body {
-          flex: 1 1 auto;
+          flex: 1 1 0%;
           min-height: 0;
+          height: 0;
         }
 
         .ingredient-section-head {
@@ -1160,6 +1166,7 @@ function IngredientVisualizationPanel({
 
         .ingredient-scroll {
           overflow: visible;
+          overflow-x: hidden;
         }
 
         @media (min-width: 1280px) {
