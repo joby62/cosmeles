@@ -175,7 +175,7 @@ export default function MobileTopBar() {
       <div className="mx-auto flex h-12 max-w-[680px] items-center justify-between px-4">
         <Link
           href="/m"
-          className="m-pressable relative z-[1] inline-flex min-w-0 max-w-[52vw] items-center gap-0.5 rounded-full px-1 py-0.5 active:bg-[color:var(--m-press)]"
+          className="m-pressable relative z-[1] inline-flex items-center gap-0.5 rounded-full px-1 py-0.5 active:bg-[color:var(--m-press)]"
           style={{ opacity: sectionOpacity }}
         >
           {!logoHidden ? (
@@ -200,7 +200,7 @@ export default function MobileTopBar() {
         </Link>
 
         <p
-          className="relative z-[1] max-w-[44vw] truncate text-right text-[11px] leading-none tracking-[0.01em] text-[color:var(--m-topbar-sub)] transition-[opacity,transform] duration-200 min-[430px]:max-w-[48vw] min-[430px]:text-[12px]"
+          className="relative z-[1] max-w-[56vw] truncate text-right text-[11px] leading-none tracking-[0.01em] text-[color:var(--m-topbar-sub)] transition-[opacity,transform] duration-200 min-[430px]:text-[12px]"
           style={{
             opacity: sloganOpacity,
             transform: `translateY(${-sloganOffset}px)`,
