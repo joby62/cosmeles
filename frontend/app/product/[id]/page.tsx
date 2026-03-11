@@ -12,6 +12,7 @@ import {
 } from "@/lib/api";
 import { getMatchRouteMeta } from "@/lib/match";
 import { getCategoryMeta, TRUST_ITEMS } from "@/lib/site";
+import { PDP_SUPPORT_LINKS, PDP_TRUST_NOTES } from "@/lib/storefrontTrust";
 
 function mergeUnique(items: string[]): string[] {
   return Array.from(new Set(items.map((item) => item.trim()).filter(Boolean)));
@@ -93,6 +94,10 @@ export default async function ProductPage({
   const related = relatedProducts
     .filter((item) => item.id !== id && item.category === doc.product.category)
     .slice(0, 3);
+  const routeTitle = routeMeta?.title || profile?.route_title || null;
+  const routeSummary = routeMeta?.summary || null;
+  const fitHeadline = profile?.headline || null;
+  const fitReason = profile?.confidence_reason || null;
 
   return (
     <div className="mx-auto max-w-7xl px-4 pb-16 pt-8">
@@ -154,6 +159,16 @@ export default async function ProductPage({
             </Link>
           </div>
           <TrustStrip items={TRUST_ITEMS} className="mt-6" />
+          <div className="mt-6 rounded-[24px] border border-black/8 bg-slate-50 px-4 py-4">
+            <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-slate-500">Shopping basics</p>
+            <div className="mt-3 space-y-2">
+              {PDP_TRUST_NOTES.slice(0, 2).map((item) => (
+                <p key={item} className="text-[13px] leading-6 text-slate-700">
+                  {item}
+                </p>
+              ))}
+            </div>
+          </div>
         </article>
       </section>
 
@@ -247,6 +262,40 @@ export default async function ProductPage({
 
         <div className="space-y-6">
           <article className="rounded-[32px] border border-black/8 bg-white/92 p-6 shadow-[0_20px_46px_rgba(15,23,42,0.06)]">
+            <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-500">Route fit</p>
+            <h2 className="mt-4 text-[28px] font-semibold tracking-[-0.04em] text-slate-950">
+              Why this product belongs in this route
+            </h2>
+            <p className="mt-3 text-[15px] leading-7 text-slate-600">
+              {fitHeadline || "Jeslect keeps the route explanation and product explanation aligned so the recommendation feels consistent across pages."}
+            </p>
+
+            {routeTitle ? (
+              <div className="mt-5 rounded-[24px] border border-sky-100 bg-sky-50 px-4 py-4">
+                <div className="text-[12px] font-semibold uppercase tracking-[0.16em] text-sky-700">Matched route</div>
+                <div className="mt-2 text-[20px] font-semibold tracking-[-0.03em] text-slate-950">{routeTitle}</div>
+                {routeSummary ? <p className="mt-2 text-[14px] leading-6 text-slate-700">{routeSummary}</p> : null}
+                {fitReason ? <p className="mt-3 text-[13px] leading-6 text-slate-600">{fitReason}</p> : null}
+              </div>
+            ) : null}
+
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Link
+                href={doc.product.category === "shampoo" ? "/match" : `/match?category=${encodeURIComponent(doc.product.category)}`}
+                className="inline-flex h-11 items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-5 text-[13px] font-semibold text-white"
+              >
+                Recheck with match
+              </Link>
+              <Link
+                href={`/learn/product/${encodeURIComponent(id)}`}
+                className="inline-flex h-11 items-center justify-center rounded-full border border-black/10 bg-white px-5 text-[13px] font-semibold text-slate-700"
+              >
+                Read learn entry
+              </Link>
+            </div>
+          </article>
+
+          <article className="rounded-[32px] border border-black/8 bg-white/92 p-6 shadow-[0_20px_46px_rgba(15,23,42,0.06)]">
             <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-500">Decision support</p>
             <h2 className="mt-4 text-[28px] font-semibold tracking-[-0.04em] text-slate-950">Still deciding?</h2>
             <p className="mt-3 text-[15px] leading-7 text-slate-600">
@@ -284,26 +333,34 @@ export default async function ProductPage({
           </article>
 
           <article className="rounded-[32px] border border-black/8 bg-white/92 p-6 shadow-[0_20px_46px_rgba(15,23,42,0.06)]">
-            <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-500">FAQ</p>
-            <div className="mt-4 space-y-4">
-              <div className="rounded-[22px] border border-black/8 bg-slate-50 px-4 py-4">
-                <h3 className="text-[15px] font-semibold text-slate-950">How long does shipping take?</h3>
-                <p className="mt-2 text-[14px] leading-6 text-slate-600">
-                  Final delivery windows are listed in the shipping policy before launch checkout goes live.
-                </p>
-              </div>
-              <div className="rounded-[22px] border border-black/8 bg-slate-50 px-4 py-4">
-                <h3 className="text-[15px] font-semibold text-slate-950">Where can I review returns?</h3>
-                <p className="mt-2 text-[14px] leading-6 text-slate-600">
-                  Review the current return path before purchase so the policy stays clear and visible.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Link href="/support/shipping" className="rounded-full border border-black/8 bg-white px-4 py-2 text-[13px] font-medium text-slate-700">
-                  Shipping
+            <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-500">Shipping, returns, and support</p>
+            <h2 className="mt-4 text-[28px] font-semibold tracking-[-0.04em] text-slate-950">
+              Keep the trust layer visible before checkout exists.
+            </h2>
+            <p className="mt-3 text-[15px] leading-7 text-slate-600">
+              The product page should answer the basic confidence questions before you leave it: how shipping is framed,
+              where returns live, and how support is routed.
+            </p>
+
+            <div className="mt-5 space-y-3">
+              {PDP_SUPPORT_LINKS.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className="block rounded-[22px] border border-black/8 bg-slate-50 px-4 py-4 transition hover:-translate-y-[1px] hover:bg-white hover:shadow-[0_12px_28px_rgba(15,23,42,0.05)]"
+                >
+                  <h3 className="text-[15px] font-semibold text-slate-950">{item.title}</h3>
+                  <p className="mt-2 text-[14px] leading-6 text-slate-600">{item.summary}</p>
                 </Link>
-                <Link href="/support/returns" className="rounded-full border border-black/8 bg-white px-4 py-2 text-[13px] font-medium text-slate-700">
-                  Returns
+              ))}
+            </div>
+
+            <div className="mt-6 rounded-[24px] border border-black/8 bg-slate-50 px-4 py-4">
+              <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-slate-500">Bag continuity</p>
+              <p className="mt-3 text-[14px] leading-6 text-slate-700">{PDP_TRUST_NOTES[0]}</p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Link href="/bag" className="rounded-full border border-black/8 bg-white px-4 py-2 text-[13px] font-medium text-slate-700">
+                  Open bag
                 </Link>
                 <Link href="/support/faq" className="rounded-full border border-black/8 bg-white px-4 py-2 text-[13px] font-medium text-slate-700">
                   More FAQ

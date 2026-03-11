@@ -113,3 +113,27 @@ export const CONTACT_SECTIONS = [
     ],
   },
 ] as const;
+
+export const PDP_TRUST_NOTES = [
+  "Your bag stays saved on this device, so you can keep the shortlist visible while you compare or leave and come back.",
+  "Shipping timing, return expectations, and support paths should stay visible before checkout starts.",
+  "Product, learn, and compare routes should stay one tap away from this page.",
+] as const;
+
+export const PDP_SUPPORT_LINKS = [
+  {
+    title: "Shipping before payment",
+    summary: "Review how Jeslect frames processing windows, delivery timing, and tracking expectations for the US launch.",
+    href: "/support/shipping",
+  },
+  {
+    title: "Returns before hesitation",
+    summary: "Check the return window, refund timing, and condition rules before committing to this product.",
+    href: "/support/returns",
+  },
+  {
+    title: "Support routing",
+    summary: "See where product-fit, shipping, and returns questions should go before order support opens.",
+    href: "/support/contact",
+  },
+] as const;
