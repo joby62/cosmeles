@@ -211,17 +211,6 @@ function SearchIcon({ className = "h-5 w-5" }: { className?: string }) {
   );
 }
 
-function SwitchIcon({ className = "h-4 w-4" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden className={className}>
-      <path d="M7 7H20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M7 7L11 3.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M7 17H20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M20 17L16 20.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
 function CloseIcon({ className = "h-4 w-4" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" aria-hidden className={className}>
@@ -469,6 +458,7 @@ function MobileWikiPageContent() {
   const featuredIngredientItem = filteredIngredientItems[0] || null;
   const featuredIngredientName = featuredIngredientItem ? splitIngredientName(featuredIngredientItem.ingredient_name) : null;
   const ingredientListItems = featuredIngredientItem ? filteredIngredientItems.slice(1) : filteredIngredientItems;
+  const searchPlaceholder = entryTab === "product" ? "搜索产品百科" : "搜索成分百科";
 
   const beginProductLoad = () => {
     setProductLoading(true);
@@ -525,108 +515,99 @@ function MobileWikiPageContent() {
     <section className="m-wiki-page -mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[color:var(--m-wiki-canvas)] px-4 pb-36 pt-4 text-white">
       <div className="space-y-5">
         <div className="space-y-3">
-          <div className="flex items-start gap-3">
-            <div className="min-w-0 flex-1">
-              <h1 data-m-large-title="百科" className="text-[28px] leading-[1.08] font-semibold tracking-[-0.03em] text-[color:var(--m-wiki-text-strong)]">
-                百科
-              </h1>
-              <div
-                role="tablist"
-                aria-label="百科类型"
-                className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)] px-3 py-2 text-[13px] shadow-[0_8px_20px_rgba(16,29,52,0.05)] backdrop-blur-xl"
-              >
-                <SwitchIcon className="h-[15px] w-[15px] text-[color:var(--m-wiki-text-soft)]" />
-                <span className="text-[12px] font-medium text-[color:var(--m-wiki-text-soft)]">切换</span>
-                {ENTRY_TABS.map((tab, index) => {
-                  const activeTab = tab.key === entryTab;
-                  return (
-                    <span key={tab.key} className="contents">
-                      {index > 0 ? <span className="text-[12px] font-medium text-[color:var(--m-wiki-text-soft)]">|</span> : null}
+          {searchOpen ? (
+            <form
+              className="m-wiki-input-shell flex h-[54px] w-full items-center rounded-[28px] shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_12px_30px_rgba(12,22,38,0.12)]"
+              onSubmit={(e) => {
+                e.preventDefault();
+              }}
+            >
+              <div className="flex h-full w-full items-center gap-2 px-4">
+                <SearchIcon className="h-[18px] w-[18px] shrink-0 text-white/48" />
+                <input
+                  ref={searchInputRef}
+                  id="wiki-search"
+                  value={query}
+                  onFocus={() => {
+                    setSearchFocused(true);
+                  }}
+                  onBlur={() => {
+                    setSearchFocused(false);
+                  }}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    if (next.trim() !== normalizedQuery) {
+                      if (entryTab === "product") {
+                        beginProductLoad();
+                      } else {
+                        beginIngredientLoad();
+                      }
+                    }
+                    setQuery(next);
+                  }}
+                  placeholder={searchPlaceholder}
+                  className="h-full min-w-0 flex-1 bg-transparent text-[14px] text-white/92 outline-none placeholder:text-white/36"
+                />
+                <button
+                  type="button"
+                  aria-label={normalizedQuery ? "清除搜索" : "收起搜索"}
+                  onClick={collapseSearch}
+                  className="m-pressable flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-white/62 active:bg-white/[0.14]"
+                >
+                  <CloseIcon />
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <h1 data-m-large-title="百科" className="text-[28px] leading-[1.08] font-semibold tracking-[-0.03em] text-[color:var(--m-wiki-text-strong)]">
+                  百科
+                </h1>
+              </div>
+
+              <div className="flex shrink-0 items-center gap-3">
+                <div
+                  role="tablist"
+                  aria-label="百科类型"
+                  className="inline-flex items-center rounded-[26px] border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)] p-1 shadow-[0_8px_20px_rgba(16,29,52,0.05)] backdrop-blur-xl"
+                >
+                  {ENTRY_TABS.map((tab) => {
+                    const activeTab = tab.key === entryTab;
+                    return (
                       <button
+                        key={tab.key}
                         role="tab"
                         aria-selected={activeTab}
                         type="button"
                         onClick={() => {
                           switchTab(tab.key);
                         }}
-                        className={`m-pressable inline-flex items-center rounded-full px-1 py-0.5 text-[14px] font-semibold tracking-[-0.01em] transition-colors ${
-                          activeTab ? "text-[color:var(--m-wiki-text-strong)]" : "text-[color:var(--m-wiki-text-soft)]"
+                        className={`m-pressable inline-flex h-[42px] items-center rounded-[22px] px-4 text-[14px] font-semibold tracking-[-0.01em] transition-all duration-200 ${
+                          activeTab
+                            ? "bg-[#e2f3e1] text-[color:var(--m-wiki-text-strong)] shadow-[inset_0_0_0_1px_rgba(125,176,122,0.14),0_8px_18px_rgba(125,176,122,0.18)]"
+                            : "text-[color:var(--m-wiki-text-soft)]"
                         }`}
                       >
-                        {tab.label}
+                        {tab.key === "product" ? "产品" : "成分"}
                       </button>
-                    </span>
-                  );
-                })}
+                    );
+                  })}
+                </div>
+
+                <button
+                  type="button"
+                  aria-label="打开搜索"
+                  onClick={() => {
+                    setSearchOpen(true);
+                  }}
+                  className="m-pressable inline-flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-[26px] border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)] text-[color:var(--m-wiki-text-mid)] shadow-[0_10px_24px_rgba(16,29,52,0.06)]"
+                >
+                  <SearchIcon className="h-[18px] w-[18px]" />
+                </button>
               </div>
             </div>
-
-            <div
-              className={`relative h-[52px] shrink-0 overflow-hidden rounded-[26px] transition-[width,box-shadow,border-color,background-color] duration-300 ${
-                searchOpen
-                  ? "m-wiki-input-shell w-[min(72vw,276px)] shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_12px_30px_rgba(12,22,38,0.12)]"
-                  : "w-[52px] border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)] shadow-[0_10px_24px_rgba(16,29,52,0.06)]"
-              }`}
-            >
-              <button
-                type="button"
-                aria-label="打开搜索"
-                onClick={() => {
-                  setSearchOpen(true);
-                }}
-                className={`m-pressable absolute inset-0 z-[1] flex items-center justify-center text-[color:var(--m-wiki-text-mid)] transition-opacity duration-200 ${
-                  searchOpen ? "pointer-events-none opacity-0" : "opacity-100"
-                }`}
-              >
-                <SearchIcon className="h-[18px] w-[18px]" />
-              </button>
-
-              <form
-                className={`absolute inset-0 flex items-center transition-[opacity,transform] duration-200 ${
-                  searchOpen ? "opacity-100" : "pointer-events-none translate-x-2 opacity-0"
-                }`}
-                onSubmit={(e) => {
-                  e.preventDefault();
-                }}
-              >
-                <div className="flex h-full w-full items-center gap-2 px-4">
-                  <SearchIcon className="h-[18px] w-[18px] shrink-0 text-white/48" />
-                  <input
-                    ref={searchInputRef}
-                    id="wiki-search"
-                    value={query}
-                    onFocus={() => {
-                      setSearchFocused(true);
-                    }}
-                    onBlur={() => {
-                      setSearchFocused(false);
-                    }}
-                    onChange={(e) => {
-                      const next = e.target.value;
-                      if (next.trim() !== normalizedQuery) {
-                        if (entryTab === "product") {
-                          beginProductLoad();
-                        } else {
-                          beginIngredientLoad();
-                        }
-                      }
-                      setQuery(next);
-                    }}
-                    placeholder="搜索产品及成分"
-                    className="h-full min-w-0 flex-1 bg-transparent text-[14px] text-white/92 outline-none placeholder:text-white/36"
-                  />
-                  <button
-                    type="button"
-                    aria-label={normalizedQuery ? "清除搜索" : "收起搜索"}
-                    onClick={collapseSearch}
-                    className="m-pressable flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-white/62 active:bg-white/[0.14]"
-                  >
-                    <CloseIcon />
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
+          )}
 
           <section className="overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <div className="flex min-w-max gap-3.5 pb-1 pt-0.5">
