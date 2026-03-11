@@ -74,6 +74,26 @@ export type ProductCommerceInfo = {
   pack_size?: ProductCommercePackSize | null;
 };
 
+export type ProductCommerceUpdatePayload = {
+  price_label?: string;
+  inventory_label?: string;
+  shipping_eta_label?: string;
+  pack_size?: {
+    label?: string;
+    unit?: string;
+    value?: number | null;
+  };
+};
+
+export type ProductUpdatePayload = {
+  category?: string;
+  brand?: string;
+  name?: string;
+  one_sentence?: string;
+  tags?: string[];
+  commerce?: ProductCommerceUpdatePayload;
+};
+
 export type ProductAnalysisKeyIngredient = {
   ingredient_name_cn: string;
   ingredient_name_en: string;
@@ -712,6 +732,15 @@ export async function fetchProductDoc(id: string): Promise<ProductDoc> {
   const value = id.trim();
   if (!value) throw new Error("productId is required.");
   return apiFetch<ProductDoc>(`/api/products/${encodeURIComponent(value)}`);
+}
+
+export async function updateProduct(id: string, payload: ProductUpdatePayload): Promise<Product> {
+  const value = id.trim();
+  if (!value) throw new Error("productId is required.");
+  return apiFetch<Product>(`/api/products/${encodeURIComponent(value)}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function fetchProductAnalysis(id: string): Promise<ProductAnalysisDetailResponse> {
