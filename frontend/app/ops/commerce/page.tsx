@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import CommerceWorkbench from "@/components/site/CommerceWorkbench";
-import { fetchAllProducts } from "@/lib/api";
+import { fetchAllProducts, fetchProductAnalysisIndex } from "@/lib/api";
 
 export const metadata: Metadata = {
   title: "Jeslect Ops | Commerce Workbench",
@@ -10,7 +10,10 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function CommerceOpsPage() {
-  const products = await fetchAllProducts().catch(() => []);
+  const [products, analysisItems] = await Promise.all([
+    fetchAllProducts().catch(() => []),
+    fetchProductAnalysisIndex().catch(() => []),
+  ]);
 
   return (
     <div className="mx-auto max-w-7xl px-4 pb-16 pt-8">
@@ -22,13 +25,13 @@ export default async function CommerceOpsPage() {
           Commerce workbench for the US storefront.
         </h1>
         <p className="mt-5 max-w-3xl text-[17px] leading-8 text-slate-600">
-          This route is for internal feed operations. Use it to patch price, inventory, shipping window, and pack size
-          into products without falling back to raw API calls.
+          This route is for internal feed operations. Patch the products users see first, then work outward through
+          price, inventory, shipping window, and pack size without falling back to raw API calls.
         </p>
       </section>
 
       <section className="mt-10">
-        <CommerceWorkbench initialProducts={products} />
+        <CommerceWorkbench initialProducts={products} initialAnalysisItems={analysisItems} />
       </section>
     </div>
   );

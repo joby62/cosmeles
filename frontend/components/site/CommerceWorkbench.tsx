@@ -6,9 +6,16 @@ import Link from "next/link";
 import {
   resolveImageUrl,
   type Product,
+  type ProductAnalysisIndexItem,
   type ProductCommerceUpdatePayload,
   updateProduct,
 } from "@/lib/api";
+import {
+  buildCommerceSurfaceMap,
+  buildCommerceSurfaceSummary,
+  getCommerceSurfaceCoverage,
+  sortProductsForCommerceOps,
+} from "@/lib/commerceSurfacePriority";
 import {
   buildCommerceCoverageSummary,
   commerceBadgeLabel,
@@ -18,12 +25,12 @@ import {
   commercePackSizeLabel,
   commercePriceLabel,
   commerceShippingEtaLabel,
-  sortProductsByCommerceReadiness,
 } from "@/lib/productCommerce";
 import { CATEGORIES, getCategoryMeta, normalizeCategoryKey } from "@/lib/site";
 
 type CommerceWorkbenchProps = {
   initialProducts: Product[];
+  initialAnalysisItems: ProductAnalysisIndexItem[];
 };
 
 type EditorState = {
@@ -91,6 +98,31 @@ function buildCommercePayload(state: EditorState): ProductCommerceUpdatePayload 
   }
 
   return payload;
+}
+
+function toTsvCell(value: string | number | null | undefined): string {
+  return String(value ?? "").replace(/\t/g, " ").replace(/\r?\n/g, " ").trim();
+}
+
+function buildTsvDraft(products: Product[]): string {
+  if (products.length === 0) return TSV_TEMPLATE;
+
+  return [
+    IMPORT_HEADERS.join("\t"),
+    ...products.map((product) =>
+      [
+        product.id,
+        product.commerce?.price_label,
+        product.commerce?.inventory_label,
+        product.commerce?.shipping_eta_label,
+        product.commerce?.pack_size?.label,
+        product.commerce?.pack_size?.unit,
+        product.commerce?.pack_size?.value,
+      ]
+        .map((item) => toTsvCell(item))
+        .join("\t"),
+    ),
+  ].join("\n");
 }
 
 function splitDelimitedLine(line: string, delimiter: "," | "\t"): string[] {
@@ -225,24 +257,28 @@ function parseImportPayload(raw: string): ImportRow[] {
   return parseDelimitedImport(trimmed);
 }
 
-export default function CommerceWorkbench({ initialProducts }: CommerceWorkbenchProps) {
-  const [products, setProducts] = useState<Product[]>(() => sortProductsByCommerceReadiness(initialProducts, "ops"));
-  const [selectedProductId, setSelectedProductId] = useState<string>(initialProducts[0]?.id || "");
+export default function CommerceWorkbench({ initialProducts, initialAnalysisItems }: CommerceWorkbenchProps) {
+  const [products, setProducts] = useState<Product[]>(() => initialProducts);
+  const [selectedProductId, setSelectedProductId] = useState<string>("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [missingFieldFilter, setMissingFieldFilter] = useState<string>("all");
+  const [surfaceFilter, setSurfaceFilter] = useState<string>("launch_priority");
   const [searchQuery, setSearchQuery] = useState("");
-  const [editor, setEditor] = useState<EditorState>(() => makeEditorState(initialProducts[0] || null));
+  const [editor, setEditor] = useState<EditorState>(() => makeEditorState(null));
   const [saveState, setSaveState] = useState<"idle" | "saving" | "done">("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
   const [importDraft, setImportDraft] = useState(TSV_TEMPLATE);
   const [importState, setImportState] = useState<"idle" | "running" | "done">("idle");
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const deferredQuery = useDeferredValue(searchQuery.trim().toLowerCase());
+  const coverageMap = useMemo(() => buildCommerceSurfaceMap(products, initialAnalysisItems), [products, initialAnalysisItems]);
+  const orderedProducts = useMemo(() => sortProductsForCommerceOps(products, coverageMap), [products, coverageMap]);
 
   const filteredProducts = useMemo(() => {
-    return products.filter((item) => {
+    return orderedProducts.filter((item) => {
       const category = normalizeCategoryKey(item.category);
+      const coverage = getCommerceSurfaceCoverage(coverageMap, item.id);
       if (categoryFilter !== "all" && category !== categoryFilter) return false;
       const status = item.commerce?.status || "catalog_only";
       if (statusFilter !== "all" && status !== statusFilter) return false;
@@ -254,6 +290,12 @@ export default function CommerceWorkbench({ initialProducts }: CommerceWorkbench
       ) {
         return false;
       }
+      if (surfaceFilter === "launch_priority" && coverage.tier === "catalog") return false;
+      if (surfaceFilter === "hero" && coverage.tier !== "hero") return false;
+      if (surfaceFilter === "category" && !coverage.kinds.includes("category")) return false;
+      if (surfaceFilter === "collection" && !coverage.kinds.includes("collection")) return false;
+      if (surfaceFilter === "search" && !coverage.kinds.includes("search")) return false;
+      if (surfaceFilter === "catalog_backlog" && coverage.tier !== "catalog") return false;
       if (!deferredQuery) return true;
       const haystack = [item.brand, item.name, item.one_sentence, commercePriceLabel(item.commerce), commerceInventoryLabel(item.commerce)]
         .filter(Boolean)
@@ -261,14 +303,23 @@ export default function CommerceWorkbench({ initialProducts }: CommerceWorkbench
         .toLowerCase();
       return haystack.includes(deferredQuery);
     });
-  }, [products, categoryFilter, statusFilter, missingFieldFilter, deferredQuery]);
+  }, [orderedProducts, coverageMap, categoryFilter, statusFilter, missingFieldFilter, surfaceFilter, deferredQuery]);
 
   const selectedProduct = useMemo(
-    () => products.find((item) => item.id === selectedProductId) || filteredProducts[0] || null,
-    [products, selectedProductId, filteredProducts],
+    () => orderedProducts.find((item) => item.id === selectedProductId) || filteredProducts[0] || orderedProducts[0] || null,
+    [orderedProducts, selectedProductId, filteredProducts],
   );
 
   const summary = useMemo(() => buildCommerceCoverageSummary(products), [products]);
+  const surfaceSummary = useMemo(() => buildCommerceSurfaceSummary(products, coverageMap), [products, coverageMap]);
+  const launchPriorityQueue = useMemo(
+    () => orderedProducts.filter((item) => getCommerceSurfaceCoverage(coverageMap, item.id).tier !== "catalog" && (item.commerce?.status || "catalog_only") !== "ready"),
+    [orderedProducts, coverageMap],
+  );
+  const selectedProductCoverage = useMemo(
+    () => (selectedProduct ? getCommerceSurfaceCoverage(coverageMap, selectedProduct.id) : null),
+    [coverageMap, selectedProduct],
+  );
 
   useEffect(() => {
     if (!selectedProduct) return;
@@ -290,9 +341,7 @@ export default function CommerceWorkbench({ initialProducts }: CommerceWorkbench
       const updated = await updateProduct(selectedProduct.id, {
         commerce: buildCommercePayload(editor),
       });
-      setProducts((current) =>
-        sortProductsByCommerceReadiness(current.map((item) => (item.id === updated.id ? { ...item, ...updated } : item)), "ops"),
-      );
+      setProducts((current) => current.map((item) => (item.id === updated.id ? { ...item, ...updated } : item)));
       setSaveState("done");
       window.setTimeout(() => setSaveState("idle"), 1800);
     } catch (error) {
@@ -325,9 +374,7 @@ export default function CommerceWorkbench({ initialProducts }: CommerceWorkbench
         applied += 1;
       }
 
-      setProducts((current) =>
-        sortProductsByCommerceReadiness(current.map((item) => updatesById.get(item.id) || item), "ops"),
-      );
+      setProducts((current) => current.map((item) => updatesById.get(item.id) || item));
       setImportState("done");
       setImportMessage(`Applied ${applied} commerce updates.`);
       window.setTimeout(() => setImportState("idle"), 1800);
@@ -395,12 +442,47 @@ export default function CommerceWorkbench({ initialProducts }: CommerceWorkbench
         </article>
       </section>
 
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <article className="rounded-[24px] border border-sky-200 bg-sky-50/80 px-5 py-5">
+          <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-sky-700">Launch-priority products</p>
+          <div className="mt-3 flex items-end gap-2">
+            <div className="text-[28px] font-semibold tracking-[-0.04em] text-slate-950">{surfaceSummary.total}</div>
+            <div className="pb-1 text-[13px] text-slate-500">surfaced now</div>
+          </div>
+          <p className="mt-2 text-[13px] leading-6 text-slate-600">
+            {surfaceSummary.hero} hero picks and {surfaceSummary.discovery} discovery products are already exposed across home, shop,
+            category, collection, and search.
+          </p>
+        </article>
+        <article className="rounded-[24px] border border-black/8 bg-slate-50 px-5 py-5">
+          <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-slate-500">Need price</p>
+          <div className="mt-3 text-[28px] font-semibold tracking-[-0.04em] text-slate-950">{surfaceSummary.needs_price}</div>
+          <p className="mt-2 text-[13px] leading-6 text-slate-600">Surfaced products still missing a price label.</p>
+        </article>
+        <article className="rounded-[24px] border border-black/8 bg-slate-50 px-5 py-5">
+          <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-slate-500">Need inventory</p>
+          <div className="mt-3 text-[28px] font-semibold tracking-[-0.04em] text-slate-950">{surfaceSummary.needs_inventory}</div>
+          <p className="mt-2 text-[13px] leading-6 text-slate-600">Surfaced products still missing a live inventory label.</p>
+        </article>
+        <article className="rounded-[24px] border border-black/8 bg-slate-50 px-5 py-5">
+          <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-slate-500">Need shipping ETA</p>
+          <div className="mt-3 text-[28px] font-semibold tracking-[-0.04em] text-slate-950">{surfaceSummary.needs_shipping_eta}</div>
+          <p className="mt-2 text-[13px] leading-6 text-slate-600">Surfaced products still missing a shipping window.</p>
+        </article>
+      </section>
+
       <section className="grid gap-6 xl:grid-cols-[1.02fr_0.98fr]">
         <article className="rounded-[32px] border border-black/8 bg-white/94 p-6 shadow-[0_20px_46px_rgba(15,23,42,0.06)]">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-500">Product list</p>
-              <h2 className="mt-3 text-[30px] font-semibold tracking-[-0.04em] text-slate-950">Select a product and patch commerce fields.</h2>
+              <h2 className="mt-3 text-[30px] font-semibold tracking-[-0.04em] text-slate-950">
+                Patch the products users already see first.
+              </h2>
+              <p className="mt-3 max-w-3xl text-[14px] leading-6 text-slate-600">
+                The default queue starts with launch-priority products already exposed on home, shop, category, collection,
+                and curated search surfaces.
+              </p>
             </div>
             <Link
               href="/shop"
@@ -410,7 +492,7 @@ export default function CommerceWorkbench({ initialProducts }: CommerceWorkbench
             </Link>
           </div>
 
-          <div className="mt-5 grid gap-3 xl:grid-cols-[0.9fr_0.42fr_0.42fr_0.42fr]">
+          <div className="mt-5 grid gap-3 xl:grid-cols-[0.9fr_0.42fr_0.42fr_0.42fr_0.5fr]">
             <input
               type="search"
               value={searchQuery}
@@ -451,12 +533,31 @@ export default function CommerceWorkbench({ initialProducts }: CommerceWorkbench
               <option value="shipping_eta">Has shipping ETA</option>
               <option value="complete">No missing fields</option>
             </select>
+            <select
+              value={surfaceFilter}
+              onChange={(event) => setSurfaceFilter(event.target.value)}
+              className="h-11 rounded-full border border-black/10 bg-white px-4 text-[14px] text-slate-900 outline-none transition focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
+            >
+              <option value="launch_priority">Launch priority</option>
+              <option value="hero">Hero only</option>
+              <option value="category">Category first screen</option>
+              <option value="collection">Collection surfaces</option>
+              <option value="search">Curated search results</option>
+              <option value="catalog_backlog">Catalog backlog</option>
+              <option value="all">All surfaces</option>
+            </select>
+          </div>
+
+          <div className="mt-4 rounded-[22px] border border-black/8 bg-slate-50 px-4 py-4 text-[13px] leading-6 text-slate-600">
+            {launchPriorityQueue.length} launch-priority products still need commerce work. Use the surface filter to switch
+            between hero picks, collections, search, and the remaining catalog backlog.
           </div>
 
           <div className="mt-5 space-y-3">
             {filteredProducts.length > 0 ? filteredProducts.map((product) => {
               const category = getCategoryMeta(product.category);
               const isSelected = selectedProduct?.id === product.id;
+              const coverage = getCommerceSurfaceCoverage(coverageMap, product.id);
               return (
                 <button
                   key={product.id}
@@ -484,6 +585,17 @@ export default function CommerceWorkbench({ initialProducts }: CommerceWorkbench
                       <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-medium text-amber-700">
                         {commerceBadgeLabel(product.commerce)}
                       </span>
+                      {coverage.tier !== "catalog" ? (
+                        <span
+                          className={`rounded-full px-3 py-1 text-[11px] font-medium ${
+                            coverage.tier === "hero"
+                              ? "border border-sky-200 bg-sky-50 text-sky-700"
+                              : "border border-emerald-200 bg-emerald-50 text-emerald-700"
+                          }`}
+                        >
+                          {coverage.tier === "hero" ? "Hero surface" : "Discovery surface"}
+                        </span>
+                      ) : null}
                       {commercePackSizeLabel(product.commerce) ? (
                         <span className="rounded-full border border-black/8 bg-white px-3 py-1 text-[11px] font-medium text-slate-600">
                           {commercePackSizeLabel(product.commerce)}
@@ -496,6 +608,23 @@ export default function CommerceWorkbench({ initialProducts }: CommerceWorkbench
                     <p className="mt-2 text-[14px] leading-6 text-slate-600">
                       {product.one_sentence || "No one-line summary is stored for this product yet."}
                     </p>
+                    {coverage.labels.length > 0 ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {coverage.labels.slice(0, 3).map((label) => (
+                          <span
+                            key={`${product.id}-${label}`}
+                            className="rounded-full border border-black/8 bg-white px-3 py-1 text-[11px] font-medium text-slate-600"
+                          >
+                            {label}
+                          </span>
+                        ))}
+                        {coverage.labels.length > 3 ? (
+                          <span className="rounded-full border border-black/8 bg-white px-3 py-1 text-[11px] font-medium text-slate-500">
+                            +{coverage.labels.length - 3} more
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : null}
                     {(commercePriceLabel(product.commerce) || commerceInventoryLabel(product.commerce) || commerceShippingEtaLabel(product.commerce)) ? (
                       <div className="mt-3 flex flex-wrap gap-2">
                         {commercePriceLabel(product.commerce) ? (
@@ -520,7 +649,7 @@ export default function CommerceWorkbench({ initialProducts }: CommerceWorkbench
               );
             }) : (
               <article className="rounded-[24px] border border-black/8 bg-slate-50 px-4 py-4 text-[14px] leading-6 text-slate-600">
-                No products match the current filters. Try widening category, status, or field coverage.
+                No products match the current filters. Try widening category, status, field coverage, or surface priority.
               </article>
             )}
           </div>
@@ -538,6 +667,20 @@ export default function CommerceWorkbench({ initialProducts }: CommerceWorkbench
                 <p className="mt-3 text-[14px] leading-6 text-slate-600">
                   Product ID: <span className="font-mono text-[12px] text-slate-500">{selectedProduct.id}</span>
                 </p>
+                {selectedProductCoverage?.tier !== "catalog" ? (
+                  <div className="mt-4 rounded-[22px] border border-sky-200 bg-sky-50 px-4 py-4 text-[13px] leading-6 text-slate-700">
+                    <span className="font-semibold text-sky-700">
+                      {selectedProductCoverage?.tier === "hero" ? "Hero exposure" : "Discovery exposure"}
+                    </span>
+                    {" "}
+                    {selectedProductCoverage?.labels.join(" | ")}
+                  </div>
+                ) : (
+                  <div className="mt-4 rounded-[22px] border border-black/8 bg-slate-50 px-4 py-4 text-[13px] leading-6 text-slate-600">
+                    This product is not on a current launch-priority surface yet, so it sits in the backlog after hero and
+                    discovery products.
+                  </div>
+                )}
 
                 <div className="mt-5 grid gap-3">
                   <label className="grid gap-2">
@@ -641,6 +784,20 @@ export default function CommerceWorkbench({ initialProducts }: CommerceWorkbench
                 className="rounded-full border border-black/10 bg-white px-4 py-2 text-[12px] font-medium text-slate-700"
               >
                 Load TSV template
+              </button>
+              <button
+                type="button"
+                onClick={() => setImportDraft(buildTsvDraft(launchPriorityQueue))}
+                className="rounded-full border border-black/10 bg-white px-4 py-2 text-[12px] font-medium text-slate-700"
+              >
+                Load launch-priority TSV
+              </button>
+              <button
+                type="button"
+                onClick={() => setImportDraft(buildTsvDraft(filteredProducts))}
+                className="rounded-full border border-black/10 bg-white px-4 py-2 text-[12px] font-medium text-slate-700"
+              >
+                Load filtered TSV
               </button>
               <button
                 type="button"
