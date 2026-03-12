@@ -29,6 +29,33 @@ type ResourceState<T> = {
   error: string | null;
 };
 
+type SessionTimelinePhase = "entry" | "action" | "analysis" | "result" | "feedback" | "exit" | "issue";
+
+type SessionTimelineNarrative = {
+  eventName: string;
+  phase: SessionTimelinePhase;
+  title: string;
+  flowLabel: string;
+  summary: string | null;
+  significant: boolean;
+  meta: string[];
+  rawMeta: string[];
+};
+
+type SessionTimelineGroup = {
+  key: string;
+  phase: SessionTimelinePhase;
+  items: Array<SessionTimelineNarrative & { stepNumber: number }>;
+};
+
+type SessionTimelinePresentation = {
+  headline: string;
+  summary: string;
+  heroPhase: SessionTimelinePhase;
+  flowSteps: string[];
+  groups: SessionTimelineGroup[];
+};
+
 const TIME_WINDOWS = [
   { label: "24h", value: 24 },
   { label: "7d", value: 24 * 7 },
@@ -43,6 +70,35 @@ const CATEGORY_OPTIONS = [
   { value: "lotion", label: CATEGORY_CONFIG.lotion.zh },
   { value: "cleanser", label: CATEGORY_CONFIG.cleanser.zh },
 ] as const;
+
+const ANALYTICS_STAGE_LABELS: Record<string, string> = {
+  uploading: "上传当前在用产品",
+  prepare: "准备对比任务",
+  resolve_targets: "读取待对比产品",
+  resolve_target: "整理产品信息",
+  stage1_vision: "识别图片文字",
+  stage2_struct: "结构化成分信息",
+  pair_compare: "生成两两分析",
+  finalize: "整理最终结论",
+  done: "对比完成",
+};
+
+const FEEDBACK_TRIGGER_LABELS: Record<string, string> = {
+  compare_upload_fail: "上传失败",
+  compare_stage_error: "分析阶段报错",
+  compare_restore_failed: "恢复历史任务失败",
+};
+
+const FEEDBACK_REASON_LABELS: Record<string, string> = {
+  upload_problem: "上传有问题",
+  dont_know_what_to_upload: "不确定拍什么",
+  too_much_work: "太麻烦",
+  leave_for_now: "先不做了",
+  hard_to_understand: "看不懂",
+  too_slow: "太慢了",
+  not_confident: "不信结果",
+  restore_unclear: "恢复逻辑不清楚",
+};
 
 function createResourceState<T>(data: T | null = null): ResourceState<T> {
   return {
@@ -183,6 +239,681 @@ function toneForOutcome(value?: string | null): string {
       return "border-[#d7d4f0] bg-[#f3f1ff] text-[#5c4ea0]";
     default:
       return "border-black/10 bg-[#f4f5f8] text-black/60";
+  }
+}
+
+function stageLabel(value?: string | null): string {
+  const key = valueOrEmpty(value);
+  return ANALYTICS_STAGE_LABELS[key] || key || "未知阶段";
+}
+
+function feedbackTriggerLabel(value?: string | null): string {
+  const key = valueOrEmpty(value);
+  return FEEDBACK_TRIGGER_LABELS[key] || key || "未标注触发原因";
+}
+
+function feedbackReasonLabel(value?: string | null): string {
+  const key = valueOrEmpty(value);
+  return FEEDBACK_REASON_LABELS[key] || key || "未标注原因";
+}
+
+function compactText(value: string, maxLength = 88): string {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, maxLength - 1)}…`;
+}
+
+function formatCompareId(value?: string | null): string {
+  const raw = valueOrEmpty(value);
+  if (!raw) return "";
+  if (raw.length <= 12) return raw;
+  return `${raw.slice(0, 8)}…${raw.slice(-4)}`;
+}
+
+function pushUniqueLabel(target: string[], value?: string | null) {
+  const text = valueOrEmpty(value);
+  if (!text) return;
+  if (!target.includes(text)) target.push(text);
+}
+
+function humanizeEventName(value?: string | null): string {
+  const raw = valueOrEmpty(value);
+  if (!raw) return "未命名事件";
+  return raw.split("_").filter(Boolean).join(" ");
+}
+
+function inferPagePhase(page?: string | null): SessionTimelinePhase {
+  switch (valueOrEmpty(page)) {
+    case "compare_result":
+    case "product_showcase":
+      return "result";
+    case "mobile_compare":
+      return "analysis";
+    case "my_use":
+    case "wiki_list":
+    case "wiki_product_detail":
+    case "wiki_category":
+      return "entry";
+    default:
+      return "entry";
+  }
+}
+
+function inferEventPhase(item: MobileAnalyticsSessionEventItem): SessionTimelinePhase {
+  const name = valueOrEmpty(item.name);
+  if (item.error_code || name.includes("error") || name.includes("fail")) return "issue";
+  if (name.startsWith("feedback_")) return "feedback";
+  if (name === "page_exit" || name.endsWith("_leave") || name.includes("reset_to_intro")) return "exit";
+  if (
+    name.includes("result") ||
+    name.startsWith("profile_") ||
+    name.startsWith("bag_") ||
+    name.startsWith("product_showcase_")
+  ) {
+    return "result";
+  }
+  if (
+    name.includes("run_") ||
+    name.includes("stage_") ||
+    name.startsWith("compare_")
+  ) {
+    return "analysis";
+  }
+  if (
+    name.includes("click") ||
+    name.includes("pick") ||
+    name.includes("select") ||
+    name.includes("upload")
+  ) {
+    return "action";
+  }
+  return inferPagePhase(item.page);
+}
+
+function buildIssueSummary(item: MobileAnalyticsSessionEventItem, detail: string): string {
+  const fragments: string[] = [];
+  if (item.stage) fragments.push(`卡在“${stageLabel(item.stage)}”`);
+  if (item.error_code) fragments.push(`错误码 ${item.error_code}`);
+  if (detail) fragments.push(compactText(detail, 72));
+  return fragments.length > 0 ? fragments.join("；") : "本次操作没有继续成功。";
+}
+
+function describeTimelineEvent(item: MobileAnalyticsSessionEventItem): SessionTimelineNarrative {
+  const eventName = valueOrEmpty(item.name);
+  const page = pageLabel(item.page);
+  const detail = valueOrEmpty(item.detail);
+  const dwell = typeof item.dwell_ms === "number" ? formatDurationMs(item.dwell_ms) : "";
+  const category = item.category ? categoryLabel(item.category) : "当前品类";
+  const meta: string[] = [];
+  const rawMeta: string[] = [];
+
+  if (item.category) pushUniqueLabel(meta, categoryLabel(item.category));
+  if (item.compare_id) pushUniqueLabel(meta, `compare ${formatCompareId(item.compare_id)}`);
+  if (dwell) pushUniqueLabel(meta, `停留 ${dwell}`);
+  if (item.stage) pushUniqueLabel(meta, stageLabel(item.stage));
+  if (item.error_code) pushUniqueLabel(meta, `错误 ${item.error_code}`);
+  if (item.reason_label) pushUniqueLabel(meta, `反馈 ${feedbackReasonLabel(item.reason_label)}`);
+  if (item.trigger_reason) pushUniqueLabel(meta, `触发 ${feedbackTriggerLabel(item.trigger_reason)}`);
+
+  pushUniqueLabel(rawMeta, `event ${eventName || "unknown"}`);
+  if (item.page) pushUniqueLabel(rawMeta, `page ${valueOrEmpty(item.page)}`);
+  if (item.route) pushUniqueLabel(rawMeta, `route ${valueOrEmpty(item.route)}`);
+  if (item.stage) pushUniqueLabel(rawMeta, `stage ${valueOrEmpty(item.stage)}`);
+  if (item.error_code) pushUniqueLabel(rawMeta, `error ${item.error_code}`);
+
+  switch (eventName) {
+    case "page_view": {
+      const title = page === "结果页" ? "进入对比结果页" : `进入${page}页`;
+      const summary =
+        page === "横向对比"
+          ? "用户已经进入核心对比链路。"
+          : page === "产品百科详情"
+            ? "用户正在查看具体商品的信息和分析入口。"
+            : `这是一次新的页面浏览，当前停留在${page}。`;
+      return {
+        eventName,
+        phase: inferPagePhase(item.page),
+        title,
+        flowLabel: title.replace("页", ""),
+        summary,
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    }
+    case "page_exit":
+      return {
+        eventName,
+        phase: "exit",
+        title: `离开${page}页`,
+        flowLabel: `离开${page}`,
+        summary: dwell ? `本页停留 ${dwell} 后离开。` : "本次浏览在这里结束。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "wiki_list_view":
+      return {
+        eventName,
+        phase: "entry",
+        title: "进入百科列表",
+        flowLabel: "进入百科列表",
+        summary: "用户正在浏览可进一步进入的百科内容。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "wiki_upload_cta_expose":
+      return {
+        eventName,
+        phase: "entry",
+        title: "看到“上传一键分析”入口",
+        flowLabel: "看到上传入口",
+        summary: "说明百科页已经把上传动作暴露给用户。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "wiki_upload_cta_click":
+      return {
+        eventName,
+        phase: "action",
+        title: "点击“上传一键分析”",
+        flowLabel: "点击上传一键分析",
+        summary: "用户从百科页进入上传 / 对比链路。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "wiki_category_ingredient_click":
+      return {
+        eventName,
+        phase: "action",
+        title: "点开成分词条",
+        flowLabel: "点开成分词条",
+        summary: "用户对更细的成分信息产生了兴趣。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "wiki_category_choose_click":
+      return {
+        eventName,
+        phase: "action",
+        title: `进入${category}挑选流程`,
+        flowLabel: `进入${category}挑选`,
+        summary: "用户从百科进一步进入该品类的选择动作。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "my_use_category_card_click":
+      return {
+        eventName,
+        phase: "action",
+        title: `在“我的在用”里选择了${category}`,
+        flowLabel: `选择${category}`,
+        summary: "用户准备进入这一品类的后续对比。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "compare_intro_start_clicked":
+      return {
+        eventName,
+        phase: "action",
+        title: "点击开始对比",
+        flowLabel: "点击开始对比",
+        summary: "用户明确愿意继续进入选品或上传步骤。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "compare_category_selected":
+      return {
+        eventName,
+        phase: "action",
+        title: `切换到${category}`,
+        flowLabel: `切换到${category}`,
+        summary: "当前会话的对比目标已经落在这个品类上。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "compare_library_pick":
+      return {
+        eventName,
+        phase: "action",
+        title: "从库内商品中做了选择",
+        flowLabel: "选择库内商品",
+        summary: "用户优先走现成商品对比，而不是上传图片。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "compare_upload_pick":
+      return {
+        eventName,
+        phase: "action",
+        title: "选择图片准备分析",
+        flowLabel: "选择图片",
+        summary: "用户开始走图片识别链路。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "compare_upload_success":
+      return {
+        eventName,
+        phase: "analysis",
+        title: "上传完成，准备识别内容",
+        flowLabel: "上传完成",
+        summary: "图片已经进入识别和结构化处理流程。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "compare_run_start":
+      return {
+        eventName,
+        phase: "analysis",
+        title: "正式发起对比分析",
+        flowLabel: "发起对比分析",
+        summary: "系统开始执行识别、结构化和两两比对。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "compare_stage_progress": {
+      const label = stageLabel(item.stage);
+      return {
+        eventName,
+        phase: "analysis",
+        title: `分析推进到“${label}”`,
+        flowLabel: `推进到${label}`,
+        summary: detail || "对比链路正在向下一阶段推进。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    }
+    case "compare_run_success":
+      return {
+        eventName,
+        phase: "result",
+        title: "对比分析完成",
+        flowLabel: "分析完成",
+        summary: "系统已经产出最终结论，等待用户查看结果。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "compare_result_view":
+      return {
+        eventName,
+        phase: "result",
+        title: "进入对比结果页",
+        flowLabel: "进入结果页",
+        summary: "用户已经看到最终建议。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "compare_result_leave":
+      return {
+        eventName,
+        phase: "exit",
+        title: "离开对比结果页",
+        flowLabel: "离开结果页",
+        summary: dwell ? `结果页停留 ${dwell} 后离开。` : "用户看完结果后离开。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "compare_result_cta_click":
+      return {
+        eventName,
+        phase: "result",
+        title: "点击结果页后续动作",
+        flowLabel: "点击结果页 CTA",
+        summary: "用户开始顺着结果页的下一步建议继续操作。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "compare_result_cta_land":
+      return {
+        eventName,
+        phase: "result",
+        title: "真正到达结果页 CTA 的目标页",
+        flowLabel: "到达 CTA 目标页",
+        summary: "说明 CTA 不只是被点击，而且成功落到了下游页面。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "profile_result_view":
+      return {
+        eventName,
+        phase: "result",
+        title: "查看个人测配结果",
+        flowLabel: "查看测配结果",
+        summary: "用户继续消费更个性化的结果内容。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "bag_add_success":
+      return {
+        eventName,
+        phase: "result",
+        title: "加入购物袋",
+        flowLabel: "加入购物袋",
+        summary: "已经发生了明确的购买意图动作。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "product_showcase_continue_upload_click":
+      return {
+        eventName,
+        phase: "result",
+        title: "从产品详情继续上传解析",
+        flowLabel: "继续上传解析",
+        summary: "用户愿意回到上传链路，继续做更深入的分析。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "product_showcase_governance_click":
+      return {
+        eventName,
+        phase: "result",
+        title: "从产品详情回到产品治理",
+        flowLabel: "回到产品治理",
+        summary: "这是偏运营 / 管理侧的后续动作。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "feedback_prompt_show":
+      return {
+        eventName,
+        phase: "feedback",
+        title: "看到反馈卡",
+        flowLabel: "看到反馈卡",
+        summary: `系统判断这里值得收集反馈${item.trigger_reason ? `，触发原因是“${feedbackTriggerLabel(item.trigger_reason)}”` : ""}。`,
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "feedback_submit": {
+      const reason = item.reason_label ? feedbackReasonLabel(item.reason_label) : "";
+      const summaryParts = [reason ? `反馈原因是“${reason}”` : "", detail ? compactText(detail, 72) : ""].filter(Boolean);
+      return {
+        eventName,
+        phase: "feedback",
+        title: "提交了反馈",
+        flowLabel: "提交反馈",
+        summary: summaryParts.join("；") || "用户补充了主观反馈，方便后续定位问题。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    }
+    case "feedback_skip":
+      return {
+        eventName,
+        phase: "feedback",
+        title: "跳过了反馈",
+        flowLabel: "跳过反馈",
+        summary: "用户没有留下进一步说明。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "compare_stage_error":
+      return {
+        eventName,
+        phase: "issue",
+        title: `分析在“${stageLabel(item.stage)}”失败`,
+        flowLabel: `${stageLabel(item.stage)}失败`,
+        summary: buildIssueSummary(item, detail),
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "compare_upload_fail":
+      return {
+        eventName,
+        phase: "issue",
+        title: "上传失败",
+        flowLabel: "上传失败",
+        summary: buildIssueSummary(item, detail),
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "compare_run_error":
+      return {
+        eventName,
+        phase: "issue",
+        title: "对比任务失败",
+        flowLabel: "对比任务失败",
+        summary: buildIssueSummary(item, detail),
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "compare_reset_to_intro":
+      return {
+        eventName,
+        phase: "exit",
+        title: "从异常状态回到开始页",
+        flowLabel: "回到开始页",
+        summary: "用户或系统把流程重置到了最开始的位置。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "stall_detected":
+      return {
+        eventName,
+        phase: "issue",
+        title: "页面出现停滞",
+        flowLabel: "页面停滞",
+        summary: `用户在${page}遇到了明显卡顿或无进展的状态。`,
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "rage_click":
+      return {
+        eventName,
+        phase: "issue",
+        title: "用户连续点击但没有得到反馈",
+        flowLabel: "连续点击无反馈",
+        summary: "这通常意味着界面反馈不够明显，或用户不知道下一步是否成功。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "dead_click":
+      return {
+        eventName,
+        phase: "issue",
+        title: "用户点击了无响应区域",
+        flowLabel: "点击无响应区域",
+        summary: "可能存在误导性的视觉元素，或点击区域没有真正接上交互。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "scroll_depth":
+      return {
+        eventName,
+        phase: "action",
+        title: "继续向下浏览",
+        flowLabel: "继续浏览",
+        summary: "用户还在主动消费当前页面内容。",
+        significant: false,
+        meta,
+        rawMeta,
+      };
+    default:
+      return {
+        eventName,
+        phase: inferEventPhase(item),
+        title: humanizeEventName(eventName),
+        flowLabel: humanizeEventName(eventName),
+        summary: detail || "这是一个已经采集到的原始信号，目前还没有单独翻译成业务文案。",
+        significant: !eventName.startsWith("scroll_"),
+        meta,
+        rawMeta,
+      };
+  }
+}
+
+function findLastMatching<T>(items: T[], predicate: (item: T) => boolean): T | null {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    if (predicate(items[index])) return items[index];
+  }
+  return null;
+}
+
+function buildSessionTimelinePresentation(items: MobileAnalyticsSessionEventItem[]): SessionTimelinePresentation {
+  const narratives = items.map((item) => describeTimelineEvent(item));
+  const flowSteps: string[] = [];
+  const groups: SessionTimelineGroup[] = [];
+
+  narratives.forEach((narrative, index) => {
+    if (narrative.significant && flowSteps[flowSteps.length - 1] !== narrative.flowLabel) {
+      flowSteps.push(narrative.flowLabel);
+    }
+
+    const previousGroup = groups[groups.length - 1];
+    const withStep = {
+      ...narrative,
+      stepNumber: index + 1,
+    };
+    if (!previousGroup || previousGroup.phase !== narrative.phase) {
+      groups.push({
+        key: `${narrative.phase}-${index}`,
+        phase: narrative.phase,
+        items: [withStep],
+      });
+      return;
+    }
+    previousGroup.items.push(withStep);
+  });
+
+  const hasResult = narratives.some((item) =>
+    ["compare_run_success", "compare_result_view", "profile_result_view", "bag_add_success"].includes(item.eventName),
+  );
+  const issueEvent = findLastMatching(narratives, (item) => item.phase === "issue");
+  const exitEvent = findLastMatching(narratives, (item) => item.phase === "exit");
+  const firstStep = flowSteps[0] || "开始浏览";
+  const lastStep = flowSteps[flowSteps.length - 1] || firstStep;
+
+  let heroPhase: SessionTimelinePhase = "entry";
+  let headline = "这次会话主要停留在浏览阶段";
+  if (hasResult) {
+    heroPhase = "result";
+    headline = "这次会话已经走到结果或后续转化动作";
+  } else if (issueEvent) {
+    heroPhase = "issue";
+    headline = issueEvent.title;
+  } else if (exitEvent) {
+    heroPhase = "exit";
+    headline = exitEvent.title;
+  } else if (narratives.some((item) => item.phase === "analysis")) {
+    heroPhase = "analysis";
+    headline = "这次会话还停留在分析链路中";
+  } else if (narratives.some((item) => item.phase === "action")) {
+    heroPhase = "action";
+    headline = "这次会话已经从浏览进入操作阶段";
+  }
+
+  const summaryParts = [`从“${firstStep}”开始`];
+  if (flowSteps.length > 1) summaryParts.push(`共走过 ${flowSteps.length} 个关键节点`);
+  if (hasResult) {
+    summaryParts.push(`最终停在“${lastStep}”`);
+  } else if (issueEvent) {
+    summaryParts.push(`最终卡在“${issueEvent.flowLabel}”`);
+  } else if (exitEvent) {
+    summaryParts.push(`最终停在“${exitEvent.flowLabel}”`);
+  } else {
+    summaryParts.push(`当前最新动作是“${lastStep}”`);
+  }
+
+  return {
+    headline,
+    summary: `${summaryParts.join("，")}。`,
+    heroPhase,
+    flowSteps: flowSteps.slice(0, 6),
+    groups,
+  };
+}
+
+function phaseLabel(phase: SessionTimelinePhase): string {
+  switch (phase) {
+    case "entry":
+      return "进入";
+    case "action":
+      return "操作";
+    case "analysis":
+      return "分析";
+    case "result":
+      return "结果";
+    case "feedback":
+      return "反馈";
+    case "exit":
+      return "离开";
+    case "issue":
+      return "异常";
+    default:
+      return "时间线";
+  }
+}
+
+function phaseDotClass(phase: SessionTimelinePhase): string {
+  switch (phase) {
+    case "entry":
+      return "bg-[#8e7654]";
+    case "action":
+      return "bg-[#2874db]";
+    case "analysis":
+      return "bg-[#5864d8]";
+    case "result":
+      return "bg-[#1e8f63]";
+    case "feedback":
+      return "bg-[#8b63ce]";
+    case "exit":
+      return "bg-[#c2871b]";
+    case "issue":
+      return "bg-[#cb4b3b]";
+    default:
+      return "bg-black/28";
+  }
+}
+
+function phaseSectionClasses(phase: SessionTimelinePhase): string {
+  switch (phase) {
+    case "entry":
+      return "border-[#e7ddd0] bg-[#fbf7f1]";
+    case "action":
+      return "border-[#d7e6fb] bg-[#f7fbff]";
+    case "analysis":
+      return "border-[#dde1fb] bg-[#f7f8ff]";
+    case "result":
+      return "border-[#d2e7db] bg-[#f4fbf7]";
+    case "feedback":
+      return "border-[#e3daf7] bg-[#faf8ff]";
+    case "exit":
+      return "border-[#eedec0] bg-[#fffaf0]";
+    case "issue":
+      return "border-[#efd1cd] bg-[#fff5f3]";
+    default:
+      return "border-black/10 bg-[#f7f8fb]";
   }
 }
 
@@ -377,6 +1108,11 @@ export default function MobileAnalyticsDashboard() {
       </div>
     );
   }
+
+  const sessionTimelinePresentation =
+    sessionDetail.data && sessionDetail.data.timeline.length > 0
+      ? buildSessionTimelinePresentation(sessionDetail.data.timeline)
+      : null;
 
   return (
     <section className="mt-8 space-y-6">
@@ -1040,8 +1776,54 @@ export default function MobileAnalyticsDashboard() {
                     <span>事件数 {formatNumber(sessionDetail.data.timeline.length)}</span>
                   </div>
                 </div>
-                {sessionDetail.data.timeline.map((item) => (
-                  <TimelineItem key={item.event_id} item={item} />
+                {sessionTimelinePresentation ? (
+                  <div className={`rounded-[24px] border px-4 py-4 ${phaseSectionClasses(sessionTimelinePresentation.heroPhase)}`}>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-black/45">Journey Summary</div>
+                        <div className="mt-2 text-[20px] font-semibold tracking-[-0.03em] text-black/86">
+                          {sessionTimelinePresentation.headline}
+                        </div>
+                        <p className="mt-2 max-w-[680px] text-[13px] leading-[1.7] text-black/64">
+                          {sessionTimelinePresentation.summary}
+                        </p>
+                      </div>
+                      <div className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white/72 px-3 py-1 text-[11px] font-semibold text-black/58">
+                        <span className={`h-2.5 w-2.5 rounded-full ${phaseDotClass(sessionTimelinePresentation.heroPhase)}`} />
+                        {phaseLabel(sessionTimelinePresentation.heroPhase)}
+                      </div>
+                    </div>
+
+                    {sessionTimelinePresentation.flowSteps.length > 0 ? (
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {sessionTimelinePresentation.flowSteps.map((step, index) => (
+                          <div
+                            key={`${step}-${index}`}
+                            className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-white/80 px-3 py-2 text-[12px] font-medium text-black/72"
+                          >
+                            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-black text-[11px] font-semibold text-white">
+                              {index + 1}
+                            </span>
+                            <span>{step}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {sessionTimelinePresentation?.groups.map((group) => (
+                  <section key={group.key} className={`rounded-[22px] border px-4 py-4 ${phaseSectionClasses(group.phase)}`}>
+                    <div className="mb-3 flex items-center gap-2">
+                      <span className={`h-2.5 w-2.5 rounded-full ${phaseDotClass(group.phase)}`} />
+                      <div className="text-[12px] font-semibold uppercase tracking-[0.12em] text-black/45">{phaseLabel(group.phase)}</div>
+                    </div>
+                    <div className="space-y-3">
+                      {group.items.map((item) => (
+                        <TimelineItem key={`${group.key}-${item.stepNumber}`} item={item} />
+                      ))}
+                    </div>
+                  </section>
                 ))}
               </div>
             ) : (
@@ -1147,29 +1929,43 @@ function EmptyHint({ label }: { label: string }) {
   return <div className="rounded-[20px] border border-dashed border-black/12 bg-[#fafbfc] px-4 py-5 text-[13px] leading-[1.65] text-black/54">{label}</div>;
 }
 
-function TimelineItem({ item }: { item: MobileAnalyticsSessionEventItem }) {
+function TimelineItem({ item }: { item: SessionTimelineNarrative & { stepNumber: number } }) {
   return (
-    <article className="rounded-[20px] border border-black/10 bg-[#f7f8fb] px-4 py-4">
+    <article className="rounded-[20px] border border-black/10 bg-white/78 px-4 py-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="text-[15px] font-semibold tracking-[-0.02em] text-black/84">{item.name}</div>
-          <div className="mt-1 text-[12px] text-black/48">
-            {formatDateTime(item.created_at)} {item.page ? `· ${item.page}` : ""}
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-black px-2 text-[11px] font-semibold text-white">
+              {item.stepNumber}
+            </span>
+            <div className="text-[15px] font-semibold tracking-[-0.02em] text-black/84">{item.title}</div>
+          </div>
+          <div className="mt-2 text-[12px] text-black/48">
+            关键节点 · {item.flowLabel}
           </div>
         </div>
-        <div className="text-right text-[12px] text-black/52">
-          {item.stage ? <div>stage: {item.stage}</div> : null}
-          {item.error_code ? <div>error: {item.error_code}</div> : null}
+        <div className="rounded-full border border-black/10 bg-white/80 px-3 py-1 text-[11px] font-semibold text-black/58">
+          {phaseLabel(item.phase)}
         </div>
       </div>
-      <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-black/52">
-        {item.category ? <span>{categoryLabel(item.category)}</span> : null}
-        {item.compare_id ? <span>compare {item.compare_id}</span> : null}
-        {typeof item.dwell_ms === "number" ? <span>dwell {item.dwell_ms}ms</span> : null}
-        {item.trigger_reason ? <span>trigger {item.trigger_reason}</span> : null}
-        {item.reason_label ? <span>reason {item.reason_label}</span> : null}
-      </div>
-      {item.detail ? <p className="mt-3 text-[13px] leading-[1.65] text-black/64">{item.detail}</p> : null}
+
+      {item.summary ? <p className="mt-3 text-[13px] leading-[1.7] text-black/66">{item.summary}</p> : null}
+
+      {item.meta.length > 0 ? (
+        <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-black/58">
+          {item.meta.map((metaItem) => (
+            <span key={metaItem} className="rounded-full border border-black/10 bg-[#f7f8fb] px-2.5 py-1">
+              {metaItem}
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      {item.rawMeta.length > 0 ? (
+        <div className="mt-3 text-[11px] leading-[1.6] text-black/42">
+          原始信号：{item.rawMeta.join(" · ")}
+        </div>
+      ) : null}
     </article>
   );
 }
