@@ -2,6 +2,8 @@
 
 > Last updated: March 12, 2026
 
+Chinese version: [README.zh-CN.md](README.zh-CN.md)
+
 ## Current Direction
 
 `jeslect.com` is now the primary product direction.
