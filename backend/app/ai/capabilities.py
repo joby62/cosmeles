@@ -1867,17 +1867,20 @@ def _validate_selection_result_block_payload(*, block_id: str, payload: dict[str
         )
 
     if block_id == "hero":
-        expected_keys = {"eyebrow", "title", "subtitle", "items"}
-        if set(payload.keys()) != expected_keys:
+        required_keys = {"eyebrow", "title", "subtitle"}
+        allowed_keys = {"eyebrow", "title", "subtitle", "items"}
+        payload_keys = set(payload.keys())
+        if not required_keys.issubset(payload_keys) or not payload_keys.issubset(allowed_keys):
             raise AIServiceError(
                 code="selection_result_invalid",
-                message=f"{block_id}.payload keys must equal {sorted(expected_keys)}.",
+                message=f"{block_id}.payload keys must include {sorted(required_keys)} and only use {sorted(allowed_keys)}.",
                 http_status=422,
             )
         _ensure_nonempty_string(f"{block_id}.payload.eyebrow", payload.get("eyebrow"))
-        _ensure_text_length(f"{block_id}.payload.title", payload.get("title"), minimum=16, maximum=28)
-        _ensure_text_length(f"{block_id}.payload.subtitle", payload.get("subtitle"), minimum=40, maximum=90)
-        _ensure_string_list(f"{block_id}.payload.items", payload.get("items"), minimum=3, maximum=5, item_min=16, item_max=48)
+        _ensure_text_length(f"{block_id}.payload.title", payload.get("title"), minimum=12, maximum=32)
+        _ensure_text_length(f"{block_id}.payload.subtitle", payload.get("subtitle"), minimum=24, maximum=100)
+        if "items" in payload:
+            _ensure_string_list(f"{block_id}.payload.items", payload.get("items"), minimum=0, maximum=5, item_min=12, item_max=48)
         return
 
     expected_keys = {"title", "subtitle", "items", "note"}

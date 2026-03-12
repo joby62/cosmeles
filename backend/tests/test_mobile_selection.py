@@ -3,6 +3,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
+from app.ai import capabilities as ai_capabilities
 from app.routes import ingest as ingest_routes
 from app.routes import products as products_routes
 from app.services import mobile_selection_result_builder as selection_result_builder_service
@@ -147,7 +148,13 @@ def _install_fake_route_mapping_builder(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setattr(products_routes, "run_capability_now", fake_run_capability_now)
 
 
-def _install_fake_selection_result_builder(monkeypatch: pytest.MonkeyPatch) -> None:
+def _install_fake_selection_result_builder(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    hero_title: str | None = None,
+    hero_subtitle: str | None = None,
+    hero_items: list[str] | None = None,
+) -> None:
     def fake_run_capability_now(*, capability, input_payload, trace_id=None, event_callback=None):
         assert capability.startswith("doubao.mobile_selection_result_")
         if event_callback:
@@ -155,6 +162,13 @@ def _install_fake_selection_result_builder(monkeypatch: pytest.MonkeyPatch) -> N
         context = json.loads(input_payload["selection_result_context_json"])
         route_title = context["route"]["title"]
         product_name = context["recommended_product"].get("name") or "当前主推"
+        resolved_hero_title = hero_title or f"你当前更偏向{route_title}这条日常护理主线"
+        resolved_hero_subtitle = hero_subtitle or "系统先根据你的题目选择和路线分差判断当前最该优先的护理方向，再用主推产品把这个方向接住。"
+        resolved_hero_items = hero_items if hero_items is not None else [
+            "当前结果先回答你现在更像什么情况，再承接产品方向。",
+            "系统不会只堆商品，而是先讲清楚为什么会落到这条路。",
+            "后续若矩阵或主推变化，这类场景内容也会随之重建更新。",
+        ]
         return {
             "schema_version": "selection_result_content.v2",
             "renderer_variant": "selection_result_default",
@@ -172,13 +186,9 @@ def _install_fake_selection_result_builder(monkeypatch: pytest.MonkeyPatch) -> N
                     "version": "v1",
                     "payload": {
                         "eyebrow": "予选先帮你看懂自己",
-                        "title": f"你当前更偏向{route_title}这条日常护理主线",
-                        "subtitle": "系统先根据你的题目选择和路线分差判断当前最该优先的护理方向，再用主推产品把这个方向接住。",
-                        "items": [
-                            "当前结果先回答你现在更像什么情况，再承接产品方向。",
-                            "系统不会只堆商品，而是先讲清楚为什么会落到这条路。",
-                            "后续若矩阵或主推变化，这类场景内容也会随之重建更新。",
-                        ],
+                        "title": resolved_hero_title,
+                        "subtitle": resolved_hero_subtitle,
+                        "items": resolved_hero_items,
                     },
                 },
                 {
@@ -266,6 +276,117 @@ def _install_fake_selection_result_builder(monkeypatch: pytest.MonkeyPatch) -> N
         }
 
     monkeypatch.setattr(selection_result_builder_service, "run_capability_now", fake_run_capability_now)
+
+
+def _sample_selection_result_content() -> dict:
+    return {
+        "schema_version": "selection_result_content.v2",
+        "renderer_variant": "selection_result_default",
+        "micro_summary": "主线先稳住吧",
+        "share_copy": {
+            "title": "你的本命路线是平衡修护",
+            "subtitle": "我现在更适合先走平衡修护这条线",
+            "caption": "先把我当前的情况讲清楚，再把更适合的护理方向和产品承接起来。",
+        },
+        "display_order": ["hero", "situation", "attention", "pitfalls", "evidence", "product_bridge", "ctas"],
+        "blocks": [
+            {
+                "id": "hero",
+                "kind": "hero",
+                "version": "v1",
+                "payload": {
+                    "eyebrow": "结果先讲人再讲产品",
+                    "title": "你当前更该先走平衡修护主线",
+                    "subtitle": "系统会先根据你的答案判断当前更该优先处理哪条护理主线，再把产品承接进来。",
+                    "items": [
+                        "先把当前情况讲明白，再讲产品为什么承接这条路线。",
+                        "结果页会解释为什么这条路线赢过其他相近方向。",
+                        "如果证据不完整，也会直接说明，不会伪造完整结论。",
+                    ],
+                },
+            },
+            {
+                "id": "situation",
+                "kind": "explanation",
+                "version": "v1",
+                "payload": {
+                    "title": "你现在更像什么情况",
+                    "subtitle": "先把你当前更像什么状态讲清楚，避免还没理解自己就被产品和营销词带跑。",
+                    "items": [
+                        "优先描述当前最突出的状态，而不是把所有问题混在一起讲。",
+                        "真正该先处理的核心矛盾，需要被单独拎出来说明。",
+                        "如果某些相近路线其实不成立，也要顺手解释清楚。",
+                    ],
+                    "note": "这里先解释你的状态，再进入推荐，不会一上来只讲产品。",
+                },
+            },
+            {
+                "id": "attention",
+                "kind": "strategy",
+                "version": "v1",
+                "payload": {
+                    "title": "你当前最该抓住什么",
+                    "subtitle": "当前主线代表的是你此刻最该优先处理的矛盾，不是把所有诉求一次性叠满。",
+                    "items": [
+                        "要先说清当前应该优先解决什么，再谈次级诉求。",
+                        "建议用户把精力放在当前最影响体验的那条主线上。",
+                        "提醒用户这是一条当前优先级判断，不是假装一步到位。",
+                    ],
+                    "note": "重点是先抓主线，别把注意力浪费在次要方向上。",
+                },
+            },
+            {
+                "id": "pitfalls",
+                "kind": "warning",
+                "version": "v1",
+                "payload": {
+                    "title": "你现在最该少踩的坑",
+                    "subtitle": "很多人会被相似症状或一句卖点带偏，所以这里要先讲哪些方向现在不该乱冲。",
+                    "items": [
+                        "要指出最容易被误判的相近路线，以及为什么现在不适合。",
+                        "如果有 veto，要把被屏蔽路线翻译成人话讲清楚。",
+                        "不要只说不推荐，还要说明背后的真实判断依据。",
+                    ],
+                    "note": "这一步是帮用户少踩坑，不是堆更多术语和吓人的判断。",
+                },
+            },
+            {
+                "id": "evidence",
+                "kind": "explanation",
+                "version": "v1",
+                "payload": {
+                    "title": "为什么系统这样判断",
+                    "subtitle": "系统会同时看答案、路线分差、top2 和 veto，而不是只凭一题就下结论。",
+                    "items": [
+                        "要明确 top1 为什么赢过 top2，而不是只重复最终路线名。",
+                        "要把题目贡献、路线分差和 veto 一起翻译成人能懂的话。",
+                        "如果产品分析缺失，也要明确说明当前证据还不完整。",
+                    ],
+                    "note": "证据层要让用户看懂判断过程，而不是只看到一个神秘结论。",
+                },
+            },
+            {
+                "id": "product_bridge",
+                "kind": "strategy",
+                "version": "v1",
+                "payload": {
+                    "title": "为什么先给你这类或这款",
+                    "subtitle": "主推产品只负责承接这条路线，目的是让产品服务于解释，而不是反过来定义你。",
+                    "items": [
+                        "先讲这类或这款为什么能承接当前主线，不要抢走结果页主线。",
+                        "如果产品分析证据不足，必须如实写明，不准假装完整。",
+                        "推荐语要回到适配度和证据，不要写成营销话术。",
+                    ],
+                    "note": "产品承接是最后一步，始终要让解释层站在产品前面。",
+                },
+            },
+        ],
+        "ctas": [
+            {"id": "open_product", "label": "查看产品详情", "action": "product", "href": "", "payload": {}},
+            {"id": "open_wiki", "label": "查看成分百科", "action": "wiki", "href": "", "payload": {}},
+            {"id": "restart", "label": "重新判断一次", "action": "restart", "href": "", "payload": {}},
+        ],
+    }
 
 
 def _build_route_mapping(client, category: str) -> None:
@@ -918,6 +1039,48 @@ def test_mobile_selection_result_build_generates_v2_content(test_client, monkeyp
     assert result_item["share_copy"]["title"]
     assert result_item["blocks"][0]["id"] == "hero"
     assert result_item["ctas"][0]["id"] == "open_product"
+
+
+def test_selection_result_normalizer_allows_hero_without_items():
+    payload = _sample_selection_result_content()
+    payload["blocks"][0]["payload"].pop("items")
+
+    normalized = ai_capabilities._normalize_mobile_selection_result_content(payload)
+
+    assert normalized["blocks"][0]["id"] == "hero"
+    assert "items" not in normalized["blocks"][0]["payload"]
+
+
+def test_mobile_selection_result_build_accepts_relaxed_hero_contract(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, _storage_dir = test_client
+    _install_fake_ingest_pipeline(
+        monkeypatch,
+        {
+            "category": "shampoo",
+            "brand": "Dove",
+            "name": "Selection Build Relaxed Hero",
+            "one_sentence": "selection result relaxed hero source",
+        },
+    )
+    _ingest_one(client, "selection-result-relaxed-hero.jpg")
+    _install_fake_route_mapping_builder(monkeypatch)
+    _build_route_mapping(client, "shampoo")
+    _install_fake_selection_result_builder(
+        monkeypatch,
+        hero_title="你当前更该先走平衡修护主线",
+        hero_subtitle="系统会先根据你的答案判断当前更该优先处理哪条护理主线，再把产品承接进来。",
+        hero_items=[],
+    )
+
+    built = client.post(
+        "/api/products/selection-results/build",
+        json={"category": "shampoo", "force_regenerate": True},
+    )
+    assert built.status_code == 200
+    body = built.json()
+    assert body["status"] == "ok"
+    assert body["failed"] == 0
+    assert body["submitted_to_model"] == 36
 
 
 def test_mobile_selection_result_missing_returns_strict_error(test_client):
