@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import MobileAnalyticsDashboard from "@/components/analytics/MobileAnalyticsDashboard";
 
 export const metadata: Metadata = {
   title: "数据分析 · 予选",
@@ -260,6 +261,8 @@ export default function AnalyticsPage() {
             <MetricTile label="第一版核心面板" value={`${FIRST_RELEASE_PANELS.length}`} detail="overview / funnel / errors / feedback / sessions" accent="stone" />
           </div>
         </header>
+
+        <MobileAnalyticsDashboard />
 
         <section id="live-signals" className="mt-8 grid gap-5 lg:grid-cols-[1.35fr_0.95fr]">
           <div className="rounded-[32px] border border-black/10 bg-white p-7 shadow-[0_18px_44px_rgba(16,24,40,0.06)]">

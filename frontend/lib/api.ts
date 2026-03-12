@@ -830,6 +830,181 @@ export type AIMetricsSummary = {
   cost_coverage_rate: number;
 };
 
+export type MobileAnalyticsQuery = {
+  sinceHours?: number;
+  dateFrom?: string;
+  dateTo?: string;
+  category?: string;
+  page?: string;
+  stage?: string;
+  errorCode?: string;
+  triggerReason?: string;
+  sessionId?: string;
+  compareId?: string;
+  ownerId?: string;
+  limit?: number;
+};
+
+export type MobileAnalyticsFilterState = {
+  since_hours?: number | null;
+  date_from?: string | null;
+  date_to?: string | null;
+  category?: string | null;
+  page?: string | null;
+  stage?: string | null;
+  error_code?: string | null;
+  trigger_reason?: string | null;
+  session_id?: string | null;
+  compare_id?: string | null;
+  owner_id?: string | null;
+  limit?: number | null;
+};
+
+export type MobileAnalyticsCountItem = {
+  key: string;
+  label: string;
+  count: number;
+  rate: number;
+};
+
+export type MobileAnalyticsOverview = {
+  status: string;
+  filters: MobileAnalyticsFilterState;
+  total_events: number;
+  sessions: number;
+  owners: number;
+  wiki_detail_views: number;
+  cta_expose: number;
+  cta_click: number;
+  cta_ctr: number;
+  use_page_views: number;
+  use_category_clicks: number;
+  use_to_compare_rate: number;
+  compare_run_start: number;
+  compare_run_success: number;
+  compare_completion_rate: number;
+  compare_result_view: number;
+  result_reach_rate: number;
+  feedback_prompt_show: number;
+  feedback_submit: number;
+  feedback_submit_rate: number;
+};
+
+export type MobileAnalyticsFunnelStep = {
+  step_key: string;
+  step_label: string;
+  count: number;
+  from_prev_rate: number;
+  from_first_rate: number;
+};
+
+export type MobileAnalyticsFunnel = {
+  status: string;
+  filters: MobileAnalyticsFilterState;
+  steps: MobileAnalyticsFunnelStep[];
+};
+
+export type MobileAnalyticsStageErrorMatrixItem = {
+  stage: string;
+  stage_label: string;
+  error_code: string;
+  count: number;
+  rate: number;
+};
+
+export type MobileAnalyticsStageDurationItem = {
+  stage: string;
+  stage_label: string;
+  samples: number;
+  avg_seconds: number;
+  p50_seconds: number;
+  p95_seconds: number;
+};
+
+export type MobileAnalyticsErrors = {
+  status: string;
+  filters: MobileAnalyticsFilterState;
+  compare_run_start: number;
+  total_errors: number;
+  by_stage: MobileAnalyticsCountItem[];
+  by_error_code: MobileAnalyticsCountItem[];
+  stage_error_matrix: MobileAnalyticsStageErrorMatrixItem[];
+  stage_duration_estimates: MobileAnalyticsStageDurationItem[];
+};
+
+export type MobileAnalyticsFeedbackTextSample = {
+  event_id: string;
+  created_at: string;
+  trigger_reason?: string | null;
+  reason_label?: string | null;
+  reason_text?: string | null;
+  category?: string | null;
+  compare_id?: string | null;
+  stage?: string | null;
+  session_id?: string | null;
+};
+
+export type MobileAnalyticsFeedbackMatrixItem = {
+  trigger_reason: string;
+  reason_label: string;
+  count: number;
+  rate: number;
+};
+
+export type MobileAnalyticsFeedback = {
+  status: string;
+  filters: MobileAnalyticsFilterState;
+  total_prompts: number;
+  total_submissions: number;
+  by_trigger_reason: MobileAnalyticsCountItem[];
+  by_reason_label: MobileAnalyticsCountItem[];
+  trigger_reason_matrix: MobileAnalyticsFeedbackMatrixItem[];
+  recent_text_samples: MobileAnalyticsFeedbackTextSample[];
+};
+
+export type MobileAnalyticsSessionSummary = {
+  session_id: string;
+  owner_label?: string | null;
+  category?: string | null;
+  compare_id?: string | null;
+  started_at: string;
+  last_event_at: string;
+  duration_seconds: number;
+  event_count: number;
+  outcome: string;
+  latest_page?: string | null;
+  latest_error_code?: string | null;
+  latest_feedback_reason?: string | null;
+  pages: string[];
+  events: string[];
+};
+
+export type MobileAnalyticsSessionEventItem = {
+  event_id: string;
+  created_at: string;
+  name: string;
+  page?: string | null;
+  route?: string | null;
+  category?: string | null;
+  compare_id?: string | null;
+  stage?: string | null;
+  error_code?: string | null;
+  detail?: string | null;
+  trigger_reason?: string | null;
+  reason_label?: string | null;
+  dwell_ms?: number | null;
+};
+
+export type MobileAnalyticsSessions = {
+  status: string;
+  filters: MobileAnalyticsFilterState;
+  total: number;
+  selected_session_id?: string | null;
+  selected_compare_id?: string | null;
+  items: MobileAnalyticsSessionSummary[];
+  timeline: MobileAnalyticsSessionEventItem[];
+};
+
 export type MobileSelectionCategory = "shampoo" | "bodywash" | "conditioner" | "lotion" | "cleanser";
 
 export type MobileSelectionResolveRequest = {
@@ -1353,9 +1528,55 @@ async function getForwardedServerHeaders(): Promise<Record<string, string>> {
   }
 }
 
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+type ApiReadCacheProfile = "dynamic" | "short" | "medium" | "long";
+
+type ApiFetchInit = RequestInit & {
+  cacheProfile?: ApiReadCacheProfile;
+  includeOwnerHeaders?: boolean;
+  revalidateSeconds?: number;
+};
+
+const API_READ_REVALIDATE_SECONDS: Record<Exclude<ApiReadCacheProfile, "dynamic">, number> = {
+  short: 30,
+  medium: 120,
+  long: 600,
+};
+
+function resolveApiFetchCacheOptions(
+  method: string,
+  cacheProfile: ApiReadCacheProfile | undefined,
+  revalidateSeconds: number | undefined,
+): { cache: RequestCache; next?: { revalidate: number } } {
+  const normalizedMethod = method.toUpperCase();
+  if (normalizedMethod !== "GET" && normalizedMethod !== "HEAD") {
+    return { cache: "no-store" };
+  }
+
+  const profile = cacheProfile || "short";
+  if (profile === "dynamic") {
+    return { cache: "no-store" };
+  }
+
+  return {
+    cache: "force-cache",
+    next: {
+      revalidate: revalidateSeconds ?? API_READ_REVALIDATE_SECONDS[profile],
+    },
+  };
+}
+
+async function apiFetch<T>(path: string, init?: ApiFetchInit): Promise<T> {
   const base = getBaseForFetch();
-  const forwarded = await getForwardedServerHeaders();
+  const method = String(init?.method || "GET");
+  const includeOwnerHeaders = init?.includeOwnerHeaders ?? true;
+  const forwarded = includeOwnerHeaders ? await getForwardedServerHeaders() : {};
+  const cacheProfile = init?.cacheProfile;
+  const revalidateSeconds = init?.revalidateSeconds;
+  const requestInit: RequestInit = { ...(init || {}) };
+  delete (requestInit as RequestInit & { cacheProfile?: unknown }).cacheProfile;
+  delete (requestInit as RequestInit & { includeOwnerHeaders?: unknown }).includeOwnerHeaders;
+  delete (requestInit as RequestInit & { revalidateSeconds?: unknown }).revalidateSeconds;
+  const cacheOptions = resolveApiFetchCacheOptions(method, cacheProfile, revalidateSeconds);
 
   // path 统一要求以 / 开头
   const url = base ? new URL(path, base).toString() : path;
@@ -1363,18 +1584,17 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     "content-type": "application/json",
     ...forwarded,
   });
-  const initHeaders = new Headers(init?.headers || {});
+  const initHeaders = new Headers(requestInit.headers || {});
   initHeaders.forEach((value, key) => {
     headers.set(key, value);
   });
 
   const res = await fetch(url, {
-    ...init,
-    // 生产建议不缓存（你也可以按需调）
-    cache: "no-store",
+    ...requestInit,
+    ...cacheOptions,
     credentials: "include",
     headers,
-  });
+  } as RequestInit & { next?: { revalidate: number } });
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
@@ -1384,7 +1604,10 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export async function fetchProducts(): Promise<Product[]> {
-  return apiFetch<Product[]>("/api/products");
+  return apiFetch<Product[]>("/api/products", {
+    cacheProfile: "short",
+    includeOwnerHeaders: false,
+  });
 }
 
 export async function fetchAllProducts(): Promise<Product[]> {
@@ -1394,7 +1617,10 @@ export async function fetchAllProducts(): Promise<Product[]> {
   const out: Product[] = [];
 
   while (offset < total) {
-    const page = await apiFetch<ProductListResponse>(`/api/products/page?offset=${offset}&limit=${limit}`);
+    const page = await apiFetch<ProductListResponse>(`/api/products/page?offset=${offset}&limit=${limit}`, {
+      cacheProfile: "short",
+      includeOwnerHeaders: false,
+    });
     out.push(...page.items);
     total = page.meta.total;
     offset += page.meta.limit;
@@ -1405,11 +1631,17 @@ export async function fetchAllProducts(): Promise<Product[]> {
 }
 
 export async function fetchProduct(id: string): Promise<Product> {
-  return apiFetch<Product>(`/api/products/${id}`);
+  return apiFetch<Product>(`/api/products/${id}`, {
+    cacheProfile: "medium",
+    includeOwnerHeaders: false,
+  });
 }
 
 export async function fetchProductDoc(id: string): Promise<ProductDoc> {
-  return apiFetch<ProductDoc>(`/api/products/${id}`);
+  return apiFetch<ProductDoc>(`/api/products/${id}`, {
+    cacheProfile: "medium",
+    includeOwnerHeaders: false,
+  });
 }
 
 export async function suggestProductDuplicates(payload: ProductDedupSuggestRequest): Promise<ProductDedupSuggestResponse> {
@@ -1444,7 +1676,9 @@ export async function createProductDedupJob(payload: ProductDedupSuggestRequest)
 export async function fetchProductDedupJob(jobId: string): Promise<ProductWorkbenchJob> {
   const value = jobId.trim();
   if (!value) throw new Error("jobId is required.");
-  return apiFetch<ProductWorkbenchJob>(`/api/products/dedup/jobs/${encodeURIComponent(value)}`);
+  return apiFetch<ProductWorkbenchJob>(`/api/products/dedup/jobs/${encodeURIComponent(value)}`, {
+    cacheProfile: "dynamic",
+  });
 }
 
 export async function listProductDedupJobs(params?: {
@@ -1458,7 +1692,9 @@ export async function listProductDedupJobs(params?: {
   if (typeof params?.limit === "number") search.set("limit", String(params.limit));
   const query = search.toString();
   const path = query ? `/api/products/dedup/jobs?${query}` : "/api/products/dedup/jobs";
-  return apiFetch<ProductWorkbenchJob[]>(path);
+  return apiFetch<ProductWorkbenchJob[]>(path, {
+    cacheProfile: "dynamic",
+  });
 }
 
 export async function cancelProductDedupJob(jobId: string): Promise<ProductWorkbenchJobCancelResponse> {
@@ -1490,7 +1726,10 @@ export async function fetchIngredientLibrary(params?: {
   if (typeof params?.limit === "number") search.set("limit", String(params.limit));
   const query = search.toString();
   const path = query ? `/api/products/ingredients/library?${query}` : "/api/products/ingredients/library";
-  return apiFetch<IngredientLibraryListResponse>(path);
+  return apiFetch<IngredientLibraryListResponse>(path, {
+    cacheProfile: "short",
+    includeOwnerHeaders: false,
+  });
 }
 
 export async function fetchIngredientLibraryItem(
@@ -1503,7 +1742,10 @@ export async function fetchIngredientLibraryItem(
     throw new Error("category and ingredientId are required.");
   }
   const path = `/api/products/ingredients/library/${encodeURIComponent(categoryValue)}/${encodeURIComponent(ingredientValue)}`;
-  return apiFetch<IngredientLibraryDetailResponse>(path);
+  return apiFetch<IngredientLibraryDetailResponse>(path, {
+    cacheProfile: "long",
+    includeOwnerHeaders: false,
+  });
 }
 
 export async function fetchIngredientLibraryPreflight(
@@ -1542,7 +1784,9 @@ export async function createIngredientLibraryBuildJob(
 export async function fetchIngredientLibraryBuildJob(jobId: string): Promise<IngredientLibraryBuildJob> {
   const value = jobId.trim();
   if (!value) throw new Error("jobId is required.");
-  return apiFetch<IngredientLibraryBuildJob>(`/api/products/ingredients/library/jobs/${encodeURIComponent(value)}`);
+  return apiFetch<IngredientLibraryBuildJob>(`/api/products/ingredients/library/jobs/${encodeURIComponent(value)}`, {
+    cacheProfile: "dynamic",
+  });
 }
 
 export async function listIngredientLibraryBuildJobs(params?: {
@@ -1558,7 +1802,9 @@ export async function listIngredientLibraryBuildJobs(params?: {
   if (typeof params?.limit === "number") search.set("limit", String(params.limit));
   const query = search.toString();
   const path = query ? `/api/products/ingredients/library/jobs?${query}` : "/api/products/ingredients/library/jobs";
-  return apiFetch<IngredientLibraryBuildJob[]>(path);
+  return apiFetch<IngredientLibraryBuildJob[]>(path, {
+    cacheProfile: "dynamic",
+  });
 }
 
 export async function cancelIngredientLibraryBuildJob(jobId: string): Promise<IngredientLibraryBuildJobCancelResponse> {
@@ -1614,7 +1860,9 @@ export async function createProductRouteMappingJob(
 export async function fetchProductRouteMappingJob(jobId: string): Promise<ProductWorkbenchJob> {
   const value = jobId.trim();
   if (!value) throw new Error("jobId is required.");
-  return apiFetch<ProductWorkbenchJob>(`/api/products/route-mapping/jobs/${encodeURIComponent(value)}`);
+  return apiFetch<ProductWorkbenchJob>(`/api/products/route-mapping/jobs/${encodeURIComponent(value)}`, {
+    cacheProfile: "dynamic",
+  });
 }
 
 export async function listProductRouteMappingJobs(params?: {
@@ -1628,7 +1876,9 @@ export async function listProductRouteMappingJobs(params?: {
   if (typeof params?.limit === "number") search.set("limit", String(params.limit));
   const query = search.toString();
   const path = query ? `/api/products/route-mapping/jobs?${query}` : "/api/products/route-mapping/jobs";
-  return apiFetch<ProductWorkbenchJob[]>(path);
+  return apiFetch<ProductWorkbenchJob[]>(path, {
+    cacheProfile: "dynamic",
+  });
 }
 
 export async function cancelProductRouteMappingJob(jobId: string): Promise<ProductWorkbenchJobCancelResponse> {
@@ -1656,6 +1906,10 @@ export async function fetchProductRouteMapping(
   if (!value) throw new Error("productId is required.");
   return apiFetch<ProductRouteMappingDetailResponse>(
     `/api/products/${encodeURIComponent(value)}/route-mapping`,
+    {
+      cacheProfile: "medium",
+      includeOwnerHeaders: false,
+    },
   );
 }
 
@@ -1666,7 +1920,10 @@ export async function fetchProductRouteMappingIndex(params?: {
   if (params?.category) search.set("category", params.category);
   const query = search.toString();
   const path = query ? `/api/products/route-mapping/index?${query}` : "/api/products/route-mapping/index";
-  return apiFetch<ProductRouteMappingIndexListResponse>(path);
+  return apiFetch<ProductRouteMappingIndexListResponse>(path, {
+    cacheProfile: "short",
+    includeOwnerHeaders: false,
+  });
 }
 
 export async function buildProductAnalysisStream(
@@ -1691,6 +1948,10 @@ export async function fetchProductAnalysis(
   if (!value) throw new Error("productId is required.");
   return apiFetch<ProductAnalysisDetailResponse>(
     `/api/products/${encodeURIComponent(value)}/analysis`,
+    {
+      cacheProfile: "long",
+      includeOwnerHeaders: false,
+    },
   );
 }
 
@@ -1701,7 +1962,10 @@ export async function fetchProductAnalysisIndex(params?: {
   if (params?.category) search.set("category", params.category);
   const query = search.toString();
   const path = query ? `/api/products/analysis/index?${query}` : "/api/products/analysis/index";
-  return apiFetch<ProductAnalysisIndexListResponse>(path);
+  return apiFetch<ProductAnalysisIndexListResponse>(path, {
+    cacheProfile: "short",
+    includeOwnerHeaders: false,
+  });
 }
 
 export async function fetchProductFeaturedSlots(params?: {
@@ -1711,7 +1975,10 @@ export async function fetchProductFeaturedSlots(params?: {
   if (params?.category) search.set("category", params.category);
   const query = search.toString();
   const path = query ? `/api/products/featured-slots?${query}` : "/api/products/featured-slots";
-  return apiFetch<ProductFeaturedSlotListResponse>(path);
+  return apiFetch<ProductFeaturedSlotListResponse>(path, {
+    cacheProfile: "short",
+    includeOwnerHeaders: false,
+  });
 }
 
 export async function setProductFeaturedSlot(payload: {
@@ -1822,7 +2089,9 @@ export async function fetchAIRuns(params?: {
   if (typeof params?.limit === "number") search.set("limit", String(params.limit));
   const query = search.toString();
   const path = query ? `/api/ai/runs?${query}` : "/api/ai/runs";
-  return apiFetch<AIRunView[]>(path);
+  return apiFetch<AIRunView[]>(path, {
+    cacheProfile: "dynamic",
+  });
 }
 
 export async function fetchLatestAIRunByJobId(jobId: string): Promise<AIRunView | null> {
@@ -1839,7 +2108,67 @@ export async function fetchAIMetricsSummary(params?: {
   if (typeof params?.sinceHours === "number") search.set("since_hours", String(params.sinceHours));
   const query = search.toString();
   const path = query ? `/api/ai/metrics/summary?${query}` : "/api/ai/metrics/summary";
-  return apiFetch<AIMetricsSummary>(path);
+  return apiFetch<AIMetricsSummary>(path, {
+    cacheProfile: "short",
+    includeOwnerHeaders: false,
+  });
+}
+
+function buildMobileAnalyticsQuery(params?: MobileAnalyticsQuery): string {
+  const search = new URLSearchParams();
+  if (typeof params?.sinceHours === "number") search.set("since_hours", String(params.sinceHours));
+  if (params?.dateFrom) search.set("date_from", params.dateFrom);
+  if (params?.dateTo) search.set("date_to", params.dateTo);
+  if (params?.category) search.set("category", params.category);
+  if (params?.page) search.set("page", params.page);
+  if (params?.stage) search.set("stage", params.stage);
+  if (params?.errorCode) search.set("error_code", params.errorCode);
+  if (params?.triggerReason) search.set("trigger_reason", params.triggerReason);
+  if (params?.sessionId) search.set("session_id", params.sessionId);
+  if (params?.compareId) search.set("compare_id", params.compareId);
+  if (params?.ownerId) search.set("owner_id", params.ownerId);
+  if (typeof params?.limit === "number") search.set("limit", String(params.limit));
+  return search.toString();
+}
+
+export async function fetchMobileAnalyticsOverview(params?: MobileAnalyticsQuery): Promise<MobileAnalyticsOverview> {
+  const query = buildMobileAnalyticsQuery(params);
+  const path = query ? `/api/products/analytics/mobile/overview?${query}` : "/api/products/analytics/mobile/overview";
+  return apiFetch<MobileAnalyticsOverview>(path, {
+    cacheProfile: "dynamic",
+  });
+}
+
+export async function fetchMobileAnalyticsFunnel(params?: MobileAnalyticsQuery): Promise<MobileAnalyticsFunnel> {
+  const query = buildMobileAnalyticsQuery(params);
+  const path = query ? `/api/products/analytics/mobile/funnel?${query}` : "/api/products/analytics/mobile/funnel";
+  return apiFetch<MobileAnalyticsFunnel>(path, {
+    cacheProfile: "dynamic",
+  });
+}
+
+export async function fetchMobileAnalyticsErrors(params?: MobileAnalyticsQuery): Promise<MobileAnalyticsErrors> {
+  const query = buildMobileAnalyticsQuery(params);
+  const path = query ? `/api/products/analytics/mobile/errors?${query}` : "/api/products/analytics/mobile/errors";
+  return apiFetch<MobileAnalyticsErrors>(path, {
+    cacheProfile: "dynamic",
+  });
+}
+
+export async function fetchMobileAnalyticsFeedback(params?: MobileAnalyticsQuery): Promise<MobileAnalyticsFeedback> {
+  const query = buildMobileAnalyticsQuery(params);
+  const path = query ? `/api/products/analytics/mobile/feedback?${query}` : "/api/products/analytics/mobile/feedback";
+  return apiFetch<MobileAnalyticsFeedback>(path, {
+    cacheProfile: "dynamic",
+  });
+}
+
+export async function fetchMobileAnalyticsSessions(params?: MobileAnalyticsQuery): Promise<MobileAnalyticsSessions> {
+  const query = buildMobileAnalyticsQuery(params);
+  const path = query ? `/api/products/analytics/mobile/sessions?${query}` : "/api/products/analytics/mobile/sessions";
+  return apiFetch<MobileAnalyticsSessions>(path, {
+    cacheProfile: "dynamic",
+  });
 }
 
 export async function resolveMobileSelection(
@@ -1852,7 +2181,9 @@ export async function resolveMobileSelection(
 }
 
 export async function fetchMobileSelectionSession(sessionId: string): Promise<MobileSelectionResolveResponse> {
-  return apiFetch<MobileSelectionResolveResponse>(`/api/mobile/selection/sessions/${encodeURIComponent(sessionId)}`);
+  return apiFetch<MobileSelectionResolveResponse>(`/api/mobile/selection/sessions/${encodeURIComponent(sessionId)}`, {
+    cacheProfile: "dynamic",
+  });
 }
 
 export async function fetchMobileSelectionFitExplanation(
@@ -1862,6 +2193,9 @@ export async function fetchMobileSelectionFitExplanation(
   if (!value) throw new Error("sessionId is required.");
   return apiFetch<MobileSelectionFitExplanationResponse>(
     `/api/mobile/selection/sessions/${encodeURIComponent(value)}/fit-explanation`,
+    {
+      cacheProfile: "dynamic",
+    },
   );
 }
 
@@ -1876,7 +2210,9 @@ export async function listMobileSelectionSessions(params?: {
   if (typeof params?.limit === "number") search.set("limit", String(params.limit));
   const query = search.toString();
   const path = query ? `/api/mobile/selection/sessions?${query}` : "/api/mobile/selection/sessions";
-  return apiFetch<MobileSelectionResolveResponse[]>(path);
+  return apiFetch<MobileSelectionResolveResponse[]>(path, {
+    cacheProfile: "dynamic",
+  });
 }
 
 export async function deleteMobileSelectionSessionsBatch(
@@ -1916,19 +2252,31 @@ export async function fetchMobileWikiProducts(params?: {
   if (typeof params?.limit === "number") search.set("limit", String(params.limit));
   const query = search.toString();
   const path = query ? `/api/mobile/wiki/products?${query}` : "/api/mobile/wiki/products";
-  return apiFetch<MobileWikiProductListResponse>(path);
+  return apiFetch<MobileWikiProductListResponse>(path, {
+    cacheProfile: "short",
+    includeOwnerHeaders: false,
+  });
 }
 
 export async function fetchMobileWikiProductDetail(productId: string): Promise<MobileWikiProductDetailResponse> {
   const value = productId.trim();
   if (!value) throw new Error("productId is required.");
-  return apiFetch<MobileWikiProductDetailResponse>(`/api/mobile/wiki/products/${encodeURIComponent(value)}`);
+  return apiFetch<MobileWikiProductDetailResponse>(`/api/mobile/wiki/products/${encodeURIComponent(value)}`, {
+    cacheProfile: "medium",
+    includeOwnerHeaders: false,
+  });
 }
 
 export async function fetchMobileWikiProductAnalysis(productId: string): Promise<MobileWikiProductAnalysisResponse> {
   const value = productId.trim();
   if (!value) throw new Error("productId is required.");
-  return apiFetch<MobileWikiProductAnalysisResponse>(`/api/mobile/wiki/products/${encodeURIComponent(value)}/analysis`);
+  return apiFetch<MobileWikiProductAnalysisResponse>(
+    `/api/mobile/wiki/products/${encodeURIComponent(value)}/analysis`,
+    {
+      cacheProfile: "long",
+      includeOwnerHeaders: false,
+    },
+  );
 }
 
 export async function fetchMobileBagItems(params?: {
@@ -1942,7 +2290,9 @@ export async function fetchMobileBagItems(params?: {
   if (typeof params?.limit === "number") search.set("limit", String(params.limit));
   const query = search.toString();
   const path = query ? `/api/mobile/bag/items?${query}` : "/api/mobile/bag/items";
-  return apiFetch<MobileBagListResponse>(path);
+  return apiFetch<MobileBagListResponse>(path, {
+    cacheProfile: "dynamic",
+  });
 }
 
 export async function upsertMobileBagItem(payload: {
@@ -1969,7 +2319,9 @@ export async function deleteMobileBagItem(itemId: string): Promise<{ status: str
 
 export async function fetchMobileCompareBootstrap(category?: MobileSelectionCategory): Promise<MobileCompareBootstrapResponse> {
   const query = category ? `?category=${encodeURIComponent(category)}` : "";
-  return apiFetch<MobileCompareBootstrapResponse>(`/api/mobile/compare/bootstrap${query}`);
+  return apiFetch<MobileCompareBootstrapResponse>(`/api/mobile/compare/bootstrap${query}`, {
+    cacheProfile: "dynamic",
+  });
 }
 
 export async function fetchMobileUserProducts(params?: {
@@ -1983,7 +2335,9 @@ export async function fetchMobileUserProducts(params?: {
   if (typeof params?.limit === "number") search.set("limit", String(params.limit));
   const query = search.toString();
   const path = query ? `/api/mobile/user-products?${query}` : "/api/mobile/user-products";
-  return apiFetch<MobileUserProductListResponse>(path);
+  return apiFetch<MobileUserProductListResponse>(path, {
+    cacheProfile: "dynamic",
+  });
 }
 
 export async function uploadMobileCompareCurrentProduct(input: {
@@ -2029,11 +2383,15 @@ export async function runMobileCompareJobStream(
 }
 
 export async function fetchMobileCompareResult(compareId: string): Promise<MobileCompareResult> {
-  return apiFetch<MobileCompareResult>(`/api/mobile/compare/results/${encodeURIComponent(compareId)}`);
+  return apiFetch<MobileCompareResult>(`/api/mobile/compare/results/${encodeURIComponent(compareId)}`, {
+    cacheProfile: "dynamic",
+  });
 }
 
 export async function fetchMobileCompareSession(compareId: string): Promise<MobileCompareSession> {
-  return apiFetch<MobileCompareSession>(`/api/mobile/compare/sessions/${encodeURIComponent(compareId)}`);
+  return apiFetch<MobileCompareSession>(`/api/mobile/compare/sessions/${encodeURIComponent(compareId)}`, {
+    cacheProfile: "dynamic",
+  });
 }
 
 export async function listMobileCompareSessions(params?: {
@@ -2047,7 +2405,9 @@ export async function listMobileCompareSessions(params?: {
   if (typeof params?.limit === "number") search.set("limit", String(params.limit));
   const query = search.toString();
   const path = query ? `/api/mobile/compare/sessions?${query}` : "/api/mobile/compare/sessions";
-  return apiFetch<MobileCompareSession[]>(path);
+  return apiFetch<MobileCompareSession[]>(path, {
+    cacheProfile: "dynamic",
+  });
 }
 
 export async function deleteMobileCompareSessionsBatch(
@@ -2337,13 +2697,17 @@ export async function listUploadIngestJobs(params?: {
   if (typeof params?.limit === "number") search.set("limit", String(params.limit));
   const query = search.toString();
   const path = query ? `/api/upload/jobs?${query}` : "/api/upload/jobs";
-  return apiFetch<UploadIngestJob[]>(path);
+  return apiFetch<UploadIngestJob[]>(path, {
+    cacheProfile: "dynamic",
+  });
 }
 
 export async function fetchUploadIngestJob(jobId: string): Promise<UploadIngestJob> {
   const value = jobId.trim();
   if (!value) throw new Error("jobId is required.");
-  return apiFetch<UploadIngestJob>(`/api/upload/jobs/${encodeURIComponent(value)}`);
+  return apiFetch<UploadIngestJob>(`/api/upload/jobs/${encodeURIComponent(value)}`, {
+    cacheProfile: "dynamic",
+  });
 }
 
 export async function cancelUploadIngestJob(jobId: string): Promise<UploadIngestJobCancelResponse> {

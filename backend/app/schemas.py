@@ -1419,6 +1419,166 @@ class MobileClientEventRequest(BaseModel):
     props: dict[str, Any] = Field(default_factory=dict)
 
 
+class MobileAnalyticsFilterState(BaseModel):
+    since_hours: Optional[int] = None
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+    category: Optional[str] = None
+    page: Optional[str] = None
+    stage: Optional[str] = None
+    error_code: Optional[str] = None
+    trigger_reason: Optional[str] = None
+    session_id: Optional[str] = None
+    compare_id: Optional[str] = None
+    owner_id: Optional[str] = None
+    limit: Optional[int] = None
+
+
+class MobileAnalyticsCountItem(BaseModel):
+    key: str
+    label: str
+    count: int = 0
+    rate: float = 0.0
+
+
+class MobileAnalyticsOverviewResponse(BaseModel):
+    status: str
+    filters: MobileAnalyticsFilterState
+    total_events: int = 0
+    sessions: int = 0
+    owners: int = 0
+    wiki_detail_views: int = 0
+    cta_expose: int = 0
+    cta_click: int = 0
+    cta_ctr: float = 0.0
+    use_page_views: int = 0
+    use_category_clicks: int = 0
+    use_to_compare_rate: float = 0.0
+    compare_run_start: int = 0
+    compare_run_success: int = 0
+    compare_completion_rate: float = 0.0
+    compare_result_view: int = 0
+    result_reach_rate: float = 0.0
+    feedback_prompt_show: int = 0
+    feedback_submit: int = 0
+    feedback_submit_rate: float = 0.0
+
+
+class MobileAnalyticsFunnelStep(BaseModel):
+    step_key: str
+    step_label: str
+    count: int = 0
+    from_prev_rate: float = 0.0
+    from_first_rate: float = 0.0
+
+
+class MobileAnalyticsFunnelResponse(BaseModel):
+    status: str
+    filters: MobileAnalyticsFilterState
+    steps: List[MobileAnalyticsFunnelStep] = Field(default_factory=list)
+
+
+class MobileAnalyticsStageErrorMatrixItem(BaseModel):
+    stage: str
+    stage_label: str
+    error_code: str
+    count: int = 0
+    rate: float = 0.0
+
+
+class MobileAnalyticsStageDurationItem(BaseModel):
+    stage: str
+    stage_label: str
+    samples: int = 0
+    avg_seconds: float = 0.0
+    p50_seconds: float = 0.0
+    p95_seconds: float = 0.0
+
+
+class MobileAnalyticsErrorsResponse(BaseModel):
+    status: str
+    filters: MobileAnalyticsFilterState
+    compare_run_start: int = 0
+    total_errors: int = 0
+    by_stage: List[MobileAnalyticsCountItem] = Field(default_factory=list)
+    by_error_code: List[MobileAnalyticsCountItem] = Field(default_factory=list)
+    stage_error_matrix: List[MobileAnalyticsStageErrorMatrixItem] = Field(default_factory=list)
+    stage_duration_estimates: List[MobileAnalyticsStageDurationItem] = Field(default_factory=list)
+
+
+class MobileAnalyticsFeedbackTextSample(BaseModel):
+    event_id: str
+    created_at: str
+    trigger_reason: Optional[str] = None
+    reason_label: Optional[str] = None
+    reason_text: Optional[str] = None
+    category: Optional[str] = None
+    compare_id: Optional[str] = None
+    stage: Optional[str] = None
+    session_id: Optional[str] = None
+
+
+class MobileAnalyticsFeedbackMatrixItem(BaseModel):
+    trigger_reason: str
+    reason_label: str
+    count: int = 0
+    rate: float = 0.0
+
+
+class MobileAnalyticsFeedbackResponse(BaseModel):
+    status: str
+    filters: MobileAnalyticsFilterState
+    total_prompts: int = 0
+    total_submissions: int = 0
+    by_trigger_reason: List[MobileAnalyticsCountItem] = Field(default_factory=list)
+    by_reason_label: List[MobileAnalyticsCountItem] = Field(default_factory=list)
+    trigger_reason_matrix: List[MobileAnalyticsFeedbackMatrixItem] = Field(default_factory=list)
+    recent_text_samples: List[MobileAnalyticsFeedbackTextSample] = Field(default_factory=list)
+
+
+class MobileAnalyticsSessionSummary(BaseModel):
+    session_id: str
+    owner_label: Optional[str] = None
+    category: Optional[str] = None
+    compare_id: Optional[str] = None
+    started_at: str
+    last_event_at: str
+    duration_seconds: float = 0.0
+    event_count: int = 0
+    outcome: str = "browsing"
+    latest_page: Optional[str] = None
+    latest_error_code: Optional[str] = None
+    latest_feedback_reason: Optional[str] = None
+    pages: List[str] = Field(default_factory=list)
+    events: List[str] = Field(default_factory=list)
+
+
+class MobileAnalyticsSessionEventItem(BaseModel):
+    event_id: str
+    created_at: str
+    name: str
+    page: Optional[str] = None
+    route: Optional[str] = None
+    category: Optional[str] = None
+    compare_id: Optional[str] = None
+    stage: Optional[str] = None
+    error_code: Optional[str] = None
+    detail: Optional[str] = None
+    trigger_reason: Optional[str] = None
+    reason_label: Optional[str] = None
+    dwell_ms: Optional[int] = None
+
+
+class MobileAnalyticsSessionsResponse(BaseModel):
+    status: str
+    filters: MobileAnalyticsFilterState
+    total: int = 0
+    selected_session_id: Optional[str] = None
+    selected_compare_id: Optional[str] = None
+    items: List[MobileAnalyticsSessionSummary] = Field(default_factory=list)
+    timeline: List[MobileAnalyticsSessionEventItem] = Field(default_factory=list)
+
+
 class MobileCompareSessionResultBrief(BaseModel):
     decision: Optional[Literal["keep", "switch", "hybrid"]] = None
     headline: Optional[str] = None

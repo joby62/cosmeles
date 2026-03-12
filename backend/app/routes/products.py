@@ -7,9 +7,9 @@ import io
 import zipfile
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from collections import defaultdict
+from collections import Counter, defaultdict
 from typing import Any, Callable
 
 from fastapi import APIRouter, Depends, Query, HTTPException
@@ -41,6 +41,7 @@ from app.db.models import (
     MobileSelectionSession,
     MobileBagItem,
     MobileCompareUsageStat,
+    MobileClientEvent,
 )
 from app.settings import settings
 from app.services.storage import (
@@ -127,6 +128,20 @@ from app.schemas import (
     ProductAnalysisStoredResult,
     ProductAnalysisResult,
     ProductAnalysisContextPayload,
+    MobileAnalyticsFilterState,
+    MobileAnalyticsCountItem,
+    MobileAnalyticsOverviewResponse,
+    MobileAnalyticsFunnelStep,
+    MobileAnalyticsFunnelResponse,
+    MobileAnalyticsStageErrorMatrixItem,
+    MobileAnalyticsStageDurationItem,
+    MobileAnalyticsErrorsResponse,
+    MobileAnalyticsFeedbackTextSample,
+    MobileAnalyticsFeedbackMatrixItem,
+    MobileAnalyticsFeedbackResponse,
+    MobileAnalyticsSessionSummary,
+    MobileAnalyticsSessionEventItem,
+    MobileAnalyticsSessionsResponse,
 )
 
 router = APIRouter(prefix="/api", tags=["products"])
@@ -210,6 +225,847 @@ class IngredientLibraryBuildCancelledError(RuntimeError):
 
 class ProductWorkbenchJobCancelledError(RuntimeError):
     pass
+
+
+ANALYTICS_DEFAULT_SINCE_HOURS = 24 * 7
+ANALYTICS_MAX_SESSION_LIMIT = 50
+ANALYTICS_SESSION_SCAN_LIMIT = 4000
+ANALYTICS_STAGE_LABELS: dict[str, str] = {
+    "uploading": "上传当前在用产品",
+    "prepare": "准备对比任务",
+    "resolve_targets": "读取待对比产品",
+    "resolve_target": "整理产品信息",
+    "stage1_vision": "识别图片文字",
+    "stage2_struct": "结构化成分信息",
+    "pair_compare": "生成两两分析",
+    "finalize": "整理最终结论",
+    "done": "对比完成",
+}
+ANALYTICS_FUNNEL_STEPS: tuple[tuple[str, str], ...] = (
+    ("wiki_detail_view", "百科详情页"),
+    ("wiki_upload_cta_expose", "上传 CTA 曝光"),
+    ("wiki_upload_cta_click", "上传 CTA 点击"),
+    ("my_use_page_view", "我的在用页"),
+    ("my_use_category_click", "品类卡点击"),
+    ("compare_page_view", "横向对比页"),
+    ("compare_run_start", "开始分析"),
+    ("compare_run_success", "分析成功"),
+    ("compare_result_view", "结果页到达"),
+)
+
+
+def _normalize_optional_text(value: Any) -> str | None:
+    text = str(value or "").strip()
+    return text or None
+
+
+def _mask_owner_id(value: str | None) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if len(text) <= 8:
+        return text
+    return f"{text[:4]}…{text[-4:]}"
+
+
+def _analytics_datetime_to_iso(value: datetime) -> str:
+    return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def _parse_analytics_datetime(value: str | None, *, end_of_day: bool = False) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+            parsed = datetime.fromisoformat(text)
+            if end_of_day:
+                parsed = parsed.replace(hour=23, minute=59, second=59, microsecond=999999)
+            else:
+                parsed = parsed.replace(hour=0, minute=0, second=0, microsecond=0)
+            return parsed.replace(tzinfo=timezone.utc)
+        if text.endswith("Z"):
+            text = f"{text[:-1]}+00:00"
+        parsed = datetime.fromisoformat(text)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid datetime value: {value}.")
+
+
+def _resolve_mobile_analytics_filters(
+    *,
+    since_hours: int | None,
+    date_from: str | None,
+    date_to: str | None,
+    category: str | None,
+    page: str | None,
+    stage: str | None,
+    error_code: str | None,
+    trigger_reason: str | None,
+    session_id: str | None,
+    compare_id: str | None,
+    owner_id: str | None,
+    limit: int | None = None,
+) -> tuple[MobileAnalyticsFilterState, str, str]:
+    category_value = _normalize_optional_text(category)
+    if category_value and category_value.lower() not in VALID_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Invalid category: {category_value}.")
+
+    since_hours_value = since_hours
+    if since_hours_value is not None and since_hours_value <= 0:
+        raise HTTPException(status_code=400, detail="since_hours must be positive.")
+
+    now_utc = datetime.now(timezone.utc)
+    start_dt = _parse_analytics_datetime(date_from, end_of_day=False)
+    end_dt = _parse_analytics_datetime(date_to, end_of_day=True)
+
+    if start_dt is None and end_dt is None:
+        since_hours_value = since_hours_value or ANALYTICS_DEFAULT_SINCE_HOURS
+        start_dt = now_utc - timedelta(hours=since_hours_value)
+        end_dt = now_utc
+    elif start_dt is None and end_dt is not None:
+        since_hours_value = since_hours_value or ANALYTICS_DEFAULT_SINCE_HOURS
+        start_dt = end_dt - timedelta(hours=since_hours_value)
+    elif start_dt is not None and end_dt is None:
+        end_dt = now_utc
+
+    if start_dt is None or end_dt is None:
+        raise HTTPException(status_code=400, detail="Failed to resolve analytics time window.")
+    if start_dt > end_dt:
+        raise HTTPException(status_code=400, detail="date_from must be earlier than date_to.")
+
+    filters = MobileAnalyticsFilterState(
+        since_hours=since_hours_value,
+        date_from=_normalize_optional_text(date_from),
+        date_to=_normalize_optional_text(date_to),
+        category=category_value.lower() if category_value else None,
+        page=_normalize_optional_text(page),
+        stage=_normalize_optional_text(stage),
+        error_code=_normalize_optional_text(error_code),
+        trigger_reason=_normalize_optional_text(trigger_reason),
+        session_id=_normalize_optional_text(session_id),
+        compare_id=_normalize_optional_text(compare_id),
+        owner_id=_normalize_optional_text(owner_id),
+        limit=limit,
+    )
+    return filters, _analytics_datetime_to_iso(start_dt), _analytics_datetime_to_iso(end_dt)
+
+
+def _safe_event_props(value: str | None) -> dict[str, Any]:
+    text = str(value or "").strip()
+    if not text:
+        return {}
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return parsed
+        return {}
+    except json.JSONDecodeError:
+        return {}
+
+
+def _query_mobile_client_events(
+    *,
+    db: Session,
+    filters: MobileAnalyticsFilterState,
+    start_iso: str,
+    end_iso: str,
+    names: list[str] | None = None,
+    desc: bool = False,
+    row_limit: int | None = None,
+) -> list[tuple[MobileClientEvent, dict[str, Any]]]:
+    stmt = select(MobileClientEvent).where(
+        MobileClientEvent.created_at >= start_iso,
+        MobileClientEvent.created_at <= end_iso,
+    )
+    if filters.category:
+        stmt = stmt.where(MobileClientEvent.category == filters.category)
+    if filters.page:
+        stmt = stmt.where(MobileClientEvent.page == filters.page)
+    if filters.stage:
+        stmt = stmt.where(MobileClientEvent.stage == filters.stage)
+    if filters.error_code:
+        stmt = stmt.where(MobileClientEvent.error_code == filters.error_code)
+    if filters.session_id:
+        stmt = stmt.where(MobileClientEvent.session_id == filters.session_id)
+    if filters.compare_id:
+        stmt = stmt.where(MobileClientEvent.compare_id == filters.compare_id)
+    if filters.owner_id:
+        stmt = stmt.where(MobileClientEvent.owner_id == filters.owner_id)
+    if names:
+        stmt = stmt.where(MobileClientEvent.name.in_(names))
+
+    stmt = stmt.order_by(MobileClientEvent.created_at.desc() if desc else MobileClientEvent.created_at.asc())
+    if row_limit is not None and row_limit > 0:
+        stmt = stmt.limit(row_limit)
+
+    rows = db.execute(stmt).scalars().all()
+    out: list[tuple[MobileClientEvent, dict[str, Any]]] = []
+    for row in rows:
+        props = _safe_event_props(row.props_json)
+        if filters.trigger_reason:
+            trigger_reason = _normalize_optional_text(props.get("trigger_reason"))
+            if trigger_reason != filters.trigger_reason:
+                continue
+        out.append((row, props))
+    return out
+
+
+def _session_key_for_event(row: MobileClientEvent) -> str:
+    session_id = _normalize_optional_text(row.session_id)
+    if session_id:
+        return session_id
+    compare_id = _normalize_optional_text(row.compare_id)
+    if compare_id:
+        return f"compare::{compare_id}"
+    return f"event::{row.event_id}"
+
+
+def _compare_key_for_event(row: MobileClientEvent) -> str:
+    compare_id = _normalize_optional_text(row.compare_id)
+    if compare_id:
+        return compare_id
+    session_id = _normalize_optional_text(row.session_id)
+    if session_id:
+        return f"session::{session_id}"
+    return row.event_id
+
+
+def _rate(numerator: int, denominator: int) -> float:
+    if denominator <= 0:
+        return 0.0
+    return round(float(numerator) / float(denominator), 4)
+
+
+def _stage_label(stage: str | None, props: dict[str, Any] | None = None) -> str:
+    props = props or {}
+    prop_label = _normalize_optional_text(props.get("stage_label"))
+    if prop_label:
+        return prop_label
+    key = str(stage or "").strip()
+    return ANALYTICS_STAGE_LABELS.get(key, key or "-")
+
+
+def _event_detail(row: MobileClientEvent, props: dict[str, Any]) -> str | None:
+    return (
+        _normalize_optional_text(row.error_detail)
+        or _normalize_optional_text(props.get("detail"))
+        or _normalize_optional_text(props.get("error"))
+        or _normalize_optional_text(props.get("reason_text"))
+    )
+
+
+def _percentile(values: list[float], percentile: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return round(float(ordered[0]), 2)
+    index = int(round((len(ordered) - 1) * percentile))
+    index = max(0, min(index, len(ordered) - 1))
+    return round(float(ordered[index]), 2)
+
+
+def _build_count_items(counter: Counter[str], *, denominator: int, label_map: dict[str, str] | None = None) -> list[MobileAnalyticsCountItem]:
+    label_map = label_map or {}
+    items = sorted(counter.items(), key=lambda item: (-item[1], label_map.get(item[0], item[0])))
+    return [
+        MobileAnalyticsCountItem(
+            key=key,
+            label=label_map.get(key, key),
+            count=count,
+            rate=_rate(count, denominator),
+        )
+        for key, count in items
+    ]
+
+
+@router.get("/products/analytics/mobile/overview", response_model=MobileAnalyticsOverviewResponse)
+def get_mobile_analytics_overview(
+    since_hours: int | None = Query(None, ge=1, le=24 * 365),
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
+    category: str | None = Query(None),
+    page: str | None = Query(None),
+    stage: str | None = Query(None),
+    error_code: str | None = Query(None),
+    trigger_reason: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    filters, start_iso, end_iso = _resolve_mobile_analytics_filters(
+        since_hours=since_hours,
+        date_from=date_from,
+        date_to=date_to,
+        category=category,
+        page=page,
+        stage=stage,
+        error_code=error_code,
+        trigger_reason=trigger_reason,
+        session_id=None,
+        compare_id=None,
+        owner_id=None,
+    )
+    rows = _query_mobile_client_events(
+        db=db,
+        filters=filters,
+        start_iso=start_iso,
+        end_iso=end_iso,
+        names=[
+            "page_view",
+            "wiki_upload_cta_expose",
+            "wiki_upload_cta_click",
+            "my_use_category_card_click",
+            "compare_run_start",
+            "compare_run_success",
+            "compare_result_view",
+            "feedback_prompt_show",
+            "feedback_submit",
+        ],
+    )
+
+    session_ids = {
+        row.session_id.strip()
+        for row, _props in rows
+        if isinstance(row.session_id, str) and row.session_id.strip()
+    }
+    owner_ids = {
+        row.owner_id.strip()
+        for row, _props in rows
+        if isinstance(row.owner_id, str) and row.owner_id.strip()
+    }
+    wiki_detail_views = {
+        row.session_id.strip()
+        for row, _props in rows
+        if row.name == "page_view" and str(row.page or "").strip() == "wiki_product_detail" and str(row.session_id or "").strip()
+    }
+    cta_expose = {
+        row.session_id.strip()
+        for row, _props in rows
+        if row.name == "wiki_upload_cta_expose" and str(row.session_id or "").strip()
+    }
+    cta_click = {
+        row.session_id.strip()
+        for row, _props in rows
+        if row.name == "wiki_upload_cta_click" and str(row.session_id or "").strip()
+    }
+    use_page_views = {
+        row.session_id.strip()
+        for row, _props in rows
+        if row.name == "page_view" and str(row.page or "").strip() == "my_use" and str(row.session_id or "").strip()
+    }
+    use_category_clicks = {
+        row.session_id.strip()
+        for row, _props in rows
+        if row.name == "my_use_category_card_click" and str(row.session_id or "").strip()
+    }
+    compare_run_start_keys = {
+        _compare_key_for_event(row)
+        for row, _props in rows
+        if row.name == "compare_run_start"
+    }
+    compare_run_success_keys = {
+        _compare_key_for_event(row)
+        for row, _props in rows
+        if row.name == "compare_run_success"
+    }
+    compare_result_view_keys = {
+        _compare_key_for_event(row)
+        for row, _props in rows
+        if row.name == "compare_result_view"
+    }
+    feedback_prompt_show = sum(1 for row, _props in rows if row.name == "feedback_prompt_show")
+    feedback_submit = sum(1 for row, _props in rows if row.name == "feedback_submit")
+
+    return MobileAnalyticsOverviewResponse(
+        status="ok",
+        filters=filters,
+        total_events=len(rows),
+        sessions=len(session_ids),
+        owners=len(owner_ids),
+        wiki_detail_views=len(wiki_detail_views),
+        cta_expose=len(cta_expose),
+        cta_click=len(cta_click),
+        cta_ctr=_rate(len(cta_click), len(cta_expose)),
+        use_page_views=len(use_page_views),
+        use_category_clicks=len(use_category_clicks),
+        use_to_compare_rate=_rate(len(compare_run_start_keys), len(use_page_views)),
+        compare_run_start=len(compare_run_start_keys),
+        compare_run_success=len(compare_run_success_keys),
+        compare_completion_rate=_rate(len(compare_run_success_keys), len(compare_run_start_keys)),
+        compare_result_view=len(compare_result_view_keys),
+        result_reach_rate=_rate(len(compare_result_view_keys), len(compare_run_success_keys)),
+        feedback_prompt_show=feedback_prompt_show,
+        feedback_submit=feedback_submit,
+        feedback_submit_rate=_rate(feedback_submit, feedback_prompt_show),
+    )
+
+
+@router.get("/products/analytics/mobile/funnel", response_model=MobileAnalyticsFunnelResponse)
+def get_mobile_analytics_funnel(
+    since_hours: int | None = Query(None, ge=1, le=24 * 365),
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
+    category: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    filters, start_iso, end_iso = _resolve_mobile_analytics_filters(
+        since_hours=since_hours,
+        date_from=date_from,
+        date_to=date_to,
+        category=category,
+        page=None,
+        stage=None,
+        error_code=None,
+        trigger_reason=None,
+        session_id=None,
+        compare_id=None,
+        owner_id=None,
+    )
+    rows = _query_mobile_client_events(
+        db=db,
+        filters=filters,
+        start_iso=start_iso,
+        end_iso=end_iso,
+        names=[
+            "page_view",
+            "wiki_upload_cta_expose",
+            "wiki_upload_cta_click",
+            "my_use_category_card_click",
+            "compare_run_start",
+            "compare_run_success",
+            "compare_result_view",
+        ],
+    )
+
+    step_sessions: dict[str, set[str]] = {
+        key: set() for key, _label in ANALYTICS_FUNNEL_STEPS
+    }
+    for row, _props in rows:
+        session_id = _normalize_optional_text(row.session_id)
+        if not session_id:
+            continue
+        if row.name == "page_view" and str(row.page or "").strip() == "wiki_product_detail":
+            step_sessions["wiki_detail_view"].add(session_id)
+        elif row.name == "wiki_upload_cta_expose":
+            step_sessions["wiki_upload_cta_expose"].add(session_id)
+        elif row.name == "wiki_upload_cta_click":
+            step_sessions["wiki_upload_cta_click"].add(session_id)
+        elif row.name == "page_view" and str(row.page or "").strip() == "my_use":
+            step_sessions["my_use_page_view"].add(session_id)
+        elif row.name == "my_use_category_card_click":
+            step_sessions["my_use_category_click"].add(session_id)
+        elif row.name == "page_view" and str(row.page or "").strip() == "mobile_compare":
+            step_sessions["compare_page_view"].add(session_id)
+        elif row.name == "compare_run_start":
+            step_sessions["compare_run_start"].add(session_id)
+        elif row.name == "compare_run_success":
+            step_sessions["compare_run_success"].add(session_id)
+        elif row.name == "compare_result_view":
+            step_sessions["compare_result_view"].add(session_id)
+
+    steps: list[MobileAnalyticsFunnelStep] = []
+    first_count = 0
+    previous_count = 0
+    for index, (step_key, step_label) in enumerate(ANALYTICS_FUNNEL_STEPS):
+        count = len(step_sessions[step_key])
+        if index == 0:
+            first_count = count
+            previous_count = count
+        steps.append(
+            MobileAnalyticsFunnelStep(
+                step_key=step_key,
+                step_label=step_label,
+                count=count,
+                from_prev_rate=1.0 if index == 0 and count > 0 else _rate(count, previous_count),
+                from_first_rate=1.0 if index == 0 and count > 0 else _rate(count, first_count),
+            )
+        )
+        previous_count = count
+
+    return MobileAnalyticsFunnelResponse(status="ok", filters=filters, steps=steps)
+
+
+@router.get("/products/analytics/mobile/errors", response_model=MobileAnalyticsErrorsResponse)
+def get_mobile_analytics_errors(
+    since_hours: int | None = Query(None, ge=1, le=24 * 365),
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
+    category: str | None = Query(None),
+    stage: str | None = Query(None),
+    error_code: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    filters, start_iso, end_iso = _resolve_mobile_analytics_filters(
+        since_hours=since_hours,
+        date_from=date_from,
+        date_to=date_to,
+        category=category,
+        page=None,
+        stage=stage,
+        error_code=error_code,
+        trigger_reason=None,
+        session_id=None,
+        compare_id=None,
+        owner_id=None,
+    )
+    rows = _query_mobile_client_events(
+        db=db,
+        filters=filters,
+        start_iso=start_iso,
+        end_iso=end_iso,
+        names=[
+            "compare_upload_fail",
+            "compare_stage_error",
+            "compare_stage_progress",
+            "compare_run_start",
+            "compare_run_success",
+        ],
+    )
+
+    compare_run_start = {
+        _compare_key_for_event(row)
+        for row, _props in rows
+        if row.name == "compare_run_start"
+    }
+    error_signature_seen: set[str] = set()
+    error_rows: list[tuple[MobileClientEvent, dict[str, Any]]] = []
+    for row, props in rows:
+        if row.name not in {"compare_upload_fail", "compare_stage_error"}:
+            continue
+        detail = _event_detail(row, props) or ""
+        signature = "|".join(
+            [
+                _compare_key_for_event(row),
+                str(row.name or "").strip(),
+                str(row.stage or "").strip(),
+                str(row.error_code or "").strip(),
+                detail,
+            ]
+        )
+        if signature in error_signature_seen:
+            continue
+        error_signature_seen.add(signature)
+        error_rows.append((row, props))
+
+    stage_counter: Counter[str] = Counter()
+    stage_label_map: dict[str, str] = {}
+    error_code_counter: Counter[str] = Counter()
+    matrix_counter: Counter[tuple[str, str]] = Counter()
+    for row, props in error_rows:
+        stage_key = _normalize_optional_text(row.stage) or "unknown"
+        stage_counter[stage_key] += 1
+        stage_label_map[stage_key] = _stage_label(stage_key, props)
+        error_key = _normalize_optional_text(row.error_code) or "unknown"
+        error_code_counter[error_key] += 1
+        matrix_counter[(stage_key, error_key)] += 1
+
+    progress_by_compare: dict[str, list[tuple[datetime, MobileClientEvent, dict[str, Any]]]] = defaultdict(list)
+    success_at_by_compare: dict[str, datetime] = {}
+    for row, props in rows:
+        compare_key = _normalize_optional_text(row.compare_id)
+        if not compare_key:
+            continue
+        created_at = _parse_utc_datetime(str(row.created_at or "").strip())
+        if created_at is None:
+            continue
+        if row.name == "compare_stage_progress":
+            progress_by_compare[compare_key].append((created_at, row, props))
+        elif row.name == "compare_run_success":
+            success_at_by_compare[compare_key] = created_at
+
+    duration_by_stage: dict[str, list[float]] = defaultdict(list)
+    duration_label_map: dict[str, str] = {}
+    for compare_key, items in progress_by_compare.items():
+        ordered = sorted(items, key=lambda item: item[0])
+        for index, current in enumerate(ordered):
+            current_dt, current_row, current_props = current
+            next_dt: datetime | None = ordered[index + 1][0] if index + 1 < len(ordered) else success_at_by_compare.get(compare_key)
+            if next_dt is None or next_dt < current_dt:
+                continue
+            stage_key = _normalize_optional_text(current_row.stage) or "unknown"
+            duration_by_stage[stage_key].append(float((next_dt - current_dt).total_seconds()))
+            duration_label_map[stage_key] = _stage_label(stage_key, current_props)
+
+    total_errors = len(error_rows)
+    stage_error_matrix = [
+        MobileAnalyticsStageErrorMatrixItem(
+            stage=stage_key,
+            stage_label=stage_label_map.get(stage_key, stage_key),
+            error_code=error_key,
+            count=count,
+            rate=_rate(count, total_errors),
+        )
+        for (stage_key, error_key), count in sorted(matrix_counter.items(), key=lambda item: (-item[1], item[0][0], item[0][1]))
+    ]
+    stage_duration_estimates = [
+        MobileAnalyticsStageDurationItem(
+            stage=stage_key,
+            stage_label=duration_label_map.get(stage_key, stage_key),
+            samples=len(values),
+            avg_seconds=round(sum(values) / len(values), 2) if values else 0.0,
+            p50_seconds=_percentile(values, 0.5),
+            p95_seconds=_percentile(values, 0.95),
+        )
+        for stage_key, values in sorted(duration_by_stage.items(), key=lambda item: (-len(item[1]), item[0]))
+    ]
+
+    return MobileAnalyticsErrorsResponse(
+        status="ok",
+        filters=filters,
+        compare_run_start=len(compare_run_start),
+        total_errors=total_errors,
+        by_stage=_build_count_items(stage_counter, denominator=total_errors, label_map=stage_label_map),
+        by_error_code=_build_count_items(error_code_counter, denominator=total_errors),
+        stage_error_matrix=stage_error_matrix,
+        stage_duration_estimates=stage_duration_estimates,
+    )
+
+
+@router.get("/products/analytics/mobile/feedback", response_model=MobileAnalyticsFeedbackResponse)
+def get_mobile_analytics_feedback(
+    since_hours: int | None = Query(None, ge=1, le=24 * 365),
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
+    category: str | None = Query(None),
+    trigger_reason: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    filters, start_iso, end_iso = _resolve_mobile_analytics_filters(
+        since_hours=since_hours,
+        date_from=date_from,
+        date_to=date_to,
+        category=category,
+        page=None,
+        stage=None,
+        error_code=None,
+        trigger_reason=trigger_reason,
+        session_id=None,
+        compare_id=None,
+        owner_id=None,
+    )
+    rows = _query_mobile_client_events(
+        db=db,
+        filters=filters,
+        start_iso=start_iso,
+        end_iso=end_iso,
+        names=["feedback_prompt_show", "feedback_submit", "feedback_skip"],
+        desc=True,
+    )
+
+    prompt_counter: Counter[str] = Counter()
+    reason_counter: Counter[str] = Counter()
+    matrix_counter: Counter[tuple[str, str]] = Counter()
+    text_samples: list[MobileAnalyticsFeedbackTextSample] = []
+    total_prompts = 0
+    total_submissions = 0
+
+    for row, props in rows:
+        trigger = _normalize_optional_text(props.get("trigger_reason")) or "unknown"
+        if row.name == "feedback_prompt_show":
+            total_prompts += 1
+            prompt_counter[trigger] += 1
+            continue
+        if row.name != "feedback_submit":
+            continue
+        total_submissions += 1
+        reason = _normalize_optional_text(props.get("reason_label")) or "unknown"
+        reason_counter[reason] += 1
+        matrix_counter[(trigger, reason)] += 1
+        text_value = _normalize_optional_text(props.get("reason_text"))
+        if text_value:
+            text_samples.append(
+                MobileAnalyticsFeedbackTextSample(
+                    event_id=row.event_id,
+                    created_at=str(row.created_at or ""),
+                    trigger_reason=trigger,
+                    reason_label=reason,
+                    reason_text=text_value,
+                    category=_normalize_optional_text(row.category),
+                    compare_id=_normalize_optional_text(row.compare_id),
+                    stage=_normalize_optional_text(row.stage),
+                    session_id=_normalize_optional_text(row.session_id),
+                )
+            )
+
+    matrix_items = [
+        MobileAnalyticsFeedbackMatrixItem(
+            trigger_reason=trigger,
+            reason_label=reason,
+            count=count,
+            rate=_rate(count, total_submissions),
+        )
+        for (trigger, reason), count in sorted(matrix_counter.items(), key=lambda item: (-item[1], item[0][0], item[0][1]))
+    ]
+
+    return MobileAnalyticsFeedbackResponse(
+        status="ok",
+        filters=filters,
+        total_prompts=total_prompts,
+        total_submissions=total_submissions,
+        by_trigger_reason=_build_count_items(prompt_counter, denominator=total_prompts),
+        by_reason_label=_build_count_items(reason_counter, denominator=total_submissions),
+        trigger_reason_matrix=matrix_items,
+        recent_text_samples=text_samples[:12],
+    )
+
+
+@router.get("/products/analytics/mobile/sessions", response_model=MobileAnalyticsSessionsResponse)
+def get_mobile_analytics_sessions(
+    since_hours: int | None = Query(None, ge=1, le=24 * 365),
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
+    category: str | None = Query(None),
+    page: str | None = Query(None),
+    stage: str | None = Query(None),
+    error_code: str | None = Query(None),
+    trigger_reason: str | None = Query(None),
+    session_id: str | None = Query(None),
+    compare_id: str | None = Query(None),
+    owner_id: str | None = Query(None),
+    limit: int = Query(12, ge=1, le=ANALYTICS_MAX_SESSION_LIMIT),
+    db: Session = Depends(get_db),
+):
+    filters, start_iso, end_iso = _resolve_mobile_analytics_filters(
+        since_hours=since_hours,
+        date_from=date_from,
+        date_to=date_to,
+        category=category,
+        page=page,
+        stage=stage,
+        error_code=error_code,
+        trigger_reason=trigger_reason,
+        session_id=session_id,
+        compare_id=compare_id,
+        owner_id=owner_id,
+        limit=limit,
+    )
+    row_limit = None if filters.session_id or filters.compare_id or filters.owner_id else ANALYTICS_SESSION_SCAN_LIMIT
+    rows = _query_mobile_client_events(
+        db=db,
+        filters=filters,
+        start_iso=start_iso,
+        end_iso=end_iso,
+        desc=True,
+        row_limit=row_limit,
+    )
+
+    grouped: dict[str, list[tuple[MobileClientEvent, dict[str, Any]]]] = defaultdict(list)
+    for row, props in rows:
+        grouped[_session_key_for_event(row)].append((row, props))
+
+    summaries: list[tuple[MobileAnalyticsSessionSummary, list[tuple[MobileClientEvent, dict[str, Any]]]]] = []
+    for group_key, group_rows in grouped.items():
+        ordered = sorted(group_rows, key=lambda item: str(item[0].created_at or ""))
+        first_row = ordered[0][0]
+        last_row = ordered[-1][0]
+        started_at = _parse_utc_datetime(str(first_row.created_at or "").strip())
+        last_event_at = _parse_utc_datetime(str(last_row.created_at or "").strip())
+        category_counter: Counter[str] = Counter()
+        pages: list[str] = []
+        seen_pages: set[str] = set()
+        seen_events: set[str] = set()
+        events: list[str] = []
+        compare_value: str | None = None
+        latest_error_code: str | None = None
+        latest_feedback_reason: str | None = None
+        outcome = "browsing"
+
+        for row, props in ordered:
+            category_value = _normalize_optional_text(row.category)
+            if category_value:
+                category_counter[category_value] += 1
+            page_value = _normalize_optional_text(row.page)
+            if page_value and page_value not in seen_pages:
+                seen_pages.add(page_value)
+                pages.append(page_value)
+            if row.name not in seen_events:
+                seen_events.add(row.name)
+                events.append(row.name)
+            compare_value = _normalize_optional_text(row.compare_id) or compare_value
+            latest_error_code = _normalize_optional_text(row.error_code) or latest_error_code
+            latest_feedback_reason = _normalize_optional_text(props.get("reason_label")) or latest_feedback_reason
+
+            if row.name == "compare_result_view":
+                outcome = "result_viewed"
+            elif outcome != "result_viewed" and row.name == "feedback_submit":
+                outcome = "feedback_submitted"
+            elif outcome not in {"result_viewed", "feedback_submitted"} and row.name in {"compare_stage_error", "compare_upload_fail", "compare_run_error"}:
+                outcome = "compare_failed"
+            elif outcome == "browsing" and row.name == "compare_run_success":
+                outcome = "compare_completed"
+            elif outcome == "browsing" and row.name == "wiki_upload_cta_click":
+                outcome = "cta_engaged"
+
+        summary = MobileAnalyticsSessionSummary(
+            session_id=group_key,
+            owner_label=_mask_owner_id(first_row.owner_id),
+            category=category_counter.most_common(1)[0][0] if category_counter else _normalize_optional_text(first_row.category),
+            compare_id=compare_value,
+            started_at=str(first_row.created_at or ""),
+            last_event_at=str(last_row.created_at or ""),
+            duration_seconds=round(float((last_event_at - started_at).total_seconds()), 2)
+            if started_at and last_event_at and last_event_at >= started_at
+            else 0.0,
+            event_count=len(ordered),
+            outcome=outcome,
+            latest_page=_normalize_optional_text(last_row.page),
+            latest_error_code=latest_error_code,
+            latest_feedback_reason=latest_feedback_reason,
+            pages=pages,
+            events=events[:8],
+        )
+        summaries.append((summary, ordered))
+
+    summaries.sort(key=lambda item: item[0].last_event_at, reverse=True)
+    visible_summaries = summaries[:limit]
+
+    selected_group_key = filters.session_id
+    if selected_group_key is None and filters.compare_id:
+        for summary, _group_rows in visible_summaries:
+            if summary.compare_id == filters.compare_id:
+                selected_group_key = summary.session_id
+                break
+    if selected_group_key is None and visible_summaries:
+        selected_group_key = visible_summaries[0][0].session_id
+
+    timeline: list[MobileAnalyticsSessionEventItem] = []
+    selected_compare_id: str | None = None
+    for summary, group_rows in summaries:
+        if summary.session_id != selected_group_key:
+            continue
+        selected_compare_id = summary.compare_id
+        for row, props in group_rows:
+            timeline.append(
+                MobileAnalyticsSessionEventItem(
+                    event_id=row.event_id,
+                    created_at=str(row.created_at or ""),
+                    name=row.name,
+                    page=_normalize_optional_text(row.page),
+                    route=_normalize_optional_text(row.route),
+                    category=_normalize_optional_text(row.category),
+                    compare_id=_normalize_optional_text(row.compare_id),
+                    stage=_normalize_optional_text(row.stage),
+                    error_code=_normalize_optional_text(row.error_code),
+                    detail=_event_detail(row, props),
+                    trigger_reason=_normalize_optional_text(props.get("trigger_reason")),
+                    reason_label=_normalize_optional_text(props.get("reason_label")),
+                    dwell_ms=row.dwell_ms,
+                )
+            )
+        break
+
+    return MobileAnalyticsSessionsResponse(
+        status="ok",
+        filters=filters,
+        total=len(summaries),
+        selected_session_id=selected_group_key,
+        selected_compare_id=selected_compare_id,
+        items=[summary for summary, _group_rows in visible_summaries],
+        timeline=timeline,
+    )
+
 
 @router.get("/products", response_model=list[ProductCard])
 def list_products(
