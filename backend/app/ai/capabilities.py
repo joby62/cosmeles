@@ -13,6 +13,8 @@ from app.schemas import (
     BodywashProductAnalysisResult,
     CleanserProductAnalysisResult,
     ConditionerProductAnalysisResult,
+    MobileSelectionResultAIContent,
+    MobileSelectionResultContextPayload,
     LotionProductAnalysisResult,
     ProductAnalysisContextPayload,
     ShampooProductAnalysisResult,
@@ -41,6 +43,11 @@ SUPPORTED_CAPABILITIES = {
     "doubao.product_profile_conditioner",
     "doubao.product_profile_lotion",
     "doubao.product_profile_cleanser",
+    "doubao.mobile_selection_result_shampoo",
+    "doubao.mobile_selection_result_bodywash",
+    "doubao.mobile_selection_result_conditioner",
+    "doubao.mobile_selection_result_lotion",
+    "doubao.mobile_selection_result_cleanser",
 }
 
 MODEL_TIER_VALUES = {"mini", "lite", "pro"}
@@ -107,6 +114,16 @@ def execute_capability(
         return _cap_product_profile("lotion", input_payload, trace_id, event_callback=event_callback)
     if capability == "doubao.product_profile_cleanser":
         return _cap_product_profile("cleanser", input_payload, trace_id, event_callback=event_callback)
+    if capability == "doubao.mobile_selection_result_shampoo":
+        return _cap_mobile_selection_result("shampoo", input_payload, trace_id, event_callback=event_callback)
+    if capability == "doubao.mobile_selection_result_bodywash":
+        return _cap_mobile_selection_result("bodywash", input_payload, trace_id, event_callback=event_callback)
+    if capability == "doubao.mobile_selection_result_conditioner":
+        return _cap_mobile_selection_result("conditioner", input_payload, trace_id, event_callback=event_callback)
+    if capability == "doubao.mobile_selection_result_lotion":
+        return _cap_mobile_selection_result("lotion", input_payload, trace_id, event_callback=event_callback)
+    if capability == "doubao.mobile_selection_result_cleanser":
+        return _cap_mobile_selection_result("cleanser", input_payload, trace_id, event_callback=event_callback)
 
     raise AIServiceError(
         code="capability_not_supported",
@@ -990,6 +1007,121 @@ def _cap_product_profile(
     )
 
 
+def _cap_mobile_selection_result(
+    category: str,
+    input_payload: dict[str, Any],
+    trace_id: str | None,
+    event_callback: Callable[[dict[str, Any]], None] | None = None,
+) -> CapabilityExecutionResult:
+    normalized_category = str(category or "").strip().lower()
+    if normalized_category not in PRODUCT_PROFILE_SUPPORTED_CATEGORIES:
+        raise AIServiceError(
+            code="selection_result_category_unsupported",
+            message=f"selection result does not support category '{normalized_category}'.",
+            http_status=400,
+        )
+
+    context_json = _required_nonempty_str(input_payload, "selection_result_context_json")
+    try:
+        context_payload = json.loads(context_json)
+    except json.JSONDecodeError as e:
+        raise AIServiceError(
+            code="invalid_input",
+            message="selection_result_context_json must be valid JSON object text.",
+            http_status=400,
+        ) from e
+    if not isinstance(context_payload, dict):
+        raise AIServiceError(
+            code="invalid_input",
+            message="selection_result_context_json must decode to a JSON object.",
+            http_status=400,
+        )
+
+    try:
+        validated_context = MobileSelectionResultContextPayload.model_validate(context_payload)
+    except Exception as e:
+        raise AIServiceError(
+            code="invalid_input",
+            message=f"selection result context invalid: {e}",
+            http_status=400,
+        ) from e
+
+    if validated_context.category != normalized_category:
+        raise AIServiceError(
+            code="invalid_input",
+            message=(
+                f"selection result context category mismatch: expected '{normalized_category}', "
+                f"got '{validated_context.category}'."
+            ),
+            http_status=400,
+        )
+
+    normalized_context_json = json.dumps(validated_context.model_dump(mode="json"), ensure_ascii=False)
+    prompt_key = f"doubao.mobile_selection_result_{normalized_category}"
+    prompt = load_prompt(prompt_key)
+    rendered_prompt = render_prompt(
+        prompt.text,
+        {
+            "selection_result_context_json": normalized_context_json,
+        },
+    )
+
+    stage = f"mobile_selection_result_{normalized_category}"
+    if _is_sample_mode():
+        sample = _build_sample_mobile_selection_result(validated_context)
+        normalized = _normalize_mobile_selection_result_content(sample)
+        artifact = _maybe_save_artifact(
+            trace_id,
+            stage,
+            {
+                "model": "sample",
+                "prompt": rendered_prompt,
+                "response": {"mode": "sample"},
+                "text": json.dumps(sample, ensure_ascii=False),
+            },
+        )
+        return CapabilityExecutionResult(
+            output={**normalized, "model": "sample", "artifact": artifact},
+            prompt_key=prompt.key,
+            prompt_version=prompt.version,
+            model="sample",
+            request_payload={"prompt": rendered_prompt},
+            response_payload={"mode": "sample"},
+        )
+
+    sdk, _, _, _ = _build_sdk_and_models()
+    pro_model = settings.doubao_pro_model or "doubao-seed-2-0-pro-260215"
+    _emit(
+        event_callback,
+        {"type": "step", "stage": stage, "message": f"Calling model {pro_model}."},
+    )
+    response_raw = _safe_sdk_call(
+        lambda: sdk.chat_with_text(
+            rendered_prompt,
+            model=pro_model,
+            stream=event_callback is not None,
+            on_text_delta=(lambda delta: _emit(event_callback, {"type": "delta", "stage": stage, "delta": delta})),
+        )
+    )
+    text = _extract_content(response_raw)
+    parsed = _extract_json_object(text)
+    normalized = _normalize_mobile_selection_result_content(parsed)
+    _emit(event_callback, {"type": "step", "stage": stage, "message": "Selection result content completed."})
+    artifact = _maybe_save_artifact(
+        trace_id,
+        stage,
+        {"model": pro_model, "prompt": rendered_prompt, "response": response_raw, "text": text},
+    )
+    return CapabilityExecutionResult(
+        output={**normalized, "model": pro_model, "artifact": artifact},
+        prompt_key=prompt.key,
+        prompt_version=prompt.version,
+        model=pro_model,
+        request_payload={"prompt": rendered_prompt},
+        response_payload=response_raw,
+    )
+
+
 def _normalize_stage1_image_paths(input_payload: dict[str, Any]) -> list[str]:
     raw = input_payload.get("image_paths")
     out: list[str] = []
@@ -1505,6 +1637,325 @@ def _normalize_product_profile_result(category: str, payload: dict[str, Any]) ->
             http_status=422,
         ) from e
     return normalized.model_dump()
+
+
+def _build_sample_mobile_selection_result(context: MobileSelectionResultContextPayload) -> dict[str, Any]:
+    route_title = str(context.route.title or "").strip() or "当前路线"
+    product_name = str(context.recommended_product.name or "").strip() or "当前主推"
+    product_title = str(context.recommended_product.brand or "").strip()
+    if product_title and product_name:
+        product_title = f"{product_title} {product_name}"
+    elif product_name:
+        product_title = product_name
+    else:
+        product_title = "当前主推产品"
+    evidence_note = "产品分析暂缺，当前先基于题目和矩阵做保守解释。"
+    if context.product_analysis_summary is not None:
+        evidence_note = "产品分析已接入，当前可用题目、矩阵和产品摘要做解释承接。"
+    return {
+        "schema_version": "selection_result_content.v2",
+        "renderer_variant": "selection_result_default",
+        "micro_summary": f"{route_title}先稳住",
+        "share_copy": {
+            "title": f"你的本命路线是{route_title}",
+            "subtitle": f"我现在更适合先走{route_title}这条线",
+            "caption": f"予选先把我现在的情况讲明白，再把当前更适合的方向和 {product_title} 这类承接方案接上了。",
+        },
+        "display_order": ["hero", "situation", "attention", "pitfalls", "evidence", "product_bridge", "ctas"],
+        "blocks": [
+            {
+                "id": "hero",
+                "kind": "hero",
+                "version": "v1",
+                "payload": {
+                    "eyebrow": "予选先帮你看懂自己",
+                    "title": f"你当前更偏向{route_title}这条日常护理主线",
+                    "subtitle": f"系统先根据你的题目选择和路线分差判断当前最该优先的护理方向，再用主推产品把这个方向接住。",
+                    "items": [
+                        "当前结果先回答你现在更像什么情况，再承接产品方向。",
+                        "系统不会只堆商品，而是先讲清楚为什么会落到这条路。",
+                        "后续若矩阵或主推变化，这类场景内容也会随之重建更新。",
+                    ],
+                },
+            },
+            {
+                "id": "situation",
+                "kind": "explanation",
+                "version": "v1",
+                "payload": {
+                    "title": "你现在更像什么情况",
+                    "subtitle": f"从当前答案组合看，你更接近 {route_title} 这条主线，说明系统认为这才是你当下更需要先处理的矛盾。",
+                    "items": [
+                        f"当前路线先锚定到 {route_title}，不是随机给产品。",
+                        "系统会结合 top1 与 top2 分差，避免只看单题表面现象。",
+                        "如果有 veto，说明某些看起来像的方向其实被明确排除了。",
+                    ],
+                    "note": "sample mode 下这里只输出保守占位内容，线上应由正式模型结果覆盖。",
+                },
+            },
+            {
+                "id": "attention",
+                "kind": "strategy",
+                "version": "v1",
+                "payload": {
+                    "title": "你当前最该抓住什么",
+                    "subtitle": "先把当前最关键的护理优先级抓住，再谈额外诉求，会比一上来追求面面俱到更稳。",
+                    "items": [
+                        "先沿着当前主线解决最核心矛盾，少被次要诉求带偏。",
+                        "题目收敛结果代表的是日常护理优先级，不是一次性终局判断。",
+                        "当前主推只是先承接这条方向，不代表你只有这一款能用。",
+                    ],
+                    "note": evidence_note,
+                },
+            },
+            {
+                "id": "pitfalls",
+                "kind": "warning",
+                "version": "v1",
+                "payload": {
+                    "title": "你现在最该少踩的坑",
+                    "subtitle": "很多人会因为只盯一个表面症状或一句营销话术，就把自己带到并不适合的方向上。",
+                    "items": [
+                        "不要把看起来也像的次要问题，误当成当前真正要先处理的问题。",
+                        "不要把产品宣传词当结论，还是要回到路线和证据本身。",
+                        "不要把当前推荐理解成万能方案，它只是更贴近你当前状态。",
+                    ],
+                    "note": "这一步的重点是少踩坑，而不是把所有需求一次性叠满。",
+                },
+            },
+            {
+                "id": "evidence",
+                "kind": "explanation",
+                "version": "v1",
+                "payload": {
+                    "title": "为什么系统这样判断",
+                    "subtitle": "系统会同时看答案、路线得分、top2 差距和 veto 屏蔽，再决定为什么当前路线更站得住。",
+                    "items": [
+                        "不是只凭单题命中，而是看整套答案如何把路线分数推高或压低。",
+                        "top2 对比能帮助解释为什么相近路线没有赢过当前主线。",
+                        "被 veto 的路线会被明确挡掉，避免结果页讲得含糊不清。",
+                    ],
+                    "note": evidence_note,
+                },
+            },
+            {
+                "id": "product_bridge",
+                "kind": "strategy",
+                "version": "v1",
+                "payload": {
+                    "title": "为什么先给你这类或这款",
+                    "subtitle": f"当前主推会优先承接 {route_title} 这条路线，目标是让产品服务于你的情况解释，而不是反过来用产品定义你。",
+                    "items": [
+                        f"当前主推先用 {product_title} 接住这条路线的核心诉求。",
+                        "如果产品分析证据不足，结果页也必须明确标注，而不是假装很完整。",
+                        "后续如果主推变化或证据更新，同一场景会按最新依赖重建内容。",
+                    ],
+                    "note": "予选的优先级是适配度，不是把更多商品堆给你。",
+                },
+            },
+        ],
+        "ctas": [
+            {"id": "open_product", "label": "查看产品详情", "action": "product", "href": "", "payload": {}},
+            {"id": "open_wiki", "label": "查看成分百科", "action": "wiki", "href": "", "payload": {}},
+            {"id": "restart", "label": "重新判断一次", "action": "restart", "href": "", "payload": {}},
+        ],
+    }
+
+
+def _normalize_mobile_selection_result_content(payload: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        raise AIServiceError(
+            code="selection_result_invalid",
+            message="selection result output must be a JSON object.",
+            http_status=422,
+        )
+
+    try:
+        normalized = MobileSelectionResultAIContent.model_validate(payload)
+    except Exception as e:
+        raise AIServiceError(
+            code="selection_result_invalid",
+            message=f"selection result output invalid: {e}",
+            http_status=422,
+        ) from e
+
+    expected_display_order = ["hero", "situation", "attention", "pitfalls", "evidence", "product_bridge", "ctas"]
+    if list(normalized.display_order) != expected_display_order:
+        raise AIServiceError(
+            code="selection_result_invalid",
+            message=f"display_order must equal {expected_display_order}.",
+            http_status=422,
+        )
+
+    _ensure_text_length("micro_summary", normalized.micro_summary, minimum=6, maximum=12)
+    _ensure_text_length("share_copy.title", normalized.share_copy.title, minimum=10, maximum=18)
+    _ensure_text_length("share_copy.subtitle", normalized.share_copy.subtitle, minimum=12, maximum=28)
+    _ensure_text_length("share_copy.caption", normalized.share_copy.caption, minimum=24, maximum=56)
+
+    expected_blocks = [
+        ("hero", "hero"),
+        ("situation", "explanation"),
+        ("attention", "strategy"),
+        ("pitfalls", "warning"),
+        ("evidence", "explanation"),
+        ("product_bridge", "strategy"),
+    ]
+    if len(normalized.blocks) != len(expected_blocks):
+        raise AIServiceError(
+            code="selection_result_invalid",
+            message=f"blocks must contain exactly {len(expected_blocks)} items.",
+            http_status=422,
+        )
+    for idx, (expected_id, expected_kind) in enumerate(expected_blocks):
+        block = normalized.blocks[idx]
+        if block.id != expected_id or block.kind != expected_kind or block.version != "v1":
+            raise AIServiceError(
+                code="selection_result_invalid",
+                message=(
+                    f"blocks[{idx}] must be id='{expected_id}', kind='{expected_kind}', version='v1'; "
+                    f"got id='{block.id}', kind='{block.kind}', version='{block.version}'."
+                ),
+                http_status=422,
+            )
+        _validate_selection_result_block_payload(block_id=expected_id, payload=block.payload)
+
+    expected_ctas = [
+        ("open_product", "product"),
+        ("open_wiki", "wiki"),
+        ("restart", "restart"),
+    ]
+    if len(normalized.ctas) != len(expected_ctas):
+        raise AIServiceError(
+            code="selection_result_invalid",
+            message=f"ctas must contain exactly {len(expected_ctas)} items.",
+            http_status=422,
+        )
+    for idx, (expected_id, expected_action) in enumerate(expected_ctas):
+        cta = normalized.ctas[idx]
+        if cta.id != expected_id or cta.action != expected_action:
+            raise AIServiceError(
+                code="selection_result_invalid",
+                message=(
+                    f"ctas[{idx}] must be id='{expected_id}', action='{expected_action}'; "
+                    f"got id='{cta.id}', action='{cta.action}'."
+                ),
+                http_status=422,
+            )
+        _ensure_nonempty_string(f"ctas[{idx}].label", cta.label)
+        if not isinstance(cta.href, str):
+            raise AIServiceError(
+                code="selection_result_invalid",
+                message=f"ctas[{idx}].href must be a string.",
+                http_status=422,
+            )
+        if not isinstance(cta.payload, dict):
+            raise AIServiceError(
+                code="selection_result_invalid",
+                message=f"ctas[{idx}].payload must be a JSON object.",
+                http_status=422,
+            )
+
+    return normalized.model_dump(mode="json")
+
+
+def _validate_selection_result_block_payload(*, block_id: str, payload: dict[str, Any]) -> None:
+    if not isinstance(payload, dict):
+        raise AIServiceError(
+            code="selection_result_invalid",
+            message=f"{block_id}.payload must be a JSON object.",
+            http_status=422,
+        )
+
+    if block_id == "hero":
+        expected_keys = {"eyebrow", "title", "subtitle", "items"}
+        if set(payload.keys()) != expected_keys:
+            raise AIServiceError(
+                code="selection_result_invalid",
+                message=f"{block_id}.payload keys must equal {sorted(expected_keys)}.",
+                http_status=422,
+            )
+        _ensure_nonempty_string(f"{block_id}.payload.eyebrow", payload.get("eyebrow"))
+        _ensure_text_length(f"{block_id}.payload.title", payload.get("title"), minimum=16, maximum=28)
+        _ensure_text_length(f"{block_id}.payload.subtitle", payload.get("subtitle"), minimum=40, maximum=90)
+        _ensure_string_list(f"{block_id}.payload.items", payload.get("items"), minimum=3, maximum=5, item_min=16, item_max=48)
+        return
+
+    expected_keys = {"title", "subtitle", "items", "note"}
+    if set(payload.keys()) != expected_keys:
+        raise AIServiceError(
+            code="selection_result_invalid",
+            message=f"{block_id}.payload keys must equal {sorted(expected_keys)}.",
+            http_status=422,
+        )
+    _ensure_text_length(f"{block_id}.payload.title", payload.get("title"), minimum=8, maximum=20)
+    _ensure_text_length(f"{block_id}.payload.subtitle", payload.get("subtitle"), minimum=30, maximum=90)
+    _ensure_string_list(f"{block_id}.payload.items", payload.get("items"), minimum=3, maximum=5, item_min=16, item_max=48)
+    _ensure_text_length(f"{block_id}.payload.note", payload.get("note"), minimum=20, maximum=80)
+
+
+def _ensure_nonempty_string(field_name: str, value: Any) -> str:
+    if not isinstance(value, str):
+        raise AIServiceError(
+            code="selection_result_invalid",
+            message=f"{field_name} must be a string.",
+            http_status=422,
+        )
+    text = value.strip()
+    if not text:
+        raise AIServiceError(
+            code="selection_result_invalid",
+            message=f"{field_name} cannot be empty.",
+            http_status=422,
+        )
+    return text
+
+
+def _ensure_text_length(field_name: str, value: Any, *, minimum: int, maximum: int) -> str:
+    text = _ensure_nonempty_string(field_name, value)
+    size = len(text)
+    if size < minimum or size > maximum:
+        raise AIServiceError(
+            code="selection_result_invalid",
+            message=f"{field_name} length must be within [{minimum}, {maximum}], got {size}.",
+            http_status=422,
+        )
+    return text
+
+
+def _ensure_string_list(
+    field_name: str,
+    value: Any,
+    *,
+    minimum: int,
+    maximum: int,
+    item_min: int,
+    item_max: int,
+) -> list[str]:
+    if not isinstance(value, list):
+        raise AIServiceError(
+            code="selection_result_invalid",
+            message=f"{field_name} must be an array.",
+            http_status=422,
+        )
+    if len(value) < minimum or len(value) > maximum:
+        raise AIServiceError(
+            code="selection_result_invalid",
+            message=f"{field_name} length must be within [{minimum}, {maximum}], got {len(value)}.",
+            http_status=422,
+        )
+    out: list[str] = []
+    seen: set[str] = set()
+    for idx, item in enumerate(value):
+        text = _ensure_text_length(f"{field_name}[{idx}]", item, minimum=item_min, maximum=item_max)
+        if text in seen:
+            raise AIServiceError(
+                code="selection_result_invalid",
+                message=f"{field_name} contains duplicate item '{text}'.",
+                http_status=422,
+            )
+        seen.add(text)
+        out.append(text)
+    return out
 
 
 def _load_route_mapping_decision_table(category: str) -> dict[str, Any]:

@@ -86,6 +86,10 @@ from app.schemas import (
     MobileSelectionLinks,
     MobileSelectionResolveRequest,
     MobileSelectionResolveResponse,
+    MobileSelectionResultLookupRequest,
+    MobileSelectionResultPublishRequest,
+    MobileSelectionResultPublishResponse,
+    MobileSelectionResultResponse,
     MobileSelectionRoute,
     MobileSelectionRuleHit,
     MobileWikiCategoryFacet,
@@ -107,6 +111,12 @@ from app.services.matrix_decision import (
     MatrixDecisionError,
     compile_matrix_config,
     resolve_matrix_selection,
+)
+from app.services.mobile_selection_results import (
+    MobileSelectionResultLookupError,
+    load_mobile_selection_result,
+    publish_mobile_selection_result,
+    to_mobile_selection_result_index_item,
 )
 from app.services.parser import normalize_doc
 from app.services.selection_fit import RouteDiagnosticRule, get_route_diagnostic_rules
@@ -730,42 +740,11 @@ def resolve_mobile_selection(
             stored = _row_to_mobile_response(existing)
             return stored.model_copy(update={"reused": True})
 
-    target_type_key = _selection_target_type_key(category=category, route_key=str(resolved["route_key"]))
-    if not target_type_key:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Cannot resolve target_type_key for category='{category}', route='{resolved['route_key']}'.",
-        )
-    featured_query_error: str | None = None
-    recommendation_source = "category_fallback"
-    try:
-        product_row = _pick_featured_product_row(
-            db=db,
-            category=category,
-            target_type_key=target_type_key,
-        )
-        if product_row is not None:
-            recommendation_source = "featured_slot"
-    except HTTPException as exc:
-        featured_query_error = str(exc.detail)
-        product_row = None
-
-    if product_row is None:
-        product_row = _pick_route_mapped_product_row(
-            db=db,
-            category=category,
-            target_type_key=target_type_key,
-            rules_version=MOBILE_RULES_VERSION,
-        )
-        if product_row is not None:
-            recommendation_source = "route_mapping"
-    if product_row is None:
-        product_row = _pick_product_row(db=db, category=category)
-        recommendation_source = "category_fallback"
-    if product_row is None:
-        if featured_query_error:
-            raise HTTPException(status_code=500, detail=featured_query_error)
-        raise HTTPException(status_code=422, detail=f"No product found for category '{category}'.")
+    product_row, recommendation_source = _resolve_selection_product_row(
+        db=db,
+        category=category,
+        route_key=str(resolved["route_key"]),
+    )
     product = _row_to_product_card(product_row)
 
     created_at = now_iso()
@@ -937,6 +916,103 @@ def get_mobile_selection_fit_explanation(
     if owner_cookie_new:
         _set_owner_cookie(response, owner_id, request)
     return MobileSelectionFitExplanationResponse(status="ok", item=item)
+
+
+@router.post("/selection/result", response_model=MobileSelectionResultResponse)
+def get_mobile_selection_result(
+    payload: MobileSelectionResultLookupRequest,
+    db: Session = Depends(get_db),
+):
+    category = str(payload.category or "").strip().lower()
+    if category not in VALID_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Invalid category: {category}.")
+
+    answers = _normalize_answers(payload.answers)
+    resolved = _resolve_selection(category=category, answers=answers)
+    answers_hash = _build_answers_hash(category=category, answers=resolved["answers"])
+
+    try:
+        item, _rec = load_mobile_selection_result(
+            db=db,
+            category=category,
+            rules_version=MOBILE_RULES_VERSION,
+            answers_hash=answers_hash,
+        )
+    except MobileSelectionResultLookupError as exc:
+        raise HTTPException(
+            status_code=exc.http_status,
+            detail={
+                "code": exc.code,
+                "stage": exc.stage,
+                "detail": exc.detail,
+                "category": category,
+                "answers_hash": answers_hash,
+                "rules_version": MOBILE_RULES_VERSION,
+            },
+        ) from exc
+    return MobileSelectionResultResponse(status="ok", item=item)
+
+
+@router.post("/selection/results/publish", response_model=MobileSelectionResultPublishResponse)
+def publish_selection_result(
+    payload: MobileSelectionResultPublishRequest,
+    db: Session = Depends(get_db),
+):
+    category = str(payload.category or "").strip().lower()
+    if category not in VALID_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Invalid category: {category}.")
+
+    answers = _normalize_answers(payload.answers)
+    resolved = _resolve_selection(category=category, answers=answers)
+    answers_hash = _build_answers_hash(category=category, answers=resolved["answers"])
+    product_row, recommendation_source = _resolve_selection_product_row(
+        db=db,
+        category=category,
+        route_key=str(resolved["route_key"]),
+    )
+    product = _row_to_product_card(product_row)
+
+    try:
+        _published, rec = publish_mobile_selection_result(
+            db=db,
+            category=category,
+            answers_hash=answers_hash,
+            rules_version=MOBILE_RULES_VERSION,
+            route=MobileSelectionRoute(key=resolved["route_key"], title=resolved["route_title"]),
+            recommendation_source=recommendation_source,
+            recommended_product=product,
+            links=MobileSelectionLinks(
+                product=f"/product/{product.id}",
+                wiki=str(resolved["wiki_href"]),
+            ),
+            schema_version=payload.schema_version,
+            renderer_variant=payload.renderer_variant,
+            micro_summary=payload.micro_summary,
+            share_copy=payload.share_copy,
+            blocks=list(payload.blocks),
+            ctas=list(payload.ctas),
+            display_order=list(payload.display_order),
+            fingerprint=(str(payload.fingerprint or "").strip() or None),
+            raw_payload=dict(payload.raw_payload) if payload.raw_payload is not None else None,
+            prompt_key=payload.prompt_key,
+            prompt_version=payload.prompt_version,
+            model=payload.model,
+            refresh_reason=payload.refresh_reason,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "SELECTION_RESULT_PUBLISH_INVALID",
+                "stage": "selection_result_publish",
+                "detail": str(exc),
+                "category": category,
+                "answers_hash": answers_hash,
+                "rules_version": MOBILE_RULES_VERSION,
+            },
+        ) from exc
+
+    return MobileSelectionResultPublishResponse(status="ok", item=to_mobile_selection_result_index_item(rec))
 
 
 @router.post(
@@ -5319,6 +5395,52 @@ def _pick_product_row(db: Session, category: str) -> ProductIndex | None:
         .order_by(ProductIndex.created_at.desc())
         .limit(1)
     ).scalars().first()
+
+
+def _resolve_selection_product_row(
+    *,
+    db: Session,
+    category: str,
+    route_key: str,
+) -> tuple[ProductIndex, str]:
+    target_type_key = _selection_target_type_key(category=category, route_key=route_key)
+    if not target_type_key:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Cannot resolve target_type_key for category='{category}', route='{route_key}'.",
+        )
+
+    featured_query_error: str | None = None
+    recommendation_source = "category_fallback"
+    try:
+        product_row = _pick_featured_product_row(
+            db=db,
+            category=category,
+            target_type_key=target_type_key,
+        )
+        if product_row is not None:
+            recommendation_source = "featured_slot"
+    except HTTPException as exc:
+        featured_query_error = str(exc.detail)
+        product_row = None
+
+    if product_row is None:
+        product_row = _pick_route_mapped_product_row(
+            db=db,
+            category=category,
+            target_type_key=target_type_key,
+            rules_version=MOBILE_RULES_VERSION,
+        )
+        if product_row is not None:
+            recommendation_source = "route_mapping"
+    if product_row is None:
+        product_row = _pick_product_row(db=db, category=category)
+        recommendation_source = "category_fallback"
+    if product_row is None:
+        if featured_query_error:
+            raise HTTPException(status_code=500, detail=featured_query_error)
+        raise HTTPException(status_code=422, detail=f"No product found for category '{category}'.")
+    return product_row, recommendation_source
 
 
 def _row_to_product_card(row: ProductIndex) -> ProductCard:

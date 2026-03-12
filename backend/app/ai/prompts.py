@@ -26,6 +26,11 @@ DEFAULT_PROMPT_VERSIONS = {
     "doubao.product_profile_conditioner": "v1",
     "doubao.product_profile_lotion": "v1",
     "doubao.product_profile_cleanser": "v1",
+    "doubao.mobile_selection_result_shampoo": "v1",
+    "doubao.mobile_selection_result_bodywash": "v1",
+    "doubao.mobile_selection_result_conditioner": "v1",
+    "doubao.mobile_selection_result_lotion": "v1",
+    "doubao.mobile_selection_result_cleanser": "v1",
 }
 
 _PLACEHOLDER = re.compile(r"\{\{\s*([a-zA-Z0-9_]+)\s*\}\}")

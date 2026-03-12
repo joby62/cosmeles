@@ -53,3 +53,31 @@ def test_dedup_workbench_job_cancel_and_retry(test_client, monkeypatch: pytest.M
     retried_job = retried.json()
     assert retried_job["status"] == "queued"
     assert retried_job["job_type"] == "dedup_suggest"
+
+
+def test_selection_result_workbench_job_create_cancel_and_retry(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, _ = test_client
+    _install_noop_submit(monkeypatch)
+
+    created = client.post(
+        "/api/products/selection-results/jobs",
+        json={"category": "shampoo", "force_regenerate": True},
+    )
+    assert created.status_code == 200
+    job = created.json()
+    assert job["job_type"] == "selection_result_build"
+    assert job["status"] == "queued"
+
+    listed = client.get("/api/products/selection-results/jobs")
+    assert listed.status_code == 200
+    assert any(item["job_id"] == job["job_id"] for item in listed.json())
+
+    cancelled = client.post(f"/api/products/selection-results/jobs/{job['job_id']}/cancel")
+    assert cancelled.status_code == 200
+    assert cancelled.json()["job"]["status"] == "cancelled"
+
+    retried = client.post(f"/api/products/selection-results/jobs/{job['job_id']}/retry")
+    assert retried.status_code == 200
+    retried_job = retried.json()
+    assert retried_job["status"] == "queued"
+    assert retried_job["job_type"] == "selection_result_build"

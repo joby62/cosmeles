@@ -327,6 +327,53 @@ class MobileSelectionSession(Base):
     created_at: Mapped[str] = mapped_column(String(32), index=True)
 
 
+class MobileSelectionResultIndex(Base):
+    __tablename__ = "mobile_selection_result_index"
+    __table_args__ = (
+        Index(
+            "ix_mobile_selection_result_lookup",
+            "category",
+            "rules_version",
+            "answers_hash",
+            "status",
+        ),
+        Index(
+            "ix_mobile_selection_result_route_scope",
+            "category",
+            "route_key",
+            "updated_at",
+        ),
+    )
+
+    scenario_id: Mapped[str] = mapped_column(String(96), primary_key=True)
+    category: Mapped[str] = mapped_column(String(32), index=True)
+    answers_hash: Mapped[str] = mapped_column(String(64), index=True)
+    rules_version: Mapped[str] = mapped_column(String(32), index=True)
+    route_key: Mapped[str] = mapped_column(String(128), index=True)
+    route_title: Mapped[str] = mapped_column(String(256), default="")
+
+    status: Mapped[str] = mapped_column(String(32), index=True, default="ready")
+    fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    renderer_variant: Mapped[str] = mapped_column(String(64), index=True, default="selection_result_default")
+    schema_version: Mapped[str] = mapped_column(String(64), default="")
+
+    recommended_product_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    product_analysis_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+
+    prompt_key: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    prompt_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+    raw_storage_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    storage_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    published_version_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    refresh_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    generated_at: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    updated_at: Mapped[str] = mapped_column(String(32), index=True)
+
+
 class MobileCompareSessionIndex(Base):
     __tablename__ = "mobile_compare_session_index"
     __table_args__ = (

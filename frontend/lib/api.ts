@@ -72,7 +72,7 @@ export type ProductWorkbenchJobCounters = {
 export type ProductWorkbenchJob = {
   status: "queued" | "running" | "cancelling" | "cancelled" | "done" | "failed";
   job_id: string;
-  job_type: "route_mapping_build" | "dedup_suggest";
+  job_type: "route_mapping_build" | "dedup_suggest" | "selection_result_build";
   params: Record<string, unknown>;
   stage?: string | null;
   stage_label?: string | null;
@@ -1217,6 +1217,95 @@ export type MobileSelectionFitExplanationResponse = {
   item: MobileSelectionFitExplanationItem;
 };
 
+export type MobileSelectionResultBlock = {
+  id: string;
+  kind: string;
+  version: string;
+  payload: Record<string, unknown>;
+};
+
+export type MobileSelectionResultCTA = {
+  id: string;
+  label: string;
+  action: string;
+  href: string;
+  payload: Record<string, unknown>;
+};
+
+export type MobileSelectionResultShareCopy = {
+  title: string;
+  subtitle: string;
+  caption: string;
+};
+
+export type MobileSelectionPublishedResult = {
+  schema_version: "selection_result_content.v1" | "selection_result_content.v2";
+  renderer_variant: string;
+  scenario_id: string;
+  category: MobileSelectionCategory;
+  answers_hash: string;
+  rules_version: string;
+  route: {
+    key: string;
+    title: string;
+  };
+  recommendation_source: MobileSelectionRecommendationSource;
+  recommended_product: Product;
+  links: {
+    product: string;
+    wiki: string;
+  };
+  micro_summary: string;
+  share_copy: MobileSelectionResultShareCopy;
+  display_order: string[];
+  blocks: MobileSelectionResultBlock[];
+  ctas: MobileSelectionResultCTA[];
+  meta: {
+    prompt_key: string;
+    prompt_version: string;
+    model: string;
+    refresh_reason: string;
+    raw_storage_path?: string | null;
+    published_version_path: string;
+    generated_at: string;
+  };
+};
+
+export type MobileSelectionResultResponse = {
+  status: string;
+  item: MobileSelectionPublishedResult;
+};
+
+export type MobileSelectionResultBuildRequest = {
+  category?: MobileSelectionCategory;
+  force_regenerate?: boolean;
+  only_missing?: boolean;
+};
+
+export type MobileSelectionResultBuildItem = {
+  category: MobileSelectionCategory;
+  answers_hash: string;
+  route_key?: string | null;
+  route_title?: string | null;
+  recommended_product_id?: string | null;
+  status: "created" | "updated" | "skipped" | "failed";
+  storage_path?: string | null;
+  model?: string | null;
+  error?: string | null;
+};
+
+export type MobileSelectionResultBuildResponse = {
+  status: string;
+  scanned_scenarios: number;
+  submitted_to_model: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+  items: MobileSelectionResultBuildItem[];
+  failures: string[];
+};
+
 export type MobileSelectionBatchDeleteRequest = {
   ids: string[];
 };
@@ -1970,6 +2059,66 @@ export async function retryProductRouteMappingJob(jobId: string): Promise<Produc
   );
 }
 
+export async function buildMobileSelectionResults(
+  payload: MobileSelectionResultBuildRequest,
+): Promise<MobileSelectionResultBuildResponse> {
+  return apiFetch<MobileSelectionResultBuildResponse>("/api/products/selection-results/build", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function createMobileSelectionResultJob(
+  payload: MobileSelectionResultBuildRequest,
+): Promise<ProductWorkbenchJob> {
+  return apiFetch<ProductWorkbenchJob>("/api/products/selection-results/jobs", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchMobileSelectionResultJob(jobId: string): Promise<ProductWorkbenchJob> {
+  const value = jobId.trim();
+  if (!value) throw new Error("jobId is required.");
+  return apiFetch<ProductWorkbenchJob>(`/api/products/selection-results/jobs/${encodeURIComponent(value)}`, {
+    cacheProfile: "dynamic",
+  });
+}
+
+export async function listMobileSelectionResultJobs(params?: {
+  status?: "queued" | "running" | "cancelling" | "cancelled" | "done" | "failed";
+  offset?: number;
+  limit?: number;
+}): Promise<ProductWorkbenchJob[]> {
+  const search = new URLSearchParams();
+  if (params?.status) search.set("status", params.status);
+  if (typeof params?.offset === "number") search.set("offset", String(params.offset));
+  if (typeof params?.limit === "number") search.set("limit", String(params.limit));
+  const query = search.toString();
+  const path = query ? `/api/products/selection-results/jobs?${query}` : "/api/products/selection-results/jobs";
+  return apiFetch<ProductWorkbenchJob[]>(path, {
+    cacheProfile: "dynamic",
+  });
+}
+
+export async function cancelMobileSelectionResultJob(jobId: string): Promise<ProductWorkbenchJobCancelResponse> {
+  const value = jobId.trim();
+  if (!value) throw new Error("jobId is required.");
+  return apiFetch<ProductWorkbenchJobCancelResponse>(
+    `/api/products/selection-results/jobs/${encodeURIComponent(value)}/cancel`,
+    { method: "POST" },
+  );
+}
+
+export async function retryMobileSelectionResultJob(jobId: string): Promise<ProductWorkbenchJob> {
+  const value = jobId.trim();
+  if (!value) throw new Error("jobId is required.");
+  return apiFetch<ProductWorkbenchJob>(
+    `/api/products/selection-results/jobs/${encodeURIComponent(value)}/retry`,
+    { method: "POST" },
+  );
+}
+
 export async function fetchProductRouteMapping(
   productId: string,
 ): Promise<ProductRouteMappingDetailResponse> {
@@ -2276,6 +2425,18 @@ export async function fetchMobileSelectionFitExplanation(
       cacheProfile: "dynamic",
     },
   );
+}
+
+export async function fetchMobileSelectionResult(payload: {
+  category: MobileSelectionCategory;
+  answers: Record<string, string>;
+}): Promise<MobileSelectionResultResponse> {
+  return apiFetch<MobileSelectionResultResponse>("/api/mobile/selection/result", {
+    method: "POST",
+    body: JSON.stringify(payload),
+    cacheProfile: "dynamic",
+    includeOwnerHeaders: false,
+  });
 }
 
 export async function listMobileSelectionSessions(params?: {

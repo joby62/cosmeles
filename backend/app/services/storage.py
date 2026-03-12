@@ -44,6 +44,10 @@ def ensure_dirs():
     os.makedirs(os.path.join(settings.storage_dir, "ingredients"), exist_ok=True)
     os.makedirs(os.path.join(settings.storage_dir, "route_mappings"), exist_ok=True)
     os.makedirs(os.path.join(settings.storage_dir, "product_profiles"), exist_ok=True)
+    os.makedirs(os.path.join(settings.storage_dir, "selection_results"), exist_ok=True)
+    os.makedirs(os.path.join(settings.storage_dir, "selection_results", "published"), exist_ok=True)
+    os.makedirs(os.path.join(settings.storage_dir, "selection_results", "published_versions"), exist_ok=True)
+    os.makedirs(os.path.join(settings.storage_dir, "selection_results", "raw"), exist_ok=True)
     os.makedirs(os.path.join(settings.user_storage_dir, "images"), exist_ok=True)
     os.makedirs(os.path.join(settings.user_storage_dir, "images", "webp"), exist_ok=True)
     os.makedirs(os.path.join(settings.user_storage_dir, "images", "jpg"), exist_ok=True)
@@ -514,6 +518,42 @@ def ingredient_profile_rel_path(category: str, ingredient_id: str) -> str:
     safe_category = _safe_storage_segment(category, fallback="unknown")
     safe_ingredient_id = _safe_storage_segment(ingredient_id, fallback="")
     return f"ingredients/{safe_category}/{safe_ingredient_id}.json"
+
+
+def selection_result_published_rel_path(category: str, rules_version: str, answers_hash: str) -> str:
+    safe_category = _safe_storage_segment(category, fallback="unknown")
+    safe_rules_version = _safe_storage_segment(rules_version, fallback="v0")
+    safe_answers_hash = _safe_storage_segment(answers_hash, fallback="")
+    return f"selection_results/published/{safe_category}/{safe_rules_version}/{safe_answers_hash}.json"
+
+
+def selection_result_published_version_rel_path(
+    category: str,
+    rules_version: str,
+    answers_hash: str,
+    version_id: str,
+) -> str:
+    safe_category = _safe_storage_segment(category, fallback="unknown")
+    safe_rules_version = _safe_storage_segment(rules_version, fallback="v0")
+    safe_answers_hash = _safe_storage_segment(answers_hash, fallback="")
+    safe_version_id = _safe_storage_segment(version_id, fallback=new_id())
+    return (
+        f"selection_results/published_versions/"
+        f"{safe_category}/{safe_rules_version}/{safe_answers_hash}/{safe_version_id}.json"
+    )
+
+
+def selection_result_raw_version_rel_path(
+    category: str,
+    rules_version: str,
+    answers_hash: str,
+    version_id: str,
+) -> str:
+    safe_category = _safe_storage_segment(category, fallback="unknown")
+    safe_rules_version = _safe_storage_segment(rules_version, fallback="v0")
+    safe_answers_hash = _safe_storage_segment(answers_hash, fallback="")
+    safe_version_id = _safe_storage_segment(version_id, fallback=new_id())
+    return f"selection_results/raw/{safe_category}/{safe_rules_version}/{safe_answers_hash}/{safe_version_id}.json"
 
 
 def _safe_storage_segment(value: str, fallback: str) -> str:

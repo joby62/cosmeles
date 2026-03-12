@@ -1,6 +1,7 @@
 import ProductAnalysisGenerator from "@/components/ProductAnalysisGenerator";
 import ProductDedupManager from "@/components/ProductDedupManager";
 import ProductIngestWorkbench from "@/components/ProductIngestWorkbench";
+import MobileSelectionResultGenerator from "@/components/MobileSelectionResultGenerator";
 import ProductManagementShell, {
   ProductManagementStageErrorCard,
 } from "@/components/ProductManagementShell";
@@ -64,6 +65,13 @@ export default async function ProductPipelinePage() {
               ...(analysisError ? [analysisError] : []),
             ].filter((item, index, arr) => arr.findIndex((x) => x.stage === item.stage && x.detail === item.detail) === index)}
           />
+        )}
+      </section>
+      <section id="mobile-selection-result-generator" className="scroll-mt-20">
+        {products ? (
+          <MobileSelectionResultGenerator initialProducts={products} />
+        ) : (
+          <ProductManagementStageErrorCard title="测评结果场景生成台不可用" errors={productError ? [productError] : []} />
         )}
       </section>
     </ProductManagementShell>

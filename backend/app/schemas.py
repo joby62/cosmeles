@@ -171,7 +171,7 @@ class ProductWorkbenchJobCounters(BaseModel):
 class ProductWorkbenchJobView(BaseModel):
     status: Literal["queued", "running", "cancelling", "cancelled", "done", "failed"] = "queued"
     job_id: str
-    job_type: Literal["route_mapping_build", "dedup_suggest"]
+    job_type: Literal["route_mapping_build", "dedup_suggest", "selection_result_build"]
     params: dict[str, Any] = Field(default_factory=dict)
     stage: Optional[str] = None
     stage_label: Optional[str] = None
@@ -1117,6 +1117,196 @@ class MobileSelectionFitExplanationItem(BaseModel):
 class MobileSelectionFitExplanationResponse(BaseModel):
     status: str
     item: MobileSelectionFitExplanationItem
+
+
+class MobileSelectionResultLookupRequest(BaseModel):
+    category: str
+    answers: dict[str, str] = Field(default_factory=dict)
+
+
+MobileSelectionResultSchemaVersion = Literal["selection_result_content.v1", "selection_result_content.v2"]
+
+
+class MobileSelectionResultBlock(StrictSchemaModel):
+    id: str
+    kind: str
+    version: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class MobileSelectionResultCTA(StrictSchemaModel):
+    id: str
+    label: str
+    action: str
+    href: str = ""
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class MobileSelectionResultShareCopy(StrictSchemaModel):
+    title: str = ""
+    subtitle: str = ""
+    caption: str = ""
+
+
+class MobileSelectionResultMeta(StrictSchemaModel):
+    prompt_key: str = ""
+    prompt_version: str = ""
+    model: str = ""
+    refresh_reason: str = ""
+    raw_storage_path: Optional[str] = None
+    published_version_path: str = ""
+    generated_at: str
+
+
+class MobileSelectionResultProductAnalysisSummary(StrictSchemaModel):
+    schema_version: str = ""
+    headline: str = ""
+    positioning_summary: str = ""
+    subtype_fit_verdict: str = ""
+    subtype_fit_reason: str = ""
+    best_for: List[str] = Field(default_factory=list)
+    not_ideal_for: List[str] = Field(default_factory=list)
+    usage_tips: List[str] = Field(default_factory=list)
+    watchouts: List[str] = Field(default_factory=list)
+    confidence: int = 0
+    confidence_reason: str = ""
+    needs_review: bool = False
+    evidence_missing_codes: List[str] = Field(default_factory=list)
+
+
+class MobileSelectionResultIngredientSnapshotItem(StrictSchemaModel):
+    ingredient_name_cn: str = ""
+    ingredient_name_en: str = ""
+    rank: int = 0
+    role: str = ""
+    impact: str = ""
+
+
+class MobileSelectionResultContextPayload(StrictSchemaModel):
+    category: ProductAnalysisCategory
+    category_label: str = ""
+    answers_hash: str
+    rules_version: str
+    answers: dict[str, str] = Field(default_factory=dict)
+    choices: List[MobileSelectionChoice] = Field(default_factory=list)
+    route: MobileSelectionRoute
+    matrix_analysis: MobileSelectionMatrixAnalysis = Field(default_factory=MobileSelectionMatrixAnalysis)
+    recommendation_source: MobileSelectionRecommendationSource = "category_fallback"
+    recommended_product: ProductCard
+    product_analysis_summary: Optional[MobileSelectionResultProductAnalysisSummary] = None
+    ingredient_snapshot: List[MobileSelectionResultIngredientSnapshotItem] = Field(default_factory=list)
+    product_analysis_fingerprint: Optional[str] = None
+
+
+class MobileSelectionResultAIContent(StrictSchemaModel):
+    schema_version: Literal["selection_result_content.v2"] = "selection_result_content.v2"
+    renderer_variant: str = "selection_result_default"
+    micro_summary: str = ""
+    share_copy: MobileSelectionResultShareCopy = Field(default_factory=MobileSelectionResultShareCopy)
+    display_order: List[str] = Field(default_factory=list)
+    blocks: List[MobileSelectionResultBlock] = Field(default_factory=list)
+    ctas: List[MobileSelectionResultCTA] = Field(default_factory=list)
+
+
+class MobileSelectionPublishedResult(StrictSchemaModel):
+    schema_version: MobileSelectionResultSchemaVersion = "selection_result_content.v1"
+    renderer_variant: str
+    scenario_id: str
+    category: str
+    answers_hash: str
+    rules_version: str
+    route: MobileSelectionRoute
+    recommendation_source: MobileSelectionRecommendationSource = "category_fallback"
+    recommended_product: ProductCard
+    links: MobileSelectionLinks
+    micro_summary: str = ""
+    share_copy: MobileSelectionResultShareCopy = Field(default_factory=MobileSelectionResultShareCopy)
+    display_order: List[str] = Field(default_factory=list)
+    blocks: List[MobileSelectionResultBlock] = Field(default_factory=list)
+    ctas: List[MobileSelectionResultCTA] = Field(default_factory=list)
+    meta: MobileSelectionResultMeta
+
+
+class MobileSelectionResultResponse(BaseModel):
+    status: str
+    item: MobileSelectionPublishedResult
+
+
+class MobileSelectionResultIndexItem(BaseModel):
+    scenario_id: str
+    category: str
+    answers_hash: str
+    rules_version: str
+    route_key: str
+    route_title: str
+    status: str
+    fingerprint: Optional[str] = None
+    renderer_variant: str
+    schema_version: str
+    recommended_product_id: Optional[str] = None
+    product_analysis_fingerprint: Optional[str] = None
+    prompt_key: Optional[str] = None
+    prompt_version: Optional[str] = None
+    model: Optional[str] = None
+    raw_storage_path: Optional[str] = None
+    storage_path: Optional[str] = None
+    published_version_path: Optional[str] = None
+    refresh_reason: Optional[str] = None
+    generated_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+class MobileSelectionResultPublishRequest(BaseModel):
+    category: str
+    answers: dict[str, str] = Field(default_factory=dict)
+    schema_version: MobileSelectionResultSchemaVersion = "selection_result_content.v1"
+    renderer_variant: str = "selection_result_default"
+    micro_summary: str = ""
+    share_copy: MobileSelectionResultShareCopy = Field(default_factory=MobileSelectionResultShareCopy)
+    blocks: List[MobileSelectionResultBlock] = Field(default_factory=list)
+    ctas: List[MobileSelectionResultCTA] = Field(default_factory=list)
+    display_order: List[str] = Field(default_factory=list)
+    fingerprint: Optional[str] = None
+    raw_payload: Optional[dict[str, Any]] = None
+    prompt_key: str = ""
+    prompt_version: str = ""
+    model: str = ""
+    refresh_reason: str = ""
+
+
+class MobileSelectionResultPublishResponse(BaseModel):
+    status: str
+    item: MobileSelectionResultIndexItem
+
+
+class MobileSelectionResultBuildRequest(BaseModel):
+    category: Optional[str] = None
+    force_regenerate: bool = False
+    only_missing: bool = False
+
+
+class MobileSelectionResultBuildItem(BaseModel):
+    category: str
+    answers_hash: str
+    route_key: Optional[str] = None
+    route_title: Optional[str] = None
+    recommended_product_id: Optional[str] = None
+    status: Literal["created", "updated", "skipped", "failed"] = "created"
+    storage_path: Optional[str] = None
+    model: Optional[str] = None
+    error: Optional[str] = None
+
+
+class MobileSelectionResultBuildResponse(BaseModel):
+    status: str
+    scanned_scenarios: int = 0
+    submitted_to_model: int = 0
+    created: int = 0
+    updated: int = 0
+    skipped: int = 0
+    failed: int = 0
+    items: List[MobileSelectionResultBuildItem] = Field(default_factory=list)
+    failures: List[str] = Field(default_factory=list)
 
 
 class MobileSelectionBatchDeleteRequest(BaseModel):

@@ -1,8 +1,11 @@
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 
 from app.routes import ingest as ingest_routes
 from app.routes import products as products_routes
+from app.services import mobile_selection_result_builder as selection_result_builder_service
 from backend.tests.support_images import VALID_TEST_IMAGE_BYTES, install_fake_save_image
 
 
@@ -142,6 +145,127 @@ def _install_fake_route_mapping_builder(monkeypatch: pytest.MonkeyPatch) -> None
         raise AssertionError(f"unexpected capability: {capability}")
 
     monkeypatch.setattr(products_routes, "run_capability_now", fake_run_capability_now)
+
+
+def _install_fake_selection_result_builder(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_run_capability_now(*, capability, input_payload, trace_id=None, event_callback=None):
+        assert capability.startswith("doubao.mobile_selection_result_")
+        if event_callback:
+            event_callback({"type": "step", "stage": capability, "message": "mock selection result"})
+        context = json.loads(input_payload["selection_result_context_json"])
+        route_title = context["route"]["title"]
+        product_name = context["recommended_product"].get("name") or "当前主推"
+        return {
+            "schema_version": "selection_result_content.v2",
+            "renderer_variant": "selection_result_default",
+            "micro_summary": f"{route_title}先稳住",
+            "share_copy": {
+                "title": f"你的本命路线是{route_title}",
+                "subtitle": f"我现在更适合先走{route_title}这条线",
+                "caption": f"予选先把我现在的情况讲明白，再把更适合的方向和 {product_name} 这类方案接上了。",
+            },
+            "display_order": ["hero", "situation", "attention", "pitfalls", "evidence", "product_bridge", "ctas"],
+            "blocks": [
+                {
+                    "id": "hero",
+                    "kind": "hero",
+                    "version": "v1",
+                    "payload": {
+                        "eyebrow": "予选先帮你看懂自己",
+                        "title": f"你当前更偏向{route_title}这条日常护理主线",
+                        "subtitle": "系统先根据你的题目选择和路线分差判断当前最该优先的护理方向，再用主推产品把这个方向接住。",
+                        "items": [
+                            "当前结果先回答你现在更像什么情况，再承接产品方向。",
+                            "系统不会只堆商品，而是先讲清楚为什么会落到这条路。",
+                            "后续若矩阵或主推变化，这类场景内容也会随之重建更新。",
+                        ],
+                    },
+                },
+                {
+                    "id": "situation",
+                    "kind": "explanation",
+                    "version": "v1",
+                    "payload": {
+                        "title": "你现在更像什么情况",
+                        "subtitle": "从当前答案组合看，你更接近这条主线，说明系统认为这才是你当下更需要先处理的核心矛盾。",
+                        "items": [
+                            "当前路线先锚定核心问题，而不是随机给产品。",
+                            "系统会结合 top1 与 top2 分差，避免只看单题表面现象。",
+                            "如果有 veto，说明某些看起来像的方向其实被明确排除了。",
+                        ],
+                        "note": "这里先把你的情况讲明白，再把产品放到后面承接。",
+                    },
+                },
+                {
+                    "id": "attention",
+                    "kind": "strategy",
+                    "version": "v1",
+                    "payload": {
+                        "title": "你当前最该抓住什么",
+                        "subtitle": "先把当前最关键的护理优先级抓住，再谈额外诉求，会比一上来追求面面俱到更稳。",
+                        "items": [
+                            "先沿着当前主线解决最核心矛盾，少被次要诉求带偏。",
+                            "题目收敛结果代表的是日常护理优先级，不是一次性终局判断。",
+                            "当前主推只是先承接这条方向，不代表你只有这一款能用。",
+                        ],
+                        "note": "平台优先级是适配度，不是把更多商品直接堆到你面前。",
+                    },
+                },
+                {
+                    "id": "pitfalls",
+                    "kind": "warning",
+                    "version": "v1",
+                    "payload": {
+                        "title": "你现在最该少踩的坑",
+                        "subtitle": "很多人会因为只盯一个表面症状或一句营销话术，就把自己带到并不适合的方向上。",
+                        "items": [
+                            "不要把看起来也像的次要问题，误当成当前真正要先处理的问题。",
+                            "不要把产品宣传词当结论，还是要回到路线和证据本身。",
+                            "不要把当前推荐理解成万能方案，它只是更贴近你当前状态。",
+                        ],
+                        "note": "这一步的重点是少踩坑，而不是把所有需求一次性叠满。",
+                    },
+                },
+                {
+                    "id": "evidence",
+                    "kind": "explanation",
+                    "version": "v1",
+                    "payload": {
+                        "title": "为什么系统这样判断",
+                        "subtitle": "系统会同时看答案、路线得分、top2 差距和 veto 屏蔽，再决定为什么当前路线更站得住。",
+                        "items": [
+                            "不是只凭单题命中，而是看整套答案如何把路线分数推高或压低。",
+                            "top2 对比能帮助解释为什么相近路线没有赢过当前主线。",
+                            "被 veto 的路线会被明确挡掉，避免结果页讲得含糊不清。",
+                        ],
+                        "note": "如果产品分析暂缺，也会如实保留证据不足，而不是伪造完整解释。",
+                    },
+                },
+                {
+                    "id": "product_bridge",
+                    "kind": "strategy",
+                    "version": "v1",
+                    "payload": {
+                        "title": "为什么先给你这类或这款",
+                        "subtitle": "当前主推会优先承接这条路线，目标是让产品服务于你的情况解释，而不是反过来用产品定义你。",
+                        "items": [
+                            "当前主推先接住这条路线的核心诉求，而不是抢走结果页主线。",
+                            "如果产品分析证据不足，结果页也必须明确标注，而不是假装很完整。",
+                            "后续如果主推变化或证据更新，同一场景会按最新依赖重建内容。",
+                        ],
+                        "note": "予选的优先级是适配度，不是把更多商品堆给你。",
+                    },
+                },
+            ],
+            "ctas": [
+                {"id": "open_product", "label": "查看产品详情", "action": "product", "href": "", "payload": {}},
+                {"id": "open_wiki", "label": "查看成分百科", "action": "wiki", "href": "", "payload": {}},
+                {"id": "restart", "label": "重新判断一次", "action": "restart", "href": "", "payload": {}},
+            ],
+            "model": "mock-pro",
+        }
+
+    monkeypatch.setattr(selection_result_builder_service, "run_capability_now", fake_run_capability_now)
 
 
 def _build_route_mapping(client, category: str) -> None:
@@ -617,3 +741,193 @@ def test_mobile_selection_pin_and_list_order(test_client, monkeypatch: pytest.Mo
     unpinned = unpin_resp.json()
     assert unpinned["is_pinned"] is False
     assert unpinned["pinned_at"] is None
+
+
+def test_mobile_selection_result_publish_and_lookup(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, storage_dir = test_client
+    _install_fake_ingest_pipeline(
+        monkeypatch,
+        {
+            "category": "shampoo",
+            "brand": "Dove",
+            "name": "Scenario Publish",
+            "one_sentence": "预生成结果发布测试",
+        },
+    )
+    _ingest_one(client, "selection-result-publish.jpg")
+
+    payload = {
+        "category": "shampoo",
+        "answers": {"q1": "A", "q2": "C", "q3": "B"},
+        "blocks": [
+            {
+                "id": "hero",
+                "kind": "hero",
+                "version": "v1",
+                "payload": {
+                    "title": "先稳住油脂分泌",
+                    "subtitle": "这是第一版发布稿",
+                },
+            }
+        ],
+        "ctas": [
+            {
+                "id": "open_product",
+                "label": "查看产品",
+                "action": "product",
+                "href": "/product/mock",
+                "payload": {},
+            }
+        ],
+        "display_order": ["hero", "ctas"],
+        "raw_payload": {
+            "headline": "draft hero",
+            "notes": ["draft"],
+        },
+        "prompt_key": "mobile.selection.result",
+        "prompt_version": "v1",
+        "model": "mock-model",
+    }
+    published = client.post("/api/mobile/selection/results/publish", json=payload)
+    assert published.status_code == 200
+    published_body = published.json()
+    item = published_body["item"]
+    assert item["status"] == "ready"
+    assert item["route_key"] == "deep-oil-control"
+    assert item["storage_path"]
+    assert item["published_version_path"]
+    assert item["raw_storage_path"]
+    assert (storage_dir / item["storage_path"]).exists()
+    assert (storage_dir / item["published_version_path"]).exists()
+    assert (storage_dir / item["raw_storage_path"]).exists()
+
+    looked_up = client.post(
+        "/api/mobile/selection/result",
+        json={"category": "shampoo", "answers": {"q1": "A", "q2": "C", "q3": "B"}},
+    )
+    assert looked_up.status_code == 200
+    result_item = looked_up.json()["item"]
+    assert result_item["category"] == "shampoo"
+    assert result_item["renderer_variant"] == "selection_result_default"
+    assert result_item["blocks"][0]["payload"]["title"] == "先稳住油脂分泌"
+    assert result_item["ctas"][0]["id"] == "open_product"
+    assert result_item["recommended_product"]["category"] == "shampoo"
+    assert result_item["recommendation_source"] == "category_fallback"
+
+
+def test_mobile_selection_result_republish_overwrites_active_payload(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, storage_dir = test_client
+    _install_fake_ingest_pipeline(
+        monkeypatch,
+        {
+            "category": "bodywash",
+            "brand": "Aveeno",
+            "name": "Scenario Republish",
+            "one_sentence": "预生成结果覆盖更新测试",
+        },
+    )
+    _ingest_one(client, "selection-result-republish.jpg")
+
+    base_payload = {
+        "category": "bodywash",
+        "answers": {"q1": "A", "q2": "A", "q3": "A", "q4": "A", "q5": "A"},
+        "blocks": [
+            {
+                "id": "hero",
+                "kind": "hero",
+                "version": "v1",
+                "payload": {"title": "第一版标题"},
+            }
+        ],
+        "prompt_key": "mobile.selection.result",
+        "prompt_version": "v1",
+        "model": "mock-model",
+        "raw_payload": {"revision": 1},
+    }
+    first = client.post("/api/mobile/selection/results/publish", json=base_payload)
+    assert first.status_code == 200
+    first_item = first.json()["item"]
+
+    second_payload = dict(base_payload)
+    second_payload["blocks"] = [
+        {
+            "id": "hero",
+            "kind": "hero",
+            "version": "v2",
+            "payload": {"title": "第二版标题"},
+        }
+    ]
+    second_payload["prompt_version"] = "v2"
+    second_payload["raw_payload"] = {"revision": 2}
+    second = client.post("/api/mobile/selection/results/publish", json=second_payload)
+    assert second.status_code == 200
+    second_item = second.json()["item"]
+    assert first_item["scenario_id"] == second_item["scenario_id"]
+    assert first_item["published_version_path"] != second_item["published_version_path"]
+    assert (storage_dir / second_item["published_version_path"]).exists()
+
+    active_doc = json.loads((storage_dir / second_item["storage_path"]).read_text(encoding="utf-8"))
+    assert active_doc["blocks"][0]["payload"]["title"] == "第二版标题"
+    assert active_doc["meta"]["prompt_version"] == "v2"
+
+    looked_up = client.post(
+        "/api/mobile/selection/result",
+        json={"category": "bodywash", "answers": {"q1": "A", "q2": "A", "q3": "A", "q4": "A", "q5": "A"}},
+    )
+    assert looked_up.status_code == 200
+    assert looked_up.json()["item"]["blocks"][0]["payload"]["title"] == "第二版标题"
+
+
+def test_mobile_selection_result_build_generates_v2_content(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, _storage_dir = test_client
+    _install_fake_ingest_pipeline(
+        monkeypatch,
+        {
+            "category": "shampoo",
+            "brand": "Dove",
+            "name": "Selection Build Source",
+            "one_sentence": "selection result build source",
+        },
+    )
+    _ingest_one(client, "selection-result-build.jpg")
+    _install_fake_route_mapping_builder(monkeypatch)
+    _build_route_mapping(client, "shampoo")
+    _install_fake_selection_result_builder(monkeypatch)
+
+    built = client.post(
+        "/api/products/selection-results/build",
+        json={"category": "shampoo", "force_regenerate": True},
+    )
+    assert built.status_code == 200
+    body = built.json()
+    assert body["status"] == "ok"
+    assert body["scanned_scenarios"] == 36
+    assert body["created"] == 36
+    assert body["updated"] == 0
+    assert body["failed"] == 0
+    assert body["submitted_to_model"] == 36
+
+    looked_up = client.post(
+        "/api/mobile/selection/result",
+        json={"category": "shampoo", "answers": {"q1": "A", "q2": "C", "q3": "B"}},
+    )
+    assert looked_up.status_code == 200
+    result_item = looked_up.json()["item"]
+    assert result_item["schema_version"] == "selection_result_content.v2"
+    assert result_item["micro_summary"]
+    assert result_item["share_copy"]["title"]
+    assert result_item["blocks"][0]["id"] == "hero"
+    assert result_item["ctas"][0]["id"] == "open_product"
+
+
+def test_mobile_selection_result_missing_returns_strict_error(test_client):
+    client, _ = test_client
+    missing = client.post(
+        "/api/mobile/selection/result",
+        json={"category": "shampoo", "answers": {"q1": "A", "q2": "C", "q3": "B"}},
+    )
+    assert missing.status_code == 404
+    body = missing.json()
+    assert body["detail"]["code"] == "SELECTION_RESULT_PRECOMPUTED_MISSING"
+    assert body["detail"]["stage"] == "selection_result_lookup"
+    assert body["detail"]["category"] == "shampoo"

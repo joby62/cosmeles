@@ -62,6 +62,28 @@ def _ensure_mobile_selection_schema() -> None:
             conn.execute(text(stmt))
 
 
+def _ensure_mobile_selection_result_schema() -> None:
+    inspector = inspect(engine)
+    if "mobile_selection_result_index" not in inspector.get_table_names():
+        return
+
+    columns = {item["name"] for item in inspector.get_columns("mobile_selection_result_index")}
+    statements: list[str] = []
+    if "fingerprint" not in columns:
+        statements.append("ALTER TABLE mobile_selection_result_index ADD COLUMN fingerprint VARCHAR(64)")
+
+    indexes = [
+        "CREATE INDEX IF NOT EXISTS ix_mobile_selection_result_index_fingerprint "
+        "ON mobile_selection_result_index (fingerprint)",
+    ]
+
+    with engine.begin() as conn:
+        for stmt in statements:
+            conn.execute(text(stmt))
+        for stmt in indexes:
+            conn.execute(text(stmt))
+
+
 def init_db() -> None:
     """
     Ensure storage dirs exist and create SQLite tables (idempotent).
@@ -75,6 +97,10 @@ def init_db() -> None:
     os.makedirs(os.path.join(settings.storage_dir, "ingredients"), exist_ok=True)
     os.makedirs(os.path.join(settings.storage_dir, "route_mappings"), exist_ok=True)
     os.makedirs(os.path.join(settings.storage_dir, "product_profiles"), exist_ok=True)
+    os.makedirs(os.path.join(settings.storage_dir, "selection_results"), exist_ok=True)
+    os.makedirs(os.path.join(settings.storage_dir, "selection_results", "published"), exist_ok=True)
+    os.makedirs(os.path.join(settings.storage_dir, "selection_results", "published_versions"), exist_ok=True)
+    os.makedirs(os.path.join(settings.storage_dir, "selection_results", "raw"), exist_ok=True)
     os.makedirs(os.path.join(settings.user_storage_dir, "images"), exist_ok=True)
     os.makedirs(os.path.join(settings.user_storage_dir, "uploads"), exist_ok=True)
     os.makedirs(os.path.join(settings.user_storage_dir, "products"), exist_ok=True)
@@ -86,6 +112,7 @@ def init_db() -> None:
     # Create tables if not exist
     Base.metadata.create_all(bind=engine)
     _ensure_mobile_selection_schema()
+    _ensure_mobile_selection_result_schema()
 
 
 def main() -> None:

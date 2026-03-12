@@ -64,6 +64,10 @@ from app.services.storage import (
     save_product_analysis,
     product_analysis_rel_path,
 )
+from app.services.mobile_selection_result_builder import (
+    SelectionResultBuildCancelledError,
+    build_mobile_selection_results,
+)
 from app.schemas import (
     ProductCard,
     ProductListResponse,
@@ -128,6 +132,9 @@ from app.schemas import (
     ProductAnalysisStoredResult,
     ProductAnalysisResult,
     ProductAnalysisContextPayload,
+    MobileSelectionResultBuildRequest,
+    MobileSelectionResultBuildResponse,
+    MobileSelectionResultBuildItem,
     MobileAnalyticsFilterState,
     MobileAnalyticsCountItem,
     MobileAnalyticsOverviewResponse,
@@ -2227,6 +2234,58 @@ def list_product_analysis_index(
     )
 
 
+@router.post("/products/selection-results/build", response_model=MobileSelectionResultBuildResponse)
+def build_mobile_selection_result_content(
+    payload: MobileSelectionResultBuildRequest,
+    db: Session = Depends(get_db),
+):
+    return _build_mobile_selection_results_impl(payload, db=db, event_callback=None)
+
+
+@router.post("/products/selection-results/jobs", response_model=ProductWorkbenchJobView)
+def create_mobile_selection_result_job(
+    payload: MobileSelectionResultBuildRequest,
+    db: Session = Depends(get_db),
+):
+    return _create_product_workbench_job(
+        db=db,
+        job_type="selection_result_build",
+        params=payload.model_dump(),
+        queued_message=f"任务已创建，等待执行（并发上限 {PRODUCT_WORKBENCH_MAX_CONCURRENCY}）。",
+    )
+
+
+@router.get("/products/selection-results/jobs", response_model=list[ProductWorkbenchJobView])
+def list_mobile_selection_result_jobs(
+    status: str | None = Query(None),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(30, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    return _list_product_workbench_jobs(
+        db=db,
+        job_type="selection_result_build",
+        status=status,
+        offset=offset,
+        limit=limit,
+    )
+
+
+@router.get("/products/selection-results/jobs/{job_id}", response_model=ProductWorkbenchJobView)
+def get_mobile_selection_result_job(job_id: str, db: Session = Depends(get_db)):
+    return _get_product_workbench_job(db=db, job_id=job_id, expected_job_type="selection_result_build")
+
+
+@router.post("/products/selection-results/jobs/{job_id}/cancel", response_model=ProductWorkbenchJobCancelResponse)
+def cancel_mobile_selection_result_job(job_id: str, db: Session = Depends(get_db)):
+    return _cancel_product_workbench_job(db=db, job_id=job_id, expected_job_type="selection_result_build")
+
+
+@router.post("/products/selection-results/jobs/{job_id}/retry", response_model=ProductWorkbenchJobView)
+def retry_mobile_selection_result_job(job_id: str, db: Session = Depends(get_db)):
+    return _retry_product_workbench_job(db=db, job_id=job_id, expected_job_type="selection_result_build")
+
+
 @router.get("/products/featured-slots", response_model=ProductFeaturedSlotListResponse)
 def list_product_featured_slots(
     category: str | None = Query(None),
@@ -4127,6 +4186,21 @@ def _run_product_workbench_job(*, job_id: str, db: Session) -> None:
                 ),
                 should_cancel=should_cancel,
             )
+        elif job_type == "selection_result_build":
+            selection_payload = MobileSelectionResultBuildRequest.model_validate(params)
+            try:
+                result = _build_mobile_selection_results_impl(
+                    selection_payload,
+                    db=db,
+                    event_callback=lambda payload: _apply_product_workbench_job_progress(
+                        bind=db.get_bind(),
+                        job_id=job_id,
+                        payload=payload,
+                    ),
+                    should_cancel=should_cancel,
+                )
+            except SelectionResultBuildCancelledError as exc:
+                raise ProductWorkbenchJobCancelledError(str(exc)) from exc
         else:  # pragma: no cover
             raise HTTPException(status_code=400, detail=f"Unsupported product workbench job type: {job_type}.")
 
@@ -4135,6 +4209,14 @@ def _run_product_workbench_job(*, job_id: str, db: Session) -> None:
             done_message = (
                 "任务完成："
                 f"scanned={int(result_payload.get('scanned_products') or 0)}，"
+                f"created={int(result_payload.get('created') or 0)}，"
+                f"updated={int(result_payload.get('updated') or 0)}，"
+                f"failed={int(result_payload.get('failed') or 0)}"
+            )
+        elif job_type == "selection_result_build":
+            done_message = (
+                "任务完成："
+                f"scenarios={int(result_payload.get('scanned_scenarios') or 0)}，"
                 f"created={int(result_payload.get('created') or 0)}，"
                 f"updated={int(result_payload.get('updated') or 0)}，"
                 f"failed={int(result_payload.get('failed') or 0)}"
@@ -4444,7 +4526,7 @@ def _to_product_workbench_job_view(rec: ProductWorkbenchJob) -> ProductWorkbench
 
 def _validate_product_workbench_job_type(job_type: str) -> str:
     value = str(job_type or "").strip().lower()
-    if value not in {"route_mapping_build", "dedup_suggest"}:
+    if value not in {"route_mapping_build", "dedup_suggest", "selection_result_build"}:
         raise HTTPException(status_code=400, detail=f"Invalid job_type: {job_type}.")
     return value
 
@@ -4483,6 +4565,18 @@ def _product_workbench_stage_label(*, job_type: str, stage: str) -> str:
             "route_mapping_build_done": "任务完成",
         }
         return mapping.get(key, key or "处理中")
+    if job_type == "selection_result_build":
+        mapping = {
+            "selection_result_build_start": "枚举场景",
+            "selection_result_start": "场景生成中",
+            "selection_result_model_step": "模型执行",
+            "selection_result_model_delta": "模型输出",
+            "selection_result_done": "单项完成",
+            "selection_result_skip": "跳过未变化项",
+            "selection_result_error": "单项失败",
+            "selection_result_build_done": "任务完成",
+        }
+        return mapping.get(key, key or "处理中")
     mapping = {
         "dedup_scan_start": "扫描候选",
         "dedup_category_start": "按品类分析",
@@ -4515,6 +4609,17 @@ def _product_workbench_progress_cursor(
             index_value if index_value > 0 else None,
             total_value if total_value > 0 else None,
             product_id,
+            category,
+        )
+    if job_type == "selection_result_build":
+        index_value = _safe_positive_int(payload.get("index"), fallback=prev_index or 0)
+        total_value = _safe_positive_int(payload.get("total"), fallback=prev_total or 0)
+        answers_hash = str(payload.get("answers_hash") or prev_item_id or "").strip() or None
+        category = str(payload.get("category") or prev_item_name or "").strip() or None
+        return (
+            index_value if index_value > 0 else None,
+            total_value if total_value > 0 else None,
+            answers_hash,
             category,
         )
     index_value = _safe_positive_int(payload.get("anchor_index"), fallback=prev_index or 0)
@@ -4555,6 +4660,23 @@ def _merge_product_workbench_counters(
         elif step == "route_mapping_skip":
             inc_counter("skipped")
         elif step == "route_mapping_error":
+            inc_counter("failed")
+        for key in ("submitted_to_model", "created", "updated", "skipped", "failed"):
+            if key in payload:
+                set_counter(key, _safe_positive_int(payload.get(key), fallback=0))
+        return
+    if job_type == "selection_result_build":
+        if "scanned_products" in payload:
+            set_counter("scanned_products", _safe_positive_int(payload.get("scanned_products"), fallback=0))
+        if step == "selection_result_done":
+            status = str(payload.get("status") or "").strip().lower()
+            if status in {"created", "updated", "skipped", "failed"}:
+                inc_counter(status)
+            if status in {"created", "updated"}:
+                inc_counter("submitted_to_model")
+        elif step == "selection_result_skip":
+            inc_counter("skipped")
+        elif step == "selection_result_error":
             inc_counter("failed")
         for key in ("submitted_to_model", "created", "updated", "skipped", "failed"):
             if key in payload:
@@ -4601,6 +4723,17 @@ def _product_workbench_progress_percent(
                 return max(value, min(95, computed))
             return max(value, 10)
         if step in {"route_mapping_build_done", "done"}:
+            return 100
+        return value
+    if job_type == "selection_result_build":
+        if step == "selection_result_build_start":
+            return max(value, 5)
+        if step in {"selection_result_start", "selection_result_done", "selection_result_skip", "selection_result_error", "selection_result_model_step", "selection_result_model_delta"}:
+            if index is not None and total is not None and total > 0:
+                computed = 10 + int((max(0, min(total, index)) / total) * 85)
+                return max(value, min(95, computed))
+            return max(value, 10)
+        if step in {"selection_result_build_done", "done"}:
             return 100
         return value
     if step == "dedup_scan_start":
@@ -5567,6 +5700,27 @@ def _build_product_analysis_impl(
         items=items,
         failures=failures[:200],
     )
+
+
+def _build_mobile_selection_results_impl(
+    payload: MobileSelectionResultBuildRequest,
+    db: Session,
+    event_callback: Callable[[dict[str, Any]], None] | None,
+    should_cancel: Callable[[], bool] | None = None,
+) -> MobileSelectionResultBuildResponse:
+    try:
+        return build_mobile_selection_results(
+            payload,
+            db=db,
+            event_callback=event_callback,
+            should_cancel=should_cancel,
+        )
+    except SelectionResultBuildCancelledError:
+        raise
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 def _to_product_analysis_record(doc: dict[str, Any], storage_path: str) -> ProductAnalysisStoredResult:
