@@ -1960,6 +1960,47 @@ html[data-nav-open="1"] #app-main{
   -webkit-backdrop-filter: saturate(180%) blur(22px);
 }
 
+@keyframes mWikiRailBreathe {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.64;
+  }
+  50% {
+    transform: translate3d(0, -2px, 0) scale(1.04);
+    opacity: 0.94;
+  }
+}
+
+@keyframes mWikiRailCardBreathe {
+  0%,
+  100% {
+    transform: translateY(-1px) scale(1);
+  }
+  50% {
+    transform: translateY(-2px) scale(1.012);
+  }
+}
+
+.m-wiki-category-rail {
+  border: 1px solid var(--m-wiki-border);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+}
+
+.m-wiki-category-rail-glow {
+  pointer-events: none;
+  position: absolute;
+  right: -14px;
+  top: -10px;
+  height: 140px;
+  width: 140px;
+  border-radius: 999px;
+  filter: blur(30px);
+  opacity: 0.72;
+  animation: mWikiRailBreathe 8.4s cubic-bezier(0.22, 0.78, 0.2, 1) infinite;
+}
+
 .m-wiki-category-card {
   border: 1px solid color-mix(in srgb, var(--m-wiki-border) 76%, rgba(255,255,255,0.42));
   background:
@@ -1979,15 +2020,8 @@ html[data-nav-open="1"] #app-main{
 }
 
 .m-wiki-category-card-active {
-  border-color: rgba(10,132,255,0.14);
-  background:
-    linear-gradient(180deg, rgba(255,255,255,0.98), rgba(237,245,255,0.9)),
-    color-mix(in srgb, var(--m-wiki-frost) 92%, rgba(10,132,255,0.06));
-  color: var(--m-wiki-text-strong);
-  box-shadow:
-    0 18px 34px rgba(15,34,66,0.1),
-    inset 0 1px 0 rgba(255,255,255,0.7);
   transform: translateY(-1px);
+  animation: mWikiRailCardBreathe 7.2s cubic-bezier(0.22, 0.78, 0.2, 1) infinite;
 }
 
 @keyframes mSheetIn {
@@ -2027,6 +2061,11 @@ html[data-nav-open="1"] #app-main{
   }
 
   .m-choose-focus-card-active {
+    animation: none !important;
+  }
+
+  .m-wiki-category-rail-glow,
+  .m-wiki-category-card-active {
     animation: none !important;
   }
 }
