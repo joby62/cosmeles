@@ -1265,6 +1265,8 @@ export type MobileCompareSession = {
     detail: string;
     http_status: number;
     retryable: boolean;
+    stage?: string | null;
+    stage_label?: string | null;
   } | null;
 };
 

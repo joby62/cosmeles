@@ -538,9 +538,22 @@ def test_mobile_compare_stream_returns_real_error_when_no_recommendation(test_cl
     )
     assert stream_resp.status_code == 200
     events = _parse_sse_events(stream_resp.text)
+    accepted = [payload for name, payload in events if name == "accepted"]
+    assert accepted
+    compare_id = accepted[0]["compare_id"]
     errors = [payload for name, payload in events if name == "error"]
     assert errors
     assert errors[0]["code"] == "COMPARE_RECOMMENDATION_NOT_FOUND"
+    assert errors[0]["stage"] == "prepare"
+    assert errors[0]["stage_label"] == "准备对比任务"
+
+    session_resp = client.get(f"/api/mobile/compare/sessions/{compare_id}")
+    assert session_resp.status_code == 200
+    session_payload = session_resp.json()
+    assert session_payload["status"] == "failed"
+    assert session_payload["error"]["code"] == "COMPARE_RECOMMENDATION_NOT_FOUND"
+    assert session_payload["error"]["stage"] == "prepare"
+    assert session_payload["error"]["stage_label"] == "准备对比任务"
 
 
 def test_mobile_compare_bootstrap_product_library_marks_recommendation_and_most_used(

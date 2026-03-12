@@ -1431,6 +1431,8 @@ class MobileCompareSessionError(BaseModel):
     detail: str
     http_status: int = 500
     retryable: bool = True
+    stage: Optional[str] = None
+    stage_label: Optional[str] = None
 
 
 class MobileCompareSessionResponse(BaseModel):

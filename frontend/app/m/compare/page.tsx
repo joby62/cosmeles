@@ -73,10 +73,100 @@ type StoredCompareDraft = {
   had_upload?: boolean;
 };
 
+type CompareTelemetryError = {
+  raw: string;
+  errorCode?: string;
+  detail?: string;
+  httpStatus?: number;
+  retryable?: boolean;
+  stage?: string;
+  stageLabel?: string;
+};
+
 function normalizeSelectionCategory(raw: unknown): MobileSelectionCategory | null {
   const normalized = String(raw || "").trim().toLowerCase() as MobileSelectionCategory;
   if (!CATEGORY_ORDER.includes(normalized)) return null;
   return normalized;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function asTrimmedString(value: unknown): string | undefined {
+  const text = String(value || "").trim();
+  return text || undefined;
+}
+
+function asNumberValue(value: unknown): number | undefined {
+  if (value == null || value === "") return undefined;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : undefined;
+}
+
+function asBooleanValue(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") return value;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return undefined;
+}
+
+function extractTrailingJson(raw: string): string | null {
+  const match = raw.match(/(\{[\s\S]*\})\s*$/);
+  return match ? match[1] : null;
+}
+
+function parseCompareErrorTelemetry(
+  input: unknown,
+  fallback?: { stage?: string | null; stageLabel?: string | null },
+): CompareTelemetryError {
+  const raw = input instanceof Error ? input.message : String(input || "").trim();
+  let payload: Record<string, unknown> | null = isRecord(input) ? input : null;
+  if (!payload) {
+    const jsonText = extractTrailingJson(raw);
+    if (jsonText) {
+      try {
+        const parsed = JSON.parse(jsonText);
+        if (isRecord(parsed)) {
+          payload = parsed;
+        }
+      } catch {
+        payload = null;
+      }
+    }
+  }
+
+  const nested = isRecord(payload?.detail) ? payload.detail : null;
+  const errorCode =
+    asTrimmedString(nested?.code) ||
+    asTrimmedString(payload?.code) ||
+    (raw.startsWith("COMPARE_UPLOAD")
+      ? "COMPARE_UPLOAD_HTTP_ERROR"
+      : raw.includes("/api/mobile/compare/jobs/stream")
+        ? "COMPARE_STREAM_HTTP_ERROR"
+        : undefined);
+  const detail =
+    asTrimmedString(nested?.detail) ||
+    asTrimmedString(payload?.detail) ||
+    raw;
+  const httpStatus =
+    asNumberValue(nested?.http_status) ||
+    asNumberValue(payload?.http_status) ||
+    asNumberValue(raw.match(/\b(\d{3})\b/) ? raw.match(/\b(\d{3})\b/)?.[1] : undefined);
+  const retryable = asBooleanValue(nested?.retryable) ?? asBooleanValue(payload?.retryable);
+  const stage = asTrimmedString(nested?.stage) || asTrimmedString(payload?.stage) || asTrimmedString(fallback?.stage);
+  const stageLabel =
+    asTrimmedString(nested?.stage_label) || asTrimmedString(payload?.stage_label) || asTrimmedString(fallback?.stageLabel);
+
+  return {
+    raw,
+    errorCode,
+    detail,
+    httpStatus,
+    retryable,
+    stage,
+    stageLabel,
+  };
 }
 
 export default function MobileComparePage() {
@@ -115,6 +205,8 @@ export default function MobileComparePage() {
   const [chromeVisible, setChromeVisible] = useState(true);
   const [chromeYielded, setChromeYielded] = useState(false);
   const activeCompareIdRef = useRef<string | null>(null);
+  const lastTrackedStageSignatureRef = useRef<string>("");
+  const lastTrackedErrorSignatureRef = useRef<string>("");
 
   const recommendationReady = Boolean(bootstrap?.recommendation?.exists);
   const hasHistoryProfile = Boolean(bootstrap?.profile?.has_history_profile);
@@ -274,6 +366,81 @@ export default function MobileComparePage() {
     activeCompareIdRef.current = activeCompareId;
   }, [activeCompareId]);
 
+  const trackCompareStageProgress = useCallback(
+    (payload: {
+      category: MobileSelectionCategory | string;
+      compareId?: string | null;
+      stage?: string | null;
+      stageLabel?: string | null;
+      percent?: number | null;
+      pairIndex?: number | null;
+      pairTotal?: number | null;
+      sourceEvent: string;
+    }) => {
+      const stage = String(payload.stage || "").trim();
+      if (!stage) return;
+      const compareId = String(payload.compareId || "").trim();
+      const pairIndex = Number(payload.pairIndex);
+      const pairTotal = Number(payload.pairTotal);
+      const signature =
+        stage === "pair_compare" && Number.isFinite(pairIndex) && Number.isFinite(pairTotal) && pairTotal > 0
+          ? `${compareId}:${stage}:${Math.round(pairIndex)}/${Math.round(pairTotal)}`
+          : `${compareId}:${stage}`;
+      if (signature === lastTrackedStageSignatureRef.current) return;
+      lastTrackedStageSignatureRef.current = signature;
+      void safeTrack("compare_stage_progress", {
+        category: payload.category,
+        compare_id: compareId || undefined,
+        stage,
+        stage_label: String(payload.stageLabel || "").trim() || undefined,
+        percent: Number.isFinite(Number(payload.percent)) ? Math.round(Number(payload.percent)) : undefined,
+        pair_index: Number.isFinite(pairIndex) ? Math.round(pairIndex) : undefined,
+        pair_total: Number.isFinite(pairTotal) ? Math.round(pairTotal) : undefined,
+        source_event: payload.sourceEvent,
+      });
+    },
+    [],
+  );
+
+  const trackCompareStageError = useCallback(
+    (payload: {
+      category: MobileSelectionCategory | string;
+      compareId?: string | null;
+      runMode: string;
+      hasUpload: boolean;
+      selectedLibraryCount: number;
+      totalCount: number;
+      sourceEvent: string;
+      error: CompareTelemetryError;
+    }) => {
+      const detail = String(payload.error.detail || payload.error.raw || "").trim();
+      const signature = [
+        String(payload.compareId || "").trim(),
+        String(payload.error.stage || "").trim(),
+        String(payload.error.errorCode || "").trim(),
+        detail,
+      ].join("|");
+      if (signature === lastTrackedErrorSignatureRef.current) return;
+      lastTrackedErrorSignatureRef.current = signature;
+      void safeTrack("compare_stage_error", {
+        category: payload.category,
+        compare_id: String(payload.compareId || "").trim() || undefined,
+        stage: payload.error.stage,
+        stage_label: payload.error.stageLabel,
+        error_code: payload.error.errorCode,
+        detail,
+        http_status: payload.error.httpStatus,
+        retryable: payload.error.retryable,
+        run_mode: payload.runMode,
+        has_upload: payload.hasUpload,
+        selected_library_count: payload.selectedLibraryCount,
+        total_count: payload.totalCount,
+        source_event: payload.sourceEvent,
+      });
+    },
+    [],
+  );
+
   const applySessionProgress = useCallback((session: MobileCompareSession) => {
     const stage = String(session.stage || "").trim();
     const normalizedStage = WAITING_STAGE_ORDER.includes(stage as WaitingStage)
@@ -299,10 +466,28 @@ export default function MobileComparePage() {
         index: Math.max(1, Math.round(pairIndex)),
         total: Math.max(1, Math.round(pairTotal)),
       });
+      trackCompareStageProgress({
+        category: session.category,
+        compareId: session.compare_id,
+        stage,
+        stageLabel: session.stage_label,
+        percent,
+        pairIndex,
+        pairTotal,
+        sourceEvent: "session_poll",
+      });
       return;
     }
     setPairProgress(null);
-  }, []);
+    trackCompareStageProgress({
+      category: session.category,
+      compareId: session.compare_id,
+      stage,
+      stageLabel: session.stage_label,
+      percent,
+      sourceEvent: "session_poll",
+    });
+  }, [trackCompareStageProgress]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -479,6 +664,24 @@ export default function MobileComparePage() {
         if (session.status === "failed") {
           const detail = String(session.error?.detail || "").trim() || "对比任务失败，请重试。";
           setRunError(humanizeCompareError(detail));
+          trackCompareStageError({
+            category: session.category,
+            compareId: session.compare_id,
+            runMode: "restore_poll",
+            hasUpload: (session.targets_snapshot || []).some((item) => item.source === "upload_new"),
+            selectedLibraryCount: (session.targets_snapshot || []).filter((item) => item.source === "history_product").length,
+            totalCount: (session.targets_snapshot || []).length,
+            sourceEvent: "session_poll_failed",
+            error: {
+              raw: detail,
+              detail,
+              errorCode: session.error?.code,
+              httpStatus: session.error?.http_status,
+              retryable: session.error?.retryable,
+              stage: session.error?.stage || session.stage || undefined,
+              stageLabel: session.error?.stage_label || session.stage_label || undefined,
+            },
+          });
         } else {
           setRunError(null);
         }
@@ -505,7 +708,7 @@ export default function MobileComparePage() {
       cancelled = true;
       if (timer) window.clearTimeout(timer);
     };
-  }, [activeCompareId, applySessionProgress, clearActiveCompare]);
+  }, [activeCompareId, applySessionProgress, clearActiveCompare, trackCompareStageError]);
 
   useEffect(() => {
     if (selectedProductIds.length <= maxLibrarySelection) return;
@@ -681,6 +884,9 @@ export default function MobileComparePage() {
     clearActiveCompare();
     clearCompareDraft();
     setLastProgressUpdateAt(Date.now());
+    lastTrackedStageSignatureRef.current = "";
+    lastTrackedErrorSignatureRef.current = "";
+    const runMode = options?.runMode || (isRetryRun ? "retry_snapshot" : "fresh");
 
     try {
       const targets: MobileCompareJobTargetInput[] = [];
@@ -689,12 +895,31 @@ export default function MobileComparePage() {
       } else {
         if (file) {
           setProgressHint("正在上传你正在用的产品...");
-          const uploaded = await uploadMobileCompareCurrentProduct({
-            category: targetCategory,
-            image: file,
-            brand: brand.trim() || undefined,
-            name: name.trim() || undefined,
-          });
+          let uploaded: Awaited<ReturnType<typeof uploadMobileCompareCurrentProduct>>;
+          try {
+            uploaded = await uploadMobileCompareCurrentProduct({
+              category: targetCategory,
+              image: file,
+              brand: brand.trim() || undefined,
+              name: name.trim() || undefined,
+            });
+          } catch (err) {
+            const telemetry = parseCompareErrorTelemetry(err, {
+              stage: "uploading",
+              stageLabel: "上传当前在用产品",
+            });
+            void safeTrack("compare_upload_fail", {
+              category: targetCategory,
+              stage: telemetry.stage,
+              stage_label: telemetry.stageLabel,
+              error_code: telemetry.errorCode,
+              detail: telemetry.detail || telemetry.raw,
+              http_status: telemetry.httpStatus,
+              retryable: telemetry.retryable,
+              run_mode: runMode,
+            });
+            throw err;
+          }
           targets.push({ source: "upload_new", upload_id: uploaded.upload_id });
           void safeTrack("compare_upload_success", { category: targetCategory, upload_id: uploaded.upload_id });
         }
@@ -714,7 +939,7 @@ export default function MobileComparePage() {
       void safeTrack("compare_run_start", {
         category: targetCategory,
         profile_mode: "reuse_latest",
-        run_mode: options?.runMode || (isRetryRun ? "retry_snapshot" : "fresh"),
+        run_mode: runMode,
         has_upload: trackedHasUpload,
         selected_library_count: trackedLibraryCount,
         total_count: targets.length,
@@ -755,6 +980,14 @@ export default function MobileComparePage() {
             if (Number.isFinite(percent)) {
               setProgressPercent(Math.max(0, Math.min(100, Math.round(percent))));
             }
+            trackCompareStageProgress({
+              category: targetCategory,
+              compareId,
+              stage,
+              stageLabel: String(event.data.stage_label || "").trim(),
+              percent,
+              sourceEvent: "stream_accepted",
+            });
             return;
           }
           if (event.event === "progress") {
@@ -785,6 +1018,34 @@ export default function MobileComparePage() {
             if (Number.isFinite(pairIndex) && Number.isFinite(pairTotal) && pairTotal > 0) {
               setPairProgress({ index: Math.max(1, Math.round(pairIndex)), total: Math.max(1, Math.round(pairTotal)) });
             }
+            trackCompareStageProgress({
+              category: targetCategory,
+              compareId,
+              stage,
+              stageLabel,
+              percent,
+              pairIndex,
+              pairTotal,
+              sourceEvent: "stream_progress",
+            });
+            return;
+          }
+          if (event.event === "error") {
+            const compareId = String(event.data.trace_id || event.data.compare_id || activeCompareIdRef.current || "").trim();
+            const telemetry = parseCompareErrorTelemetry(event.data, {
+              stage: String(event.data.stage || activeStage || "").trim(),
+              stageLabel: String(event.data.stage_label || activeStageLabel || "").trim(),
+            });
+            trackCompareStageError({
+              category: targetCategory,
+              compareId,
+              runMode,
+              hasUpload: trackedHasUpload,
+              selectedLibraryCount: trackedLibraryCount,
+              totalCount: trackedTargets.length || targets.length,
+              sourceEvent: "stream_error",
+              error: telemetry,
+            });
             return;
           }
           if (event.event === "heartbeat") {
@@ -822,7 +1083,7 @@ export default function MobileComparePage() {
       void safeTrack("compare_run_success", {
         category: targetCategory,
         compare_id: result.compare_id,
-        run_mode: options?.runMode || (isRetryRun ? "retry_snapshot" : "fresh"),
+        run_mode: runMode,
         has_upload: trackedTargets.some((item) => item.source === "upload_new"),
         selected_library_count: trackedTargets.filter((item) => item.source === "history_product").length,
         total_count: trackedTargets.length,
@@ -841,10 +1102,30 @@ export default function MobileComparePage() {
       } else {
         setRunError(humanizeCompareError(text));
       }
+      const telemetry = parseCompareErrorTelemetry(text, {
+        stage: activeSession?.error?.stage || activeSession?.stage || activeStage,
+        stageLabel: activeSession?.error?.stage_label || activeSession?.stage_label || activeStageLabel,
+      });
+      trackCompareStageError({
+        category: targetCategory,
+        compareId: activeCompareIdRef.current,
+        runMode,
+        hasUpload: trackedTargets.some((item) => item.source === "upload_new"),
+        selectedLibraryCount: trackedTargets.filter((item) => item.source === "history_product").length,
+        totalCount: trackedTargets.length,
+        sourceEvent: "run_catch",
+        error: telemetry,
+      });
       void safeTrack("compare_run_error", {
         category: targetCategory,
+        compare_id: String(activeCompareIdRef.current || "").trim() || undefined,
         error: text,
-        run_mode: options?.runMode || (isRetryRun ? "retry_snapshot" : "fresh"),
+        stage: telemetry.stage,
+        stage_label: telemetry.stageLabel,
+        error_code: telemetry.errorCode,
+        detail: telemetry.detail || telemetry.raw,
+        http_status: telemetry.httpStatus,
+        run_mode: runMode,
         has_upload: trackedTargets.some((item) => item.source === "upload_new"),
         selected_library_count: trackedTargets.filter((item) => item.source === "history_product").length,
         total_count: trackedTargets.length,

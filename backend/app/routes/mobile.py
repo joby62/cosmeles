@@ -1710,7 +1710,11 @@ def run_mobile_compare_job_stream(
             )
             emit("result", result.model_dump(), db_session=local_db)
         except HTTPException as e:
-            err_payload = _compare_error_payload_from_http_exception(e)
+            err_payload = _enrich_compare_error_payload(
+                _compare_error_payload_from_http_exception(e),
+                compare_id=compare_id,
+                db=local_db,
+            )
             _upsert_mobile_compare_session(
                 compare_id=compare_id,
                 owner_type=owner_type,
@@ -1725,12 +1729,16 @@ def run_mobile_compare_job_stream(
             )
             emit("error", err_payload, db_session=local_db)
         except AIServiceError as e:
-            err_payload = {
-                "code": e.code,
-                "detail": e.message,
-                "http_status": e.http_status,
-                "retryable": e.http_status >= 500,
-            }
+            err_payload = _enrich_compare_error_payload(
+                {
+                    "code": e.code,
+                    "detail": e.message,
+                    "http_status": e.http_status,
+                    "retryable": e.http_status >= 500,
+                },
+                compare_id=compare_id,
+                db=local_db,
+            )
             _upsert_mobile_compare_session(
                 compare_id=compare_id,
                 owner_type=owner_type,
@@ -1745,12 +1753,16 @@ def run_mobile_compare_job_stream(
             )
             emit("error", err_payload, db_session=local_db)
         except Exception as e:  # pragma: no cover
-            err_payload = {
-                "code": "COMPARE_INTERNAL_ERROR",
-                "detail": str(e),
-                "http_status": 500,
-                "retryable": True,
-            }
+            err_payload = _enrich_compare_error_payload(
+                {
+                    "code": "COMPARE_INTERNAL_ERROR",
+                    "detail": str(e),
+                    "http_status": 500,
+                    "retryable": True,
+                },
+                compare_id=compare_id,
+                db=local_db,
+            )
             _upsert_mobile_compare_session(
                 compare_id=compare_id,
                 owner_type=owner_type,
@@ -4598,6 +4610,20 @@ def _compare_error_payload_from_http_exception(exc: HTTPException) -> dict[str, 
         "http_status": exc.status_code,
         "retryable": exc.status_code >= 500,
     }
+
+
+def _enrich_compare_error_payload(
+    payload: dict[str, Any],
+    *,
+    compare_id: str,
+    db: Session,
+) -> dict[str, Any]:
+    out = dict(payload or {})
+    session_row = db.get(MobileCompareSessionIndex, compare_id)
+    if session_row is not None:
+        out.setdefault("stage", str(session_row.stage or "").strip() or None)
+        out.setdefault("stage_label", str(session_row.stage_label or "").strip() or None)
+    return out
 
 
 def _to_sse(event: str, payload: dict[str, Any]) -> str:
