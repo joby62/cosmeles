@@ -1,5 +1,6 @@
 import "../globals.css";
 import MobileBottomNav from "@/components/mobile/MobileBottomNav";
+import MobileLocationConsent from "@/components/mobile/MobileLocationConsent";
 import MobileTopBar from "@/components/mobile/MobileTopBar";
 
 export const metadata = {
@@ -15,6 +16,7 @@ export default function MobileLayout({ children }: { children: React.ReactNode }
       </header>
 
       <main className="m-mobile-main mx-auto max-w-[680px] px-4 py-6">{children}</main>
+      <MobileLocationConsent />
       <MobileBottomNav />
     </div>
   );

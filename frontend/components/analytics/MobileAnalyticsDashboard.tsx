@@ -512,6 +512,17 @@ function describeTimelineEvent(item: MobileAnalyticsSessionEventItem): SessionTi
         meta,
         rawMeta,
       };
+    case "location_context_captured":
+      return {
+        eventName,
+        phase: "action",
+        title: "用户允许读取位置",
+        flowLabel: "允许位置授权",
+        summary: detail || "已记录近似位置，后续内容可以把它作为呈现依据之一。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
     case "compare_run_start":
       return {
         eventName,
