@@ -166,12 +166,33 @@ class ProductWorkbenchJobCounters(BaseModel):
     failed: int = 0
     compared_pairs: int = 0
     suggestions: int = 0
+    deleted: int = 0
+    missing: int = 0
+    invalid: int = 0
+    repaired: int = 0
+    removed_files: int = 0
+    removed_dirs: int = 0
+    scanned_images: int = 0
+    orphan_images: int = 0
+    deleted_images: int = 0
+    scanned_runs: int = 0
+    orphan_runs: int = 0
+    deleted_runs: int = 0
 
 
 class ProductWorkbenchJobView(BaseModel):
     status: Literal["queued", "running", "cancelling", "cancelled", "done", "failed"] = "queued"
     job_id: str
-    job_type: Literal["route_mapping_build", "product_analysis_build", "dedup_suggest", "selection_result_build"]
+    job_type: Literal[
+        "route_mapping_build",
+        "product_analysis_build",
+        "dedup_suggest",
+        "selection_result_build",
+        "product_batch_delete",
+        "ingredient_batch_delete",
+        "orphan_storage_cleanup",
+        "mobile_invalid_ref_cleanup",
+    ]
     params: dict[str, Any] = Field(default_factory=dict)
     stage: Optional[str] = None
     stage_label: Optional[str] = None

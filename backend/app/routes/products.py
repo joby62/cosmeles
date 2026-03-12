@@ -236,7 +236,9 @@ class IngredientLibraryBuildCancelledError(RuntimeError):
 
 
 class ProductWorkbenchJobCancelledError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, result: dict[str, Any] | None = None):
+        super().__init__(message)
+        self.result = result
 
 
 ANALYTICS_DEFAULT_SINCE_HOURS = 24 * 7
@@ -1828,11 +1830,55 @@ def retry_ingredient_library_build_job(job_id: str, db: Session = Depends(get_db
     return _to_ingredient_build_job_view(rec)
 
 
-@router.post("/products/ingredients/library/batch-delete", response_model=IngredientLibraryBatchDeleteResponse)
-def batch_delete_ingredient_library(
+def _delete_ingredient_library_batch_item(
+    *,
+    db: Session,
+    ingredient_id: str,
+    rec: IngredientLibraryIndex | None,
+    remove_doubao_artifacts: bool,
+) -> tuple[bool, int, int]:
+    removed_files = 0
+    removed_dirs = 0
+    profile_path = _resolve_ingredient_profile_path_for_delete(rec=rec, ingredient_id=ingredient_id)
+    profile_deleted = False
+    if profile_path and exists_rel_path(profile_path):
+        if remove_rel_path(profile_path):
+            profile_deleted = True
+            removed_files += 1
+
+    if rec is not None:
+        alias_rows = db.execute(
+            select(IngredientLibraryAlias)
+            .where(IngredientLibraryAlias.category == str(rec.category or "").strip().lower())
+            .where(IngredientLibraryAlias.ingredient_id == ingredient_id)
+        ).scalars().all()
+        for alias_row in alias_rows:
+            db.delete(alias_row)
+        redirect_rows = db.execute(
+            select(IngredientLibraryRedirect).where(
+                (IngredientLibraryRedirect.old_ingredient_id == ingredient_id)
+                | (IngredientLibraryRedirect.new_ingredient_id == ingredient_id)
+            )
+        ).scalars().all()
+        for redirect_row in redirect_rows:
+            db.delete(redirect_row)
+        db.delete(rec)
+
+    if remove_doubao_artifacts:
+        run_files, run_dirs = remove_rel_dir(f"doubao_runs/{ingredient_id}")
+        removed_files += run_files
+        removed_dirs += run_dirs
+
+    deleted = rec is not None or profile_deleted
+    return deleted, removed_files, removed_dirs
+
+
+def _batch_delete_ingredient_library_impl(
     payload: IngredientLibraryBatchDeleteRequest,
-    db: Session = Depends(get_db),
-):
+    db: Session,
+    event_callback: Callable[[dict[str, Any]], None] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
+) -> IngredientLibraryBatchDeleteResponse:
     _ensure_ingredient_index_table(db)
     _ensure_ingredient_alias_tables(db)
     ingredient_ids = _normalize_ingredient_id_list(payload.ingredient_ids)
@@ -1849,51 +1895,94 @@ def batch_delete_ingredient_library(
     failed_items: list[IngredientLibraryDeleteFailureItem] = []
     removed_files = 0
     removed_dirs = 0
-    dirty = False
+    total = len(ingredient_ids)
 
-    for ingredient_id in ingredient_ids:
+    if event_callback:
+        event_callback(
+            {
+                "step": "ingredient_delete_start",
+                "index": 0,
+                "total": total,
+                "text": f"准备处理 {total} 个成分删除请求。",
+            }
+        )
+
+    for index, ingredient_id in enumerate(ingredient_ids, start=1):
+        if should_cancel and should_cancel():
+            raise ProductWorkbenchJobCancelledError(
+                f"成分删除任务已取消：deleted={len(deleted_ids)}，missing={len(missing_ids)}，failed={len(failed_items)}。",
+                result=IngredientLibraryBatchDeleteResponse(
+                    status="cancelled",
+                    deleted_ids=deleted_ids,
+                    missing_ids=missing_ids,
+                    failed_items=failed_items,
+                    removed_files=removed_files,
+                    removed_dirs=removed_dirs,
+                ).model_dump(),
+            )
         rec = by_id.get(ingredient_id)
         try:
-            profile_path = _resolve_ingredient_profile_path_for_delete(rec=rec, ingredient_id=ingredient_id)
-            profile_deleted = False
-            if profile_path and exists_rel_path(profile_path):
-                if remove_rel_path(profile_path):
-                    profile_deleted = True
-                    removed_files += 1
-
-            if rec is not None:
-                alias_rows = db.execute(
-                    select(IngredientLibraryAlias)
-                    .where(IngredientLibraryAlias.category == str(rec.category or "").strip().lower())
-                    .where(IngredientLibraryAlias.ingredient_id == ingredient_id)
-                ).scalars().all()
-                for alias_row in alias_rows:
-                    db.delete(alias_row)
-                redirect_rows = db.execute(
-                    select(IngredientLibraryRedirect).where(
-                        (IngredientLibraryRedirect.old_ingredient_id == ingredient_id)
-                        | (IngredientLibraryRedirect.new_ingredient_id == ingredient_id)
-                    )
-                ).scalars().all()
-                for redirect_row in redirect_rows:
-                    db.delete(redirect_row)
-                db.delete(rec)
-                dirty = True
-
-            if bool(payload.remove_doubao_artifacts):
-                run_files, run_dirs = remove_rel_dir(f"doubao_runs/{ingredient_id}")
-                removed_files += run_files
-                removed_dirs += run_dirs
-
-            if rec is None and not profile_deleted:
+            if event_callback:
+                event_callback(
+                    {
+                        "step": "ingredient_delete_item",
+                        "index": index,
+                        "total": total,
+                        "ingredient_id": ingredient_id,
+                        "text": f"删除成分 {ingredient_id} 及关联产物。",
+                    }
+                )
+            deleted, item_removed_files, item_removed_dirs = _delete_ingredient_library_batch_item(
+                db=db,
+                ingredient_id=ingredient_id,
+                rec=rec,
+                remove_doubao_artifacts=bool(payload.remove_doubao_artifacts),
+            )
+            removed_files += item_removed_files
+            removed_dirs += item_removed_dirs
+            if not deleted:
                 missing_ids.append(ingredient_id)
+                if event_callback:
+                    event_callback(
+                        {
+                            "step": "ingredient_delete_missing",
+                            "index": index,
+                            "total": total,
+                            "ingredient_id": ingredient_id,
+                            "text": f"成分 {ingredient_id} 不存在，记为 missing。",
+                            "missing": len(missing_ids),
+                        }
+                    )
                 continue
             deleted_ids.append(ingredient_id)
+            db.commit()
+            if event_callback:
+                event_callback(
+                    {
+                        "step": "ingredient_delete_done",
+                        "index": index,
+                        "total": total,
+                        "ingredient_id": ingredient_id,
+                        "text": f"成分 {ingredient_id} 删除完成。",
+                        "deleted": len(deleted_ids),
+                        "removed_files": removed_files,
+                        "removed_dirs": removed_dirs,
+                    }
+                )
         except Exception as e:
+            db.rollback()
             failed_items.append(IngredientLibraryDeleteFailureItem(ingredient_id=ingredient_id, error=str(e)))
-
-    if dirty:
-        db.commit()
+            if event_callback:
+                event_callback(
+                    {
+                        "step": "ingredient_delete_error",
+                        "index": index,
+                        "total": total,
+                        "ingredient_id": ingredient_id,
+                        "text": f"成分 {ingredient_id} 删除失败：{e}",
+                        "failed": len(failed_items),
+                    }
+                )
 
     return IngredientLibraryBatchDeleteResponse(
         status="ok",
@@ -1903,6 +1992,61 @@ def batch_delete_ingredient_library(
         removed_files=removed_files,
         removed_dirs=removed_dirs,
     )
+
+
+@router.post("/products/ingredients/library/batch-delete/jobs", response_model=ProductWorkbenchJobView)
+def create_ingredient_batch_delete_job(
+    payload: IngredientLibraryBatchDeleteRequest,
+    db: Session = Depends(get_db),
+):
+    ingredient_ids = _normalize_ingredient_id_list(payload.ingredient_ids)
+    if not ingredient_ids:
+        raise HTTPException(status_code=400, detail="ingredient_ids cannot be empty.")
+    return _create_product_workbench_job(
+        db=db,
+        job_type="ingredient_batch_delete",
+        params=payload.model_dump(),
+        queued_message=f"成分批量删除任务已创建，待处理 {len(ingredient_ids)} 个成分。",
+    )
+
+
+@router.get("/products/ingredients/library/batch-delete/jobs", response_model=list[ProductWorkbenchJobView])
+def list_ingredient_batch_delete_jobs(
+    status: str | None = Query(None),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(30, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    return _list_product_workbench_jobs(
+        db=db,
+        job_type="ingredient_batch_delete",
+        status=status,
+        offset=offset,
+        limit=limit,
+    )
+
+
+@router.get("/products/ingredients/library/batch-delete/jobs/{job_id}", response_model=ProductWorkbenchJobView)
+def get_ingredient_batch_delete_job(job_id: str, db: Session = Depends(get_db)):
+    return _get_product_workbench_job(db=db, job_id=job_id, expected_job_type="ingredient_batch_delete")
+
+
+@router.post("/products/ingredients/library/batch-delete/jobs/{job_id}/cancel", response_model=ProductWorkbenchJobCancelResponse)
+def cancel_ingredient_batch_delete_job(job_id: str, db: Session = Depends(get_db)):
+    return _cancel_product_workbench_job(db=db, job_id=job_id, expected_job_type="ingredient_batch_delete")
+
+
+@router.post("/products/ingredients/library/batch-delete/jobs/{job_id}/retry", response_model=ProductWorkbenchJobView)
+def retry_ingredient_batch_delete_job(job_id: str, db: Session = Depends(get_db)):
+    return _retry_product_workbench_job(db=db, job_id=job_id, expected_job_type="ingredient_batch_delete")
+
+
+@router.post("/products/ingredients/library/batch-delete", response_model=IngredientLibraryBatchDeleteResponse)
+def batch_delete_ingredient_library(
+    payload: IngredientLibraryBatchDeleteRequest,
+    db: Session = Depends(get_db),
+):
+    return _batch_delete_ingredient_library_impl(payload=payload, db=db)
 
 
 @router.get("/products/ingredients/library", response_model=IngredientLibraryListResponse)
@@ -2537,8 +2681,62 @@ def delete_product(product_id: str, db: Session = Depends(get_db)):
     return {"id": product_id, "status": "deleted", "removed_files": removed}
 
 
-@router.post("/products/batch-delete", response_model=ProductBatchDeleteResponse)
-def batch_delete_products(payload: ProductBatchDeleteRequest, db: Session = Depends(get_db)):
+def _delete_product_batch_item(
+    *,
+    db: Session,
+    product_id: str,
+    rec: ProductIndex,
+    remove_doubao_artifacts: bool,
+) -> tuple[int, int]:
+    removed_files = 0
+    removed_dirs = 0
+
+    if remove_rel_path(rec.json_path):
+        removed_files += 1
+    image_removed, _ = remove_product_images(product_id=product_id, image_path=rec.image_path)
+    removed_files += image_removed
+    if remove_doubao_artifacts:
+        f_count, d_count = remove_rel_dir(f"doubao_runs/{product_id}")
+        removed_files += f_count
+        removed_dirs += d_count
+
+    route_mapping_rec = db.get(ProductRouteMappingIndex, product_id)
+    if route_mapping_rec:
+        route_mapping_path = str(route_mapping_rec.storage_path or "").strip() or product_route_mapping_rel_path(
+            str(route_mapping_rec.category or ""),
+            product_id,
+        )
+        if route_mapping_path and remove_rel_path(route_mapping_path):
+            removed_files += 1
+        db.delete(route_mapping_rec)
+    analysis_rec = db.get(ProductAnalysisIndex, product_id)
+    if analysis_rec:
+        analysis_path = str(analysis_rec.storage_path or "").strip() or product_analysis_rel_path(
+            str(analysis_rec.category or ""),
+            product_id,
+        )
+        if analysis_path and remove_rel_path(analysis_path):
+            removed_files += 1
+        db.delete(analysis_rec)
+    try:
+        featured_slots = db.execute(
+            select(ProductFeaturedSlot).where(ProductFeaturedSlot.product_id == product_id)
+        ).scalars().all()
+    except OperationalError as exc:
+        raise _featured_slot_schema_http_error(exc) from exc
+    for slot in featured_slots:
+        db.delete(slot)
+
+    db.delete(rec)
+    return removed_files, removed_dirs
+
+
+def _batch_delete_products_impl(
+    payload: ProductBatchDeleteRequest,
+    db: Session,
+    event_callback: Callable[[dict[str, Any]], None] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
+) -> ProductBatchDeleteResponse:
     ids = list(dict.fromkeys([str(item).strip() for item in payload.ids if str(item).strip()]))
     keep_ids = {str(item).strip() for item in payload.keep_ids if str(item).strip()}
     if not ids:
@@ -2549,56 +2747,106 @@ def batch_delete_products(payload: ProductBatchDeleteRequest, db: Session = Depe
     missing_ids: list[str] = []
     removed_files = 0
     removed_dirs = 0
+    total = len(ids)
 
-    for product_id in ids:
+    if event_callback:
+        event_callback(
+            {
+                "step": "product_delete_start",
+                "index": 0,
+                "total": total,
+                "scanned_products": total,
+                "text": f"准备处理 {total} 个产品删除请求。",
+            }
+        )
+
+    for index, product_id in enumerate(ids, start=1):
+        if should_cancel and should_cancel():
+            raise ProductWorkbenchJobCancelledError(
+                f"产品删除任务已取消：deleted={len(deleted_ids)}，skipped={len(skipped_ids)}，missing={len(missing_ids)}。",
+                result=ProductBatchDeleteResponse(
+                    status="cancelled",
+                    deleted_ids=deleted_ids,
+                    skipped_ids=skipped_ids,
+                    missing_ids=missing_ids,
+                    removed_files=removed_files,
+                    removed_dirs=removed_dirs,
+                ).model_dump(),
+            )
         if product_id in keep_ids:
             skipped_ids.append(product_id)
+            if event_callback:
+                event_callback(
+                    {
+                        "step": "product_delete_skip",
+                        "index": index,
+                        "total": total,
+                        "product_id": product_id,
+                        "text": f"跳过保留产品 {product_id}。",
+                        "skipped": len(skipped_ids),
+                    }
+                )
             continue
         rec = db.get(ProductIndex, product_id)
         if not rec:
             missing_ids.append(product_id)
+            if event_callback:
+                event_callback(
+                    {
+                        "step": "product_delete_missing",
+                        "index": index,
+                        "total": total,
+                        "product_id": product_id,
+                        "text": f"产品 {product_id} 不存在，记为 missing。",
+                        "missing": len(missing_ids),
+                    }
+                )
             continue
 
-        if remove_rel_path(rec.json_path):
-            removed_files += 1
-        image_removed, _ = remove_product_images(product_id=product_id, image_path=rec.image_path)
-        removed_files += image_removed
-        if payload.remove_doubao_artifacts:
-            f_count, d_count = remove_rel_dir(f"doubao_runs/{product_id}")
-            removed_files += f_count
-            removed_dirs += d_count
-
-        route_mapping_rec = db.get(ProductRouteMappingIndex, product_id)
-        if route_mapping_rec:
-            route_mapping_path = str(route_mapping_rec.storage_path or "").strip() or product_route_mapping_rel_path(
-                str(route_mapping_rec.category or ""),
-                product_id,
+        if event_callback:
+            event_callback(
+                {
+                    "step": "product_delete_item",
+                    "index": index,
+                    "total": total,
+                    "product_id": product_id,
+                    "text": f"删除产品 {product_id} 及关联产物。",
+                }
             )
-            if route_mapping_path and remove_rel_path(route_mapping_path):
-                removed_files += 1
-            db.delete(route_mapping_rec)
-        analysis_rec = db.get(ProductAnalysisIndex, product_id)
-        if analysis_rec:
-            analysis_path = str(analysis_rec.storage_path or "").strip() or product_analysis_rel_path(
-                str(analysis_rec.category or ""),
-                product_id,
-            )
-            if analysis_path and remove_rel_path(analysis_path):
-                removed_files += 1
-            db.delete(analysis_rec)
-        try:
-            featured_slots = db.execute(
-                select(ProductFeaturedSlot).where(ProductFeaturedSlot.product_id == product_id)
-            ).scalars().all()
-        except OperationalError as exc:
-            raise _featured_slot_schema_http_error(exc) from exc
-        for slot in featured_slots:
-            db.delete(slot)
-
-        db.delete(rec)
+        item_removed_files, item_removed_dirs = _delete_product_batch_item(
+            db=db,
+            product_id=product_id,
+            rec=rec,
+            remove_doubao_artifacts=bool(payload.remove_doubao_artifacts),
+        )
+        removed_files += item_removed_files
+        removed_dirs += item_removed_dirs
+        db.commit()
         deleted_ids.append(product_id)
+        if event_callback:
+            event_callback(
+                {
+                    "step": "product_delete_done",
+                    "index": index,
+                    "total": total,
+                    "product_id": product_id,
+                    "text": f"产品 {product_id} 删除完成。",
+                    "deleted": len(deleted_ids),
+                    "removed_files": removed_files,
+                    "removed_dirs": removed_dirs,
+                }
+            )
 
     if deleted_ids:
+        if event_callback:
+            event_callback(
+                {
+                    "step": "product_delete_mobile_refs_cleanup",
+                    "index": total,
+                    "total": total,
+                    "text": f"同步清理 {len(deleted_ids)} 个已删产品的移动端失效引用。",
+                }
+            )
         _cleanup_mobile_invalid_product_refs(
             db=db,
             dry_run=False,
@@ -2606,8 +2854,8 @@ def batch_delete_products(payload: ProductBatchDeleteRequest, db: Session = Depe
             invalid_product_ids=set(deleted_ids),
             selection_deleted_by="products:batch_delete",
         )
+        db.commit()
 
-    db.commit()
     return ProductBatchDeleteResponse(
         status="ok",
         deleted_ids=deleted_ids,
@@ -2618,6 +2866,55 @@ def batch_delete_products(payload: ProductBatchDeleteRequest, db: Session = Depe
     )
 
 
+@router.post("/products/batch-delete/jobs", response_model=ProductWorkbenchJobView)
+def create_product_batch_delete_job(payload: ProductBatchDeleteRequest, db: Session = Depends(get_db)):
+    ids = [str(item).strip() for item in payload.ids if str(item).strip()]
+    if not ids:
+        raise HTTPException(status_code=400, detail="ids is required.")
+    return _create_product_workbench_job(
+        db=db,
+        job_type="product_batch_delete",
+        params=payload.model_dump(),
+        queued_message=f"产品批量删除任务已创建，待处理 {len(ids)} 个产品。",
+    )
+
+
+@router.get("/products/batch-delete/jobs", response_model=list[ProductWorkbenchJobView])
+def list_product_batch_delete_jobs(
+    status: str | None = Query(None),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(30, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    return _list_product_workbench_jobs(
+        db=db,
+        job_type="product_batch_delete",
+        status=status,
+        offset=offset,
+        limit=limit,
+    )
+
+
+@router.get("/products/batch-delete/jobs/{job_id}", response_model=ProductWorkbenchJobView)
+def get_product_batch_delete_job(job_id: str, db: Session = Depends(get_db)):
+    return _get_product_workbench_job(db=db, job_id=job_id, expected_job_type="product_batch_delete")
+
+
+@router.post("/products/batch-delete/jobs/{job_id}/cancel", response_model=ProductWorkbenchJobCancelResponse)
+def cancel_product_batch_delete_job(job_id: str, db: Session = Depends(get_db)):
+    return _cancel_product_workbench_job(db=db, job_id=job_id, expected_job_type="product_batch_delete")
+
+
+@router.post("/products/batch-delete/jobs/{job_id}/retry", response_model=ProductWorkbenchJobView)
+def retry_product_batch_delete_job(job_id: str, db: Session = Depends(get_db)):
+    return _retry_product_workbench_job(db=db, job_id=job_id, expected_job_type="product_batch_delete")
+
+
+@router.post("/products/batch-delete", response_model=ProductBatchDeleteResponse)
+def batch_delete_products(payload: ProductBatchDeleteRequest, db: Session = Depends(get_db)):
+    return _batch_delete_products_impl(payload=payload, db=db)
+
+
 def _cleanup_mobile_invalid_product_refs(
     *,
     db: Session,
@@ -2625,7 +2922,21 @@ def _cleanup_mobile_invalid_product_refs(
     sample_limit: int,
     invalid_product_ids: set[str] | None = None,
     selection_deleted_by: str,
+    event_callback: Callable[[dict[str, Any]], None] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> MobileInvalidProductRefCleanupResponse:
+    def _emit(step: str, *, index: int, total: int, text: str) -> None:
+        if not event_callback:
+            return
+        event_callback(
+            {
+                "step": step,
+                "index": index,
+                "total": total,
+                "text": text,
+            }
+        )
+
     normalized_invalid_ids: set[str] | None = None
     if invalid_product_ids is not None:
         normalized_invalid_ids = {
@@ -2664,17 +2975,42 @@ def _cleanup_mobile_invalid_product_refs(
         "bag_items": _empty_scope(),
         "compare_usage_stats": _empty_scope(),
     }
+
+    def _current_result_payload(status: str = "ok") -> dict[str, Any]:
+        result["status"] = status
+        result["total_invalid"] = (
+            result["selection_sessions"]["invalid"]
+            + result["bag_items"]["invalid"]
+            + result["compare_usage_stats"]["invalid"]
+        )
+        result["total_repaired"] = (
+            result["selection_sessions"]["repaired"]
+            + result["bag_items"]["repaired"]
+            + result["compare_usage_stats"]["repaired"]
+        )
+        return MobileInvalidProductRefCleanupResponse.model_validate(result).model_dump()
+
+    _emit(
+        "mobile_ref_cleanup_start",
+        index=0,
+        total=3,
+        text=f"开始{'扫描' if dry_run else '修复'}移动端产品失效引用。",
+    )
     if targeted_mode and not normalized_invalid_ids:
-        result["total_invalid"] = 0
-        result["total_repaired"] = 0
-        return MobileInvalidProductRefCleanupResponse.model_validate(result)
+        return MobileInvalidProductRefCleanupResponse.model_validate(_current_result_payload())
 
     selection_stmt = select(MobileSelectionSession).where(MobileSelectionSession.deleted_at.is_(None))
     if targeted_mode and normalized_invalid_ids:
         selection_stmt = selection_stmt.where(MobileSelectionSession.product_id.in_(sorted(normalized_invalid_ids)))
     selection_rows = db.execute(selection_stmt).scalars().all()
+    _emit("mobile_ref_cleanup_scope", index=1, total=3, text=f"扫描选择会话引用，共 {len(selection_rows)} 条。")
     result["selection_sessions"]["scanned"] = len(selection_rows)
     for row in selection_rows:
+        if should_cancel and should_cancel():
+            raise ProductWorkbenchJobCancelledError(
+                "移动端失效引用清理已取消（选择会话阶段）。",
+                result=_current_result_payload("cancelled"),
+            )
         product_id = str(row.product_id or "").strip()
         if not product_id:
             continue
@@ -2690,13 +3026,28 @@ def _cleanup_mobile_invalid_product_refs(
         row.pinned_at = None
         row.product_id = None
         result["selection_sessions"]["repaired"] += 1
+    _emit(
+        "mobile_ref_cleanup_scope",
+        index=1,
+        total=3,
+        text=(
+            f"选择会话完成：invalid={result['selection_sessions']['invalid']}，"
+            f"repaired={result['selection_sessions']['repaired']}。"
+        ),
+    )
 
     bag_stmt = select(MobileBagItem)
     if targeted_mode and normalized_invalid_ids:
         bag_stmt = bag_stmt.where(MobileBagItem.product_id.in_(sorted(normalized_invalid_ids)))
     bag_rows = db.execute(bag_stmt).scalars().all()
+    _emit("mobile_ref_cleanup_scope", index=2, total=3, text=f"扫描购物袋引用，共 {len(bag_rows)} 条。")
     result["bag_items"]["scanned"] = len(bag_rows)
     for row in bag_rows:
+        if should_cancel and should_cancel():
+            raise ProductWorkbenchJobCancelledError(
+                "移动端失效引用清理已取消（购物袋阶段）。",
+                result=_current_result_payload("cancelled"),
+            )
         product_id = str(row.product_id or "").strip()
         if not product_id:
             continue
@@ -2707,13 +3058,25 @@ def _cleanup_mobile_invalid_product_refs(
             continue
         db.delete(row)
         result["bag_items"]["repaired"] += 1
+    _emit(
+        "mobile_ref_cleanup_scope",
+        index=2,
+        total=3,
+        text=f"购物袋完成：invalid={result['bag_items']['invalid']}，repaired={result['bag_items']['repaired']}。",
+    )
 
     usage_stmt = select(MobileCompareUsageStat)
     if targeted_mode and normalized_invalid_ids:
         usage_stmt = usage_stmt.where(MobileCompareUsageStat.product_id.in_(sorted(normalized_invalid_ids)))
     usage_rows = db.execute(usage_stmt).scalars().all()
+    _emit("mobile_ref_cleanup_scope", index=3, total=3, text=f"扫描使用统计引用，共 {len(usage_rows)} 条。")
     result["compare_usage_stats"]["scanned"] = len(usage_rows)
     for row in usage_rows:
+        if should_cancel and should_cancel():
+            raise ProductWorkbenchJobCancelledError(
+                "移动端失效引用清理已取消（使用统计阶段）。",
+                result=_current_result_payload("cancelled"),
+            )
         product_id = str(row.product_id or "").strip()
         if not product_id:
             continue
@@ -2727,18 +3090,60 @@ def _cleanup_mobile_invalid_product_refs(
             continue
         db.delete(row)
         result["compare_usage_stats"]["repaired"] += 1
+    _emit(
+        "mobile_ref_cleanup_scope",
+        index=3,
+        total=3,
+        text=(
+            f"使用统计完成：invalid={result['compare_usage_stats']['invalid']}，"
+            f"repaired={result['compare_usage_stats']['repaired']}。"
+        ),
+    )
+    return MobileInvalidProductRefCleanupResponse.model_validate(_current_result_payload())
 
-    result["total_invalid"] = (
-        result["selection_sessions"]["invalid"]
-        + result["bag_items"]["invalid"]
-        + result["compare_usage_stats"]["invalid"]
+
+@router.post("/maintenance/mobile/product-refs/jobs", response_model=ProductWorkbenchJobView)
+def create_mobile_invalid_product_ref_cleanup_job(
+    payload: MobileInvalidProductRefCleanupRequest,
+    db: Session = Depends(get_db),
+):
+    return _create_product_workbench_job(
+        db=db,
+        job_type="mobile_invalid_ref_cleanup",
+        params=payload.model_dump(),
+        queued_message=f"移动端失效引用{'扫描' if payload.dry_run else '修复'}任务已创建。",
     )
-    result["total_repaired"] = (
-        result["selection_sessions"]["repaired"]
-        + result["bag_items"]["repaired"]
-        + result["compare_usage_stats"]["repaired"]
+
+
+@router.get("/maintenance/mobile/product-refs/jobs", response_model=list[ProductWorkbenchJobView])
+def list_mobile_invalid_product_ref_cleanup_jobs(
+    status: str | None = Query(None),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(30, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    return _list_product_workbench_jobs(
+        db=db,
+        job_type="mobile_invalid_ref_cleanup",
+        status=status,
+        offset=offset,
+        limit=limit,
     )
-    return MobileInvalidProductRefCleanupResponse.model_validate(result)
+
+
+@router.get("/maintenance/mobile/product-refs/jobs/{job_id}", response_model=ProductWorkbenchJobView)
+def get_mobile_invalid_product_ref_cleanup_job(job_id: str, db: Session = Depends(get_db)):
+    return _get_product_workbench_job(db=db, job_id=job_id, expected_job_type="mobile_invalid_ref_cleanup")
+
+
+@router.post("/maintenance/mobile/product-refs/jobs/{job_id}/cancel", response_model=ProductWorkbenchJobCancelResponse)
+def cancel_mobile_invalid_product_ref_cleanup_job(job_id: str, db: Session = Depends(get_db)):
+    return _cancel_product_workbench_job(db=db, job_id=job_id, expected_job_type="mobile_invalid_ref_cleanup")
+
+
+@router.post("/maintenance/mobile/product-refs/jobs/{job_id}/retry", response_model=ProductWorkbenchJobView)
+def retry_mobile_invalid_product_ref_cleanup_job(job_id: str, db: Session = Depends(get_db)):
+    return _retry_product_workbench_job(db=db, job_id=job_id, expected_job_type="mobile_invalid_ref_cleanup")
 
 
 @router.post("/maintenance/mobile/product-refs/cleanup", response_model=MobileInvalidProductRefCleanupResponse)
@@ -2757,8 +3162,21 @@ def cleanup_invalid_mobile_product_refs(
     return result
 
 
-@router.post("/maintenance/storage/orphans/cleanup", response_model=OrphanStorageCleanupResponse)
-def cleanup_orphan_storage_assets(payload: OrphanStorageCleanupRequest, db: Session = Depends(get_db)):
+def _cleanup_orphan_storage_impl(
+    payload: OrphanStorageCleanupRequest,
+    db: Session,
+    event_callback: Callable[[dict[str, Any]], None] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
+) -> OrphanStorageCleanupResponse:
+    if event_callback:
+        event_callback(
+            {
+                "step": "orphan_cleanup_prepare",
+                "index": 1,
+                "total": 2,
+                "text": "收集产品与图片引用集。",
+            }
+        )
     rows = db.execute(select(ProductIndex.id, ProductIndex.image_path)).all()
     keep_product_ids: set[str] = set()
     keep_image_paths: set[str] = set()
@@ -2770,6 +3188,17 @@ def cleanup_orphan_storage_assets(payload: OrphanStorageCleanupRequest, db: Sess
         for rel_path in image_variant_rel_paths(str(image_path or "").strip()):
             keep_image_paths.add(rel_path)
 
+    if should_cancel and should_cancel():
+        raise ProductWorkbenchJobCancelledError("孤儿存储清理在执行前已取消。")
+    if event_callback:
+        event_callback(
+            {
+                "step": "orphan_cleanup_scan",
+                "index": 2,
+                "total": 2,
+                "text": f"开始{'预览' if payload.dry_run else '执行'} orphan 清理。",
+            }
+        )
     result = cleanup_orphan_storage(
         keep_product_ids=keep_product_ids,
         keep_image_paths=keep_image_paths,
@@ -2778,6 +3207,52 @@ def cleanup_orphan_storage_assets(payload: OrphanStorageCleanupRequest, db: Sess
         max_delete=payload.max_delete,
     )
     return OrphanStorageCleanupResponse.model_validate(result)
+
+
+@router.post("/maintenance/storage/orphans/jobs", response_model=ProductWorkbenchJobView)
+def create_orphan_storage_cleanup_job(payload: OrphanStorageCleanupRequest, db: Session = Depends(get_db)):
+    return _create_product_workbench_job(
+        db=db,
+        job_type="orphan_storage_cleanup",
+        params=payload.model_dump(),
+        queued_message=f"orphan 存储{'预览' if payload.dry_run else '清理'}任务已创建。",
+    )
+
+
+@router.get("/maintenance/storage/orphans/jobs", response_model=list[ProductWorkbenchJobView])
+def list_orphan_storage_cleanup_jobs(
+    status: str | None = Query(None),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(30, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    return _list_product_workbench_jobs(
+        db=db,
+        job_type="orphan_storage_cleanup",
+        status=status,
+        offset=offset,
+        limit=limit,
+    )
+
+
+@router.get("/maintenance/storage/orphans/jobs/{job_id}", response_model=ProductWorkbenchJobView)
+def get_orphan_storage_cleanup_job(job_id: str, db: Session = Depends(get_db)):
+    return _get_product_workbench_job(db=db, job_id=job_id, expected_job_type="orphan_storage_cleanup")
+
+
+@router.post("/maintenance/storage/orphans/jobs/{job_id}/cancel", response_model=ProductWorkbenchJobCancelResponse)
+def cancel_orphan_storage_cleanup_job(job_id: str, db: Session = Depends(get_db)):
+    return _cancel_product_workbench_job(db=db, job_id=job_id, expected_job_type="orphan_storage_cleanup")
+
+
+@router.post("/maintenance/storage/orphans/jobs/{job_id}/retry", response_model=ProductWorkbenchJobView)
+def retry_orphan_storage_cleanup_job(job_id: str, db: Session = Depends(get_db)):
+    return _retry_product_workbench_job(db=db, job_id=job_id, expected_job_type="orphan_storage_cleanup")
+
+
+@router.post("/maintenance/storage/orphans/cleanup", response_model=OrphanStorageCleanupResponse)
+def cleanup_orphan_storage_assets(payload: OrphanStorageCleanupRequest, db: Session = Depends(get_db)):
+    return _cleanup_orphan_storage_impl(payload=payload, db=db)
 
 
 @router.get("/maintenance/storage/images/download")
@@ -4254,6 +4729,58 @@ def _run_product_workbench_job(*, job_id: str, db: Session) -> None:
                 )
             except SelectionResultBuildCancelledError as exc:
                 raise ProductWorkbenchJobCancelledError(str(exc)) from exc
+        elif job_type == "product_batch_delete":
+            delete_payload = ProductBatchDeleteRequest.model_validate(params)
+            result = _batch_delete_products_impl(
+                delete_payload,
+                db=db,
+                event_callback=lambda payload: _apply_product_workbench_job_progress(
+                    bind=db.get_bind(),
+                    job_id=job_id,
+                    payload=payload,
+                ),
+                should_cancel=should_cancel,
+            )
+        elif job_type == "ingredient_batch_delete":
+            ingredient_delete_payload = IngredientLibraryBatchDeleteRequest.model_validate(params)
+            result = _batch_delete_ingredient_library_impl(
+                ingredient_delete_payload,
+                db=db,
+                event_callback=lambda payload: _apply_product_workbench_job_progress(
+                    bind=db.get_bind(),
+                    job_id=job_id,
+                    payload=payload,
+                ),
+                should_cancel=should_cancel,
+            )
+        elif job_type == "orphan_storage_cleanup":
+            orphan_payload = OrphanStorageCleanupRequest.model_validate(params)
+            result = _cleanup_orphan_storage_impl(
+                orphan_payload,
+                db=db,
+                event_callback=lambda payload: _apply_product_workbench_job_progress(
+                    bind=db.get_bind(),
+                    job_id=job_id,
+                    payload=payload,
+                ),
+                should_cancel=should_cancel,
+            )
+        elif job_type == "mobile_invalid_ref_cleanup":
+            mobile_ref_payload = MobileInvalidProductRefCleanupRequest.model_validate(params)
+            result = _cleanup_mobile_invalid_product_refs(
+                db=db,
+                dry_run=bool(mobile_ref_payload.dry_run),
+                sample_limit=int(mobile_ref_payload.sample_limit),
+                selection_deleted_by="maintenance:mobile_product_ref_cleanup",
+                event_callback=lambda payload: _apply_product_workbench_job_progress(
+                    bind=db.get_bind(),
+                    job_id=job_id,
+                    payload=payload,
+                ),
+                should_cancel=should_cancel,
+            )
+            if (not mobile_ref_payload.dry_run) and result.total_repaired > 0:
+                db.commit()
         else:  # pragma: no cover
             raise HTTPException(status_code=400, detail=f"Unsupported product workbench job type: {job_type}.")
 
@@ -4282,6 +4809,34 @@ def _run_product_workbench_job(*, job_id: str, db: Session) -> None:
                 f"updated={int(result_payload.get('updated') or 0)}，"
                 f"failed={int(result_payload.get('failed') or 0)}"
             )
+        elif job_type == "product_batch_delete":
+            done_message = (
+                "任务完成："
+                f"deleted={len(result_payload.get('deleted_ids') or [])}，"
+                f"skipped={len(result_payload.get('skipped_ids') or [])}，"
+                f"missing={len(result_payload.get('missing_ids') or [])}"
+            )
+        elif job_type == "ingredient_batch_delete":
+            done_message = (
+                "任务完成："
+                f"deleted={len(result_payload.get('deleted_ids') or [])}，"
+                f"missing={len(result_payload.get('missing_ids') or [])}，"
+                f"failed={len(result_payload.get('failed_items') or [])}"
+            )
+        elif job_type == "orphan_storage_cleanup":
+            images_obj = result_payload.get("images") if isinstance(result_payload.get("images"), dict) else {}
+            runs_obj = result_payload.get("runs") if isinstance(result_payload.get("runs"), dict) else {}
+            done_message = (
+                f"{'预览完成' if bool(result_payload.get('dry_run')) else '清理完成'}："
+                f"images_deleted={int(images_obj.get('deleted_images') or 0)}，"
+                f"runs_deleted={int(runs_obj.get('deleted_runs') or 0)}"
+            )
+        elif job_type == "mobile_invalid_ref_cleanup":
+            done_message = (
+                f"{'扫描完成' if bool(result_payload.get('dry_run')) else '修复完成'}："
+                f"invalid={int(result_payload.get('total_invalid') or 0)}，"
+                f"repaired={int(result_payload.get('total_repaired') or 0)}"
+            )
         else:
             done_message = (
                 "任务完成："
@@ -4297,7 +4852,12 @@ def _run_product_workbench_job(*, job_id: str, db: Session) -> None:
         )
     except ProductWorkbenchJobCancelledError as e:
         db.rollback()
-        _mark_product_workbench_job_cancelled(job_id=job_id, bind=db.get_bind(), message=str(e))
+        _mark_product_workbench_job_cancelled(
+            job_id=job_id,
+            bind=db.get_bind(),
+            message=str(e),
+            result=e.result if isinstance(getattr(e, "result", None), dict) else None,
+        )
     except HTTPException as e:
         db.rollback()
         _mark_product_workbench_job_failed(
@@ -4420,7 +4980,13 @@ def _mark_product_workbench_job_done(
         local_db.close()
 
 
-def _mark_product_workbench_job_cancelled(*, job_id: str, bind: Any, message: str) -> None:
+def _mark_product_workbench_job_cancelled(
+    *,
+    job_id: str,
+    bind: Any,
+    message: str,
+    result: dict[str, Any] | None = None,
+) -> None:
     SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=bind)
     local_db = SessionMaker()
     try:
@@ -4429,11 +4995,21 @@ def _mark_product_workbench_job_cancelled(*, job_id: str, bind: Any, message: st
             return
         now = now_iso()
         job_type = _validate_product_workbench_job_type(str(rec.job_type or "").strip())
+        counters = _safe_load_json_object(rec.counters_json) or {}
+        if isinstance(result, dict):
+            _merge_product_workbench_counters(
+                job_type=job_type,
+                counters=counters,
+                payload=result,
+            )
+        rec.counters_json = json.dumps(counters, ensure_ascii=False)
         rec.status = "cancelled"
         rec.stage = "cancelled"
         rec.stage_label = _product_workbench_stage_label(job_type=job_type, stage="cancelled")
         rec.message = str(message or "任务已取消。")
         rec.percent = max(0, min(99, int(rec.percent or 0)))
+        if isinstance(result, dict):
+            rec.result_json = json.dumps(result, ensure_ascii=False)
         rec.finished_at = now
         rec.updated_at = now
         local_db.add(rec)
@@ -4587,7 +5163,16 @@ def _to_product_workbench_job_view(rec: ProductWorkbenchJob) -> ProductWorkbench
 
 def _validate_product_workbench_job_type(job_type: str) -> str:
     value = str(job_type or "").strip().lower()
-    if value not in {"route_mapping_build", "product_analysis_build", "dedup_suggest", "selection_result_build"}:
+    if value not in {
+        "route_mapping_build",
+        "product_analysis_build",
+        "dedup_suggest",
+        "selection_result_build",
+        "product_batch_delete",
+        "ingredient_batch_delete",
+        "orphan_storage_cleanup",
+        "mobile_invalid_ref_cleanup",
+    }:
         raise HTTPException(status_code=400, detail=f"Invalid job_type: {job_type}.")
     return value
 
@@ -4650,6 +5235,37 @@ def _product_workbench_stage_label(*, job_type: str, stage: str) -> str:
             "selection_result_build_done": "任务完成",
         }
         return mapping.get(key, key or "处理中")
+    if job_type == "product_batch_delete":
+        mapping = {
+            "product_delete_start": "准备删除",
+            "product_delete_item": "删除产品",
+            "product_delete_done": "单项完成",
+            "product_delete_skip": "跳过保留项",
+            "product_delete_missing": "目标缺失",
+            "product_delete_mobile_refs_cleanup": "清理移动端引用",
+        }
+        return mapping.get(key, key or "处理中")
+    if job_type == "ingredient_batch_delete":
+        mapping = {
+            "ingredient_delete_start": "准备删除",
+            "ingredient_delete_item": "删除成分",
+            "ingredient_delete_done": "单项完成",
+            "ingredient_delete_missing": "目标缺失",
+            "ingredient_delete_error": "单项失败",
+        }
+        return mapping.get(key, key or "处理中")
+    if job_type == "orphan_storage_cleanup":
+        mapping = {
+            "orphan_cleanup_prepare": "收集引用",
+            "orphan_cleanup_scan": "扫描 orphan",
+        }
+        return mapping.get(key, key or "处理中")
+    if job_type == "mobile_invalid_ref_cleanup":
+        mapping = {
+            "mobile_ref_cleanup_start": "准备扫描",
+            "mobile_ref_cleanup_scope": "处理分区",
+        }
+        return mapping.get(key, key or "处理中")
     mapping = {
         "dedup_scan_start": "扫描候选",
         "dedup_category_start": "按品类分析",
@@ -4705,6 +5321,50 @@ def _product_workbench_progress_cursor(
             total_value if total_value > 0 else None,
             answers_hash,
             category,
+        )
+    if job_type == "product_batch_delete":
+        index_value = _safe_positive_int(payload.get("index"), fallback=prev_index or 0)
+        total_value = _safe_positive_int(payload.get("total"), fallback=prev_total or 0)
+        product_id = str(payload.get("product_id") or prev_item_id or "").strip() or None
+        label = str(payload.get("text") or prev_item_name or "").strip() or None
+        return (
+            index_value if index_value > 0 else None,
+            total_value if total_value > 0 else None,
+            product_id,
+            label,
+        )
+    if job_type == "ingredient_batch_delete":
+        index_value = _safe_positive_int(payload.get("index"), fallback=prev_index or 0)
+        total_value = _safe_positive_int(payload.get("total"), fallback=prev_total or 0)
+        ingredient_id = str(payload.get("ingredient_id") or prev_item_id or "").strip() or None
+        label = str(payload.get("text") or prev_item_name or "").strip() or None
+        return (
+            index_value if index_value > 0 else None,
+            total_value if total_value > 0 else None,
+            ingredient_id,
+            label,
+        )
+    if job_type == "orphan_storage_cleanup":
+        index_value = _safe_positive_int(payload.get("index"), fallback=prev_index or 0)
+        total_value = _safe_positive_int(payload.get("total"), fallback=prev_total or 0)
+        step = str(payload.get("step") or prev_item_id or "").strip() or None
+        label = str(payload.get("text") or prev_item_name or "").strip() or None
+        return (
+            index_value if index_value > 0 else None,
+            total_value if total_value > 0 else None,
+            step,
+            label,
+        )
+    if job_type == "mobile_invalid_ref_cleanup":
+        index_value = _safe_positive_int(payload.get("index"), fallback=prev_index or 0)
+        total_value = _safe_positive_int(payload.get("total"), fallback=prev_total or 0)
+        step = str(payload.get("step") or prev_item_id or "").strip() or None
+        label = str(payload.get("text") or prev_item_name or "").strip() or None
+        return (
+            index_value if index_value > 0 else None,
+            total_value if total_value > 0 else None,
+            step,
+            label,
         )
     index_value = _safe_positive_int(payload.get("anchor_index"), fallback=prev_index or 0)
     total_value = _safe_positive_int(payload.get("anchor_total"), fallback=prev_total or 0)
@@ -4783,6 +5443,70 @@ def _merge_product_workbench_counters(
             if key in payload:
                 set_counter(key, _safe_positive_int(payload.get(key), fallback=0))
         return
+    if job_type == "product_batch_delete":
+        if "scanned_products" in payload:
+            set_counter("scanned_products", _safe_positive_int(payload.get("scanned_products"), fallback=0))
+        if step == "product_delete_done":
+            inc_counter("deleted")
+        elif step == "product_delete_skip":
+            inc_counter("skipped")
+        elif step == "product_delete_missing":
+            inc_counter("missing")
+        deleted_ids_raw = payload.get("deleted_ids")
+        if isinstance(deleted_ids_raw, list):
+            set_counter("deleted", len(deleted_ids_raw))
+        elif "deleted" in payload:
+            set_counter("deleted", _safe_positive_int(payload.get("deleted"), fallback=0))
+        skipped_ids_raw = payload.get("skipped_ids")
+        if isinstance(skipped_ids_raw, list):
+            set_counter("skipped", len(skipped_ids_raw))
+        missing_ids_raw = payload.get("missing_ids")
+        if isinstance(missing_ids_raw, list):
+            set_counter("missing", len(missing_ids_raw))
+        elif "missing" in payload:
+            set_counter("missing", _safe_positive_int(payload.get("missing"), fallback=0))
+        for key in ("removed_files", "removed_dirs"):
+            if key in payload:
+                set_counter(key, _safe_positive_int(payload.get(key), fallback=0))
+        return
+    if job_type == "ingredient_batch_delete":
+        if step == "ingredient_delete_done":
+            inc_counter("deleted")
+        elif step == "ingredient_delete_missing":
+            inc_counter("missing")
+        elif step == "ingredient_delete_error":
+            inc_counter("failed")
+        deleted_ids_raw = payload.get("deleted_ids")
+        if isinstance(deleted_ids_raw, list):
+            set_counter("deleted", len(deleted_ids_raw))
+        missing_ids_raw = payload.get("missing_ids")
+        if isinstance(missing_ids_raw, list):
+            set_counter("missing", len(missing_ids_raw))
+        failed_items_raw = payload.get("failed_items")
+        if isinstance(failed_items_raw, list):
+            set_counter("failed", len(failed_items_raw))
+        for key in ("removed_files", "removed_dirs"):
+            if key in payload:
+                set_counter(key, _safe_positive_int(payload.get(key), fallback=0))
+        return
+    if job_type == "orphan_storage_cleanup":
+        images_raw = payload.get("images")
+        if isinstance(images_raw, dict):
+            for field in ("scanned_images", "orphan_images", "deleted_images"):
+                if field in images_raw:
+                    set_counter(field, _safe_positive_int(images_raw.get(field), fallback=0))
+        runs_raw = payload.get("runs")
+        if isinstance(runs_raw, dict):
+            for field in ("scanned_runs", "orphan_runs", "deleted_runs"):
+                if field in runs_raw:
+                    set_counter(field, _safe_positive_int(runs_raw.get(field), fallback=0))
+        return
+    if job_type == "mobile_invalid_ref_cleanup":
+        if "total_invalid" in payload:
+            set_counter("invalid", _safe_positive_int(payload.get("total_invalid"), fallback=0))
+        if "total_repaired" in payload:
+            set_counter("repaired", _safe_positive_int(payload.get("total_repaired"), fallback=0))
+        return
 
     if "scanned_products" in payload:
         set_counter("scanned_products", _safe_positive_int(payload.get("scanned_products"), fallback=0))
@@ -4846,6 +5570,49 @@ def _product_workbench_progress_percent(
                 return max(value, min(95, computed))
             return max(value, 10)
         if step in {"selection_result_build_done", "done"}:
+            return 100
+        return value
+    if job_type == "product_batch_delete":
+        if step == "product_delete_start":
+            return max(value, 5)
+        if step == "product_delete_mobile_refs_cleanup":
+            return max(value, 96)
+        if step in {"product_delete_item", "product_delete_done", "product_delete_skip", "product_delete_missing"}:
+            if index is not None and total is not None and total > 0:
+                computed = 10 + int((max(0, min(total, index)) / total) * 82)
+                return max(value, min(95, computed))
+            return max(value, 10)
+        if step == "done":
+            return 100
+        return value
+    if job_type == "ingredient_batch_delete":
+        if step == "ingredient_delete_start":
+            return max(value, 5)
+        if step in {"ingredient_delete_item", "ingredient_delete_done", "ingredient_delete_missing", "ingredient_delete_error"}:
+            if index is not None and total is not None and total > 0:
+                computed = 10 + int((max(0, min(total, index)) / total) * 85)
+                return max(value, min(95, computed))
+            return max(value, 10)
+        if step == "done":
+            return 100
+        return value
+    if job_type == "orphan_storage_cleanup":
+        if step == "orphan_cleanup_prepare":
+            return max(value, 10)
+        if step == "orphan_cleanup_scan":
+            return max(value, 60)
+        if step == "done":
+            return 100
+        return value
+    if job_type == "mobile_invalid_ref_cleanup":
+        if step == "mobile_ref_cleanup_start":
+            return max(value, 5)
+        if step == "mobile_ref_cleanup_scope":
+            if index is not None and total is not None and total > 0:
+                computed = 15 + int((max(0, min(total, index)) / total) * 80)
+                return max(value, min(95, computed))
+            return max(value, 15)
+        if step == "done":
             return 100
         return value
     if step == "dedup_scan_start":

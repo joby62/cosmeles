@@ -67,12 +67,32 @@ export type ProductWorkbenchJobCounters = {
   failed: number;
   compared_pairs: number;
   suggestions: number;
+  deleted: number;
+  missing: number;
+  invalid: number;
+  repaired: number;
+  removed_files: number;
+  removed_dirs: number;
+  scanned_images: number;
+  orphan_images: number;
+  deleted_images: number;
+  scanned_runs: number;
+  orphan_runs: number;
+  deleted_runs: number;
 };
 
 export type ProductWorkbenchJob = {
   status: "queued" | "running" | "cancelling" | "cancelled" | "done" | "failed";
   job_id: string;
-  job_type: "route_mapping_build" | "product_analysis_build" | "dedup_suggest" | "selection_result_build";
+  job_type:
+    | "route_mapping_build"
+    | "product_analysis_build"
+    | "dedup_suggest"
+    | "selection_result_build"
+    | "product_batch_delete"
+    | "ingredient_batch_delete"
+    | "orphan_storage_cleanup"
+    | "mobile_invalid_ref_cleanup";
   params: Record<string, unknown>;
   stage?: string | null;
   stage_label?: string | null;
@@ -1993,6 +2013,63 @@ export async function deleteIngredientLibraryBatch(
   });
 }
 
+export async function createIngredientBatchDeleteJob(
+  payload: IngredientLibraryBatchDeleteRequest,
+): Promise<ProductWorkbenchJob> {
+  return apiFetch<ProductWorkbenchJob>("/api/products/ingredients/library/batch-delete/jobs", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchIngredientBatchDeleteJob(jobId: string): Promise<ProductWorkbenchJob> {
+  const value = jobId.trim();
+  if (!value) throw new Error("jobId is required.");
+  return apiFetch<ProductWorkbenchJob>(`/api/products/ingredients/library/batch-delete/jobs/${encodeURIComponent(value)}`, {
+    cacheProfile: "dynamic",
+  });
+}
+
+export async function listIngredientBatchDeleteJobs(params?: {
+  status?: ProductWorkbenchJob["status"];
+  offset?: number;
+  limit?: number;
+}): Promise<ProductWorkbenchJob[]> {
+  const search = new URLSearchParams();
+  if (params?.status) search.set("status", params.status);
+  if (typeof params?.offset === "number") search.set("offset", String(params.offset));
+  if (typeof params?.limit === "number") search.set("limit", String(params.limit));
+  const query = search.toString();
+  const path = query
+    ? `/api/products/ingredients/library/batch-delete/jobs?${query}`
+    : "/api/products/ingredients/library/batch-delete/jobs";
+  return apiFetch<ProductWorkbenchJob[]>(path, {
+    cacheProfile: "dynamic",
+  });
+}
+
+export async function cancelIngredientBatchDeleteJob(jobId: string): Promise<ProductWorkbenchJobCancelResponse> {
+  const value = jobId.trim();
+  if (!value) throw new Error("jobId is required.");
+  return apiFetch<ProductWorkbenchJobCancelResponse>(
+    `/api/products/ingredients/library/batch-delete/jobs/${encodeURIComponent(value)}/cancel`,
+    {
+      method: "POST",
+    },
+  );
+}
+
+export async function retryIngredientBatchDeleteJob(jobId: string): Promise<ProductWorkbenchJob> {
+  const value = jobId.trim();
+  if (!value) throw new Error("jobId is required.");
+  return apiFetch<ProductWorkbenchJob>(
+    `/api/products/ingredients/library/batch-delete/jobs/${encodeURIComponent(value)}/retry`,
+    {
+      method: "POST",
+    },
+  );
+}
+
 export async function buildProductRouteMappingStream(
   payload: ProductRouteMappingBuildRequest,
   onEvent: (event: SSEEvent) => void,
@@ -2284,10 +2361,109 @@ export async function deleteProductsBatch(payload: ProductBatchDeleteRequest): P
   });
 }
 
+export async function createProductBatchDeleteJob(payload: ProductBatchDeleteRequest): Promise<ProductWorkbenchJob> {
+  return apiFetch<ProductWorkbenchJob>("/api/products/batch-delete/jobs", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchProductBatchDeleteJob(jobId: string): Promise<ProductWorkbenchJob> {
+  const value = jobId.trim();
+  if (!value) throw new Error("jobId is required.");
+  return apiFetch<ProductWorkbenchJob>(`/api/products/batch-delete/jobs/${encodeURIComponent(value)}`, {
+    cacheProfile: "dynamic",
+  });
+}
+
+export async function listProductBatchDeleteJobs(params?: {
+  status?: ProductWorkbenchJob["status"];
+  offset?: number;
+  limit?: number;
+}): Promise<ProductWorkbenchJob[]> {
+  const search = new URLSearchParams();
+  if (params?.status) search.set("status", params.status);
+  if (typeof params?.offset === "number") search.set("offset", String(params.offset));
+  if (typeof params?.limit === "number") search.set("limit", String(params.limit));
+  const query = search.toString();
+  const path = query ? `/api/products/batch-delete/jobs?${query}` : "/api/products/batch-delete/jobs";
+  return apiFetch<ProductWorkbenchJob[]>(path, {
+    cacheProfile: "dynamic",
+  });
+}
+
+export async function cancelProductBatchDeleteJob(jobId: string): Promise<ProductWorkbenchJobCancelResponse> {
+  const value = jobId.trim();
+  if (!value) throw new Error("jobId is required.");
+  return apiFetch<ProductWorkbenchJobCancelResponse>(`/api/products/batch-delete/jobs/${encodeURIComponent(value)}/cancel`, {
+    method: "POST",
+  });
+}
+
+export async function retryProductBatchDeleteJob(jobId: string): Promise<ProductWorkbenchJob> {
+  const value = jobId.trim();
+  if (!value) throw new Error("jobId is required.");
+  return apiFetch<ProductWorkbenchJob>(`/api/products/batch-delete/jobs/${encodeURIComponent(value)}/retry`, {
+    method: "POST",
+  });
+}
+
 export async function cleanupOrphanStorage(payload: OrphanStorageCleanupRequest): Promise<OrphanStorageCleanupResponse> {
   return apiFetch<OrphanStorageCleanupResponse>("/api/maintenance/storage/orphans/cleanup", {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+export async function createOrphanStorageCleanupJob(
+  payload: OrphanStorageCleanupRequest,
+): Promise<ProductWorkbenchJob> {
+  return apiFetch<ProductWorkbenchJob>("/api/maintenance/storage/orphans/jobs", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchOrphanStorageCleanupJob(jobId: string): Promise<ProductWorkbenchJob> {
+  const value = jobId.trim();
+  if (!value) throw new Error("jobId is required.");
+  return apiFetch<ProductWorkbenchJob>(`/api/maintenance/storage/orphans/jobs/${encodeURIComponent(value)}`, {
+    cacheProfile: "dynamic",
+  });
+}
+
+export async function listOrphanStorageCleanupJobs(params?: {
+  status?: ProductWorkbenchJob["status"];
+  offset?: number;
+  limit?: number;
+}): Promise<ProductWorkbenchJob[]> {
+  const search = new URLSearchParams();
+  if (params?.status) search.set("status", params.status);
+  if (typeof params?.offset === "number") search.set("offset", String(params.offset));
+  if (typeof params?.limit === "number") search.set("limit", String(params.limit));
+  const query = search.toString();
+  const path = query ? `/api/maintenance/storage/orphans/jobs?${query}` : "/api/maintenance/storage/orphans/jobs";
+  return apiFetch<ProductWorkbenchJob[]>(path, {
+    cacheProfile: "dynamic",
+  });
+}
+
+export async function cancelOrphanStorageCleanupJob(jobId: string): Promise<ProductWorkbenchJobCancelResponse> {
+  const value = jobId.trim();
+  if (!value) throw new Error("jobId is required.");
+  return apiFetch<ProductWorkbenchJobCancelResponse>(
+    `/api/maintenance/storage/orphans/jobs/${encodeURIComponent(value)}/cancel`,
+    {
+      method: "POST",
+    },
+  );
+}
+
+export async function retryOrphanStorageCleanupJob(jobId: string): Promise<ProductWorkbenchJob> {
+  const value = jobId.trim();
+  if (!value) throw new Error("jobId is required.");
+  return apiFetch<ProductWorkbenchJob>(`/api/maintenance/storage/orphans/jobs/${encodeURIComponent(value)}/retry`, {
+    method: "POST",
   });
 }
 
@@ -2297,6 +2473,62 @@ export async function cleanupInvalidMobileProductRefs(
   return apiFetch<MobileInvalidProductRefCleanupResponse>("/api/maintenance/mobile/product-refs/cleanup", {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+export async function createMobileInvalidProductRefCleanupJob(
+  payload: MobileInvalidProductRefCleanupRequest,
+): Promise<ProductWorkbenchJob> {
+  return apiFetch<ProductWorkbenchJob>("/api/maintenance/mobile/product-refs/jobs", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchMobileInvalidProductRefCleanupJob(jobId: string): Promise<ProductWorkbenchJob> {
+  const value = jobId.trim();
+  if (!value) throw new Error("jobId is required.");
+  return apiFetch<ProductWorkbenchJob>(`/api/maintenance/mobile/product-refs/jobs/${encodeURIComponent(value)}`, {
+    cacheProfile: "dynamic",
+  });
+}
+
+export async function listMobileInvalidProductRefCleanupJobs(params?: {
+  status?: ProductWorkbenchJob["status"];
+  offset?: number;
+  limit?: number;
+}): Promise<ProductWorkbenchJob[]> {
+  const search = new URLSearchParams();
+  if (params?.status) search.set("status", params.status);
+  if (typeof params?.offset === "number") search.set("offset", String(params.offset));
+  if (typeof params?.limit === "number") search.set("limit", String(params.limit));
+  const query = search.toString();
+  const path = query
+    ? `/api/maintenance/mobile/product-refs/jobs?${query}`
+    : "/api/maintenance/mobile/product-refs/jobs";
+  return apiFetch<ProductWorkbenchJob[]>(path, {
+    cacheProfile: "dynamic",
+  });
+}
+
+export async function cancelMobileInvalidProductRefCleanupJob(
+  jobId: string,
+): Promise<ProductWorkbenchJobCancelResponse> {
+  const value = jobId.trim();
+  if (!value) throw new Error("jobId is required.");
+  return apiFetch<ProductWorkbenchJobCancelResponse>(
+    `/api/maintenance/mobile/product-refs/jobs/${encodeURIComponent(value)}/cancel`,
+    {
+      method: "POST",
+    },
+  );
+}
+
+export async function retryMobileInvalidProductRefCleanupJob(jobId: string): Promise<ProductWorkbenchJob> {
+  const value = jobId.trim();
+  if (!value) throw new Error("jobId is required.");
+  return apiFetch<ProductWorkbenchJob>(`/api/maintenance/mobile/product-refs/jobs/${encodeURIComponent(value)}/retry`, {
+    method: "POST",
   });
 }
 

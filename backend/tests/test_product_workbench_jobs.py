@@ -109,3 +109,59 @@ def test_product_analysis_workbench_job_create_cancel_and_retry(test_client, mon
     retried_job = retried.json()
     assert retried_job["status"] == "queued"
     assert retried_job["job_type"] == "product_analysis_build"
+
+
+@pytest.mark.parametrize(
+    ("path", "payload", "job_type"),
+    [
+      ("/api/products/batch-delete/jobs", {"ids": ["prod-1", "prod-2"], "remove_doubao_artifacts": True}, "product_batch_delete"),
+      (
+          "/api/products/ingredients/library/batch-delete/jobs",
+          {"ingredient_ids": ["ing-1", "ing-2"], "remove_doubao_artifacts": True},
+          "ingredient_batch_delete",
+      ),
+      (
+          "/api/maintenance/storage/orphans/jobs",
+          {"dry_run": True, "min_age_minutes": 30, "max_delete": 500},
+          "orphan_storage_cleanup",
+      ),
+      (
+          "/api/maintenance/mobile/product-refs/jobs",
+          {"dry_run": True, "sample_limit": 8},
+          "mobile_invalid_ref_cleanup",
+      ),
+    ],
+)
+def test_governance_cleanup_workbench_jobs_create_list_cancel_retry(
+    test_client,
+    monkeypatch: pytest.MonkeyPatch,
+    path: str,
+    payload: dict,
+    job_type: str,
+):
+    client, _ = test_client
+    _install_noop_submit(monkeypatch)
+
+    created = client.post(path, json=payload)
+    assert created.status_code == 200
+    job = created.json()
+    assert job["job_type"] == job_type
+    assert job["status"] == "queued"
+
+    listed = client.get(path)
+    assert listed.status_code == 200
+    assert any(item["job_id"] == job["job_id"] for item in listed.json())
+
+    fetched = client.get(f"{path}/{job['job_id']}")
+    assert fetched.status_code == 200
+    assert fetched.json()["job_id"] == job["job_id"]
+
+    cancelled = client.post(f"{path}/{job['job_id']}/cancel")
+    assert cancelled.status_code == 200
+    assert cancelled.json()["job"]["status"] == "cancelled"
+
+    retried = client.post(f"{path}/{job['job_id']}/retry")
+    assert retried.status_code == 200
+    retried_job = retried.json()
+    assert retried_job["status"] == "queued"
+    assert retried_job["job_type"] == job_type

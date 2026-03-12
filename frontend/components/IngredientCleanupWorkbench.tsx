@@ -3,12 +3,25 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import WorkbenchTaskSection from "@/components/workbench/WorkbenchTaskSection";
 import {
+  formatErrorDetail,
+  useProductWorkbenchJobs,
+  type UseProductWorkbenchJobsState,
+} from "@/components/workbench/useProductWorkbenchJobs";
+import {
+  IngredientLibraryBatchDeleteRequest,
+  IngredientLibraryBatchDeleteResponse,
   IngredientLibraryListItem,
   Product,
+  ProductWorkbenchJob,
   ProductRouteMappingIndexItem,
-  deleteIngredientLibraryBatch,
+  cancelIngredientBatchDeleteJob,
+  createIngredientBatchDeleteJob,
   fetchIngredientLibrary,
+  fetchIngredientBatchDeleteJob,
+  listIngredientBatchDeleteJobs,
+  retryIngredientBatchDeleteJob,
 } from "@/lib/api";
 import { CATEGORY_CONFIG } from "@/lib/catalog";
 
@@ -65,6 +78,7 @@ type CategoryBucket = {
 
 const PAGE_LIMIT = 500;
 const MAX_SCAN_PAGES = 2000;
+const INGREDIENT_DELETE_JOB_STORAGE_KEY = "ingredient-cleanup-delete-job-id";
 
 export default function IngredientCleanupWorkbench({
   initialProducts,
@@ -83,10 +97,26 @@ export default function IngredientCleanupWorkbench({
   const [detailSubtype, setDetailSubtype] = useState("");
   const [selectedIngredientIds, setSelectedIngredientIds] = useState<string[]>([]);
   const [removeArtifacts, setRemoveArtifacts] = useState(true);
-  const [deleting, setDeleting] = useState(false);
-  const [deleteSummary, setDeleteSummary] = useState<string | null>(null);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [exportingCsv, setExportingCsv] = useState(false);
+  const [handledDeleteResultJobId, setHandledDeleteResultJobId] = useState<string | null>(null);
+
+  const ingredientDeleteJobService = useMemo(
+    () => ({
+      listJobs: listIngredientBatchDeleteJobs,
+      fetchJob: fetchIngredientBatchDeleteJob,
+      createJob: createIngredientBatchDeleteJob,
+      cancelJob: cancelIngredientBatchDeleteJob,
+      retryJob: retryIngredientBatchDeleteJob,
+    }),
+    [],
+  );
+
+  const ingredientDeleteJobs = useProductWorkbenchJobs<IngredientLibraryBatchDeleteRequest, IngredientLibraryBatchDeleteResponse>({
+    storageKey: INGREDIENT_DELETE_JOB_STORAGE_KEY,
+    listLimit: 20,
+    parseResult: (job) => parseIngredientBatchDeleteResult(job.result as Record<string, unknown> | undefined),
+    service: ingredientDeleteJobService,
+  });
 
   const productById = useMemo(() => {
     const map = new Map<string, Product>();
@@ -419,6 +449,28 @@ export default function IngredientCleanupWorkbench({
   const selectedSet = useMemo(() => new Set(selectedIngredientIds), [selectedIngredientIds]);
   const subtypeOptions = detailCategory ? subtypeOptionsByCategory.get(detailCategory) || [] : [];
 
+  useEffect(() => {
+    if (
+      !ingredientDeleteJobs.result ||
+      !ingredientDeleteJobs.resultJobId ||
+      handledDeleteResultJobId === ingredientDeleteJobs.resultJobId
+    ) {
+      return;
+    }
+    setHandledDeleteResultJobId(ingredientDeleteJobs.resultJobId);
+    setSelectedIngredientIds([]);
+    void loadAllIngredients();
+    if (ingredientDeleteJobs.result.deleted_ids.length > 0) {
+      router.refresh();
+    }
+  }, [
+    handledDeleteResultJobId,
+    ingredientDeleteJobs.result,
+    ingredientDeleteJobs.resultJobId,
+    loadAllIngredients,
+    router,
+  ]);
+
   function toggleIngredientSelection(ingredientId: string, checked: boolean) {
     setSelectedIngredientIds((prev) => {
       if (checked) return Array.from(new Set([...prev, ingredientId]));
@@ -436,29 +488,13 @@ export default function IngredientCleanupWorkbench({
 
   async function deleteSelectedIngredients() {
     if (selectedIngredientIds.length === 0) {
-      setDeleteSummary("当前没有勾选成分。");
+      ingredientDeleteJobs.setErrorMessage("当前没有勾选成分。");
       return;
     }
-    setDeleting(true);
-    setDeleteSummary(null);
-    setDeleteError(null);
-    try {
-      const result = await deleteIngredientLibraryBatch({
-        ingredient_ids: selectedIngredientIds,
-        remove_doubao_artifacts: removeArtifacts,
-      });
-      setDeleteSummary(`清理完成：删除 ${result.deleted_ids.length} 条，缺失 ${result.missing_ids.length} 条，失败 ${result.failed_items.length} 条。`);
-      if (result.failed_items.length > 0) {
-        setDeleteError(result.failed_items.slice(0, 8).map((item) => `${item.ingredient_id}: ${item.error}`).join("\n"));
-      }
-      setSelectedIngredientIds([]);
-      await loadAllIngredients();
-      router.refresh();
-    } catch (err) {
-      setDeleteError(formatErrorDetail(err));
-    } finally {
-      setDeleting(false);
-    }
+    await ingredientDeleteJobs.startJob({
+      ingredient_ids: [...selectedIngredientIds],
+      remove_doubao_artifacts: removeArtifacts,
+    });
   }
 
   async function exportAllCsv() {
@@ -526,11 +562,9 @@ export default function IngredientCleanupWorkbench({
         categoryOptions={categoryOptions}
         subtypeOptions={subtypeOptions}
         removeArtifacts={removeArtifacts}
-        deleting={deleting}
+        deleteJobs={ingredientDeleteJobs}
         selectedCount={selectedIngredientIds.length}
         filteredCount={filteredIngredients.length}
-        deleteSummary={deleteSummary}
-        deleteError={deleteError}
         filteredIngredients={filteredIngredients}
         selectedSet={selectedSet}
         onDetailQueryChange={setDetailQuery}
@@ -1448,11 +1482,9 @@ function IngredientCleanupPanel({
   categoryOptions,
   subtypeOptions,
   removeArtifacts,
-  deleting,
+  deleteJobs,
   selectedCount,
   filteredCount,
-  deleteSummary,
-  deleteError,
   filteredIngredients,
   selectedSet,
   onDetailQueryChange,
@@ -1472,11 +1504,9 @@ function IngredientCleanupPanel({
   categoryOptions: string[];
   subtypeOptions: Array<{ key: string; title: string; count: number }>;
   removeArtifacts: boolean;
-  deleting: boolean;
+  deleteJobs: UseProductWorkbenchJobsState<IngredientLibraryBatchDeleteRequest, IngredientLibraryBatchDeleteResponse>;
   selectedCount: number;
   filteredCount: number;
-  deleteSummary: string | null;
-  deleteError: string | null;
   filteredIngredients: IngredientLibraryListItem[];
   selectedSet: Set<string>;
   onDetailQueryChange: (value: string) => void;
@@ -1568,16 +1598,43 @@ function IngredientCleanupPanel({
         <button
           type="button"
           onClick={onDeleteSelected}
-          disabled={deleting || selectedCount === 0}
+          disabled={deleteJobs.jobLoading || deleteJobs.activeRunning || selectedCount === 0}
           className="inline-flex h-9 items-center justify-center rounded-full border border-[#ef4444]/40 bg-[#fff5f5] px-4 text-[12px] font-semibold text-[#b42318] disabled:opacity-50"
         >
-          {deleting ? "清理中..." : `删除勾选 (${selectedCount})`}
+          {deleteJobs.jobLoading && !deleteJobs.activeRunning ? "提交中..." : `删除勾选 (${selectedCount})`}
         </button>
         <span className="text-[12px] text-black/58">当前筛选 {filteredCount} 条</span>
       </div>
 
-      {deleteSummary ? <div className="mt-2 text-[13px] text-[#116a3f]">{deleteSummary}</div> : null}
-      {deleteError ? <pre className="mt-2 whitespace-pre-wrap text-[12px] text-[#b42318]">{deleteError}</pre> : null}
+      <WorkbenchTaskSection
+        errorMessage={deleteJobs.errorMessage}
+        onRefresh={() => {
+          void deleteJobs.refreshJobs();
+        }}
+        refreshDisabled={deleteJobs.jobsLoading}
+        refreshLabel={deleteJobs.jobsLoading ? "刷新中..." : "刷新成分删除任务"}
+        onCancelActive={() => {
+          void deleteJobs.cancelActiveJob();
+        }}
+        cancelActiveDisabled={deleteJobs.jobLoading || !deleteJobs.activeRunning || !deleteJobs.activeJob}
+        cancelActiveLabel="中止当前成分删除任务"
+        consoleProps={{
+          activeJob: deleteJobs.activeJob,
+          activeRunning: deleteJobs.activeRunning,
+          progressValue: deleteJobs.progressValue,
+          countersText: buildIngredientDeleteCountersText(deleteJobs.activeJob),
+          liveText: deleteJobs.liveText,
+          prettyText: deleteJobs.result ? buildIngredientDeletePrettyText(deleteJobs.result) : "",
+          jobs: deleteJobs.sortedJobs,
+          jobLoading: deleteJobs.jobLoading,
+          onSelectJob: deleteJobs.selectJob,
+          onRetryJob: (jobId) => {
+            void deleteJobs.retryJob(jobId);
+          },
+          waitingPrettyText: "等待成分删除结果...",
+          emptyHistoryText: "暂无成分删除任务。",
+        }}
+      />
 
       <div className="mt-3 max-h-[360px] space-y-2 overflow-auto pr-1">
         {filteredIngredients.map((item) => {
@@ -1674,14 +1731,58 @@ function filterTagClass(active: boolean): string {
     : "rounded-full border border-black/10 bg-white/92 px-3.5 py-2 text-[12px] font-semibold text-black/68 shadow-[0_10px_24px_rgba(15,23,42,0.04)] transition hover:-translate-y-[1px] hover:bg-white hover:shadow-[0_14px_28px_rgba(15,23,42,0.08)]";
 }
 
-function formatErrorDetail(err: unknown): string {
-  if (err instanceof Error && err.message) return err.message;
-  if (typeof err === "string") return err;
-  try {
-    return JSON.stringify(err);
-  } catch {
-    return String(err);
+function buildIngredientDeleteCountersText(job: ProductWorkbenchJob | null): string | null {
+  if (!job) return null;
+  return `deleted ${job.counters.deleted} · missing ${job.counters.missing} · failed ${job.counters.failed} · removed_files ${job.counters.removed_files} · removed_dirs ${job.counters.removed_dirs}`;
+}
+
+function parseIngredientBatchDeleteResult(
+  value: Record<string, unknown> | undefined,
+): IngredientLibraryBatchDeleteResponse | null {
+  if (!value || typeof value !== "object") return null;
+  const status = String(value.status || "").trim();
+  if (!status) return null;
+  return {
+    status,
+    deleted_ids: Array.isArray(value.deleted_ids) ? value.deleted_ids.map(String) : [],
+    missing_ids: Array.isArray(value.missing_ids) ? value.missing_ids.map(String) : [],
+    failed_items: Array.isArray(value.failed_items)
+      ? value.failed_items
+          .map((item) => {
+            if (!item || typeof item !== "object") return null;
+            const entry = item as Record<string, unknown>;
+            return {
+              ingredient_id: String(entry.ingredient_id || "").trim(),
+              error: String(entry.error || "").trim(),
+            };
+          })
+          .filter((item): item is IngredientLibraryBatchDeleteResponse["failed_items"][number] => Boolean(item?.ingredient_id))
+      : [],
+    removed_files: Number(value.removed_files || 0),
+    removed_dirs: Number(value.removed_dirs || 0),
+  };
+}
+
+function buildIngredientDeletePrettyText(result: IngredientLibraryBatchDeleteResponse): string {
+  const lines: string[] = [];
+  lines.push(`状态: ${result.status}`);
+  lines.push(`deleted=${result.deleted_ids.length}, missing=${result.missing_ids.length}, failed=${result.failed_items.length}`);
+  lines.push(`removed_files=${result.removed_files}, removed_dirs=${result.removed_dirs}`);
+  if (result.deleted_ids.length > 0) {
+    lines.push("");
+    lines.push("已删除成分:");
+    for (const id of result.deleted_ids.slice(0, 20)) {
+      lines.push(`- ${id}`);
+    }
   }
+  if (result.failed_items.length > 0) {
+    lines.push("");
+    lines.push("失败项:");
+    for (const item of result.failed_items.slice(0, 10)) {
+      lines.push(`- ${item.ingredient_id}: ${item.error}`);
+    }
+  }
+  return lines.join("\n");
 }
 
 function buildFullIngredientCsv(
