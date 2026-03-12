@@ -219,7 +219,7 @@ export default function ConditionerProfileFlowClient() {
             <div className="m-profile-step-index">护发素决策 · 第 {stepIndex + 1}/{STEPS.length} 步</div>
             <TitleTag className="m-profile-step-title">{step.title}</TitleTag>
             <p className="m-profile-step-note">{step.note}</p>
-            {stepIndex === 0 && !selected ? <MobileLocationConsent /> : null}
+            {stepIndex === 0 && !selected ? <MobileLocationConsent scenario="conditioner" /> : null}
 
             <div className="mt-6 space-y-3">
               {step.options.map((opt) => {
