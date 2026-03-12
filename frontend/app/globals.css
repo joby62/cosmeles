@@ -1517,15 +1517,17 @@ html[data-nav-open="1"] #app-main{
 }
 
 .m-choose-history-section {
-  margin-top: 34px;
+  margin-top: 40px;
+  padding-top: 22px;
+  border-top: 1px solid var(--m-choose-image-shell-border);
 }
 
 .m-choose-history-card {
-  border-radius: 30px;
-  border: 1px solid var(--m-choose-image-shell-border);
-  background: linear-gradient(180deg, var(--m-choose-card-bg), var(--m-choose-action-bg));
-  padding: 18px 18px 16px;
-  box-shadow: 0 12px 30px rgba(17,31,55,0.06);
+  border-radius: 0;
+  border: none;
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
 }
 
 .m-choose-action-wrap {
@@ -1551,22 +1553,38 @@ html[data-nav-open="1"] #app-main{
 }
 
 .m-choose-history-title {
-  margin-top: 14px;
-  font-size: 28px;
-  line-height: 1.12;
-  letter-spacing: -0.04em;
+  margin-top: 12px;
+  font-size: 24px;
+  line-height: 1.18;
+  letter-spacing: -0.03em;
 }
 
 .m-choose-history-note {
-  max-width: 22rem;
+  margin-top: 10px;
+  max-width: 20rem;
+  font-size: 14px;
+  line-height: 1.56;
 }
 
 .m-choose-history-meta {
-  margin-top: 14px;
-  font-size: 12.5px;
+  margin-top: 10px;
+  font-size: 12px;
   font-weight: 560;
   letter-spacing: -0.01em;
   color: var(--m-choose-card-meta);
+}
+
+.m-choose-history-section .m-choose-head-chip {
+  min-height: 24px;
+  padding: 0 10px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--m-choose-card-meta);
+}
+
+.m-choose-history-section .m-choose-recent {
+  font-size: 12.5px;
+  color: var(--m-choose-chip-text);
 }
 
 @media (max-width: 420px) {
@@ -1589,7 +1607,7 @@ html[data-nav-open="1"] #app-main{
   }
 
   .m-choose-history-title {
-    font-size: 24px;
+    font-size: 22px;
   }
 
   .m-choose-focus-card {
