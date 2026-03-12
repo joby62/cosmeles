@@ -1,11 +1,20 @@
 import Image from "next/image";
 import Link from "next/link";
+import EvidenceReadout from "@/components/site/EvidenceReadout";
 import {
   fetchMobileWikiProductDetail,
   fetchProductAnalysis,
   resolveStoredImageUrl,
 } from "@/lib/api";
 import { getMatchRouteMeta } from "@/lib/match";
+import {
+  analysisConfidenceLabel,
+  analysisCounterProof,
+  analysisPositiveProof,
+  analysisReviewLabel,
+  analysisVerdictLabel,
+  analysisVerdictSummary,
+} from "@/lib/productEvidence";
 import { categoryHref, getCategoryMeta, normalizeCategoryKey } from "@/lib/site";
 
 function mergeUnique(items: string[]): string[] {
@@ -71,6 +80,20 @@ export default async function LearnProductDetailPage({
   const notIdealFor = mergeUnique(profile?.not_ideal_for || item.doc.summary.who_not_for || []);
   const usageTips = mergeUnique(profile?.usage_tips || []);
   const normalizedCategory = normalizeCategoryKey(item.product.category);
+  const confidenceLabel = analysisConfidenceLabel(profile?.confidence);
+  const verdictLabel = analysisVerdictLabel(profile?.subtype_fit_verdict);
+  const verdictSummary = analysisVerdictSummary(profile?.subtype_fit_verdict);
+  const reviewLabel = analysisReviewLabel(profile?.needs_review);
+  const positiveProof = analysisPositiveProof(profile, 3);
+  const counterProof = analysisCounterProof(profile, 3);
+  const fallbackSupport = item.doc.summary.pros.slice(0, 3);
+  const fallbackGuardrails = item.doc.summary.cons.slice(0, 3);
+  const resolvedIngredientCount = item.ingredient_refs.filter((ref) => ref.ingredient_id).length;
+  const evidenceNote =
+    profile?.subtype_fit_reason ||
+    (resolvedIngredientCount > 0
+      ? `${resolvedIngredientCount} ingredient links are already resolved into the Jeslect ingredient library.`
+      : "Ingredient linking is still being expanded across this product profile.");
   const keyIngredients =
     profile?.key_ingredients?.slice(0, 6) ||
     item.doc.ingredients.slice(0, 6).map((ingredient) => ({
@@ -221,6 +244,23 @@ export default async function LearnProductDetailPage({
         </div>
 
         <div className="space-y-6">
+          <EvidenceReadout
+            eyebrow="Evidence basis"
+            title="Read the same trust layer that powers the shopping profile."
+            summary={
+              verdictSummary ||
+              "Learn entries reuse the product analysis layer so ingredient education and shopping guidance stay aligned."
+            }
+            badges={[confidenceLabel, verdictLabel, reviewLabel]}
+            supportTitle="What supports this profile"
+            supportItems={positiveProof.length > 0 ? positiveProof : fallbackSupport}
+            supportEmpty="No structured supporting signals are available yet."
+            guardrailTitle="What to keep in mind"
+            guardrailItems={counterProof.length > 0 ? counterProof : fallbackGuardrails}
+            guardrailEmpty="No structured evidence guardrails are mapped yet."
+            note={evidenceNote}
+          />
+
           <article className="rounded-[32px] border border-black/8 bg-white/92 p-6 shadow-[0_20px_46px_rgba(15,23,42,0.06)]">
             <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-500">Resolved ingredient links</p>
             <div className="mt-4 space-y-3">

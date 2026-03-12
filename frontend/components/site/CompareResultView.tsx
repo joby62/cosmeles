@@ -359,14 +359,40 @@ export default function CompareResultView({ compareId }: CompareResultViewProps)
             </div>
           </article>
 
-          {result.transparency.warnings.length > 0 ? (
-            <article className="rounded-[28px] border border-amber-200 bg-amber-50 px-5 py-5 text-[14px] leading-6 text-amber-800">
-              <p className="text-[12px] font-semibold uppercase tracking-[0.18em]">Transparency notes</p>
-              <div className="mt-3 space-y-2">
-                {result.transparency.warnings.map((item) => (
-                  <p key={item}>{item}</p>
-                ))}
-              </div>
+          {result.transparency.warnings.length > 0 || result.transparency.missing_fields.length > 0 ? (
+            <article className="rounded-[32px] border border-black/8 bg-white/92 p-6 shadow-[0_20px_46px_rgba(15,23,42,0.06)]">
+              <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-500">Evidence guardrails</p>
+              <h2 className="mt-4 text-[28px] font-semibold tracking-[-0.04em] text-slate-950">
+                Read the compare limits before you act on the verdict.
+              </h2>
+              <p className="mt-3 text-[15px] leading-7 text-slate-600">
+                Compare is already useful for narrowing a decision, but this result can still carry missing fields or model
+                warnings while the storefront is pre-checkout.
+              </p>
+              {result.transparency.missing_fields.length > 0 ? (
+                <div className="mt-5 flex flex-wrap gap-2">
+                  {result.transparency.missing_fields.map((item) => (
+                    <span
+                      key={item}
+                      className="rounded-full border border-black/8 bg-slate-50 px-3 py-1 text-[11px] font-medium text-slate-600"
+                    >
+                      {item.replace(/_/g, " ")}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+              {result.transparency.warnings.length > 0 ? (
+                <div className="mt-5 rounded-[24px] border border-amber-100 bg-amber-50 px-4 py-4">
+                  <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-amber-700">Warnings</p>
+                  <div className="mt-3 space-y-2">
+                    {result.transparency.warnings.map((item) => (
+                      <p key={item} className="text-[14px] leading-6 text-slate-700">
+                        {item}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </article>
           ) : null}
         </div>
