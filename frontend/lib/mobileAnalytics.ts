@@ -1,6 +1,6 @@
 "use client";
 
-const MOBILE_EVENT_ENDPOINT = "/api/mobile/compare/events";
+const MOBILE_EVENT_ENDPOINT = "/api/mobile/events";
 const MOBILE_SESSION_STORAGE_KEY = "mx_mobile_analytics_session";
 
 type MobileAnalyticsProps = Record<string, unknown>;

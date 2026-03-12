@@ -1414,6 +1414,11 @@ class MobileCompareEventRequest(BaseModel):
     props: dict[str, Any] = Field(default_factory=dict)
 
 
+class MobileClientEventRequest(BaseModel):
+    name: str
+    props: dict[str, Any] = Field(default_factory=dict)
+
+
 class MobileCompareSessionResultBrief(BaseModel):
     decision: Optional[Literal["keep", "switch", "hybrid"]] = None
     headline: Optional[str] = None

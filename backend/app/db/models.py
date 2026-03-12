@@ -405,6 +405,56 @@ class MobileBagItem(Base):
     updated_at: Mapped[str] = mapped_column(String(32), index=True)
 
 
+class MobileClientEvent(Base):
+    __tablename__ = "mobile_client_events"
+    __table_args__ = (
+        Index(
+            "ix_mobile_client_events_owner_scope",
+            "owner_type",
+            "owner_id",
+            "created_at",
+        ),
+        Index(
+            "ix_mobile_client_events_name_scope",
+            "name",
+            "created_at",
+        ),
+        Index(
+            "ix_mobile_client_events_session_scope",
+            "session_id",
+            "created_at",
+        ),
+        Index(
+            "ix_mobile_client_events_compare_scope",
+            "compare_id",
+            "created_at",
+        ),
+    )
+
+    event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner_type: Mapped[str] = mapped_column(String(32), index=True, default="device")
+    owner_id: Mapped[str] = mapped_column(String(128), index=True)
+
+    session_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(128), index=True)
+    page: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    route: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    source: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    category: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    product_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    user_product_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    compare_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    step: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    stage: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    dwell_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    error_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    http_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    props_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[str] = mapped_column(String(32), index=True)
+
+
 class UserUploadAsset(Base):
     __tablename__ = "user_upload_assets"
     __table_args__ = (

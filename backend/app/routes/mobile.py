@@ -23,6 +23,7 @@ from app.db.models import (
     IngredientLibraryIndex,
     IngredientLibraryRedirect,
     MobileBagItem,
+    MobileClientEvent,
     MobileCompareSessionIndex,
     MobileCompareUsageStat,
     MobileSelectionSession,
@@ -43,6 +44,7 @@ from app.schemas import (
     MobileBagUpsertRequest,
     MobileCompareBootstrapResponse,
     MobileCompareCategoryItem,
+    MobileClientEventRequest,
     MobileCompareEventRequest,
     MobileCompareIngredientDiff,
     MobileCompareIngredientOrderDiff,
@@ -1950,29 +1952,92 @@ def get_mobile_compare_result(
     return result
 
 
+@router.post("/events")
+def record_mobile_event(
+    payload: MobileClientEventRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    return _record_mobile_client_event(
+        payload=payload,
+        request=request,
+        response=response,
+        db=db,
+    )
+
+
 @router.post("/compare/events")
 def record_mobile_compare_event(
     payload: MobileCompareEventRequest,
     request: Request,
     response: Response,
+    db: Session = Depends(get_db),
+):
+    return _record_mobile_client_event(
+        payload=MobileClientEventRequest(name=payload.name, props=payload.props),
+        request=request,
+        response=response,
+        db=db,
+        legacy_artifact_kind="mobile_compare_event",
+    )
+
+
+def _record_mobile_client_event(
+    *,
+    payload: MobileClientEventRequest,
+    request: Request,
+    response: Response,
+    db: Session,
+    legacy_artifact_kind: str | None = None,
 ):
     owner_type, owner_id, owner_cookie_new = _resolve_owner(request)
-    trace_id = new_id()
-    save_doubao_artifact(
-        trace_id,
-        "mobile_compare_event",
-        {
-            "trace_id": trace_id,
-            "owner_type": owner_type,
-            "owner_id": owner_id,
-            "event_name": payload.name,
-            "props": payload.props,
-            "created_at": now_iso(),
-        },
+    event_id = new_id()
+    created_at = now_iso()
+    props = payload.props if isinstance(payload.props, dict) else {}
+    row = MobileClientEvent(
+        event_id=event_id,
+        owner_type=owner_type,
+        owner_id=owner_id,
+        session_id=_mobile_event_string(props.get("session_id"), limit=128),
+        name=_mobile_event_string(payload.name, limit=128) or "unknown",
+        page=_mobile_event_string(props.get("page"), limit=128),
+        route=_mobile_event_string(props.get("route"), limit=256),
+        source=_mobile_event_string(props.get("source"), limit=128),
+        category=_mobile_event_string(props.get("category"), limit=32),
+        product_id=_mobile_event_string(props.get("product_id"), limit=64),
+        user_product_id=_mobile_event_string(props.get("user_product_id"), limit=64),
+        compare_id=_mobile_event_string(props.get("compare_id"), limit=64),
+        step=_mobile_event_string(props.get("step"), limit=64),
+        stage=_mobile_event_string(props.get("stage"), limit=64),
+        dwell_ms=_mobile_event_int(props.get("dwell_ms")),
+        error_code=_mobile_event_string(props.get("error_code"), limit=64),
+        error_detail=_mobile_event_detail(props),
+        http_status=_mobile_event_int(props.get("http_status") if props.get("http_status") is not None else props.get("status_code")),
+        props_json=json.dumps(props, ensure_ascii=False, default=str),
+        created_at=created_at,
     )
+    db.add(row)
+    db.commit()
+
+    if legacy_artifact_kind:
+        save_doubao_artifact(
+            event_id,
+            legacy_artifact_kind,
+            {
+                "trace_id": event_id,
+                "event_id": event_id,
+                "owner_type": owner_type,
+                "owner_id": owner_id,
+                "event_name": row.name,
+                "props": props,
+                "created_at": created_at,
+            },
+        )
+
     if owner_cookie_new:
         _set_owner_cookie(response, owner_id, request)
-    return {"status": "ok", "trace_id": trace_id}
+    return {"status": "ok", "trace_id": event_id, "event_id": event_id}
 
 
 def _run_mobile_compare_job(
@@ -4603,6 +4668,30 @@ def _normalize_session_ids(raw_ids: list[str]) -> list[str]:
         seen.add(value)
         normalized.append(value)
     return normalized
+
+
+def _mobile_event_string(value: Any, *, limit: int) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    return text[:limit]
+
+
+def _mobile_event_int(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _mobile_event_detail(props: dict[str, Any]) -> str | None:
+    for key in ("detail", "error_detail", "error"):
+        text = _mobile_event_string(props.get(key), limit=2000)
+        if text:
+            return text
+    return None
 
 
 def _normalize_owner_id(raw: str | None) -> str:
