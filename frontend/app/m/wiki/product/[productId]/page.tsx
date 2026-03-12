@@ -110,23 +110,23 @@ export default async function MobileWikiProductDetailPage({
 
   if (!data) {
     return (
-      <section className="pb-24">
-        <article className="rounded-[24px] border border-[#ffb39e]/55 bg-[#fff7f3] px-4 py-4 text-[#7a2d21]">
+      <section className="m-wiki-page -mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[color:var(--m-wiki-canvas)] px-4 pb-24 pt-4 text-white">
+        <article className="rounded-[24px] border border-[#ff8f8f]/45 bg-[#ff5f5f]/10 px-4 py-4 text-[#ffd9d9]">
           <h1 className="text-[22px] font-semibold">产品百科加载失败</h1>
-          <p className="mt-2 text-[13px] leading-[1.55]">未做降级，已展示真实错误：</p>
-          <p className="mt-2 rounded-xl border border-[#f6c6bc] bg-white/85 px-3 py-2 text-[12px] leading-[1.55]">
+          <p className="mt-2 text-[13px] leading-[1.55] text-white/76">未做降级，已展示真实错误：</p>
+          <p className="mt-2 rounded-xl border border-white/10 bg-black/24 px-3 py-2 text-[12px] leading-[1.55] text-white/82">
             {loadError || "unknown"}
           </p>
           <div className="mt-3 flex gap-2">
             <Link
               href={returnHref}
-              className="inline-flex h-9 items-center rounded-full border border-black/15 bg-white px-4 text-[12px] font-semibold text-black/75"
+              className="inline-flex h-9 items-center rounded-full border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)] px-4 text-[12px] font-semibold text-[color:var(--m-wiki-text-mid)]"
             >
               返回百科
             </Link>
             <Link
               href="/m/choose"
-              className="inline-flex h-9 items-center rounded-full border border-black/15 bg-white px-4 text-[12px] font-semibold text-black/75"
+              className="inline-flex h-9 items-center rounded-full border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)] px-4 text-[12px] font-semibold text-[color:var(--m-wiki-text-mid)]"
             >
               去智能推荐
             </Link>
@@ -146,7 +146,7 @@ export default async function MobileWikiProductDetailPage({
   const diagnosticsEntries = analysis ? Object.entries(analysis.diagnostics || {}) : [];
 
   return (
-    <section className="pb-28">
+    <section className="m-wiki-page -mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[color:var(--m-wiki-canvas)] px-4 pb-40 pt-4 text-white">
       <MobilePageAnalytics
         page="wiki_product_detail"
         route={`/m/wiki/product/${product.id}`}
@@ -177,13 +177,13 @@ export default async function MobileWikiProductDetailPage({
       ) : null}
       <Link
         href={returnHref}
-        className="inline-flex h-9 items-center rounded-full border border-black/15 bg-white px-4 text-[12px] font-semibold text-black/75 active:bg-black/[0.03]"
+        className="inline-flex h-9 items-center rounded-full border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)] px-4 text-[12px] font-semibold text-[color:var(--m-wiki-text-mid)] backdrop-blur-xl active:bg-black/[0.03]"
       >
         返回百科
       </Link>
 
-      <article className="mt-3 overflow-hidden rounded-[26px] border border-black/10 bg-white">
-        <div className="relative aspect-[4/3] bg-[#f4f5f9]">
+      <article className="m-wiki-card mt-3 overflow-hidden rounded-[26px]">
+        <div className="relative aspect-[4/3] bg-[color:var(--m-wiki-soft-bg)]">
           <Image
             src={resolveImageUrl(product)}
             alt={product.name || product.id}
@@ -194,22 +194,22 @@ export default async function MobileWikiProductDetailPage({
         </div>
         <div className="px-4 py-4">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-black/[0.05] px-3 py-1 text-[11px] text-black/64">{item.category_label}</span>
+            <span className="rounded-full border border-white/10 bg-black/18 px-3 py-1 text-[11px] text-white/68">{item.category_label}</span>
             {item.target_type_title ? (
-              <span className="rounded-full border border-[#cfe2ff] bg-[#f4f8ff] px-3 py-1 text-[11px] text-[#244f9e]">
+              <span className="m-wiki-pill m-wiki-pill-info rounded-full border px-3 py-1 text-[11px]">
                 {item.target_type_title}
               </span>
             ) : null}
             {item.is_featured ? (
-              <span className="rounded-full border border-[#1f7a45]/35 bg-[#eaf8ef] px-3 py-1 text-[11px] text-[#116a3f]">
+              <span className="m-wiki-pill m-wiki-pill-good rounded-full border px-3 py-1 text-[11px]">
                 当前主推
               </span>
             ) : null}
           </div>
-          <h1 className="mt-3 text-[24px] leading-[1.24] font-semibold tracking-[-0.02em] text-black/90">
+          <h1 className="mt-3 text-[24px] leading-[1.24] font-semibold tracking-[-0.02em] text-white/92">
             {product.name || "未命名产品"}
           </h1>
-          <p className="mt-1 text-[14px] text-black/58">{product.brand || "品牌未识别"}</p>
+          <p className="mt-1 text-[14px] text-white/58">{product.brand || "品牌未识别"}</p>
           <div className="mt-3">
             <MobileEventBeacon
               name="wiki_upload_cta_expose"
@@ -237,31 +237,31 @@ export default async function MobileWikiProductDetailPage({
                 result_cta: resultCta || undefined,
                 from_compare_id: fromCompareId || undefined,
               }}
-              className="inline-flex max-w-full items-center rounded-full border border-[#cfe2ff] bg-[linear-gradient(180deg,#f7faff_0%,#eef5ff_100%)] px-4 py-2 text-[12px] font-semibold leading-[1.45] text-[#2450a3] shadow-[0_8px_22px_rgba(36,80,163,0.08)] active:translate-y-[1px]"
+              className="inline-flex max-w-full items-center rounded-full border border-[color:var(--m-wiki-info-border)] bg-[color:var(--m-wiki-info-bg)] px-4 py-2 text-[12px] font-semibold leading-[1.45] text-[color:var(--m-wiki-info-text)] shadow-[0_8px_22px_rgba(36,80,163,0.08)] active:translate-y-[1px]"
             >
               没有你的产品？点击上传一键分析
             </MobileTrackedLink>
           </div>
-          <p className="mt-3 text-[14px] leading-[1.55] text-black/68">
+          <p className="mt-3 text-[14px] leading-[1.55] text-white/68">
             {product.one_sentence || "暂无一句话摘要。"}
           </p>
 
-          <div className="mt-4 grid grid-cols-2 gap-2 text-[12px] text-black/56">
-            <div className="rounded-xl border border-black/8 bg-[#fafafa] px-3 py-2">
+          <div className="mt-4 grid grid-cols-2 gap-2 text-[12px] text-white/56">
+            <div className="m-wiki-card-soft rounded-xl px-3 py-2">
               <div>映射状态</div>
-              <div className="mt-1 font-medium text-black/78">{item.mapping_ready ? "已完成" : "未完成"}</div>
+              <div className="mt-1 font-medium text-white/78">{item.mapping_ready ? "已完成" : "未完成"}</div>
             </div>
-            <div className="rounded-xl border border-black/8 bg-[#fafafa] px-3 py-2">
+            <div className="m-wiki-card-soft rounded-xl px-3 py-2">
               <div>主类置信度</div>
-              <div className="mt-1 font-medium text-black/78">{typeof item.primary_confidence === "number" ? `${item.primary_confidence}%` : "-"}</div>
+              <div className="mt-1 font-medium text-white/78">{typeof item.primary_confidence === "number" ? `${item.primary_confidence}%` : "-"}</div>
             </div>
-            <div className="rounded-xl border border-black/8 bg-[#fafafa] px-3 py-2">
+            <div className="m-wiki-card-soft rounded-xl px-3 py-2">
               <div>创建时间</div>
-              <div className="mt-1 font-medium text-black/78">{fmtTime(product.created_at)}</div>
+              <div className="mt-1 font-medium text-white/78">{fmtTime(product.created_at)}</div>
             </div>
-            <div className="rounded-xl border border-black/8 bg-[#fafafa] px-3 py-2">
+            <div className="m-wiki-card-soft rounded-xl px-3 py-2">
               <div>产品 ID</div>
-              <div className="mt-1 line-clamp-1 font-medium text-black/78">{product.id}</div>
+              <div className="mt-1 line-clamp-1 font-medium text-white/78">{product.id}</div>
             </div>
           </div>
 
@@ -280,7 +280,7 @@ export default async function MobileWikiProductDetailPage({
             />
             <Link
               href={`/product/${encodeURIComponent(product.id)}`}
-              className="inline-flex h-10 items-center rounded-full border border-black/15 bg-white px-4 text-[12px] font-semibold text-black/75 active:bg-black/[0.03]"
+              className="inline-flex h-10 items-center rounded-full border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)] px-4 text-[12px] font-semibold text-[color:var(--m-wiki-text-mid)] active:bg-black/[0.03]"
             >
               打开完整产品页
             </Link>
@@ -288,29 +288,29 @@ export default async function MobileWikiProductDetailPage({
         </div>
       </article>
 
-      <article className="mt-4 rounded-[24px] border border-black/10 bg-white px-4 py-4">
-        <h2 className="text-[18px] font-semibold text-black/88">增强分析</h2>
+      <article className="m-wiki-card mt-4 rounded-[24px] px-4 py-4">
+        <h2 className="text-[18px] font-semibold text-white/88">增强分析</h2>
         {analysis ? (
           <div className="mt-3">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-full border border-[#cfe2ff] bg-[#f4f8ff] px-3 py-1 text-[11px] text-[#244f9e]">
+              <span className="m-wiki-pill m-wiki-pill-info rounded-full border px-3 py-1 text-[11px]">
                 {analysis.route_title || analysis.route_key}
               </span>
-              <span className="rounded-full border border-black/10 bg-[#fafafa] px-3 py-1 text-[11px] text-black/62">
+              <span className="rounded-full border border-white/10 bg-black/18 px-3 py-1 text-[11px] text-white/62">
                 {VERDICT_LABELS[analysis.subtype_fit_verdict] || analysis.subtype_fit_verdict}
               </span>
-              <span className="rounded-full border border-black/10 bg-[#fafafa] px-3 py-1 text-[11px] text-black/62">
+              <span className="rounded-full border border-white/10 bg-black/18 px-3 py-1 text-[11px] text-white/62">
                 置信度 {analysis.confidence}%
               </span>
               {analysis.needs_review ? (
-                <span className="rounded-full border border-[#f9c97a] bg-[#fff8eb] px-3 py-1 text-[11px] text-[#8c5a00]">
+                <span className="m-wiki-pill m-wiki-pill-warn rounded-full border px-3 py-1 text-[11px]">
                   待人工复核
                 </span>
               ) : null}
             </div>
-            <h3 className="mt-3 text-[20px] leading-[1.35] font-semibold text-black/88">{analysis.headline}</h3>
-            <p className="mt-2 text-[13px] leading-[1.65] text-black/66">{analysis.positioning_summary}</p>
-            <p className="mt-2 text-[12px] leading-[1.6] text-black/54">{analysis.subtype_fit_reason}</p>
+            <h3 className="mt-3 text-[20px] leading-[1.35] font-semibold text-white/88">{analysis.headline}</h3>
+            <p className="mt-2 text-[13px] leading-[1.65] text-white/66">{analysis.positioning_summary}</p>
+            <p className="mt-2 text-[12px] leading-[1.6] text-white/54">{analysis.subtype_fit_reason}</p>
 
             <div className="mt-4 grid grid-cols-1 gap-3">
               <MobileListCard title="更适合" items={analysis.best_for} tone="green" />
@@ -320,75 +320,75 @@ export default async function MobileWikiProductDetailPage({
             </div>
 
             <div className="mt-4">
-              <div className="text-[14px] font-semibold text-black/84">诊断维度</div>
+              <div className="text-[14px] font-semibold text-white/84">诊断维度</div>
               <div className="mt-2 grid grid-cols-2 gap-2">
                 {diagnosticsEntries.map(([key, value]) => (
-                  <div key={key} className="rounded-xl border border-black/8 bg-[#fafafa] px-3 py-2">
+                  <div key={key} className="m-wiki-card-soft rounded-xl px-3 py-2">
                     <div className="flex items-center justify-between gap-2">
-                      <div className="text-[11px] font-semibold leading-[1.35] text-black/82">
+                      <div className="text-[11px] font-semibold leading-[1.35] text-white/82">
                         {DIAGNOSTIC_LABELS[key] || key}
                       </div>
-                      <div className="text-[11px] font-medium text-black/58">{value.score}/5</div>
+                      <div className="text-[11px] font-medium text-white/58">{value.score}/5</div>
                     </div>
-                    <div className="mt-1 text-[11px] leading-[1.55] text-black/54">{value.reason}</div>
+                    <div className="mt-1 text-[11px] leading-[1.55] text-white/54">{value.reason}</div>
                   </div>
                 ))}
               </div>
             </div>
 
-            <div className="mt-4 rounded-[18px] border border-black/8 bg-[#fafafa] px-3 py-3">
-              <div className="text-[14px] font-semibold text-black/84">关键成分</div>
+            <div className="m-wiki-card-soft mt-4 rounded-[18px] px-3 py-3">
+              <div className="text-[14px] font-semibold text-white/84">关键成分</div>
               {analysis.key_ingredients.length === 0 ? (
-                <p className="mt-2 text-[12px] text-black/54">暂无关键成分摘要。</p>
+                <p className="mt-2 text-[12px] text-white/54">暂无关键成分摘要。</p>
               ) : (
                 <ul className="mt-2 space-y-2">
                   {analysis.key_ingredients.map((entry) => (
                     <li key={`${entry.rank}-${entry.ingredient_name_cn}-${entry.ingredient_name_en}`}>
-                      <div className="text-[12px] font-semibold text-black/82">
+                      <div className="text-[12px] font-semibold text-white/82">
                         #{entry.rank} {entry.ingredient_name_cn || entry.ingredient_name_en}
                       </div>
-                      <div className="mt-0.5 text-[11px] text-black/56">{entry.role}</div>
-                      <div className="mt-0.5 text-[11px] leading-[1.55] text-black/54">{entry.impact}</div>
+                      <div className="mt-0.5 text-[11px] text-white/56">{entry.role}</div>
+                      <div className="mt-0.5 text-[11px] leading-[1.55] text-white/54">{entry.impact}</div>
                     </li>
                   ))}
                 </ul>
               )}
             </div>
 
-            <div className="mt-4 rounded-[18px] border border-black/8 bg-[#fafafa] px-3 py-3">
-              <div className="text-[14px] font-semibold text-black/84">证据缺口</div>
+            <div className="m-wiki-card-soft mt-4 rounded-[18px] px-3 py-3">
+              <div className="text-[14px] font-semibold text-white/84">证据缺口</div>
               {analysis.evidence.missing_codes.length === 0 ? (
-                <p className="mt-2 text-[12px] text-[#116a3f]">当前分析未标记明显缺口。</p>
+                <p className="mt-2 text-[12px] text-[color:var(--m-wiki-good-text)]">当前分析未标记明显缺口。</p>
               ) : (
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {analysis.evidence.missing_codes.map((code) => (
                     <span
                       key={code}
-                      className="rounded-full border border-black/10 bg-white px-2.5 py-1 text-[11px] text-black/58"
+                      className="rounded-full border border-white/10 bg-black/18 px-2.5 py-1 text-[11px] text-white/58"
                     >
                       {MISSING_CODE_LABELS[code] || code}
                     </span>
                   ))}
                 </div>
               )}
-              <p className="mt-3 text-[11px] leading-[1.6] text-black/54">{analysis.confidence_reason}</p>
+              <p className="mt-3 text-[11px] leading-[1.6] text-white/54">{analysis.confidence_reason}</p>
             </div>
           </div>
         ) : analysisError ? (
-          <p className="mt-2 text-[13px] leading-[1.55] text-[#b42318]">增强分析加载失败：{analysisError}</p>
+          <p className="mt-2 text-[13px] leading-[1.55] text-[#ffb8b8]">增强分析加载失败：{analysisError}</p>
         ) : (
-          <p className="mt-2 text-[13px] leading-[1.55] text-[#b42318]">增强分析缺失：详情已放行但分析数据为空，请检查后端 wiki ready 过滤。</p>
+          <p className="mt-2 text-[13px] leading-[1.55] text-white/58">增强分析缺失：详情已放行但分析数据为空，请检查后端 wiki ready 过滤。</p>
         )}
       </article>
 
-      <article className="mt-4 rounded-[24px] border border-black/10 bg-white px-4 py-4">
-        <h2 className="text-[18px] font-semibold text-black/88">成分列表</h2>
+      <article className="m-wiki-card mt-4 rounded-[24px] px-4 py-4">
+        <h2 className="text-[18px] font-semibold text-white/88">成分列表</h2>
         {item.doc.ingredients.length === 0 ? (
-          <p className="mt-2 text-[13px] text-black/58">无可用成分数据。</p>
+          <p className="mt-2 text-[13px] text-white/58">无可用成分数据。</p>
         ) : (
           <ul className="mt-3 space-y-2">
             {item.doc.ingredients.map((ing, idx) => (
-              <li key={`${ing.name}-${idx}`} className="rounded-xl border border-black/8 bg-[#fafafa] px-3 py-2">
+              <li key={`${ing.name}-${idx}`} className="m-wiki-card-soft rounded-xl px-3 py-2">
                 {(() => {
                   const ref = ingredientRefByIndex.get(idx + 1);
                   const resolved = ref?.status === "resolved" && ref?.ingredient_id;
@@ -396,10 +396,10 @@ export default async function MobileWikiProductDetailPage({
                     return (
                       <Link
                         href={`/m/wiki/${encodeURIComponent(product.category || item.product.category || "shampoo")}/${encodeURIComponent(String(ref.ingredient_id))}`}
-                        className="inline-flex items-center gap-2 text-[13px] font-semibold text-[#0f4aa8] underline underline-offset-2"
+                        className="inline-flex items-center gap-2 text-[13px] font-semibold text-[color:var(--m-wiki-info-text)] underline underline-offset-2"
                       >
                         {ing.name || "未命名成分"}
-                        <span className="rounded-full border border-[#b6ccff] bg-[#eef4ff] px-2 py-0.5 text-[10px] text-[#2d4f92]">
+                        <span className="m-wiki-pill m-wiki-pill-info rounded-full border px-2 py-0.5 text-[10px]">
                           查看成分百科
                         </span>
                       </Link>
@@ -407,20 +407,20 @@ export default async function MobileWikiProductDetailPage({
                   }
                   return (
                     <div className="flex flex-wrap items-center gap-2">
-                      <div className="text-[13px] font-semibold text-black/84">{ing.name || "未命名成分"}</div>
+                      <div className="text-[13px] font-semibold text-white/84">{ing.name || "未命名成分"}</div>
                       {ref?.status === "conflict" ? (
-                        <span className="rounded-full border border-[#f9c97a] bg-[#fff8eb] px-2 py-0.5 text-[10px] text-[#8c5a00]">映射冲突</span>
+                        <span className="m-wiki-pill m-wiki-pill-warn rounded-full border px-2 py-0.5 text-[10px]">映射冲突</span>
                       ) : (
-                        <span className="rounded-full border border-black/12 bg-white px-2 py-0.5 text-[10px] text-black/56">未映射</span>
+                        <span className="rounded-full border border-white/10 bg-black/18 px-2 py-0.5 text-[10px] text-white/56">未映射</span>
                       )}
                     </div>
                   );
                 })()}
-                <div className="mt-1 text-[12px] text-black/56">
+                <div className="mt-1 text-[12px] text-white/56">
                   类型：{ing.type || "-"} · 风险：{ing.risk || "-"}
                 </div>
                 {ing.functions?.length ? (
-                  <div className="mt-1 text-[12px] text-black/56">功能：{ing.functions.join(" / ")}</div>
+                  <div className="mt-1 text-[12px] text-white/56">功能：{ing.functions.join(" / ")}</div>
                 ) : null}
               </li>
             ))}
@@ -442,17 +442,17 @@ function MobileListCard({
 }) {
   const toneClass =
     tone === "green"
-      ? "border-[#d5eadb] bg-[#f4fbf5]"
+      ? "border-[color:var(--m-wiki-good-border)] bg-[color:var(--m-wiki-good-bg)]"
       : tone === "amber"
-        ? "border-[#f4dfb1] bg-[#fffaf0]"
+        ? "border-[color:var(--m-wiki-risk-medium-border)] bg-[color:var(--m-wiki-risk-medium-bg)]"
         : tone === "blue"
-          ? "border-[#d3e2ff] bg-[#f5f8ff]"
-          : "border-[#f0d6d2] bg-[#fff7f6]";
+          ? "border-[color:var(--m-wiki-info-border)] bg-[color:var(--m-wiki-info-bg)]"
+          : "border-[color:var(--m-wiki-warn-border)] bg-[color:var(--m-wiki-warn-bg)]";
 
   return (
     <div className={`rounded-[18px] border px-3 py-3 ${toneClass}`}>
-      <div className="text-[13px] font-semibold text-black/84">{title}</div>
-      <ul className="mt-2 space-y-1 text-[12px] leading-[1.55] text-black/62">
+      <div className="text-[13px] font-semibold text-white/84">{title}</div>
+      <ul className="mt-2 space-y-1 text-[12px] leading-[1.55] text-white/62">
         {items.length > 0 ? items.map((item) => <li key={item}>• {item}</li>) : <li>-</li>}
       </ul>
     </div>
