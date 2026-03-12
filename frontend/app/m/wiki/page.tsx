@@ -918,11 +918,11 @@ function MobileWikiPageContent() {
                 </h1>
               </div>
 
-              <div className="flex shrink-0 items-center gap-3">
+              <div className="m-wiki-top-actions">
                 <div
                   role="tablist"
                   aria-label="百科类型"
-                  className="inline-flex items-center rounded-[26px] border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)] p-1 shadow-[0_8px_20px_rgba(16,29,52,0.05)] backdrop-blur-xl"
+                  className="m-wiki-control-rail m-wiki-top-toggle"
                 >
                   {ENTRY_TABS.map((tab) => {
                     const activeTab = tab.key === entryTab;
@@ -936,11 +936,7 @@ function MobileWikiPageContent() {
                         onClick={() => {
                           switchTab(tab.key);
                         }}
-                        className={`m-pressable inline-flex h-[42px] items-center rounded-[22px] px-4 text-[14px] font-semibold tracking-[-0.01em] transition-all duration-200 ${
-                          activeTab
-                            ? "bg-[#e2f3e1] text-[color:var(--m-wiki-text-strong)] shadow-[inset_0_0_0_1px_rgba(125,176,122,0.14),0_8px_18px_rgba(125,176,122,0.18)]"
-                            : "text-[color:var(--m-wiki-text-soft)]"
-                        }`}
+                        className={`m-wiki-top-toggle-btn m-pressable ${activeTab ? "m-wiki-top-toggle-btn-active" : ""}`}
                       >
                         {tab.key === "product" ? "产品" : "成分"}
                       </button>
@@ -956,7 +952,7 @@ function MobileWikiPageContent() {
                     setFilterSheetOpen(false);
                     setSearchOpen(true);
                   }}
-                  className="m-pressable inline-flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-[26px] border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)] text-[color:var(--m-wiki-text-mid)] shadow-[0_10px_24px_rgba(16,29,52,0.06)]"
+                  className="m-wiki-control-rail m-wiki-top-search m-pressable"
                 >
                   <SearchIcon className="h-[18px] w-[18px]" />
                 </button>
