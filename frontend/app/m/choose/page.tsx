@@ -41,6 +41,7 @@ type CategoryMeta = {
   totalSteps: number;
   summary: string;
   audience: string;
+  focusAudience: string;
   draftKey: string;
 };
 
@@ -66,6 +67,7 @@ const CATS: CategoryMeta[] = [
     totalSteps: 3,
     summary: "3 步 · 约 30 秒",
     audience: "头皮容易出油，也在意头屑、敏感或发丝状态",
+    focusAudience: "头皮容易出油",
     draftKey: SHAMPOO_PROFILE_DRAFT_KEY,
   },
   {
@@ -78,6 +80,7 @@ const CATS: CategoryMeta[] = [
     totalSteps: 5,
     summary: "5 步 · 约 45 秒",
     audience: "既想洗得舒服，也想一起判断粗糙、痘痘或耐受问题",
+    focusAudience: "想洗得舒服稳定",
     draftKey: BODYWASH_PROFILE_DRAFT_KEY,
   },
   {
@@ -90,6 +93,7 @@ const CATS: CategoryMeta[] = [
     totalSteps: 3,
     summary: "3 步 · 约 30 秒",
     audience: "发丝有受损、毛躁、打结，或很怕一用就塌",
+    focusAudience: "发丝毛躁打结",
     draftKey: CONDITIONER_PROFILE_DRAFT_KEY,
   },
   {
@@ -102,6 +106,7 @@ const CATS: CategoryMeta[] = [
     totalSteps: 5,
     summary: "5 步 · 约 45 秒",
     audience: "身体容易干痒粗糙，或很在意质地负担和修护续航",
+    focusAudience: "身体干痒粗糙",
     draftKey: LOTION_PROFILE_DRAFT_KEY,
   },
   {
@@ -114,6 +119,7 @@ const CATS: CategoryMeta[] = [
     totalSteps: 5,
     summary: "5 步 · 约 45 秒",
     audience: "想同时兼顾清洁力、敏感度和洗后肤感",
+    focusAudience: "洗后怕紧绷",
     draftKey: CLEANSER_PROFILE_DRAFT_KEY,
   },
 ];
@@ -331,6 +337,16 @@ function uniqAudienceParts(parts: Array<string | undefined>, fallback: string): 
     })
     .slice(0, 3);
   return compact.length ? compact.join("、") : fallback;
+}
+
+function pickPrimaryAudience(audience: string, fallback: string): string {
+  const normalized = audience.trim();
+  if (!normalized) return fallback;
+  const first = normalized
+    .split(/[，,。；;、]/)
+    .map((part) => part.trim())
+    .find(Boolean);
+  return first || fallback;
 }
 
 function describeShampooAudience(signals: { q1?: "A" | "B" | "C"; q2?: "A" | "B" | "C" | "D"; q3?: "A" | "B" | "C" }): string {
@@ -873,131 +889,130 @@ export default function MobileChoose() {
   const selected = CAT_MAP[selectedKey];
   const selectedDraft = drafts[selected.key] || null;
   const selectedRecentResultHref = recentResultHref[selected.key] || null;
-  const recentEntryHref = selectedRecentResultHref || "/m/me/history?tab=selection";
-  const selectedAudience = selectedDraft?.audience || selected.audience;
+  const selectedFocusAudience = selectedDraft
+    ? pickPrimaryAudience(selectedDraft.audience, selected.focusAudience)
+    : selected.focusAudience;
   const remainingSteps = selectedDraft ? selectedDraft.total - selectedDraft.answered : 0;
   const chooseTitle = "先选最像你的一类";
-  const chooseNote = "左右滑动图片卡，找到当前最像你的那一类，再直接开始测配。";
-  const historyKicker = selectedDraft ? "继续这次判断" : selectedRecentResultHref ? "上次结论还在" : "历史记录";
+  const chooseNote = "先凭直觉选一类，后面的题会越答越准。";
+  const chooseContext = `现在先从${selected.zh}开始，更适合${selectedFocusAudience}的人。`;
+  const historyKicker = "上次记录";
   const historyTitle = selectedDraft
-    ? `${selected.zh} 已完成 ${selectedDraft.answered}/${selectedDraft.total}`
+    ? "这次判断可以直接续上"
     : selectedRecentResultHref
-      ? `${selected.zh} 的上次结论还能直接回看`
+      ? "上次结果还能直接回看"
       : "上次结果会留在这里";
   const historyNote = selectedDraft
-    ? `你已经先圈住${selectedAudience}，再答${remainingSteps}题就能把选择收得更准。`
+    ? "你已经答过前面的题，回来会从刚才停下的位置继续。"
     : selectedRecentResultHref
-      ? `如果你现在仍然更像${selectedAudience}这类需求，可以先回看上次结果；状态变了，再重新测一遍。`
-      : "完成一次后，上次结果会保留在这里，回来可以直接接着看。";
-  const recentEntryLabel = selectedRecentResultHref ? "回看上次结果" : "查看历史";
+      ? "状态没怎么变，就先回看上次结果；变了，再重新测一遍。"
+      : "做完一次后，结果会自动留在这里，回来不用重新找。";
+  const historyMeta = selectedDraft
+    ? `${selected.zh} · 已完成 ${selectedDraft.answered}/${selectedDraft.total} · 还差 ${remainingSteps} 题`
+    : selectedRecentResultHref
+      ? `${selected.zh} · ${selected.summary}`
+      : `${selected.zh} · 完成后会自动保留`;
+  const historyActionHref = selectedDraft
+    ? selectedDraft.continueHref
+    : selectedRecentResultHref || "/m/me/history?tab=selection";
+  const historyActionLabel = selectedDraft ? "继续" : selectedRecentResultHref ? "回看结果" : "查看历史";
 
   return (
     <div className="m-choose-shell" onPointerDownCapture={stopAutoCycle} onTouchStartCapture={stopAutoCycle} onWheelCapture={stopAutoCycle}>
-      <div className="m-choose-head">
-        <div className="m-choose-status-card">
+      <section className="m-choose-hero" aria-label="个性测配">
+        <div className="m-choose-head">
           <div className="m-choose-head-chip">选择测配</div>
           <h1 className="m-choose-head-title">{chooseTitle}</h1>
           <p className="m-choose-head-note">{chooseNote}</p>
-          <div className="m-choose-status-meta">
-            <span className="m-choose-status-pill">{selected.summary}</span>
-            <span className="m-choose-status-pill">{`更适合${selectedAudience}的人`}</span>
+          <p className="m-choose-head-context">{chooseContext}</p>
+        </div>
+
+        <div className="m-choose-dial-wrap">
+          <div className="m-choose-dial-shell">
+            <div className="m-choose-dial" role="tablist" aria-label="选择测配品类">
+              {CATS.map((cat) => {
+                const active = selected.key === cat.key;
+                return (
+                  <button
+                    key={cat.key}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => onSelectTag(cat.key)}
+                    className={`m-choose-dial-item m-pressable ${active ? "m-choose-dial-item-active" : ""}`}
+                  >
+                    {cat.zh}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="m-choose-dial-wrap">
-        <div className="m-choose-dial-shell">
-          <div className="m-choose-dial" role="tablist" aria-label="选择测配品类">
-            {CATS.map((cat) => {
-              const active = selected.key === cat.key;
-              return (
-                <button
-                  key={cat.key}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  onClick={() => onSelectTag(cat.key)}
-                  className={`m-choose-dial-item m-pressable ${active ? "m-choose-dial-item-active" : ""}`}
-                >
-                  {cat.zh}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      <div
-        className="m-choose-focus-rail"
-        ref={cardRailRef}
-        onScroll={onCardScroll}
-        aria-label="滑动选择品类卡片"
-      >
-        {CARD_ITEMS.map((item, index) => {
-          const cat = item.cat;
-          const active = selected.key === cat.key;
-          const cardDraft = drafts[cat.key] || null;
-          const cardMeta = cardDraft ? `已完成 ${cardDraft.answered}/${cardDraft.total} · 继续判断` : cat.summary;
-          const cardNote = `更适合${cardDraft?.audience || cat.audience}的人。`;
-          return (
-            <button
-              key={item.id}
-              type="button"
-              aria-pressed={active}
-              onClick={() => onSelectCardItem(cat.key)}
-              className={`m-choose-focus-card m-pressable ${active ? "m-choose-focus-card-active" : ""}`}
-              ref={(node) => {
-                cardItemRefs.current[index] = node;
-              }}
-            >
-              <div className="m-choose-focus-main">
-                <div className="m-choose-focus-title">{cat.zh}</div>
-                <div className="m-choose-focus-meta">{cardMeta}</div>
-                <p className="m-choose-focus-note">{cardNote}</p>
-              </div>
-              <div className="m-choose-focus-image-shell">
-                <div className="m-choose-focus-image">
-                  <Image src={cat.image} alt={cat.zh} width={220} height={150} className="h-[148px] w-[220px] object-contain" />
+        <div
+          className="m-choose-focus-rail"
+          ref={cardRailRef}
+          onScroll={onCardScroll}
+          aria-label="滑动选择品类卡片"
+        >
+          {CARD_ITEMS.map((item, index) => {
+            const cat = item.cat;
+            const active = selected.key === cat.key;
+            const cardDraft = drafts[cat.key] || null;
+            const cardMeta = cardDraft ? `已完成 ${cardDraft.answered}/${cardDraft.total}` : cat.summary;
+            const cardAudience = cardDraft ? pickPrimaryAudience(cardDraft.audience, cat.focusAudience) : cat.focusAudience;
+            const cardNote = `更适合${cardAudience}的人`;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                aria-pressed={active}
+                onClick={() => onSelectCardItem(cat.key)}
+                className={`m-choose-focus-card m-pressable ${active ? "m-choose-focus-card-active" : ""}`}
+                ref={(node) => {
+                  cardItemRefs.current[index] = node;
+                }}
+              >
+                <div className="m-choose-focus-main">
+                  <div className="m-choose-focus-title">{cat.zh}</div>
+                  <div className="m-choose-focus-meta">{cardMeta}</div>
+                  <p className="m-choose-focus-note">{cardNote}</p>
                 </div>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="m-choose-action-section">
-        <div className="m-choose-action-wrap">
-          <Link
-            href={selectedDraft ? selectedDraft.continueHref : selected.startHref}
-            className="m-profile-primary-btn m-choose-primary-btn inline-flex items-center justify-center"
-          >
-            {selectedDraft ? "继续测配" : "开始测配"}
-          </Link>
+                <div className="m-choose-focus-image-shell">
+                  <div className="m-choose-focus-image">
+                    <Image src={cat.image} alt={cat.zh} width={220} height={150} className="h-[148px] w-[220px] object-contain" />
+                  </div>
+                </div>
+              </button>
+            );
+          })}
         </div>
-      </div>
 
-      <div className="m-choose-history-section">
-        <div className="m-choose-status-card">
+        <div className="m-choose-action-section">
+          <div className="m-choose-action-wrap">
+            <Link
+              href={selectedDraft ? selectedDraft.continueHref : selected.startHref}
+              className="m-profile-primary-btn m-choose-primary-btn inline-flex items-center justify-center"
+            >
+              {selectedDraft ? "继续测配" : "开始测配"}
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      <section className="m-choose-history-section" aria-label="上次记录">
+        <div className="m-choose-history-card">
           <div className="m-choose-head-topline">
             <div className="m-choose-head-chip">{historyKicker}</div>
-            <Link href={recentEntryHref} className="m-choose-recent m-pressable">
-              {recentEntryLabel}
+            <Link href={historyActionHref} className="m-choose-recent m-pressable">
+              {historyActionLabel}
             </Link>
           </div>
           <h2 className="m-choose-head-title m-choose-history-title">{historyTitle}</h2>
-          <p className="m-choose-head-note">{historyNote}</p>
-          <div className="m-choose-status-meta">
-            <span className="m-choose-status-pill">{selected.summary}</span>
-            {selectedDraft ? (
-              <span className="m-choose-status-pill">{`还差 ${remainingSteps} 题`}</span>
-            ) : selectedRecentResultHref ? (
-              <span className="m-choose-status-pill">上次结果可直接回看</span>
-            ) : (
-              <span className="m-choose-status-pill">完成后会自动留在这里</span>
-            )}
-          </div>
+          <p className="m-choose-head-note m-choose-history-note">{historyNote}</p>
+          <p className="m-choose-history-meta">{historyMeta}</p>
         </div>
-      </div>
+      </section>
     </div>
   );
 }
