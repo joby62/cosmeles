@@ -2121,44 +2121,45 @@ html[data-nav-open="1"] #app-main{
 }
 
 .m-wiki-category-rail {
-  border: 1px solid var(--m-wiki-border);
-  backdrop-filter: saturate(180%) blur(20px);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-}
-
-.m-wiki-category-rail-glow {
-  pointer-events: none;
-  position: absolute;
-  right: -14px;
-  top: -10px;
-  height: 140px;
-  width: 140px;
-  border-radius: 999px;
-  filter: blur(30px);
-  opacity: 0.72;
-  animation: mWikiRailBreathe 8.4s cubic-bezier(0.22, 0.78, 0.2, 1) infinite;
+  display: flex;
+  min-width: max-content;
+  gap: 10px;
+  padding: 2px 0 6px;
 }
 
 .m-wiki-category-card {
-  border: 1px solid color-mix(in srgb, var(--m-wiki-border) 76%, rgba(255,255,255,0.42));
-  background:
-    linear-gradient(180deg, rgba(255,255,255,0.9), rgba(247,249,252,0.82)),
-    color-mix(in srgb, var(--m-wiki-frost) 88%, transparent);
+  display: inline-flex;
+  height: 54px;
+  width: 94px;
+  min-width: 94px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid rgba(22,34,56,0.12);
+  border-radius: 27px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(247,249,252,0.94));
   color: var(--m-wiki-text-mid);
   box-shadow:
-    0 12px 26px rgba(16,29,52,0.05),
+    0 6px 16px rgba(16,29,52,0.05),
     inset 0 1px 0 rgba(255,255,255,0.56);
-  backdrop-filter: saturate(180%) blur(18px);
-  -webkit-backdrop-filter: saturate(180%) blur(18px);
+  backdrop-filter: saturate(175%) blur(14px);
+  -webkit-backdrop-filter: saturate(175%) blur(14px);
   transition:
     border-color var(--m-dur-fast) var(--m-ease),
-    background-color var(--m-dur-fast) var(--m-ease),
+    background var(--m-dur-fast) var(--m-ease),
     box-shadow var(--m-dur-fast) var(--m-ease),
     transform var(--m-dur-fast) var(--m-ease);
+  white-space: nowrap;
 }
 
 .m-wiki-category-card-active {
+  border-color: rgba(255,255,255,0.34);
+  background: var(--m-wiki-category-active-bg);
+  color: var(--m-wiki-text-strong);
   transform: translateY(-1px);
+  box-shadow:
+    0 10px 24px rgba(16,29,52,0.08),
+    inset 0 1px 0 rgba(255,255,255,0.26);
   animation: mWikiRailCardBreathe 7.2s cubic-bezier(0.22, 0.78, 0.2, 1) infinite;
 }
 
@@ -2366,18 +2367,11 @@ html[data-nav-open="1"] #app-main{
   }
 
   .m-shell .m-wiki-page .m-wiki-category-rail {
-    border-color: rgba(255,255,255,0.14) !important;
-    background: linear-gradient(180deg, rgba(20,30,46,0.94), rgba(13,21,34,0.92)) !important;
-    box-shadow:
-      0 18px 36px rgba(0,0,0,0.3),
-      inset 0 1px 0 rgba(255,255,255,0.05) !important;
+    background: transparent !important;
+    box-shadow: none !important;
   }
 
-  .m-shell .m-wiki-page .m-wiki-category-rail-glow {
-    opacity: 0.32 !important;
-  }
-
-  .m-shell .m-wiki-page .m-wiki-category-card {
+  .m-shell .m-wiki-page .m-wiki-category-card:not(.m-wiki-category-card-active) {
     border-color: rgba(255,255,255,0.12) !important;
     background: linear-gradient(180deg, rgba(25,36,55,0.96), rgba(17,26,40,0.92)) !important;
     color: var(--m-wiki-text-mid) !important;
@@ -2387,17 +2381,12 @@ html[data-nav-open="1"] #app-main{
   }
 
   .m-shell .m-wiki-page .m-wiki-category-card-active {
-    border-color: rgba(96,158,255,0.34) !important;
-    background: linear-gradient(180deg, rgba(31,48,79,0.96), rgba(21,34,55,0.94)) !important;
+    border-color: rgba(255,255,255,0.16) !important;
+    background: var(--m-wiki-category-active-bg) !important;
     color: var(--m-wiki-text-strong) !important;
     box-shadow:
       0 18px 34px rgba(0,0,0,0.28),
-      inset 0 0 0 1px rgba(96,158,255,0.14) !important;
-  }
-
-  .m-shell .m-wiki-page .m-wiki-category-card-active > span:first-child {
-    background: rgba(96,158,255,0.18) !important;
-    box-shadow: inset 0 0 0 1px rgba(96,158,255,0.16) !important;
+      inset 0 1px 0 rgba(255,255,255,0.08) !important;
   }
 
   .m-shell .m-wiki-page [role="tab"][aria-selected="true"] {

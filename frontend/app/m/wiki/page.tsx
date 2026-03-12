@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import MobileFrictionSignals from "@/components/mobile/MobileFrictionSignals";
 import MobilePageAnalytics from "@/components/mobile/MobilePageAnalytics";
 import MobileScrollDepthAnalytics from "@/components/mobile/MobileScrollDepthAnalytics";
@@ -20,6 +20,7 @@ import { isWikiCategoryKey, WIKI_MAP, WIKI_ORDER, type WikiCategoryKey } from "@
 
 type CategoryTheme = {
   heroClass: string;
+  railActiveBg: string;
   hazeClass: string;
   accentClass: string;
   railShellClass: string;
@@ -63,6 +64,7 @@ const CATEGORY_THEME: Record<WikiCategoryKey, CategoryTheme> = {
   shampoo: {
     heroClass:
       "bg-[radial-gradient(circle_at_24%_16%,rgba(247,249,252,0.98),rgba(203,214,231,0.92)_44%,rgba(118,137,172,0.96)_100%)]",
+    railActiveBg: "radial-gradient(circle at 24% 16%, rgba(247,249,252,0.98), rgba(203,214,231,0.92) 44%, rgba(118,137,172,0.96) 100%)",
     hazeClass: "bg-[radial-gradient(circle_at_72%_82%,rgba(36,46,72,0.4),rgba(10,20,36,0)_64%)]",
     accentClass: "bg-[#90a7d3]",
     railShellClass:
@@ -75,6 +77,7 @@ const CATEGORY_THEME: Record<WikiCategoryKey, CategoryTheme> = {
   bodywash: {
     heroClass:
       "bg-[radial-gradient(circle_at_70%_18%,rgba(242,248,255,0.96),rgba(194,211,246,0.9)_44%,rgba(121,143,210,0.94)_100%)]",
+    railActiveBg: "radial-gradient(circle at 70% 18%, rgba(242,248,255,0.96), rgba(194,211,246,0.9) 44%, rgba(121,143,210,0.94) 100%)",
     hazeClass: "bg-[radial-gradient(circle_at_22%_82%,rgba(28,38,92,0.42),rgba(10,20,36,0)_64%)]",
     accentClass: "bg-[#9fb5ff]",
     railShellClass:
@@ -87,6 +90,7 @@ const CATEGORY_THEME: Record<WikiCategoryKey, CategoryTheme> = {
   conditioner: {
     heroClass:
       "bg-[radial-gradient(circle_at_24%_16%,rgba(248,244,255,0.97),rgba(214,198,245,0.91)_44%,rgba(152,129,216,0.94)_100%)]",
+    railActiveBg: "radial-gradient(circle at 24% 16%, rgba(248,244,255,0.97), rgba(214,198,245,0.91) 44%, rgba(152,129,216,0.94) 100%)",
     hazeClass: "bg-[radial-gradient(circle_at_72%_82%,rgba(56,24,102,0.42),rgba(10,20,36,0)_64%)]",
     accentClass: "bg-[#bea1ff]",
     railShellClass:
@@ -99,6 +103,7 @@ const CATEGORY_THEME: Record<WikiCategoryKey, CategoryTheme> = {
   lotion: {
     heroClass:
       "bg-[radial-gradient(circle_at_24%_18%,rgba(255,248,232,0.97),rgba(246,220,173,0.91)_44%,rgba(217,168,96,0.94)_100%)]",
+    railActiveBg: "radial-gradient(circle at 24% 18%, rgba(255,248,232,0.97), rgba(246,220,173,0.91) 44%, rgba(217,168,96,0.94) 100%)",
     hazeClass: "bg-[radial-gradient(circle_at_70%_82%,rgba(90,56,18,0.4),rgba(10,20,36,0)_64%)]",
     accentClass: "bg-[#e7bd72]",
     railShellClass:
@@ -111,6 +116,7 @@ const CATEGORY_THEME: Record<WikiCategoryKey, CategoryTheme> = {
   cleanser: {
     heroClass:
       "bg-[radial-gradient(circle_at_24%_18%,rgba(242,252,255,0.97),rgba(189,223,236,0.9)_44%,rgba(117,176,203,0.94)_100%)]",
+    railActiveBg: "radial-gradient(circle at 24% 18%, rgba(242,252,255,0.97), rgba(189,223,236,0.9) 44%, rgba(117,176,203,0.94) 100%)",
     hazeClass: "bg-[radial-gradient(circle_at_72%_82%,rgba(16,66,84,0.42),rgba(10,20,36,0)_64%)]",
     accentClass: "bg-[#87c7dd]",
     railShellClass:
@@ -958,38 +964,42 @@ function MobileWikiPageContent() {
             </div>
           )}
 
-          <section className="overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            <div className={`m-wiki-category-rail relative min-w-max overflow-hidden rounded-[35px] px-2.5 py-2 ${theme.railShellClass}`}>
-              <div className={`m-wiki-category-rail-glow ${theme.railGlowClass}`} />
-              <div className="relative flex min-w-max gap-3.5 pb-1 pt-0.5">
-                {WIKI_ORDER.map((key) => {
-                  const item = WIKI_MAP[key];
-                  const activeTag = key === active;
-                  const categoryTheme = CATEGORY_THEME[key];
-                  return (
-                    <button
-                      key={item.key}
-                      type="button"
-                      data-analytics-id={`wiki:category:${item.key}`}
-                      onClick={() => {
-                        switchCategory(key);
-                      }}
-                      className={`m-wiki-category-card m-pressable relative inline-flex h-[62px] min-w-[138px] items-center gap-3 rounded-[31px] px-4.5 ${
-                        activeTag ? `m-wiki-category-card-active ${categoryTheme.railCardClass}` : ""
+          <section className="-mx-4 overflow-x-auto px-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="m-wiki-category-rail">
+              {WIKI_ORDER.map((key) => {
+                const item = WIKI_MAP[key];
+                const activeTag = key === active;
+                const categoryTheme = CATEGORY_THEME[key];
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    data-analytics-id={`wiki:category:${item.key}`}
+                    onClick={() => {
+                      switchCategory(key);
+                    }}
+                    style={
+                      activeTag
+                        ? ({
+                            "--m-wiki-category-active-bg": categoryTheme.railActiveBg,
+                          } as CSSProperties)
+                        : undefined
+                    }
+                    className={`m-wiki-category-card m-pressable ${activeTag ? "m-wiki-category-card-active" : ""}`}
+                  >
+                    <span
+                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-[12px] transition-colors ${
+                        activeTag
+                          ? "bg-white/68 shadow-[inset_0_1px_0_rgba(255,255,255,0.34)]"
+                          : "bg-white/82 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]"
                       }`}
                     >
-                      <span
-                        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[15px] transition-colors ${
-                          activeTag ? categoryTheme.railIconClass : "bg-white/82 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]"
-                        }`}
-                      >
-                        <Image src={`/m/categories/${item.key}.png`} alt={item.label} width={24} height={24} className="h-[24px] w-[24px] rounded-[9px] object-cover" />
-                      </span>
-                      <span className="text-[17px] font-semibold tracking-[-0.024em]">{item.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
+                      <Image src={`/m/categories/${item.key}.png`} alt={item.label} width={22} height={22} className="h-[22px] w-[22px] rounded-[8px] object-cover" />
+                    </span>
+                    <span className="text-[16px] font-semibold tracking-[-0.024em]">{item.label}</span>
+                  </button>
+                );
+              })}
             </div>
           </section>
 
