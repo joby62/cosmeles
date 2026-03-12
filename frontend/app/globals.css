@@ -2120,6 +2120,7 @@ html[data-nav-open="1"] #app-main{
   min-width: 58px;
   align-items: center;
   justify-content: center;
+  border: 1px solid transparent;
   border-radius: 18px;
   padding: 0 14px;
   font-size: 14px;
@@ -2134,11 +2135,11 @@ html[data-nav-open="1"] #app-main{
 }
 
 .m-wiki-top-toggle-btn-active {
-  background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(242,245,249,0.92));
-  color: var(--m-wiki-text-strong);
-  box-shadow:
-    0 4px 10px rgba(16,29,52,0.06),
-    inset 0 1px 0 rgba(255,255,255,0.66);
+  border-color: var(--m-wiki-top-toggle-active-border, rgba(155,183,219,0.5));
+  background: var(--m-wiki-top-toggle-active-bg, linear-gradient(180deg, rgba(255,255,255,0.98), rgba(242,245,249,0.92)));
+  color: var(--m-wiki-top-toggle-active-text, var(--m-wiki-text-strong));
+  transform: translateY(-1px);
+  box-shadow: var(--m-wiki-top-toggle-active-shadow, 0 4px 10px rgba(16,29,52,0.06), inset 0 1px 0 rgba(255,255,255,0.66));
 }
 
 .m-wiki-top-search {
@@ -2429,11 +2430,10 @@ html[data-nav-open="1"] #app-main{
   }
 
   .m-shell .m-wiki-page .m-wiki-top-toggle-btn-active {
-    background: linear-gradient(180deg, rgba(44,58,81,0.96), rgba(32,45,66,0.92)) !important;
-    color: var(--m-wiki-text-strong) !important;
-    box-shadow:
-      0 8px 18px rgba(0,0,0,0.2),
-      inset 0 1px 0 rgba(255,255,255,0.08) !important;
+    border-color: var(--m-wiki-top-toggle-active-border, rgba(155,183,219,0.5)) !important;
+    background: var(--m-wiki-top-toggle-active-bg, linear-gradient(180deg, rgba(44,58,81,0.96), rgba(32,45,66,0.92))) !important;
+    color: var(--m-wiki-top-toggle-active-text, var(--m-wiki-text-strong)) !important;
+    box-shadow: var(--m-wiki-top-toggle-active-shadow, 0 8px 18px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.08)) !important;
   }
 
   .m-shell .m-wiki-page .m-wiki-hero-card > div:first-child {

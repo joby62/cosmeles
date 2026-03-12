@@ -29,6 +29,13 @@ type CategoryTheme = {
   railIconClass: string;
 };
 
+type EntryTabTheme = {
+  activeBg: string;
+  activeBorder: string;
+  activeText: string;
+  activeShadow: string;
+};
+
 type NameParts = {
   main: string;
   sub: string | null;
@@ -60,13 +67,28 @@ const ENTRY_TABS: Array<{ key: WikiEntryTab; label: string }> = [
   { key: "ingredient", label: "成分" },
 ];
 
+const ENTRY_TAB_THEME: Record<WikiEntryTab, EntryTabTheme> = {
+  product: {
+    activeBg: "linear-gradient(180deg, rgba(241,248,255,0.98), rgba(218,232,248,0.92))",
+    activeBorder: "rgba(155,183,219,0.5)",
+    activeText: "#27476d",
+    activeShadow: "0 5px 12px rgba(64,94,138,0.1), inset 0 1px 0 rgba(255,255,255,0.72)",
+  },
+  ingredient: {
+    activeBg: "linear-gradient(180deg, rgba(241,250,246,0.98), rgba(212,234,226,0.92))",
+    activeBorder: "rgba(129,183,168,0.48)",
+    activeText: "#235149",
+    activeShadow: "0 5px 12px rgba(47,106,92,0.09), inset 0 1px 0 rgba(255,255,255,0.72)",
+  },
+};
+
 const CATEGORY_THEME: Record<WikiCategoryKey, CategoryTheme> = {
   shampoo: {
     heroClass:
-      "bg-[radial-gradient(circle_at_24%_16%,rgba(247,249,252,0.98),rgba(203,214,231,0.92)_44%,rgba(118,137,172,0.96)_100%)]",
-    railActiveBg: "radial-gradient(circle at 24% 16%, rgba(247,249,252,0.98), rgba(203,214,231,0.92) 44%, rgba(118,137,172,0.96) 100%)",
-    hazeClass: "bg-[radial-gradient(circle_at_72%_82%,rgba(36,46,72,0.4),rgba(10,20,36,0)_64%)]",
-    accentClass: "bg-[#90a7d3]",
+      "bg-[radial-gradient(circle_at_24%_16%,rgba(246,250,255,0.98),rgba(214,226,243,0.92)_44%,rgba(128,157,203,0.95)_100%)]",
+    railActiveBg: "radial-gradient(circle at 24% 16%, rgba(246,250,255,0.98), rgba(214,226,243,0.92) 44%, rgba(128,157,203,0.95) 100%)",
+    hazeClass: "bg-[radial-gradient(circle_at_72%_82%,rgba(32,52,96,0.38),rgba(10,20,36,0)_64%)]",
+    accentClass: "bg-[#a3c0f0]",
     railShellClass:
       "border-[rgba(122,140,176,0.18)] bg-[linear-gradient(180deg,rgba(244,247,252,0.98),rgba(229,236,246,0.92))] shadow-[0_16px_32px_rgba(33,46,78,0.08),inset_0_1px_0_rgba(255,255,255,0.72)]",
     railGlowClass: "bg-[radial-gradient(circle,rgba(144,167,211,0.34),rgba(144,167,211,0))]",
@@ -102,10 +124,10 @@ const CATEGORY_THEME: Record<WikiCategoryKey, CategoryTheme> = {
   },
   lotion: {
     heroClass:
-      "bg-[radial-gradient(circle_at_24%_18%,rgba(255,248,232,0.97),rgba(246,220,173,0.91)_44%,rgba(217,168,96,0.94)_100%)]",
-    railActiveBg: "radial-gradient(circle at 24% 18%, rgba(255,248,232,0.97), rgba(246,220,173,0.91) 44%, rgba(217,168,96,0.94) 100%)",
-    hazeClass: "bg-[radial-gradient(circle_at_70%_82%,rgba(90,56,18,0.4),rgba(10,20,36,0)_64%)]",
-    accentClass: "bg-[#e7bd72]",
+      "bg-[radial-gradient(circle_at_24%_18%,rgba(255,246,242,0.98),rgba(243,220,212,0.92)_44%,rgba(212,163,146,0.95)_100%)]",
+    railActiveBg: "radial-gradient(circle at 24% 18%, rgba(255,246,242,0.98), rgba(243,220,212,0.92) 44%, rgba(212,163,146,0.95) 100%)",
+    hazeClass: "bg-[radial-gradient(circle_at_70%_82%,rgba(94,54,44,0.36),rgba(10,20,36,0)_64%)]",
+    accentClass: "bg-[#e6b7a7]",
     railShellClass:
       "border-[rgba(225,186,116,0.18)] bg-[linear-gradient(180deg,rgba(253,248,236,0.98),rgba(247,236,210,0.92))] shadow-[0_16px_32px_rgba(106,74,28,0.08),inset_0_1px_0_rgba(255,255,255,0.72)]",
     railGlowClass: "bg-[radial-gradient(circle,rgba(231,189,114,0.34),rgba(231,189,114,0))]",
@@ -926,6 +948,7 @@ function MobileWikiPageContent() {
                 >
                   {ENTRY_TABS.map((tab) => {
                     const activeTab = tab.key === entryTab;
+                    const tabTheme = ENTRY_TAB_THEME[tab.key];
                     return (
                       <button
                         key={tab.key}
@@ -936,6 +959,16 @@ function MobileWikiPageContent() {
                         onClick={() => {
                           switchTab(tab.key);
                         }}
+                        style={
+                          activeTab
+                            ? ({
+                                "--m-wiki-top-toggle-active-bg": tabTheme.activeBg,
+                                "--m-wiki-top-toggle-active-border": tabTheme.activeBorder,
+                                "--m-wiki-top-toggle-active-text": tabTheme.activeText,
+                                "--m-wiki-top-toggle-active-shadow": tabTheme.activeShadow,
+                              } as CSSProperties)
+                            : undefined
+                        }
                         className={`m-wiki-top-toggle-btn m-pressable ${activeTab ? "m-wiki-top-toggle-btn-active" : ""}`}
                       >
                         {tab.key === "product" ? "产品" : "成分"}
