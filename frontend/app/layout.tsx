@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import DemoLocaleProvider from "@/components/site/DemoLocaleProvider";
 import SiteFooter from "@/components/site/SiteFooter";
 import SiteHeader from "@/components/site/SiteHeader";
 
@@ -12,13 +13,15 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en-US">
+    <html lang="en-US" suppressHydrationWarning>
       <body>
-        <div className="site-shell">
-          <SiteHeader />
-          <main className="site-main">{children}</main>
-          <SiteFooter />
-        </div>
+        <DemoLocaleProvider>
+          <div className="site-shell">
+            <SiteHeader />
+            <main className="site-main">{children}</main>
+            <SiteFooter />
+          </div>
+        </DemoLocaleProvider>
       </body>
     </html>
   );

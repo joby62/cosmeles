@@ -12,6 +12,7 @@
   --site-shadow: 0 24px 64px rgba(15, 23, 42, 0.08);
   --font-display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
   --font-body: "SF Pro Text", "Segoe UI", Helvetica, sans-serif;
+  --font-cn-brand: "Songti SC", "STSong", "Noto Serif SC", "Source Han Serif SC", serif;
 }
 
 html {
@@ -19,6 +20,13 @@ html {
     radial-gradient(circle at top, rgba(41, 151, 255, 0.16), transparent 28%),
     radial-gradient(circle at 15% 18%, rgba(168, 204, 255, 0.18), transparent 24%),
     linear-gradient(180deg, #fbfdff 0%, var(--site-bg) 42%, #eef4fb 100%);
+}
+
+html[data-demo-locale="zh"] {
+  background:
+    radial-gradient(circle at top, rgba(41, 151, 255, 0.14), transparent 28%),
+    radial-gradient(circle at 14% 16%, rgba(184, 211, 242, 0.18), transparent 24%),
+    linear-gradient(180deg, #fbfdff 0%, #f5f7fb 42%, #edf3f8 100%);
 }
 
 body {
@@ -51,4 +59,11 @@ select {
 
 .site-display {
   font-family: var(--font-display);
+}
+
+.brand-cn-wordmark,
+.brand-cn-glyph {
+  font-family: var(--font-cn-brand);
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
