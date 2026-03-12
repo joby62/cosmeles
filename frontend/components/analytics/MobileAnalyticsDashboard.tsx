@@ -113,6 +113,12 @@ function pageLabel(page?: string | null): string {
       return "横向对比";
     case "my_use":
       return "我的在用";
+    case "wiki_product_detail":
+      return "产品百科详情";
+    case "wiki_category":
+      return "品类百科";
+    case "product_showcase":
+      return "产品详情页";
     default:
       return valueOrEmpty(page) || "unknown";
   }
@@ -565,30 +571,30 @@ export default function MobileAnalyticsDashboard() {
                         {formatDurationMs(experience.data.p50_result_dwell_ms)}
                       </div>
                       <div className="mt-2 text-[12px] text-black/52">
-                        rage {formatNumber(experience.data.rage_clicks)} · stall {formatNumber(experience.data.stall_detected)}
+                        rage {formatNumber(experience.data.rage_clicks)} · dead {formatNumber(experience.data.dead_clicks)} · stall {formatNumber(experience.data.stall_detected)}
                       </div>
                     </article>
                   </div>
                 </div>
 
                 <div>
-                  <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-black/42">结果页 CTA 点击</div>
-                  {experience.data.result_cta_clicks.length === 0 ? (
-                    <EmptyHint label="当前筛选下还没有结果页 CTA 点击。" />
+                  <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-black/42">结果页 CTA 后续完成</div>
+                  {experience.data.result_cta_followthrough.length === 0 ? (
+                    <EmptyHint label="当前筛选下还没有结果页 CTA 后续完成数据。" />
                   ) : (
                     <div className="space-y-3">
-                      {experience.data.result_cta_clicks.map((item) => (
-                        <div key={item.key}>
+                      {experience.data.result_cta_followthrough.map((item) => (
+                        <div key={item.cta}>
                           <div className="flex items-center justify-between gap-3">
-                            <div className="text-[13px] font-medium text-black/72">{resultCtaLabel(item.key)}</div>
+                            <div className="text-[13px] font-medium text-black/72">{resultCtaLabel(item.cta)}</div>
                             <div className="text-[12px] text-black/52">
-                              {formatNumber(item.count)} · {formatPercent(item.rate)}
+                              落地 {formatNumber(item.landings)} / 点击 {formatNumber(item.clicks)} · {formatPercent(item.landing_rate)}
                             </div>
                           </div>
                           <div className="mt-2 h-2 rounded-full bg-black/6">
                             <div
                               className="h-2 rounded-full bg-[#0f7c59]"
-                              style={{ width: item.count > 0 ? `${Math.max(8, Math.round(item.rate * 100))}%` : "0%" }}
+                              style={{ width: item.clicks > 0 ? `${Math.max(8, Math.round(item.landing_rate * 100))}%` : "0%" }}
                             />
                           </div>
                         </div>
@@ -653,6 +659,67 @@ export default function MobileAnalyticsDashboard() {
                         ))}
                       </div>
                     )}
+                  </div>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-black/42">Top Dead Targets</div>
+                    {experience.data.dead_click_targets.length === 0 ? (
+                      <EmptyHint label="当前筛选下还没有 dead click。" />
+                    ) : (
+                      <div className="space-y-2">
+                        {experience.data.dead_click_targets.map((item) => (
+                          <div
+                            key={`${item.page}:${item.target_id}`}
+                            className="flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-black/10 bg-[#fff6f2] px-4 py-3"
+                          >
+                            <div className="text-[13px] text-black/72">{rageTargetLabel(item)}</div>
+                            <div className="text-[12px] text-black/52">
+                              {formatNumber(item.count)} · {formatPercent(item.rate)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-black/42">结果页 CTA 点击分布</div>
+                    {experience.data.result_cta_clicks.length === 0 ? (
+                      <EmptyHint label="当前筛选下还没有结果页 CTA 点击。" />
+                    ) : (
+                      renderCountList(experience.data.result_cta_clicks)
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-black/42">环境切片</div>
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    <div>
+                      <div className="mb-3 text-[12px] text-black/48">Browser</div>
+                      {renderCountList(experience.data.browser_families)}
+                    </div>
+                    <div>
+                      <div className="mb-3 text-[12px] text-black/48">OS</div>
+                      {renderCountList(experience.data.os_families)}
+                    </div>
+                    <div>
+                      <div className="mb-3 text-[12px] text-black/48">Device</div>
+                      {renderCountList(experience.data.device_types)}
+                    </div>
+                    <div>
+                      <div className="mb-3 text-[12px] text-black/48">Viewport</div>
+                      {renderCountList(experience.data.viewport_buckets)}
+                    </div>
+                    <div>
+                      <div className="mb-3 text-[12px] text-black/48">Network</div>
+                      {renderCountList(experience.data.network_types)}
+                    </div>
+                    <div>
+                      <div className="mb-3 text-[12px] text-black/48">Language</div>
+                      {renderCountList(experience.data.languages)}
+                    </div>
                   </div>
                 </div>
               </div>

@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { MobileCompareResult, MobileCompareResultSection } from "@/lib/api";
-import { trackMobileEvent, trackMobileEventWithBeacon } from "@/lib/mobileAnalytics";
+import { markMobileTargetHandled, trackMobileEvent, trackMobileEventWithBeacon } from "@/lib/mobileAnalytics";
 import { describeMobileRouteFocus } from "@/lib/mobile/routeCopy";
 
 type InsightSource = "feel" | "rhythm" | "care" | "consensus" | "ingredient" | "fallback";
@@ -192,6 +192,18 @@ export default function MobileCompareResultFlow({ result }: { result: MobileComp
     void trackMobileEvent("compare_result_cta_click", payload);
   };
 
+  const trackedHref = (href: string, cta: string): string => {
+    const [path, hash = ""] = href.split("#", 2);
+    const [pathname, search = ""] = path.split("?", 2);
+    const params = new URLSearchParams(search);
+    params.set("source", "compare_result");
+    params.set("result_cta", cta);
+    params.set("from_compare_id", result.compare_id);
+    const query = params.toString();
+    const rebuilt = query ? `${pathname}?${query}` : pathname;
+    return hash ? `${rebuilt}#${hash}` : rebuilt;
+  };
+
   useEffect(() => {
     if (!activeSheet) return;
     const prevOverflow = document.body.style.overflow;
@@ -278,7 +290,9 @@ export default function MobileCompareResultFlow({ result }: { result: MobileComp
             <a
               href="#reason-gallery"
               data-analytics-id="result:cta:reason-gallery"
+              data-analytics-dead-click-watch="true"
               onClick={() => {
+                markMobileTargetHandled("result:cta:reason-gallery");
                 trackResultCta("reason_gallery_anchor");
               }}
               className="m-pressable inline-flex h-11 items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-6 text-[15px] font-semibold text-white shadow-[0_12px_28px_rgba(0,113,227,0.28)] active:opacity-95"
@@ -286,9 +300,11 @@ export default function MobileCompareResultFlow({ result }: { result: MobileComp
               看原因
             </a>
             <Link
-              href={`/m/compare?category=${encodeURIComponent(result.category)}`}
+              href={trackedHref(`/m/compare?category=${encodeURIComponent(result.category)}`, "rerun_compare")}
               data-analytics-id="result:cta:rerun-compare"
+              data-analytics-dead-click-watch="true"
               onClick={() => {
+                markMobileTargetHandled("result:cta:rerun-compare");
                 trackResultCta("rerun_compare", undefined, true);
               }}
               className="m-pressable inline-flex h-11 items-center justify-center rounded-full border border-[#d0d6e0] bg-white px-5 text-[14px] font-medium text-[#2f3b53] active:bg-black/[0.03] dark:border-[#5f6b82] dark:bg-[#1f2a3e] dark:text-[#d7e4ff]"
@@ -335,6 +351,7 @@ export default function MobileCompareResultFlow({ result }: { result: MobileComp
                     <button
                       type="button"
                       onClick={() => {
+                        markMobileTargetHandled(`result:cta:open-full:${card.key}`);
                         trackResultCta("open_full_card", {
                           card_source: card.source,
                           card_key: card.key,
@@ -342,6 +359,7 @@ export default function MobileCompareResultFlow({ result }: { result: MobileComp
                         setActiveSheet({ source: card.source, title: card.title, items: card.items });
                       }}
                       data-analytics-id={`result:cta:open-full:${card.key}`}
+                      data-analytics-dead-click-watch="true"
                       className="m-pressable inline-flex h-10 items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-5 text-[14px] font-semibold text-white shadow-[0_12px_24px_rgba(0,113,227,0.26)] active:opacity-95"
                     >
                       全部内容
@@ -370,9 +388,11 @@ export default function MobileCompareResultFlow({ result }: { result: MobileComp
 
           <div className="mt-5 flex flex-wrap gap-2">
             <Link
-              href={result.recommendation.links.product}
+              href={trackedHref(result.recommendation.links.product, "recommendation_product")}
               data-analytics-id="result:cta:product"
+              data-analytics-dead-click-watch="true"
               onClick={() => {
+                markMobileTargetHandled("result:cta:product");
                 trackResultCta("recommendation_product", {
                   target_path: result.recommendation.links.product,
                 }, true);
@@ -382,9 +402,11 @@ export default function MobileCompareResultFlow({ result }: { result: MobileComp
               查看推荐产品
             </Link>
             <Link
-              href={result.recommendation.links.wiki}
+              href={trackedHref(result.recommendation.links.wiki, "recommendation_wiki")}
               data-analytics-id="result:cta:wiki"
+              data-analytics-dead-click-watch="true"
               onClick={() => {
+                markMobileTargetHandled("result:cta:wiki");
                 trackResultCta("recommendation_wiki", {
                   target_path: result.recommendation.links.wiki,
                 }, true);

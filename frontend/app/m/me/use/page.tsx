@@ -1,4 +1,5 @@
 import Image from "next/image";
+import MobileFrictionSignals from "@/components/mobile/MobileFrictionSignals";
 import MobilePageAnalytics from "@/components/mobile/MobilePageAnalytics";
 import MobileTrackedLink from "@/components/mobile/MobileTrackedLink";
 
@@ -52,6 +53,7 @@ export default async function MobileMeUsePage({
   return (
     <section className="space-y-4 pb-8">
       <MobilePageAnalytics page="my_use" route="/m/me/use" source={source || "m_me_use"} category={requestedCategory} />
+      <MobileFrictionSignals page="my_use" route="/m/me/use" source={source || "m_me_use"} category={requestedCategory} />
       <header className="overflow-hidden rounded-[30px] border border-black/10 bg-white/88 p-5 shadow-[0_10px_28px_rgba(20,34,58,0.08)] dark:border-white/15 dark:bg-[#0f1724]/84">
         <div className="inline-flex rounded-full border border-[#0071e3]/24 bg-[#0071e3]/8 px-3 py-1 text-[11px] font-semibold tracking-[0.01em] text-[#0071e3]">
           在用管理
@@ -107,6 +109,8 @@ export default async function MobileMeUsePage({
               <MobileTrackedLink
                 href={href}
                 eventName="my_use_category_card_click"
+                data-analytics-id={`my-use:category:${item.key}`}
+                data-analytics-dead-click-watch="true"
                 eventProps={{
                   page: "my_use",
                   route: "/m/me/use",

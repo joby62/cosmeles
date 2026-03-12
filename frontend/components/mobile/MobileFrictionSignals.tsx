@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { trackMobileEvent } from "@/lib/mobileAnalytics";
+import { getMobileTargetHandledAt, trackMobileEvent } from "@/lib/mobileAnalytics";
 
 type Props = {
   page: string;
@@ -17,12 +17,21 @@ type Props = {
 
 const RAGE_CLICK_WINDOW_MS = 1800;
 const RAGE_CLICK_THRESHOLD = 3;
+const DEAD_CLICK_DELAY_MS = 900;
+const DEAD_CLICK_COOLDOWN_MS = 5000;
 
 function findAnalyticsTargetId(target: EventTarget | null): string | null {
   if (!(target instanceof Element)) return null;
   const node = target.closest("[data-analytics-id]");
   const value = node?.getAttribute("data-analytics-id");
   return value?.trim() || null;
+}
+
+function shouldWatchDeadClick(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) return false;
+  const node = target.closest("[data-analytics-dead-click-watch]");
+  const value = node?.getAttribute("data-analytics-dead-click-watch");
+  return value === "true";
 }
 
 export default function MobileFrictionSignals({
@@ -44,6 +53,8 @@ export default function MobileFrictionSignals({
   const lastClickAtRef = useRef<number>(0);
   const clickCountRef = useRef<number>(0);
   const rageFiredTargetsRef = useRef<Set<string>>(new Set());
+  const deadClickTimersRef = useRef<Map<string, number>>(new Map());
+  const deadClickLastFiredAtRef = useRef<Map<string, number>>(new Map());
   const latestRouteRef = useRef(route);
   const latestExtraRef = useRef<Record<string, unknown>>(extra || {});
 
@@ -57,6 +68,9 @@ export default function MobileFrictionSignals({
     lastActivityAtRef.current = Date.now();
     stallFiredRef.current = false;
     rageFiredTargetsRef.current = new Set();
+    deadClickTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
+    deadClickTimersRef.current = new Map();
+    deadClickLastFiredAtRef.current = new Map();
     lastClickTargetRef.current = null;
     clickCountRef.current = 0;
 
@@ -118,6 +132,38 @@ export default function MobileFrictionSignals({
       lastClickTargetRef.current = targetId;
       lastClickAtRef.current = now;
 
+      if (shouldWatchDeadClick(event.target)) {
+        const previousTimer = deadClickTimersRef.current.get(targetId);
+        if (previousTimer) {
+          window.clearTimeout(previousTimer);
+        }
+        const clickAt = now;
+        const timerId = window.setTimeout(() => {
+          const handledAt = getMobileTargetHandledAt(targetId);
+          if (handledAt && handledAt >= clickAt) {
+            return;
+          }
+          const lastDeadClickAt = deadClickLastFiredAtRef.current.get(targetId) || 0;
+          if (clickAt - lastDeadClickAt < DEAD_CLICK_COOLDOWN_MS) {
+            return;
+          }
+          deadClickLastFiredAtRef.current.set(targetId, clickAt);
+          void trackMobileEvent("dead_click", {
+            page,
+            route: latestRouteRef.current,
+            source: source || undefined,
+            category: category || undefined,
+            product_id: productId || undefined,
+            user_product_id: userProductId || undefined,
+            compare_id: compareId || undefined,
+            target_id: targetId,
+            wait_ms: DEAD_CLICK_DELAY_MS,
+            ...latestExtraRef.current,
+          });
+        }, DEAD_CLICK_DELAY_MS);
+        deadClickTimersRef.current.set(targetId, timerId);
+      }
+
       if (clickCountRef.current < RAGE_CLICK_THRESHOLD || rageFiredTargetsRef.current.has(targetId)) {
         return;
       }
@@ -144,6 +190,7 @@ export default function MobileFrictionSignals({
 
     return () => {
       clearStallTimer();
+      deadClickTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
       window.removeEventListener("scroll", touchActivity);
       window.removeEventListener("pointerdown", touchActivity);
       window.removeEventListener("keydown", touchActivity);

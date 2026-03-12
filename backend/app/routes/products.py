@@ -141,6 +141,7 @@ from app.schemas import (
     MobileAnalyticsFeedbackResponse,
     MobileAnalyticsPageDepthItem,
     MobileAnalyticsRageClickTargetItem,
+    MobileAnalyticsCtaFollowthroughItem,
     MobileAnalyticsExperienceResponse,
     MobileAnalyticsSessionSummary,
     MobileAnalyticsSessionEventItem,
@@ -255,6 +256,45 @@ ANALYTICS_FUNNEL_STEPS: tuple[tuple[str, str], ...] = (
     ("compare_run_success", "分析成功"),
     ("compare_result_view", "结果页到达"),
 )
+ANALYTICS_BROWSER_LABELS: dict[str, str] = {
+    "chrome": "Chrome",
+    "safari": "Safari",
+    "edge": "Edge",
+    "firefox": "Firefox",
+    "wechat": "WeChat",
+    "other": "其他",
+    "unknown": "未知",
+}
+ANALYTICS_OS_LABELS: dict[str, str] = {
+    "ios": "iOS",
+    "android": "Android",
+    "macos": "macOS",
+    "windows": "Windows",
+    "linux": "Linux",
+    "other": "其他",
+    "unknown": "未知",
+}
+ANALYTICS_DEVICE_LABELS: dict[str, str] = {
+    "phone": "手机",
+    "tablet": "平板",
+    "desktop": "桌面",
+    "unknown": "未知",
+}
+ANALYTICS_VIEWPORT_LABELS: dict[str, str] = {
+    "xs": "超窄屏",
+    "sm": "小屏",
+    "md": "手机常规屏",
+    "lg": "平板屏",
+    "xl": "桌面宽屏",
+    "unknown": "未知",
+}
+ANALYTICS_NETWORK_LABELS: dict[str, str] = {
+    "slow-2g": "slow-2g",
+    "2g": "2G",
+    "3g": "3G",
+    "4g": "4G",
+    "unknown": "未知",
+}
 
 
 def _normalize_optional_text(value: Any) -> str | None:
@@ -457,6 +497,18 @@ def _event_detail(row: MobileClientEvent, props: dict[str, Any]) -> str | None:
         or _normalize_optional_text(props.get("detail"))
         or _normalize_optional_text(props.get("error"))
         or _normalize_optional_text(props.get("reason_text"))
+    )
+
+
+def _event_prop_key(props: dict[str, Any], key: str, *, fallback: str = "unknown") -> str:
+    value = _normalize_optional_text(props.get(key))
+    return value or fallback
+
+
+def _has_event_environment(props: dict[str, Any]) -> bool:
+    return any(
+        _normalize_optional_text(props.get(key))
+        for key in ("browser_family", "os_family", "device_type", "viewport_bucket", "network_type", "lang")
     )
 
 
@@ -942,6 +994,7 @@ def get_mobile_analytics_experience(
         start_iso=start_iso,
         end_iso=end_iso,
         names=[
+            "page_view",
             "wiki_list_view",
             "wiki_product_click",
             "wiki_ingredient_click",
@@ -950,7 +1003,9 @@ def get_mobile_analytics_experience(
             "scroll_depth",
             "stall_detected",
             "rage_click",
+            "dead_click",
             "compare_result_cta_click",
+            "compare_result_cta_land",
         ],
     )
 
@@ -966,12 +1021,32 @@ def get_mobile_analytics_experience(
     result_scroll_100_keys: set[str] = set()
     stall_counter: Counter[str] = Counter()
     rage_counter: Counter[tuple[str, str]] = Counter()
+    dead_click_counter: Counter[tuple[str, str]] = Counter()
     result_cta_counter: Counter[str] = Counter()
+    result_cta_land_counter: Counter[str] = Counter()
+    browser_counter: Counter[str] = Counter()
+    os_counter: Counter[str] = Counter()
+    device_counter: Counter[str] = Counter()
+    viewport_counter: Counter[str] = Counter()
+    network_counter: Counter[str] = Counter()
+    language_counter: Counter[str] = Counter()
 
     page_view_counter: Counter[str] = Counter()
+    env_seen_sessions: set[str] = set()
 
     for row, props in rows:
         row_page = _normalize_optional_text(row.page) or "unknown"
+        session_key = _session_key_for_event(row)
+        if session_key not in env_seen_sessions and _has_event_environment(props):
+            env_seen_sessions.add(session_key)
+            browser_counter[_event_prop_key(props, "browser_family")] += 1
+            os_counter[_event_prop_key(props, "os_family")] += 1
+            device_counter[_event_prop_key(props, "device_type")] += 1
+            viewport_counter[_event_prop_key(props, "viewport_bucket")] += 1
+            network_counter[_event_prop_key(props, "network_type")] += 1
+            language_counter[_event_prop_key(props, "lang")] += 1
+        if row.name == "page_view":
+            continue
         if row.name == "wiki_list_view":
             entry_tab = _normalize_optional_text(props.get("entry_tab")) or "product"
             page_view_counter[row_page] += 1
@@ -1019,9 +1094,17 @@ def get_mobile_analytics_experience(
             target_id = _normalize_optional_text(props.get("target_id")) or "unknown"
             rage_counter[(row_page, target_id)] += 1
             continue
+        if row.name == "dead_click":
+            target_id = _normalize_optional_text(props.get("target_id")) or "unknown"
+            dead_click_counter[(row_page, target_id)] += 1
+            continue
         if row.name == "compare_result_cta_click":
             cta_key = _normalize_optional_text(props.get("cta")) or "unknown"
             result_cta_counter[cta_key] += 1
+            continue
+        if row.name == "compare_result_cta_land":
+            cta_key = _normalize_optional_text(props.get("cta")) or "unknown"
+            result_cta_land_counter[cta_key] += 1
 
     scroll_depth_items = [
         MobileAnalyticsPageDepthItem(
@@ -1036,6 +1119,7 @@ def get_mobile_analytics_experience(
         )
     ]
     total_rage_clicks = sum(rage_counter.values())
+    total_dead_clicks = sum(dead_click_counter.values())
     rage_click_targets = [
         MobileAnalyticsRageClickTargetItem(
             page=page_key,
@@ -1048,6 +1132,32 @@ def get_mobile_analytics_experience(
             key=lambda item: (-item[1], item[0][0], item[0][1]),
         )[:12]
     ]
+    dead_click_targets = [
+        MobileAnalyticsRageClickTargetItem(
+            page=page_key,
+            target_id=target_id,
+            count=count,
+            rate=_rate(count, total_dead_clicks),
+        )
+        for (page_key, target_id), count in sorted(
+            dead_click_counter.items(),
+            key=lambda item: (-item[1], item[0][0], item[0][1]),
+        )[:12]
+    ]
+    followthrough_keys = sorted(set(result_cta_counter.keys()) | set(result_cta_land_counter.keys()))
+    followthrough_items = [
+        MobileAnalyticsCtaFollowthroughItem(
+            cta=cta_key,
+            clicks=result_cta_counter.get(cta_key, 0),
+            landings=result_cta_land_counter.get(cta_key, 0),
+            landing_rate=_rate(result_cta_land_counter.get(cta_key, 0), result_cta_counter.get(cta_key, 0)),
+        )
+        for cta_key in sorted(
+            followthrough_keys,
+            key=lambda key: (-result_cta_counter.get(key, 0), key),
+        )
+    ]
+    env_denominator = len(env_seen_sessions)
 
     return MobileAnalyticsExperienceResponse(
         status="ok",
@@ -1068,10 +1178,19 @@ def get_mobile_analytics_experience(
         result_scroll_100_rate=_rate(len(result_scroll_100_keys), compare_result_views),
         stall_detected=sum(stall_counter.values()),
         rage_clicks=total_rage_clicks,
+        dead_clicks=total_dead_clicks,
         scroll_depth_by_page=scroll_depth_items,
         stall_by_page=_build_count_items(stall_counter, denominator=sum(stall_counter.values())),
         rage_click_targets=rage_click_targets,
+        dead_click_targets=dead_click_targets,
         result_cta_clicks=_build_count_items(result_cta_counter, denominator=sum(result_cta_counter.values())),
+        result_cta_followthrough=followthrough_items,
+        browser_families=_build_count_items(browser_counter, denominator=env_denominator, label_map=ANALYTICS_BROWSER_LABELS),
+        os_families=_build_count_items(os_counter, denominator=env_denominator, label_map=ANALYTICS_OS_LABELS),
+        device_types=_build_count_items(device_counter, denominator=env_denominator, label_map=ANALYTICS_DEVICE_LABELS),
+        viewport_buckets=_build_count_items(viewport_counter, denominator=env_denominator, label_map=ANALYTICS_VIEWPORT_LABELS),
+        network_types=_build_count_items(network_counter, denominator=env_denominator, label_map=ANALYTICS_NETWORK_LABELS),
+        languages=_build_count_items(language_counter, denominator=env_denominator),
     )
 
 

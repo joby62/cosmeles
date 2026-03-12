@@ -76,26 +76,34 @@ const EVENT_GROUPS = [
     value: "能直接按 stage、error_code、http_status 看失败分布。",
   },
   {
-    title: "结果页阅读与主观反馈",
+    title: "结果页阅读、后续动作与主观反馈",
     status: "已接入",
-    summary: "现在不只知道结果页被打开了，还能知道读到多深、停留多久、点了哪个 CTA，以及失败后主观上为什么离开。",
+    summary: "现在不只知道结果页被打开了，还能知道读到多深、停留多久、点了哪个 CTA、有没有成功落到下一页，以及失败后主观上为什么离开。",
     events: [
       "compare_result_view",
       "compare_result_leave",
       "scroll_depth",
       "compare_result_cta_click",
+      "compare_result_cta_land",
       "feedback_prompt_show",
       "feedback_submit",
       "feedback_skip",
     ],
-    value: "把“发生了什么”“看到了多少”“用户觉得为什么”放到同一张图里。",
+    value: "把“发生了什么”“看到了多少”“点后有没有继续”“用户觉得为什么”放到同一张图里。",
   },
   {
-    title: "误触与停滞",
+    title: "误触、死点与停滞",
     status: "已接入",
-    summary: "已经有 rage click 和 stall 信号，能开始判断‘按钮不清楚’还是‘用户卡住没动’。",
-    events: ["rage_click", "stall_detected"],
+    summary: "现在已经有 rage click、dead click 和 stall 信号，能开始判断‘按钮不清楚’‘点了没反应’还是‘用户卡住没动’。",
+    events: ["rage_click", "dead_click", "stall_detected"],
     value: "让产品体验分析从后验报错，往前推进到界面摩擦本身。",
+  },
+  {
+    title: "环境切片",
+    status: "已接入",
+    summary: "现在每条移动端事件会自动带浏览器、系统、网络、语言和 viewport 粒度，开始支持环境差异分析。",
+    events: ["browser_family", "os_family", "network_type", "lang", "viewport_bucket", "device_type"],
+    value: "能回答某类问题是不是只发生在特定设备、语言或网络条件下。",
   },
 ] as const;
 
@@ -121,9 +129,9 @@ const ANALYTIC_QUESTIONS = [
     signals: ["compare_run_start", "compare_stage_progress", "compare_stage_error", "compare_run_error"],
   },
   {
-    question: "分析成功后，用户有没有真的读结果、点下一步？",
-    answer: "现在已经能区分结果页到了没有、读到多深、停留多久，以及结果页 CTA 有没有被点击。",
-    signals: ["compare_run_success", "compare_result_view", "compare_result_leave", "scroll_depth", "compare_result_cta_click"],
+    question: "分析成功后，用户有没有真的读结果、点下一步并落到下一页？",
+    answer: "现在已经能区分结果页到了没有、读到多深、停留多久、CTA 有没有被点击，以及点击后有没有成功落地。",
+    signals: ["compare_run_success", "compare_result_view", "compare_result_leave", "scroll_depth", "compare_result_cta_click", "compare_result_cta_land"],
   },
   {
     question: "用户主观上为什么放弃？",
@@ -132,26 +140,26 @@ const ANALYTIC_QUESTIONS = [
   },
   {
     question: "界面是报错劝退，还是用户自己卡住了？",
-    answer: "现在可以把 rage click、stall 和阶段错误并排看，区分可靠性问题和交互问题。",
-    signals: ["rage_click", "stall_detected", "compare_stage_error"],
+    answer: "现在可以把 rage click、dead click、stall 和阶段错误并排看，区分可靠性问题和交互问题。",
+    signals: ["rage_click", "dead_click", "stall_detected", "compare_stage_error"],
+  },
+  {
+    question: "某些问题是不是只发生在特定环境？",
+    answer: "现在已经能按浏览器、系统、网络、语言、viewport 切片看体验和错误分布。",
+    signals: ["browser_family", "os_family", "network_type", "lang", "viewport_bucket", "device_type"],
   },
 ] as const;
 
 const DEFERRED_SIGNALS = [
   {
-    title: "精确误触",
-    reason: "现在有 rage click，但还没有真正的 dead click 判定，所以‘点了没反应’仍然不够精确。",
-    items: ["dead_click", "dead_click_target", "dead_click_count"],
+    title: "更深的后续动作闭环",
+    reason: "现在已经能确认 CTA 落到目标页，但还没继续追到“在目标页完成了什么动作”。",
+    items: ["next_action_completed", "result_to_compare_run_start", "result_to_product_add_to_bag"],
   },
   {
-    title: "结果页后续动作",
-    reason: "已经知道结果页 CTA 点击了什么，但还没把‘点后有没有完成下一步’串成完整后链路。",
-    items: ["next_action_completed", "result_to_wiki_success", "result_to_product_success"],
-  },
-  {
-    title: "环境维度",
-    reason: "缺浏览器版本、设备型号、网络状态，暂时不能回答某些错误是否只发生在特定环境。",
-    items: ["device_model", "browser_family", "network_type", "lang"],
+    title: "设备细颗粒环境",
+    reason: "现在有浏览器/系统/网络/语言/viewport，但还没有设备型号、内存、并发能力这些更细颗粒环境。",
+    items: ["device_model", "device_memory", "hardware_concurrency", "save_data_segment"],
   },
 ] as const;
 
@@ -183,8 +191,8 @@ const FIRST_RELEASE_PANELS = [
   {
     title: "Experience Signals",
     badge: "体验信号",
-    description: "把列表兴趣、结果页阅读深度、rage click、stall 和 CTA 点击拉到一屏里看。",
-    outputs: ["列表 CTR", "结果页停留", "阅读深度", "误触与停滞目标"],
+    description: "把列表兴趣、结果页阅读深度、CTA 落地率、dead/rage/stall 和环境切片拉到一屏里看。",
+    outputs: ["列表 CTR", "CTA 落地率", "阅读深度", "误触与停滞目标", "环境分布"],
   },
   {
     title: "Session Explorer",

@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import MobileEventBeacon from "@/components/mobile/MobileEventBeacon";
 import { fetchIngredientLibrary } from "@/lib/api";
 import { isWikiCategoryKey, WIKI_MAP, WIKI_ORDER, type WikiCategoryKey } from "@/lib/mobile/ingredientWiki";
 
@@ -130,6 +131,8 @@ export default async function WikiCategoryPage({
   const current = WIKI_MAP[category];
   const theme = CATEGORY_THEME[category];
   const focusKey = queryValue(search.focus);
+  const resultCta = queryValue(search.result_cta);
+  const fromCompareId = queryValue(search.from_compare_id);
   const focus = current.key === "shampoo" && focusKey ? SHAMPOO_FOCUS_MAP[focusKey] : undefined;
   const query = queryValue(search.q);
   const returnQuery = new URLSearchParams();
@@ -144,6 +147,19 @@ export default async function WikiCategoryPage({
 
   return (
     <section className="m-wiki-page -mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[color:var(--m-wiki-canvas)] px-4 pb-36 pt-4 text-white">
+      {resultCta && fromCompareId ? (
+        <MobileEventBeacon
+          name="compare_result_cta_land"
+          props={{
+            page: "wiki_category",
+            route: `/m/wiki/${category}`,
+            source: "m_compare_result",
+            category,
+            compare_id: fromCompareId,
+            cta: resultCta,
+          }}
+        />
+      ) : null}
       <div className="mb-4">
         <p className="m-wiki-kicker text-[13px] text-[#4ea0ff]">成份百科</p>
         <h1 data-m-large-title={current.label} className="mt-1 text-[34px] leading-[1.08] font-semibold tracking-[-0.03em]">{current.label}</h1>

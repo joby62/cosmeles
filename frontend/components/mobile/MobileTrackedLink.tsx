@@ -2,7 +2,7 @@
 
 import Link, { type LinkProps } from "next/link";
 import type { AnchorHTMLAttributes, ReactNode } from "react";
-import { trackMobileEvent } from "@/lib/mobileAnalytics";
+import { markMobileTargetHandled, trackMobileEvent } from "@/lib/mobileAnalytics";
 
 type Props = LinkProps &
   Omit<AnchorHTMLAttributes<HTMLAnchorElement>, "href"> & {
@@ -22,6 +22,7 @@ export default function MobileTrackedLink({
     <Link
       {...rest}
       onClick={(event) => {
+        markMobileTargetHandled(event.currentTarget.getAttribute("data-analytics-id"));
         if (eventName) {
           void trackMobileEvent(eventName, eventProps || {});
         }

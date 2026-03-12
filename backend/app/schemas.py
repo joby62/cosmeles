@@ -1550,6 +1550,13 @@ class MobileAnalyticsRageClickTargetItem(BaseModel):
     rate: float = 0.0
 
 
+class MobileAnalyticsCtaFollowthroughItem(BaseModel):
+    cta: str
+    clicks: int = 0
+    landings: int = 0
+    landing_rate: float = 0.0
+
+
 class MobileAnalyticsExperienceResponse(BaseModel):
     status: str
     filters: MobileAnalyticsFilterState
@@ -1569,10 +1576,19 @@ class MobileAnalyticsExperienceResponse(BaseModel):
     result_scroll_100_rate: float = 0.0
     stall_detected: int = 0
     rage_clicks: int = 0
+    dead_clicks: int = 0
     scroll_depth_by_page: List[MobileAnalyticsPageDepthItem] = Field(default_factory=list)
     stall_by_page: List[MobileAnalyticsCountItem] = Field(default_factory=list)
     rage_click_targets: List[MobileAnalyticsRageClickTargetItem] = Field(default_factory=list)
+    dead_click_targets: List[MobileAnalyticsRageClickTargetItem] = Field(default_factory=list)
     result_cta_clicks: List[MobileAnalyticsCountItem] = Field(default_factory=list)
+    result_cta_followthrough: List[MobileAnalyticsCtaFollowthroughItem] = Field(default_factory=list)
+    browser_families: List[MobileAnalyticsCountItem] = Field(default_factory=list)
+    os_families: List[MobileAnalyticsCountItem] = Field(default_factory=list)
+    device_types: List[MobileAnalyticsCountItem] = Field(default_factory=list)
+    viewport_buckets: List[MobileAnalyticsCountItem] = Field(default_factory=list)
+    network_types: List[MobileAnalyticsCountItem] = Field(default_factory=list)
+    languages: List[MobileAnalyticsCountItem] = Field(default_factory=list)
 
 
 class MobileAnalyticsSessionSummary(BaseModel):

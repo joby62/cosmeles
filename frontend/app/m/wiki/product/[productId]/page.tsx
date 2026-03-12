@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import AddToBagButton from "@/components/mobile/AddToBagButton";
 import MobileEventBeacon from "@/components/mobile/MobileEventBeacon";
+import MobileFrictionSignals from "@/components/mobile/MobileFrictionSignals";
 import MobilePageAnalytics from "@/components/mobile/MobilePageAnalytics";
 import MobileTrackedLink from "@/components/mobile/MobileTrackedLink";
 import { fetchMobileWikiProductAnalysis, fetchMobileWikiProductDetail, resolveImageUrl } from "@/lib/api";
@@ -103,10 +104,7 @@ export default async function MobileWikiProductDetailPage({
     try {
       analysisData = await fetchMobileWikiProductAnalysis(productId);
     } catch (err) {
-      const text = formatRuntimeError(err);
-      if (!text.startsWith("API 404:")) {
-        analysisError = text;
-      }
+      analysisError = formatRuntimeError(err);
     }
   }
 
@@ -141,6 +139,8 @@ export default async function MobileWikiProductDetailPage({
   const item = data.item;
   const product = item.product;
   const uploadCtaHref = `/m/me/use?category=${encodeURIComponent(product.category)}&source=wiki_product_detail&product_id=${encodeURIComponent(product.id)}&return_to=${encodeURIComponent(`/m/wiki/product/${product.id}`)}`;
+  const resultCta = queryValue(search.result_cta);
+  const fromCompareId = queryValue(search.from_compare_id);
   const ingredientRefByIndex = new Map((item.ingredient_refs || []).map((ref) => [ref.index, ref]));
   const analysis = analysisData?.item.profile || null;
   const diagnosticsEntries = analysis ? Object.entries(analysis.diagnostics || {}) : [];
@@ -154,6 +154,27 @@ export default async function MobileWikiProductDetailPage({
         category={product.category}
         productId={product.id}
       />
+      <MobileFrictionSignals
+        page="wiki_product_detail"
+        route={`/m/wiki/product/${product.id}`}
+        source="wiki_product_detail"
+        category={product.category}
+        productId={product.id}
+      />
+      {resultCta && fromCompareId ? (
+        <MobileEventBeacon
+          name="compare_result_cta_land"
+          props={{
+            page: "wiki_product_detail",
+            route: `/m/wiki/product/${product.id}`,
+            source: "m_compare_result",
+            category: product.category,
+            product_id: product.id,
+            compare_id: fromCompareId,
+            cta: resultCta,
+          }}
+        />
+      ) : null}
       <Link
         href={returnHref}
         className="inline-flex h-9 items-center rounded-full border border-black/15 bg-white px-4 text-[12px] font-semibold text-black/75 active:bg-black/[0.03]"
@@ -204,6 +225,8 @@ export default async function MobileWikiProductDetailPage({
             <MobileTrackedLink
               href={uploadCtaHref}
               eventName="wiki_upload_cta_click"
+              data-analytics-id="wiki-detail:upload-cta"
+              data-analytics-dead-click-watch="true"
               eventProps={{
                 page: "wiki_product_detail",
                 route: `/m/wiki/product/${product.id}`,
@@ -341,7 +364,7 @@ export default async function MobileWikiProductDetailPage({
         ) : analysisError ? (
           <p className="mt-2 text-[13px] leading-[1.55] text-[#b42318]">增强分析加载失败：{analysisError}</p>
         ) : (
-          <p className="mt-2 text-[13px] leading-[1.55] text-black/58">该产品的增强分析尚未生成。</p>
+          <p className="mt-2 text-[13px] leading-[1.55] text-[#b42318]">增强分析缺失：详情已放行但分析数据为空，请检查后端 wiki ready 过滤。</p>
         )}
       </article>
 

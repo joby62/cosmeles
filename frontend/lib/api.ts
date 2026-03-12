@@ -976,6 +976,13 @@ export type MobileAnalyticsRageClickTargetItem = {
   rate: number;
 };
 
+export type MobileAnalyticsCtaFollowthroughItem = {
+  cta: string;
+  clicks: number;
+  landings: number;
+  landing_rate: number;
+};
+
 export type MobileAnalyticsExperience = {
   status: string;
   filters: MobileAnalyticsFilterState;
@@ -995,10 +1002,19 @@ export type MobileAnalyticsExperience = {
   result_scroll_100_rate: number;
   stall_detected: number;
   rage_clicks: number;
+  dead_clicks: number;
   scroll_depth_by_page: MobileAnalyticsPageDepthItem[];
   stall_by_page: MobileAnalyticsCountItem[];
   rage_click_targets: MobileAnalyticsRageClickTargetItem[];
+  dead_click_targets: MobileAnalyticsRageClickTargetItem[];
   result_cta_clicks: MobileAnalyticsCountItem[];
+  result_cta_followthrough: MobileAnalyticsCtaFollowthroughItem[];
+  browser_families: MobileAnalyticsCountItem[];
+  os_families: MobileAnalyticsCountItem[];
+  device_types: MobileAnalyticsCountItem[];
+  viewport_buckets: MobileAnalyticsCountItem[];
+  network_types: MobileAnalyticsCountItem[];
+  languages: MobileAnalyticsCountItem[];
 };
 
 export type MobileAnalyticsSessionSummary = {

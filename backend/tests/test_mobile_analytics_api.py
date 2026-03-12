@@ -55,7 +55,7 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 category="shampoo",
                 product_id="p-1",
                 created_at="2026-03-12T01:00:00.000000Z",
-                props_json='{"client_ts":"2026-03-12T01:00:00.000Z"}',
+                props_json='{"client_ts":"2026-03-12T01:00:00.000Z","browser_family":"safari","os_family":"ios","device_type":"phone","viewport_bucket":"md","network_type":"4g","lang":"zh-CN"}',
             ),
             MobileClientEvent(
                 event_id="evt-002",
@@ -96,7 +96,7 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 source="wiki_product_detail",
                 category="shampoo",
                 created_at="2026-03-12T01:00:03.000000Z",
-                props_json="{}",
+                props_json='{"browser_family":"safari","os_family":"ios","device_type":"phone","viewport_bucket":"md","network_type":"4g","lang":"zh-CN"}',
             ),
             MobileClientEvent(
                 event_id="evt-005",
@@ -122,7 +122,7 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 source="m_compare",
                 category="shampoo",
                 created_at="2026-03-12T01:00:05.000000Z",
-                props_json="{}",
+                props_json='{"browser_family":"safari","os_family":"ios","device_type":"phone","viewport_bucket":"md","network_type":"4g","lang":"zh-CN"}',
             ),
             MobileClientEvent(
                 event_id="evt-007",
@@ -223,7 +223,7 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 category="bodywash",
                 product_id="p-2",
                 created_at="2026-03-12T02:00:00.000000Z",
-                props_json="{}",
+                props_json='{"browser_family":"chrome","os_family":"android","device_type":"phone","viewport_bucket":"md","network_type":"3g","lang":"zh-CN"}',
             ),
             MobileClientEvent(
                 event_id="evt-014",
@@ -409,7 +409,7 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 source="m_wiki",
                 category="shampoo",
                 created_at="2026-03-12T04:00:00.000000Z",
-                props_json='{"entry_tab":"product","visible_count":24,"total_count":48}',
+                props_json='{"entry_tab":"product","visible_count":24,"total_count":48,"browser_family":"chrome","os_family":"android","device_type":"phone","viewport_bucket":"md","network_type":"4g","lang":"zh-CN"}',
             ),
             MobileClientEvent(
                 event_id="evt-027",
@@ -436,7 +436,7 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 source="m_wiki",
                 category="shampoo",
                 created_at="2026-03-12T04:05:00.000000Z",
-                props_json='{"entry_tab":"ingredient","visible_count":24,"total_count":60}',
+                props_json='{"entry_tab":"ingredient","visible_count":24,"total_count":60,"browser_family":"chrome","os_family":"android","device_type":"phone","viewport_bucket":"md","network_type":"4g","lang":"en-US"}',
             ),
             MobileClientEvent(
                 event_id="evt-029",
@@ -550,6 +550,34 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 props_json='{"cta":"recommendation_product"}',
             ),
             MobileClientEvent(
+                event_id="evt-036b",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="compare_result_cta_land",
+                page="mobile_compare",
+                route="/m/compare?category=shampoo",
+                source="m_compare_result",
+                category="shampoo",
+                compare_id="cmp-1",
+                created_at="2026-03-12T01:00:18.050000Z",
+                props_json='{"cta":"rerun_compare"}',
+            ),
+            MobileClientEvent(
+                event_id="evt-036c",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="compare_result_cta_land",
+                page="product_showcase",
+                route="/product/p-9",
+                source="m_compare_result",
+                category="shampoo",
+                compare_id="cmp-1",
+                created_at="2026-03-12T01:00:18.150000Z",
+                props_json='{"cta":"recommendation_product"}',
+            ),
+            MobileClientEvent(
                 event_id="evt-037",
                 owner_type="device",
                 owner_id="owner-gamma",
@@ -587,6 +615,20 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 category="shampoo",
                 created_at="2026-03-12T04:00:21.000000Z",
                 props_json='{"target_id":"wiki:search:open","click_count":3}',
+            ),
+            MobileClientEvent(
+                event_id="evt-040",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="dead_click",
+                page="compare_result",
+                route="/m/compare/result/cmp-1",
+                source="m_compare_result",
+                category="shampoo",
+                compare_id="cmp-1",
+                created_at="2026-03-12T01:00:18.200000Z",
+                props_json='{"target_id":"result:cta:wiki","wait_ms":900}',
             ),
         ]
         db.add_all(rows)
@@ -693,6 +735,7 @@ def test_mobile_analytics_experience(mobile_analytics_client: TestClient):
     assert payload["result_scroll_100_rate"] == 1.0
     assert payload["stall_detected"] == 2
     assert payload["rage_clicks"] == 2
+    assert payload["dead_clicks"] == 1
 
     depth_items = {(item["page"], item["depth_percent"]): item for item in payload["scroll_depth_by_page"]}
     assert depth_items[("compare_result", 75)]["count"] == 1
@@ -706,7 +749,23 @@ def test_mobile_analytics_experience(mobile_analytics_client: TestClient):
     rage_targets = {(item["page"], item["target_id"]): item["count"] for item in payload["rage_click_targets"]}
     assert rage_targets[("compare_result", "result:cta:rerun-compare")] == 1
     assert rage_targets[("wiki_list", "wiki:search:open")] == 1
+    dead_targets = {(item["page"], item["target_id"]): item["count"] for item in payload["dead_click_targets"]}
+    assert dead_targets[("compare_result", "result:cta:wiki")] == 1
 
     cta_counts = {item["key"]: item["count"] for item in payload["result_cta_clicks"]}
     assert cta_counts["rerun_compare"] == 1
     assert cta_counts["recommendation_product"] == 1
+    followthrough = {item["cta"]: item for item in payload["result_cta_followthrough"]}
+    assert followthrough["rerun_compare"]["landings"] == 1
+    assert followthrough["rerun_compare"]["landing_rate"] == 1.0
+    assert followthrough["recommendation_product"]["landings"] == 1
+
+    browser_counts = {item["key"]: item["count"] for item in payload["browser_families"]}
+    assert browser_counts["chrome"] == 3
+    assert browser_counts["safari"] == 1
+    os_counts = {item["key"]: item["count"] for item in payload["os_families"]}
+    assert os_counts["android"] == 3
+    assert os_counts["ios"] == 1
+    network_counts = {item["key"]: item["count"] for item in payload["network_types"]}
+    assert network_counts["4g"] == 3
+    assert network_counts["3g"] == 1
