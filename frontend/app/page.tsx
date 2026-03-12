@@ -107,6 +107,18 @@ export default function HomePage() {
             产品管理
           </Link>
           <Link
+            href="/analytics"
+            className={cx(
+              "px-4 py-2 rounded-full",
+              "text-[12px] font-medium tracking-[0.02em]",
+              "border border-black/[0.08]",
+              "bg-[#eff8f2] text-[#164f3d] hover:bg-[#e4f2e9]",
+              "transition-colors"
+            )}
+          >
+            数据分析
+          </Link>
+          <Link
             href="/matrix-test"
             className={cx(
               "px-4 py-2 rounded-full",

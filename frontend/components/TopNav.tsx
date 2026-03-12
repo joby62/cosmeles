@@ -180,6 +180,9 @@ export default function TopNav() {
               >
                 {lang === "zh" ? "产品管理" : "Product Mgmt"}
               </Link>
+              <Link href="/analytics" className="nav-item" onPointerEnter={() => requestClose()}>
+                {lang === "zh" ? "数据分析" : "Analytics"}
+              </Link>
               <Link href="/matrix-test" className="nav-item" onPointerEnter={() => requestClose()}>
                 {lang === "zh" ? "矩阵测试" : "Matrix Test"}
               </Link>
