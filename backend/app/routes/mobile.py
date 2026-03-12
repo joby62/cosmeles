@@ -1030,72 +1030,123 @@ def list_mobile_wiki_products(
             )
 
     normalized_query = str(q or "").strip()
-    stmt = select(ProductIndex)
-    if normalized_category:
-        stmt = stmt.where(ProductIndex.category == normalized_category)
-    if normalized_query:
-        like = f"%{normalized_query}%"
-        stmt = stmt.where(
-            (ProductIndex.name.like(like))
-            | (ProductIndex.brand.like(like))
-            | (ProductIndex.one_sentence.like(like))
+
+    def apply_product_filters(stmt):
+        next_stmt = stmt
+        if normalized_category:
+            next_stmt = next_stmt.where(ProductIndex.category == normalized_category)
+        if normalized_query:
+            like = f"%{normalized_query}%"
+            next_stmt = next_stmt.where(
+                (ProductIndex.name.like(like))
+                | (ProductIndex.brand.like(like))
+                | (ProductIndex.one_sentence.like(like))
+            )
+        return next_stmt
+
+    try:
+        rows = (
+            db.execute(
+                apply_product_filters(
+                    select(ProductIndex)
+                    .join(ProductAnalysisIndex, ProductAnalysisIndex.product_id == ProductIndex.id)
+                    .where(ProductAnalysisIndex.status == "ready")
+                ).order_by(ProductIndex.created_at.desc())
+            )
+            .scalars()
+            .all()
         )
-    rows = db.execute(stmt.order_by(ProductIndex.created_at.desc())).scalars().all()
-    rows = [row for row in rows if exists_rel_path(str(row.json_path or ""))]
+    except OperationalError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Failed to query product analysis index. "
+                "Database schema may be outdated (missing table 'product_analysis_index'). "
+                f"Raw error: {exc}"
+            ),
+        ) from exc
 
     product_ids = [str(row.id or "").strip() for row in rows if str(row.id or "").strip()]
+    analysis_by_product_id = _product_analysis_by_product_id(db=db, product_ids=product_ids)
     route_mapping_by_product_id = _route_mapping_by_product_id(db=db, product_ids=product_ids)
-    featured_by_slot = _featured_slot_by_slot_key(db=db, categories={str(row.category or "").strip().lower() for row in rows})
 
+    wiki_ready_rows: list[ProductIndex] = []
     category_counts: dict[str, int] = defaultdict(int)
     subtype_counts: dict[str, tuple[str, int]] = {}
-    built_items: list[MobileWikiProductItem] = []
-
     for row in rows:
+        product_id = str(row.id or "").strip()
+        if not product_id:
+            continue
+        if _mobile_wiki_product_unavailable_detail(
+            row=row,
+            analysis=analysis_by_product_id.get(product_id),
+        ) is not None:
+            continue
+        wiki_ready_rows.append(row)
+
         category_key = str(row.category or "").strip().lower()
         if not category_key:
             continue
-        mapping = route_mapping_by_product_id.get(str(row.id))
-        item = _build_mobile_wiki_product_item(
-            row=row,
-            mapping=mapping,
-            featured_by_slot=featured_by_slot,
-        )
         category_counts[category_key] += 1
 
-        if normalized_category == category_key and item.target_type_level == "subcategory":
-            sub_key = str(item.target_type_key or "").strip()
-            sub_label = str(item.target_type_title or "").strip()
-            if sub_key and sub_label:
-                prev = subtype_counts.get(sub_key)
-                if prev:
-                    subtype_counts[sub_key] = (sub_label, prev[1] + 1)
-                else:
-                    subtype_counts[sub_key] = (sub_label, 1)
-
-        if normalized_target_type_key and item.target_type_key != normalized_target_type_key:
-            continue
-        built_items.append(item)
+        if normalized_category == category_key and category_key in ROUTE_MAPPED_CATEGORIES:
+            mapping = route_mapping_by_product_id.get(product_id)
+            if mapping is None or str(mapping.status or "").strip().lower() != "ready":
+                continue
+            primary_key = str(mapping.primary_route_key or "").strip()
+            if not primary_key:
+                continue
+            primary_title = str(mapping.primary_route_title or "").strip() or primary_key
+            previous = subtype_counts.get(primary_key)
+            subtype_counts[primary_key] = (
+                primary_title,
+                (previous[1] if previous else 0) + 1,
+            )
 
     categories = [
         MobileWikiCategoryFacet(
-            key=cat,
-            label=CATEGORY_LABELS_ZH.get(cat, cat),
+            key=category_key,
+            label=CATEGORY_LABELS_ZH.get(category_key, category_key),
             count=count,
         )
-        for cat, count in sorted(category_counts.items(), key=lambda x: (-x[1], x[0]))
+        for category_key, count in sorted(category_counts.items(), key=lambda item: (-item[1], item[0]))
     ]
     subtypes = [
         MobileWikiSubtypeFacet(
-            key=key,
-            label=value[0],
-            count=value[1],
+            key=route_key,
+            label=title,
+            count=count,
         )
-        for key, value in sorted(subtype_counts.items(), key=lambda x: (-x[1][1], x[0]))
+        for route_key, (title, count) in sorted(subtype_counts.items(), key=lambda item: (-item[1][1], item[0]))
     ]
 
-    total = len(built_items)
-    sliced = built_items[offset : offset + limit]
+    filtered_rows = wiki_ready_rows
+    if normalized_target_type_key and normalized_category in ROUTE_MAPPED_CATEGORIES:
+        filtered_rows = []
+        for row in wiki_ready_rows:
+            mapping = route_mapping_by_product_id.get(str(row.id or "").strip())
+            if mapping is None or str(mapping.status or "").strip().lower() != "ready":
+                continue
+            primary_key = str(mapping.primary_route_key or "").strip()
+            if primary_key != normalized_target_type_key:
+                continue
+            filtered_rows.append(row)
+
+    total = len(filtered_rows)
+    sliced_rows = filtered_rows[offset : offset + limit]
+    featured_by_slot = _featured_slot_by_slot_key(
+        db=db,
+        categories={str(row.category or "").strip().lower() for row in sliced_rows},
+    )
+    sliced = [
+        _build_mobile_wiki_product_item(
+            row=row,
+            mapping=route_mapping_by_product_id.get(str(row.id)),
+            featured_by_slot=featured_by_slot,
+        )
+        for row in sliced_rows
+        if str(row.category or "").strip()
+    ]
     if owner_cookie_new:
         _set_owner_cookie(response, owner_id, request)
     return MobileWikiProductListResponse(
@@ -1126,9 +1177,11 @@ def get_mobile_wiki_product_detail(
     row = db.get(ProductIndex, pid)
     if row is None:
         raise HTTPException(status_code=404, detail=f"Product '{pid}' not found.")
+    analysis = _product_analysis_by_product_id(db=db, product_ids=[pid]).get(pid)
+    unavailable_detail = _mobile_wiki_product_unavailable_detail(row=row, analysis=analysis)
+    if unavailable_detail is not None:
+        raise HTTPException(status_code=404, detail=unavailable_detail)
     json_path = str(row.json_path or "").strip()
-    if not json_path or not exists_rel_path(json_path):
-        raise HTTPException(status_code=404, detail=f"Product doc for '{pid}' is missing.")
 
     try:
         raw_doc = load_json(json_path)
@@ -1189,14 +1242,17 @@ def get_mobile_wiki_product_analysis(
     pid = str(product_id or "").strip()
     if not pid:
         raise HTTPException(status_code=400, detail="product_id is required.")
-
-    rec = db.get(ProductAnalysisIndex, pid)
-    if rec is None or str(rec.status or "").strip().lower() != "ready":
+    product_row = db.get(ProductIndex, pid)
+    if product_row is None:
+        raise HTTPException(status_code=404, detail=f"Product '{pid}' not found.")
+    rec = _product_analysis_by_product_id(db=db, product_ids=[pid]).get(pid)
+    unavailable_detail = _mobile_wiki_product_unavailable_detail(row=product_row, analysis=rec)
+    if unavailable_detail is not None:
+        raise HTTPException(status_code=404, detail=unavailable_detail)
+    if rec is None:
         raise HTTPException(status_code=404, detail=f"Product analysis not found for product '{pid}'.")
 
-    storage_path = str(rec.storage_path or "").strip() or product_analysis_rel_path(str(rec.category or ""), pid)
-    if not exists_rel_path(storage_path):
-        raise HTTPException(status_code=404, detail=f"Product analysis file missing for product '{pid}'.")
+    storage_path = _mobile_wiki_product_analysis_storage_path(row=product_row, analysis=rec)
 
     try:
         raw_doc = load_json(storage_path)
@@ -3823,6 +3879,58 @@ def _route_mapping_by_product_id(
     for row in rows:
         out[str(row.product_id)] = row
     return out
+
+
+def _product_analysis_by_product_id(
+    *,
+    db: Session,
+    product_ids: list[str],
+) -> dict[str, ProductAnalysisIndex]:
+    normalized_ids = [str(item or "").strip() for item in product_ids if str(item or "").strip()]
+    if not normalized_ids:
+        return {}
+    try:
+        rows = db.execute(
+            select(ProductAnalysisIndex).where(ProductAnalysisIndex.product_id.in_(normalized_ids))
+        ).scalars().all()
+    except OperationalError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Failed to query product analysis index. "
+                "Database schema may be outdated (missing table 'product_analysis_index'). "
+                f"Raw error: {exc}"
+            ),
+        ) from exc
+    out: dict[str, ProductAnalysisIndex] = {}
+    for row in rows:
+        out[str(row.product_id)] = row
+    return out
+
+
+def _mobile_wiki_product_analysis_storage_path(
+    *,
+    row: ProductIndex,
+    analysis: ProductAnalysisIndex,
+) -> str:
+    return str(analysis.storage_path or "").strip() or product_analysis_rel_path(str(row.category or ""), str(row.id or ""))
+
+
+def _mobile_wiki_product_unavailable_detail(
+    *,
+    row: ProductIndex,
+    analysis: ProductAnalysisIndex | None,
+) -> str | None:
+    product_id = str(row.id or "").strip() or "-"
+    json_path = str(row.json_path or "").strip()
+    if not json_path or not exists_rel_path(json_path):
+        return f"Product doc for '{product_id}' is missing."
+    if analysis is None or str(analysis.status or "").strip().lower() != "ready":
+        return f"Product analysis not found for product '{product_id}'."
+    storage_path = _mobile_wiki_product_analysis_storage_path(row=row, analysis=analysis)
+    if not storage_path or not exists_rel_path(storage_path):
+        return f"Product analysis file missing for product '{product_id}'."
+    return None
 
 
 def _featured_slot_by_slot_key(
