@@ -1396,17 +1396,24 @@ html[data-nav-open="1"] #app-main{
   background: linear-gradient(180deg, var(--m-choose-card-bg), rgba(243,247,255,0.86));
   padding: 22px 20px 18px;
   text-align: left;
-  box-shadow: 0 14px 34px rgba(17,31,55,0.07);
+  box-shadow: 0 10px 24px rgba(17,31,55,0.05);
+  opacity: 0.72;
+  filter: saturate(0.82);
   transition:
     transform var(--m-dur-mid) var(--m-ease),
+    opacity var(--m-dur-fast) var(--m-ease),
+    filter var(--m-dur-fast) var(--m-ease),
     border-color var(--m-dur-fast) var(--m-ease),
     box-shadow var(--m-dur-fast) var(--m-ease),
     background-color var(--m-dur-fast) var(--m-ease);
+  transform: scale(0.962) translateY(8px);
 }
 
 .m-choose-focus-card-active {
   border-color: rgba(10,132,255,0.2);
   box-shadow: 0 22px 48px rgba(12,57,128,0.14), 0 0 0 1px rgba(10,132,255,0.08);
+  opacity: 1;
+  filter: saturate(1);
   transform: translateY(-2px);
 }
 
@@ -1451,6 +1458,10 @@ html[data-nav-open="1"] #app-main{
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,0.32),
     0 10px 24px rgba(17,31,55,0.04);
+  transition:
+    transform var(--m-dur-mid) var(--m-ease),
+    opacity var(--m-dur-fast) var(--m-ease),
+    box-shadow var(--m-dur-fast) var(--m-ease);
 }
 
 .m-choose-focus-image {
@@ -1460,6 +1471,45 @@ html[data-nav-open="1"] #app-main{
   justify-content: center;
   border-radius: 24px;
   background: var(--m-choose-image-bg);
+}
+
+.m-choose-focus-card .m-choose-focus-title,
+.m-choose-focus-card .m-choose-focus-meta,
+.m-choose-focus-card .m-choose-focus-note,
+.m-choose-focus-card .m-choose-focus-image-shell {
+  transition:
+    opacity var(--m-dur-fast) var(--m-ease),
+    transform var(--m-dur-mid) var(--m-ease),
+    color var(--m-dur-fast) var(--m-ease),
+    box-shadow var(--m-dur-fast) var(--m-ease);
+}
+
+.m-choose-focus-card .m-choose-focus-title {
+  opacity: 0.84;
+}
+
+.m-choose-focus-card .m-choose-focus-meta,
+.m-choose-focus-card .m-choose-focus-note {
+  opacity: 0.7;
+}
+
+.m-choose-focus-card .m-choose-focus-image-shell {
+  opacity: 0.78;
+  transform: translateY(4px) scale(0.985);
+}
+
+.m-choose-focus-card-active .m-choose-focus-title,
+.m-choose-focus-card-active .m-choose-focus-meta,
+.m-choose-focus-card-active .m-choose-focus-note,
+.m-choose-focus-card-active .m-choose-focus-image-shell {
+  opacity: 1;
+}
+
+.m-choose-focus-card-active .m-choose-focus-image-shell {
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.34),
+    0 14px 28px rgba(17,31,55,0.06);
+  transform: translateY(0) scale(1);
 }
 
 .m-choose-action-section {
