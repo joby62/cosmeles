@@ -4,6 +4,8 @@
 
 英文版请见：[README.md](README.md)
 
+详细四阶段执行版请见：[docs/JESLECT_PHASE_PLAN.zh-CN.md](docs/JESLECT_PHASE_PLAN.zh-CN.md)
+
 ## 当前主线
 
 `jeslect.com` 目前的主执行方向，仍然是美国优先的英文独立站。
