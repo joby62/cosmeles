@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import MobileEventBeacon from "@/components/mobile/MobileEventBeacon";
+import MobileTrackedLink from "@/components/mobile/MobileTrackedLink";
 import { fetchIngredientLibrary } from "@/lib/api";
 import { isWikiCategoryKey, WIKI_MAP, WIKI_ORDER, type WikiCategoryKey } from "@/lib/mobile/ingredientWiki";
 
@@ -206,10 +207,22 @@ export default async function WikiCategoryPage({
       <div className="space-y-4">
         {library.items.map((item) => {
           const name = splitIngredientName(item.ingredient_name);
+          const ingredientHref = `/m/wiki/${category}/${item.ingredient_id}?return_to=${encodeURIComponent(returnTo)}`;
           return (
-            <Link
+            <MobileTrackedLink
               key={item.ingredient_id}
-              href={`/m/wiki/${category}/${item.ingredient_id}?return_to=${encodeURIComponent(returnTo)}`}
+              href={ingredientHref}
+              eventName="wiki_category_ingredient_click"
+              eventProps={{
+                page: "wiki_category",
+                route: `/m/wiki/${category}`,
+                source: "wiki_category",
+                category,
+                target_path: ingredientHref,
+                ingredient_id: item.ingredient_id,
+                result_cta: resultCta || undefined,
+                from_compare_id: fromCompareId || undefined,
+              }}
               className="m-wiki-hero-card m-pressable block overflow-hidden rounded-[28px] transition-transform active:scale-[0.997]"
             >
               <div className={`${theme.heroClass} relative h-[164px] w-full`}>
@@ -240,7 +253,7 @@ export default async function WikiCategoryPage({
                 <p className="mt-1 line-clamp-1 text-[15px] font-semibold text-white/88">{summaryFocus(item.summary)}</p>
                 <p className="mt-1.5 text-[12px] text-white/56">来源样本 {item.source_count} 条</p>
               </div>
-            </Link>
+            </MobileTrackedLink>
           );
         })}
 
@@ -252,12 +265,22 @@ export default async function WikiCategoryPage({
       </div>
 
       <div className="mt-8">
-        <Link
+        <MobileTrackedLink
           href={`/m/${current.key}/profile?step=1`}
+          eventName="wiki_category_choose_click"
+          eventProps={{
+            page: "wiki_category",
+            route: `/m/wiki/${category}`,
+            source: "wiki_category",
+            category,
+            target_path: `/m/${current.key}/profile?step=1`,
+            result_cta: resultCta || undefined,
+            from_compare_id: fromCompareId || undefined,
+          }}
           className="m-pressable inline-flex h-11 items-center justify-center rounded-full border border-white/20 bg-white/[0.07] px-5 text-[15px] font-semibold text-white/90 backdrop-blur-xl active:bg-white/[0.12]"
         >
           进入{current.label}挑选
-        </Link>
+        </MobileTrackedLink>
       </div>
     </section>
   );

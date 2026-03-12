@@ -234,6 +234,8 @@ export default async function MobileWikiProductDetailPage({
                 category: product.category,
                 product_id: product.id,
                 target_path: "/m/me/use",
+                result_cta: resultCta || undefined,
+                from_compare_id: fromCompareId || undefined,
               }}
               className="inline-flex max-w-full items-center rounded-full border border-[#cfe2ff] bg-[linear-gradient(180deg,#f7faff_0%,#eef5ff_100%)] px-4 py-2 text-[12px] font-semibold leading-[1.45] text-[#2450a3] shadow-[0_8px_22px_rgba(36,80,163,0.08)] active:translate-y-[1px]"
             >

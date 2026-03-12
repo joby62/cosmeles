@@ -55,7 +55,7 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 category="shampoo",
                 product_id="p-1",
                 created_at="2026-03-12T01:00:00.000000Z",
-                props_json='{"client_ts":"2026-03-12T01:00:00.000Z","browser_family":"safari","os_family":"ios","device_type":"phone","viewport_bucket":"md","network_type":"4g","lang":"zh-CN"}',
+                props_json='{"client_ts":"2026-03-12T01:00:00.000Z","browser_family":"safari","os_family":"ios","device_type":"phone","viewport_bucket":"md","network_type":"4g","lang":"zh-CN","device_memory_bucket":"4gb","cpu_core_bucket":"6","touch_points_bucket":"5_plus","online_state":"online"}',
             ),
             MobileClientEvent(
                 event_id="evt-002",
@@ -223,7 +223,7 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 category="bodywash",
                 product_id="p-2",
                 created_at="2026-03-12T02:00:00.000000Z",
-                props_json='{"browser_family":"chrome","os_family":"android","device_type":"phone","viewport_bucket":"md","network_type":"3g","lang":"zh-CN"}',
+                props_json='{"browser_family":"chrome","os_family":"android","device_type":"phone","viewport_bucket":"md","network_type":"3g","lang":"zh-CN","device_memory_bucket":"4gb","cpu_core_bucket":"8","touch_points_bucket":"5_plus","online_state":"online"}',
             ),
             MobileClientEvent(
                 event_id="evt-014",
@@ -409,7 +409,7 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 source="m_wiki",
                 category="shampoo",
                 created_at="2026-03-12T04:00:00.000000Z",
-                props_json='{"entry_tab":"product","visible_count":24,"total_count":48,"browser_family":"chrome","os_family":"android","device_type":"phone","viewport_bucket":"md","network_type":"4g","lang":"zh-CN"}',
+                props_json='{"entry_tab":"product","visible_count":24,"total_count":48,"browser_family":"chrome","os_family":"android","device_type":"phone","viewport_bucket":"md","network_type":"4g","lang":"zh-CN","device_memory_bucket":"8gb","cpu_core_bucket":"8","touch_points_bucket":"5_plus","online_state":"online"}',
             ),
             MobileClientEvent(
                 event_id="evt-027",
@@ -436,7 +436,7 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 source="m_wiki",
                 category="shampoo",
                 created_at="2026-03-12T04:05:00.000000Z",
-                props_json='{"entry_tab":"ingredient","visible_count":24,"total_count":60,"browser_family":"chrome","os_family":"android","device_type":"phone","viewport_bucket":"md","network_type":"4g","lang":"en-US"}',
+                props_json='{"entry_tab":"ingredient","visible_count":24,"total_count":60,"browser_family":"chrome","os_family":"android","device_type":"phone","viewport_bucket":"md","network_type":"4g","lang":"en-US","device_memory_bucket":"8gb","cpu_core_bucket":"8","touch_points_bucket":"5_plus","online_state":"online"}',
             ),
             MobileClientEvent(
                 event_id="evt-029",
@@ -578,6 +578,34 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 props_json='{"cta":"recommendation_product"}',
             ),
             MobileClientEvent(
+                event_id="evt-036d",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="compare_run_start",
+                page="mobile_compare",
+                route="/m/compare?category=shampoo&source=compare_result&result_cta=rerun_compare&from_compare_id=cmp-1",
+                source="m_compare_result",
+                category="shampoo",
+                compare_id="cmp-3",
+                created_at="2026-03-12T01:00:18.060000Z",
+                props_json='{"run_mode":"library_only","selected_library_count":2,"total_count":2,"result_cta":"rerun_compare","from_compare_id":"cmp-1"}',
+            ),
+            MobileClientEvent(
+                event_id="evt-036e",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="product_showcase_continue_upload_click",
+                page="product_showcase",
+                route="/product/p-9",
+                source="m_compare_result",
+                category="shampoo",
+                product_id="p-9",
+                created_at="2026-03-12T01:00:18.160000Z",
+                props_json='{"target_path":"/product/pipeline#product-ingest-workbench","result_cta":"recommendation_product","from_compare_id":"cmp-1"}',
+            ),
+            MobileClientEvent(
                 event_id="evt-037",
                 owner_type="device",
                 owner_id="owner-gamma",
@@ -652,12 +680,12 @@ def test_mobile_analytics_overview_and_funnel(mobile_analytics_client: TestClien
     assert payload["wiki_detail_views"] == 2
     assert payload["cta_expose"] == 2
     assert payload["cta_click"] == 1
-    assert payload["compare_run_start"] == 2
+    assert payload["compare_run_start"] == 3
     assert payload["compare_run_success"] == 1
     assert payload["compare_result_view"] == 1
     assert payload["feedback_prompt_show"] == 2
     assert payload["feedback_submit"] == 1
-    assert payload["compare_completion_rate"] == 0.5
+    assert payload["compare_completion_rate"] == 0.3333
     assert payload["feedback_submit_rate"] == 0.5
 
     funnel = client.get(f"/api/products/analytics/mobile/funnel?{query}")
@@ -678,7 +706,7 @@ def test_mobile_analytics_errors_feedback_and_sessions(mobile_analytics_client: 
     errors = client.get(f"/api/products/analytics/mobile/errors?{query}")
     assert errors.status_code == 200
     error_payload = errors.json()
-    assert error_payload["compare_run_start"] == 2
+    assert error_payload["compare_run_start"] == 3
     assert error_payload["total_errors"] == 2
     by_stage = {item["key"]: item for item in error_payload["by_stage"]}
     assert by_stage["uploading"]["count"] == 1
@@ -759,6 +787,11 @@ def test_mobile_analytics_experience(mobile_analytics_client: TestClient):
     assert followthrough["rerun_compare"]["landings"] == 1
     assert followthrough["rerun_compare"]["landing_rate"] == 1.0
     assert followthrough["recommendation_product"]["landings"] == 1
+    completions = {(item["cta"], item["completion_key"]): item for item in payload["result_cta_completions"]}
+    assert completions[("rerun_compare", "compare_run_start")]["completions"] == 1
+    assert completions[("rerun_compare", "compare_run_start")]["completion_rate_from_land"] == 1.0
+    assert completions[("recommendation_product", "product_showcase_continue_upload_click")]["completions"] == 1
+    assert completions[("recommendation_product", "product_showcase_continue_upload_click")]["completion_rate_from_click"] == 1.0
 
     browser_counts = {item["key"]: item["count"] for item in payload["browser_families"]}
     assert browser_counts["chrome"] == 3
@@ -769,3 +802,13 @@ def test_mobile_analytics_experience(mobile_analytics_client: TestClient):
     network_counts = {item["key"]: item["count"] for item in payload["network_types"]}
     assert network_counts["4g"] == 3
     assert network_counts["3g"] == 1
+    memory_counts = {item["key"]: item["count"] for item in payload["device_memory_buckets"]}
+    assert memory_counts["4gb"] == 2
+    assert memory_counts["8gb"] == 2
+    cpu_counts = {item["key"]: item["count"] for item in payload["cpu_core_buckets"]}
+    assert cpu_counts["6"] == 1
+    assert cpu_counts["8"] == 3
+    touch_counts = {item["key"]: item["count"] for item in payload["touch_points_buckets"]}
+    assert touch_counts["5_plus"] == 4
+    online_counts = {item["key"]: item["count"] for item in payload["online_states"]}
+    assert online_counts["online"] == 4

@@ -1557,6 +1557,17 @@ class MobileAnalyticsCtaFollowthroughItem(BaseModel):
     landing_rate: float = 0.0
 
 
+class MobileAnalyticsCtaCompletionItem(BaseModel):
+    cta: str
+    completion_key: str
+    completion_label: str
+    clicks: int = 0
+    landings: int = 0
+    completions: int = 0
+    completion_rate_from_click: float = 0.0
+    completion_rate_from_land: float = 0.0
+
+
 class MobileAnalyticsExperienceResponse(BaseModel):
     status: str
     filters: MobileAnalyticsFilterState
@@ -1583,12 +1594,17 @@ class MobileAnalyticsExperienceResponse(BaseModel):
     dead_click_targets: List[MobileAnalyticsRageClickTargetItem] = Field(default_factory=list)
     result_cta_clicks: List[MobileAnalyticsCountItem] = Field(default_factory=list)
     result_cta_followthrough: List[MobileAnalyticsCtaFollowthroughItem] = Field(default_factory=list)
+    result_cta_completions: List[MobileAnalyticsCtaCompletionItem] = Field(default_factory=list)
     browser_families: List[MobileAnalyticsCountItem] = Field(default_factory=list)
     os_families: List[MobileAnalyticsCountItem] = Field(default_factory=list)
     device_types: List[MobileAnalyticsCountItem] = Field(default_factory=list)
     viewport_buckets: List[MobileAnalyticsCountItem] = Field(default_factory=list)
     network_types: List[MobileAnalyticsCountItem] = Field(default_factory=list)
     languages: List[MobileAnalyticsCountItem] = Field(default_factory=list)
+    device_memory_buckets: List[MobileAnalyticsCountItem] = Field(default_factory=list)
+    cpu_core_buckets: List[MobileAnalyticsCountItem] = Field(default_factory=list)
+    touch_points_buckets: List[MobileAnalyticsCountItem] = Field(default_factory=list)
+    online_states: List[MobileAnalyticsCountItem] = Field(default_factory=list)
 
 
 class MobileAnalyticsSessionSummary(BaseModel):

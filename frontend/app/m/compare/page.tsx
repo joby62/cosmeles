@@ -266,6 +266,16 @@ function MobileComparePageContent() {
   const resultCta = String(searchParams?.get("result_cta") || "").trim();
   const fromCompareId = String(searchParams?.get("from_compare_id") || "").trim();
   const analyticsRoute = searchParams?.toString() ? `${pathname}?${searchParams.toString()}` : pathname || "/m/compare";
+  const resultActionContext = useMemo(
+    () =>
+      resultCta && fromCompareId
+        ? {
+            result_cta: resultCta,
+            from_compare_id: fromCompareId,
+          }
+        : null,
+    [fromCompareId, resultCta],
+  );
   const resultLandingPayload = useMemo(
     () =>
       resultCta && fromCompareId
@@ -1008,6 +1018,7 @@ function MobileComparePageContent() {
         has_upload: trackedHasUpload,
         selected_library_count: trackedLibraryCount,
         total_count: targets.length,
+        ...(resultActionContext || {}),
       });
 
       const result = await runMobileCompareJobStream(

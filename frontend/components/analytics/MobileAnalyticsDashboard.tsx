@@ -602,6 +602,37 @@ export default function MobileAnalyticsDashboard() {
                     </div>
                   )}
                 </div>
+
+                <div>
+                  <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-black/42">落地后的真实动作</div>
+                  {experience.data.result_cta_completions.length === 0 ? (
+                    <EmptyHint label="当前筛选下还没有落地后的真实动作样本。" />
+                  ) : (
+                    <div className="space-y-2.5">
+                      {experience.data.result_cta_completions.map((item) => (
+                        <article
+                          key={`${item.cta}:${item.completion_key}`}
+                          className="rounded-[18px] border border-black/10 bg-[#f7f8fb] px-4 py-3"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <div className="text-[13px] font-medium text-black/78">{resultCtaLabel(item.cta)}</div>
+                              <div className="mt-1 text-[12px] text-black/52">{item.completion_label}</div>
+                            </div>
+                            <div className="text-right text-[12px] text-black/52">
+                              <div>完成 {formatNumber(item.completions)} / 落地 {formatNumber(item.landings)}</div>
+                              <div>点击 {formatNumber(item.clicks)}</div>
+                            </div>
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-black/56">
+                            <span>从落地完成 {formatPercent(item.completion_rate_from_land)}</span>
+                            <span>从点击完成 {formatPercent(item.completion_rate_from_click)}</span>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="space-y-5">
@@ -695,7 +726,7 @@ export default function MobileAnalyticsDashboard() {
 
                 <div>
                   <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-black/42">环境切片</div>
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                     <div>
                       <div className="mb-3 text-[12px] text-black/48">Browser</div>
                       {renderCountList(experience.data.browser_families)}
@@ -719,6 +750,22 @@ export default function MobileAnalyticsDashboard() {
                     <div>
                       <div className="mb-3 text-[12px] text-black/48">Language</div>
                       {renderCountList(experience.data.languages)}
+                    </div>
+                    <div>
+                      <div className="mb-3 text-[12px] text-black/48">Memory</div>
+                      {renderCountList(experience.data.device_memory_buckets)}
+                    </div>
+                    <div>
+                      <div className="mb-3 text-[12px] text-black/48">CPU</div>
+                      {renderCountList(experience.data.cpu_core_buckets)}
+                    </div>
+                    <div>
+                      <div className="mb-3 text-[12px] text-black/48">Touch</div>
+                      {renderCountList(experience.data.touch_points_buckets)}
+                    </div>
+                    <div>
+                      <div className="mb-3 text-[12px] text-black/48">Online</div>
+                      {renderCountList(experience.data.online_states)}
                     </div>
                   </div>
                 </div>

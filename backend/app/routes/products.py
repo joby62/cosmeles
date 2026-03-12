@@ -142,6 +142,7 @@ from app.schemas import (
     MobileAnalyticsPageDepthItem,
     MobileAnalyticsRageClickTargetItem,
     MobileAnalyticsCtaFollowthroughItem,
+    MobileAnalyticsCtaCompletionItem,
     MobileAnalyticsExperienceResponse,
     MobileAnalyticsSessionSummary,
     MobileAnalyticsSessionEventItem,
@@ -294,6 +295,42 @@ ANALYTICS_NETWORK_LABELS: dict[str, str] = {
     "3g": "3G",
     "4g": "4G",
     "unknown": "未知",
+}
+ANALYTICS_MEMORY_LABELS: dict[str, str] = {
+    "lte1": "<= 1GB",
+    "2gb": "2GB",
+    "4gb": "4GB",
+    "8gb": "8GB",
+    "gt8gb": "> 8GB",
+    "unknown": "未知",
+}
+ANALYTICS_CPU_LABELS: dict[str, str] = {
+    "lte2": "<= 2 核",
+    "4": "4 核",
+    "6": "6 核",
+    "8": "8 核",
+    "gt8": "> 8 核",
+    "unknown": "未知",
+}
+ANALYTICS_TOUCH_LABELS: dict[str, str] = {
+    "0": "0",
+    "1": "1",
+    "2_4": "2-4",
+    "5_plus": "5+",
+    "unknown": "未知",
+}
+ANALYTICS_ONLINE_LABELS: dict[str, str] = {
+    "online": "在线",
+    "offline": "离线",
+    "unknown": "未知",
+}
+ANALYTICS_CTA_COMPLETION_LABELS: dict[str, str] = {
+    "compare_run_start": "再次开始对比",
+    "wiki_upload_cta_click": "点击上传一键分析",
+    "wiki_category_ingredient_click": "点开成分词条",
+    "wiki_category_choose_click": "进入该品类挑选",
+    "product_showcase_continue_upload_click": "继续上传解析",
+    "product_showcase_governance_click": "返回产品治理",
 }
 
 
@@ -620,6 +657,11 @@ def get_mobile_analytics_overview(
         for row, _props in rows
         if row.name == "compare_run_start"
     }
+    compare_run_start_sessions = {
+        row.session_id.strip()
+        for row, _props in rows
+        if row.name == "compare_run_start" and str(row.session_id or "").strip()
+    }
     compare_run_success_keys = {
         _compare_key_for_event(row)
         for row, _props in rows
@@ -645,7 +687,7 @@ def get_mobile_analytics_overview(
         cta_ctr=_rate(len(cta_click), len(cta_expose)),
         use_page_views=len(use_page_views),
         use_category_clicks=len(use_category_clicks),
-        use_to_compare_rate=_rate(len(compare_run_start_keys), len(use_page_views)),
+        use_to_compare_rate=_rate(len(compare_run_start_sessions), len(use_page_views)),
         compare_run_start=len(compare_run_start_keys),
         compare_run_success=len(compare_run_success_keys),
         compare_completion_rate=_rate(len(compare_run_success_keys), len(compare_run_start_keys)),
@@ -998,6 +1040,8 @@ def get_mobile_analytics_experience(
             "wiki_list_view",
             "wiki_product_click",
             "wiki_ingredient_click",
+            "wiki_category_ingredient_click",
+            "wiki_category_choose_click",
             "compare_result_view",
             "compare_result_leave",
             "scroll_depth",
@@ -1006,6 +1050,10 @@ def get_mobile_analytics_experience(
             "dead_click",
             "compare_result_cta_click",
             "compare_result_cta_land",
+            "compare_run_start",
+            "wiki_upload_cta_click",
+            "product_showcase_continue_upload_click",
+            "product_showcase_governance_click",
         ],
     )
 
@@ -1024,12 +1072,19 @@ def get_mobile_analytics_experience(
     dead_click_counter: Counter[tuple[str, str]] = Counter()
     result_cta_counter: Counter[str] = Counter()
     result_cta_land_counter: Counter[str] = Counter()
+    result_cta_click_sessions: dict[str, set[str]] = defaultdict(set)
+    result_cta_land_sessions: dict[str, set[str]] = defaultdict(set)
+    result_cta_completion_sessions: dict[tuple[str, str], set[str]] = defaultdict(set)
     browser_counter: Counter[str] = Counter()
     os_counter: Counter[str] = Counter()
     device_counter: Counter[str] = Counter()
     viewport_counter: Counter[str] = Counter()
     network_counter: Counter[str] = Counter()
     language_counter: Counter[str] = Counter()
+    memory_counter: Counter[str] = Counter()
+    cpu_counter: Counter[str] = Counter()
+    touch_counter: Counter[str] = Counter()
+    online_counter: Counter[str] = Counter()
 
     page_view_counter: Counter[str] = Counter()
     env_seen_sessions: set[str] = set()
@@ -1045,6 +1100,10 @@ def get_mobile_analytics_experience(
             viewport_counter[_event_prop_key(props, "viewport_bucket")] += 1
             network_counter[_event_prop_key(props, "network_type")] += 1
             language_counter[_event_prop_key(props, "lang")] += 1
+            memory_counter[_event_prop_key(props, "device_memory_bucket")] += 1
+            cpu_counter[_event_prop_key(props, "cpu_core_bucket")] += 1
+            touch_counter[_event_prop_key(props, "touch_points_bucket")] += 1
+            online_counter[_event_prop_key(props, "online_state")] += 1
         if row.name == "page_view":
             continue
         if row.name == "wiki_list_view":
@@ -1101,10 +1160,25 @@ def get_mobile_analytics_experience(
         if row.name == "compare_result_cta_click":
             cta_key = _normalize_optional_text(props.get("cta")) or "unknown"
             result_cta_counter[cta_key] += 1
+            result_cta_click_sessions[cta_key].add(
+                f"{session_key}:{_normalize_optional_text(row.compare_id) or 'no-compare'}:{cta_key}"
+            )
             continue
         if row.name == "compare_result_cta_land":
             cta_key = _normalize_optional_text(props.get("cta")) or "unknown"
             result_cta_land_counter[cta_key] += 1
+            origin_compare_id = _normalize_optional_text(props.get("from_compare_id")) or _normalize_optional_text(row.compare_id) or "no-compare"
+            result_cta_land_sessions[cta_key].add(f"{session_key}:{origin_compare_id}:{cta_key}")
+            continue
+        if row.name in ANALYTICS_CTA_COMPLETION_LABELS:
+            cta_key = _normalize_optional_text(props.get("result_cta"))
+            if not cta_key:
+                continue
+            origin_compare_id = _normalize_optional_text(props.get("from_compare_id")) or _normalize_optional_text(row.compare_id) or "no-compare"
+            completion_key = row.name
+            result_cta_completion_sessions[(cta_key, completion_key)].add(
+                f"{session_key}:{origin_compare_id}:{cta_key}:{completion_key}"
+            )
 
     scroll_depth_items = [
         MobileAnalyticsPageDepthItem(
@@ -1157,6 +1231,22 @@ def get_mobile_analytics_experience(
             key=lambda key: (-result_cta_counter.get(key, 0), key),
         )
     ]
+    completion_items = [
+        MobileAnalyticsCtaCompletionItem(
+            cta=cta_key,
+            completion_key=completion_key,
+            completion_label=ANALYTICS_CTA_COMPLETION_LABELS.get(completion_key, completion_key),
+            clicks=len(result_cta_click_sessions.get(cta_key, set())),
+            landings=len(result_cta_land_sessions.get(cta_key, set())),
+            completions=len(session_keys),
+            completion_rate_from_click=_rate(len(session_keys), len(result_cta_click_sessions.get(cta_key, set()))),
+            completion_rate_from_land=_rate(len(session_keys), len(result_cta_land_sessions.get(cta_key, set()))),
+        )
+        for (cta_key, completion_key), session_keys in sorted(
+            result_cta_completion_sessions.items(),
+            key=lambda item: (-len(item[1]), item[0][0], item[0][1]),
+        )
+    ]
     env_denominator = len(env_seen_sessions)
 
     return MobileAnalyticsExperienceResponse(
@@ -1185,12 +1275,17 @@ def get_mobile_analytics_experience(
         dead_click_targets=dead_click_targets,
         result_cta_clicks=_build_count_items(result_cta_counter, denominator=sum(result_cta_counter.values())),
         result_cta_followthrough=followthrough_items,
+        result_cta_completions=completion_items,
         browser_families=_build_count_items(browser_counter, denominator=env_denominator, label_map=ANALYTICS_BROWSER_LABELS),
         os_families=_build_count_items(os_counter, denominator=env_denominator, label_map=ANALYTICS_OS_LABELS),
         device_types=_build_count_items(device_counter, denominator=env_denominator, label_map=ANALYTICS_DEVICE_LABELS),
         viewport_buckets=_build_count_items(viewport_counter, denominator=env_denominator, label_map=ANALYTICS_VIEWPORT_LABELS),
         network_types=_build_count_items(network_counter, denominator=env_denominator, label_map=ANALYTICS_NETWORK_LABELS),
         languages=_build_count_items(language_counter, denominator=env_denominator),
+        device_memory_buckets=_build_count_items(memory_counter, denominator=env_denominator, label_map=ANALYTICS_MEMORY_LABELS),
+        cpu_core_buckets=_build_count_items(cpu_counter, denominator=env_denominator, label_map=ANALYTICS_CPU_LABELS),
+        touch_points_buckets=_build_count_items(touch_counter, denominator=env_denominator, label_map=ANALYTICS_TOUCH_LABELS),
+        online_states=_build_count_items(online_counter, denominator=env_denominator, label_map=ANALYTICS_ONLINE_LABELS),
     )
 
 

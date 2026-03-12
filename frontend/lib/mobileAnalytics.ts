@@ -10,6 +10,11 @@ type NavigatorWithConnection = Navigator & {
     effectiveType?: string;
     saveData?: boolean;
   };
+  deviceMemory?: number;
+  userAgentData?: {
+    platform?: string;
+    mobile?: boolean;
+  };
 };
 
 function canUseWindow(): boolean {
@@ -59,6 +64,35 @@ function detectDeviceType(width: number): string {
   return "desktop";
 }
 
+function detectDeviceMemoryBucket(value: unknown): string {
+  const memory = Number(value);
+  if (!Number.isFinite(memory) || memory <= 0) return "unknown";
+  if (memory <= 1) return "lte1";
+  if (memory <= 2) return "2gb";
+  if (memory <= 4) return "4gb";
+  if (memory <= 8) return "8gb";
+  return "gt8gb";
+}
+
+function detectCpuCoreBucket(value: unknown): string {
+  const cores = Number(value);
+  if (!Number.isFinite(cores) || cores <= 0) return "unknown";
+  if (cores <= 2) return "lte2";
+  if (cores <= 4) return "4";
+  if (cores <= 6) return "6";
+  if (cores <= 8) return "8";
+  return "gt8";
+}
+
+function detectTouchPointsBucket(value: unknown): string {
+  const touchPoints = Number(value);
+  if (!Number.isFinite(touchPoints) || touchPoints < 0) return "unknown";
+  if (touchPoints === 0) return "0";
+  if (touchPoints === 1) return "1";
+  if (touchPoints <= 4) return "2_4";
+  return "5_plus";
+}
+
 function getMobileEnvironmentContext(): MobileAnalyticsProps {
   if (!canUseWindow()) return {};
   try {
@@ -73,6 +107,10 @@ function getMobileEnvironmentContext(): MobileAnalyticsProps {
       save_data: Boolean(nav.connection?.saveData),
       viewport_bucket: detectViewportBucket(width),
       device_type: detectDeviceType(width),
+      device_memory_bucket: detectDeviceMemoryBucket(nav.deviceMemory),
+      cpu_core_bucket: detectCpuCoreBucket(nav.hardwareConcurrency),
+      touch_points_bucket: detectTouchPointsBucket(nav.maxTouchPoints),
+      online_state: typeof nav.onLine === "boolean" ? (nav.onLine ? "online" : "offline") : "unknown",
     };
   } catch {
     return {};

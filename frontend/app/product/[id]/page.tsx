@@ -33,7 +33,19 @@ export default async function ProductShowcasePage({
           }}
         />
       ) : null}
-      <ProductShowcase id={id} doc={doc} routeMapping={routeMappingDetail?.item || null} />
+      <ProductShowcase
+        id={id}
+        doc={doc}
+        routeMapping={routeMappingDetail?.item || null}
+        analyticsContext={
+          resultCta && fromCompareId
+            ? {
+                resultCta,
+                fromCompareId,
+              }
+            : null
+        }
+      />
     </>
   );
 }

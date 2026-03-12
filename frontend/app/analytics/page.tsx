@@ -78,18 +78,24 @@ const EVENT_GROUPS = [
   {
     title: "结果页阅读、后续动作与主观反馈",
     status: "已接入",
-    summary: "现在不只知道结果页被打开了，还能知道读到多深、停留多久、点了哪个 CTA、有没有成功落到下一页，以及失败后主观上为什么离开。",
+    summary: "现在不只知道结果页被打开了，还能知道读到多深、停留多久、点了哪个 CTA、有没有成功落到下一页，以及落地后又做了什么真实动作。",
     events: [
       "compare_result_view",
       "compare_result_leave",
       "scroll_depth",
       "compare_result_cta_click",
       "compare_result_cta_land",
+      "compare_run_start",
+      "wiki_upload_cta_click",
+      "wiki_category_ingredient_click",
+      "wiki_category_choose_click",
+      "product_showcase_continue_upload_click",
+      "product_showcase_governance_click",
       "feedback_prompt_show",
       "feedback_submit",
       "feedback_skip",
     ],
-    value: "把“发生了什么”“看到了多少”“点后有没有继续”“用户觉得为什么”放到同一张图里。",
+    value: "把“发生了什么”“看到了多少”“点后有没有继续”“落地后做了什么”“用户觉得为什么”放到同一张图里。",
   },
   {
     title: "误触、死点与停滞",
@@ -101,9 +107,20 @@ const EVENT_GROUPS = [
   {
     title: "环境切片",
     status: "已接入",
-    summary: "现在每条移动端事件会自动带浏览器、系统、网络、语言和 viewport 粒度，开始支持环境差异分析。",
-    events: ["browser_family", "os_family", "network_type", "lang", "viewport_bucket", "device_type"],
-    value: "能回答某类问题是不是只发生在特定设备、语言或网络条件下。",
+    summary: "现在每条移动端事件会自动带浏览器、系统、网络、语言、viewport，以及内存/CPU/触控/在线状态这些能力环境。",
+    events: [
+      "browser_family",
+      "os_family",
+      "network_type",
+      "lang",
+      "viewport_bucket",
+      "device_type",
+      "device_memory_bucket",
+      "cpu_core_bucket",
+      "touch_points_bucket",
+      "online_state",
+    ],
+    value: "能回答某类问题是不是只发生在特定设备能力、语言、网络或在线条件下。",
   },
 ] as const;
 
@@ -129,9 +146,20 @@ const ANALYTIC_QUESTIONS = [
     signals: ["compare_run_start", "compare_stage_progress", "compare_stage_error", "compare_run_error"],
   },
   {
-    question: "分析成功后，用户有没有真的读结果、点下一步并落到下一页？",
-    answer: "现在已经能区分结果页到了没有、读到多深、停留多久、CTA 有没有被点击，以及点击后有没有成功落地。",
-    signals: ["compare_run_success", "compare_result_view", "compare_result_leave", "scroll_depth", "compare_result_cta_click", "compare_result_cta_land"],
+    question: "分析成功后，用户有没有真的读结果、点下一步、落到下一页并继续动作？",
+    answer: "现在已经能区分结果页到了没有、读到多深、停留多久、CTA 有没有被点击，以及点击后是否落地并触发真实后续动作。",
+    signals: [
+      "compare_run_success",
+      "compare_result_view",
+      "compare_result_leave",
+      "scroll_depth",
+      "compare_result_cta_click",
+      "compare_result_cta_land",
+      "compare_run_start",
+      "wiki_upload_cta_click",
+      "wiki_category_choose_click",
+      "product_showcase_continue_upload_click",
+    ],
   },
   {
     question: "用户主观上为什么放弃？",
@@ -145,21 +173,32 @@ const ANALYTIC_QUESTIONS = [
   },
   {
     question: "某些问题是不是只发生在特定环境？",
-    answer: "现在已经能按浏览器、系统、网络、语言、viewport 切片看体验和错误分布。",
-    signals: ["browser_family", "os_family", "network_type", "lang", "viewport_bucket", "device_type"],
+    answer: "现在已经能按浏览器、系统、网络、语言、viewport，以及内存/CPU/触控/在线状态切片看体验和错误分布。",
+    signals: [
+      "browser_family",
+      "os_family",
+      "network_type",
+      "lang",
+      "viewport_bucket",
+      "device_type",
+      "device_memory_bucket",
+      "cpu_core_bucket",
+      "touch_points_bucket",
+      "online_state",
+    ],
   },
 ] as const;
 
 const DEFERRED_SIGNALS = [
   {
-    title: "更深的后续动作闭环",
-    reason: "现在已经能确认 CTA 落到目标页，但还没继续追到“在目标页完成了什么动作”。",
-    items: ["next_action_completed", "result_to_compare_run_start", "result_to_product_add_to_bag"],
+    title: "更细的业务完成动作",
+    reason: "现在已经能看到落地后的关键动作，但还没继续追到更深业务结果，例如产品页后续是否加入购物袋、百科后是否完成收藏或回流。",
+    items: ["result_to_product_add_to_bag", "wiki_detail_follow_save", "profile_finish_after_choose"],
   },
   {
     title: "设备细颗粒环境",
-    reason: "现在有浏览器/系统/网络/语言/viewport，但还没有设备型号、内存、并发能力这些更细颗粒环境。",
-    items: ["device_model", "device_memory", "hardware_concurrency", "save_data_segment"],
+    reason: "现在已经有内存、CPU、触控和在线状态，但 Web 端仍拿不到稳定设备型号，也还没有更细的 Save-Data 分层。",
+    items: ["device_model", "save_data_segment", "battery_bucket", "render_fps_bucket"],
   },
 ] as const;
 
@@ -191,8 +230,8 @@ const FIRST_RELEASE_PANELS = [
   {
     title: "Experience Signals",
     badge: "体验信号",
-    description: "把列表兴趣、结果页阅读深度、CTA 落地率、dead/rage/stall 和环境切片拉到一屏里看。",
-    outputs: ["列表 CTR", "CTA 落地率", "阅读深度", "误触与停滞目标", "环境分布"],
+    description: "把列表兴趣、结果页阅读深度、CTA 落地率、落地后真实动作、dead/rage/stall 和环境切片拉到一屏里看。",
+    outputs: ["列表 CTR", "CTA 落地率", "真实动作完成率", "阅读深度", "误触与停滞目标", "环境分布"],
   },
   {
     title: "Session Explorer",
@@ -221,7 +260,7 @@ const FINAL_STATE_MODULES = [
   {
     title: "Trust & Comprehension",
     summary: "专门看用户为什么不信结果、看不懂结果、或者看完后没有继续行动。",
-    bullets: ["结果页阅读深度", "反馈语义聚类", "结果页 CTA 转化", "文案/结构实验对比"],
+    bullets: ["结果页阅读深度", "反馈语义聚类", "结果页 CTA 深转化", "文案/结构实验对比"],
   },
   {
     title: "Experiment Overlay",

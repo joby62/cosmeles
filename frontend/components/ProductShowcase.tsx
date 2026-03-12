@@ -1,23 +1,39 @@
-import Link from "next/link";
 import Image from "next/image";
 import {
   ProductDoc,
   ProductRouteMappingResult,
   resolveStoredImageUrl,
 } from "@/lib/api";
+import MobileTrackedLink from "@/components/mobile/MobileTrackedLink";
 
 export default function ProductShowcase({
   id,
   doc,
   routeMapping,
+  analyticsContext,
 }: {
   id: string;
   doc: ProductDoc;
   routeMapping: ProductRouteMappingResult | null;
+  analyticsContext?: {
+    resultCta: string;
+    fromCompareId: string;
+  } | null;
 }) {
   const imageUrl = resolveStoredImageUrl(doc.evidence?.image_path);
   const models = doc.evidence?.doubao_models || {};
   const artifacts = doc.evidence?.doubao_artifacts || {};
+  const pageRoute = `/product/${id}`;
+  const pageSource = analyticsContext ? "m_compare_result" : "product_showcase";
+  const baseEventProps = {
+    page: "product_showcase",
+    route: pageRoute,
+    source: pageSource,
+    category: doc.product?.category || undefined,
+    product_id: id,
+    result_cta: analyticsContext?.resultCta || undefined,
+    from_compare_id: analyticsContext?.fromCompareId || undefined,
+  };
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-[1180px] px-6 py-10">
@@ -26,12 +42,28 @@ export default function ProductShowcase({
         <div className="pointer-events-none absolute -left-14 -bottom-16 h-56 w-56 rounded-full bg-[#00a86b]/10 blur-2xl" />
         <div className="relative">
           <div className="flex flex-wrap items-center gap-2">
-            <Link href="/product/governance" className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/68 transition-colors hover:bg-black/[0.03]">
+            <MobileTrackedLink
+              href="/product/governance"
+              eventName="product_showcase_governance_click"
+              eventProps={{
+                ...baseEventProps,
+                target_path: "/product/governance",
+              }}
+              className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/68 transition-colors hover:bg-black/[0.03]"
+            >
               返回产品治理
-            </Link>
-            <Link href="/product/pipeline#product-ingest-workbench" className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/68 transition-colors hover:bg-black/[0.03]">
+            </MobileTrackedLink>
+            <MobileTrackedLink
+              href="/product/pipeline#product-ingest-workbench"
+              eventName="product_showcase_continue_upload_click"
+              eventProps={{
+                ...baseEventProps,
+                target_path: "/product/pipeline#product-ingest-workbench",
+              }}
+              className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/68 transition-colors hover:bg-black/[0.03]"
+            >
               继续上传解析
-            </Link>
+            </MobileTrackedLink>
             <span className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/62">ID: {id}</span>
           </div>
 

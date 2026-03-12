@@ -983,6 +983,17 @@ export type MobileAnalyticsCtaFollowthroughItem = {
   landing_rate: number;
 };
 
+export type MobileAnalyticsCtaCompletionItem = {
+  cta: string;
+  completion_key: string;
+  completion_label: string;
+  clicks: number;
+  landings: number;
+  completions: number;
+  completion_rate_from_click: number;
+  completion_rate_from_land: number;
+};
+
 export type MobileAnalyticsExperience = {
   status: string;
   filters: MobileAnalyticsFilterState;
@@ -1009,12 +1020,17 @@ export type MobileAnalyticsExperience = {
   dead_click_targets: MobileAnalyticsRageClickTargetItem[];
   result_cta_clicks: MobileAnalyticsCountItem[];
   result_cta_followthrough: MobileAnalyticsCtaFollowthroughItem[];
+  result_cta_completions: MobileAnalyticsCtaCompletionItem[];
   browser_families: MobileAnalyticsCountItem[];
   os_families: MobileAnalyticsCountItem[];
   device_types: MobileAnalyticsCountItem[];
   viewport_buckets: MobileAnalyticsCountItem[];
   network_types: MobileAnalyticsCountItem[];
   languages: MobileAnalyticsCountItem[];
+  device_memory_buckets: MobileAnalyticsCountItem[];
+  cpu_core_buckets: MobileAnalyticsCountItem[];
+  touch_points_buckets: MobileAnalyticsCountItem[];
+  online_states: MobileAnalyticsCountItem[];
 };
 
 export type MobileAnalyticsSessionSummary = {
