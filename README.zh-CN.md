@@ -1,6 +1,6 @@
 # Jeslect / Cosmeles 中文说明
 
-> 最后更新：2026-03-12
+> 最后更新：2026-03-13
 
 英文版请见：[README.md](README.md)
 
@@ -28,6 +28,79 @@ Jeslect 现在不是完整商城，而是一个帮助用户在下单前更快看
 
 - `frontend/`：Jeslect 新英文独立站
 - `frontend-legacy/`：旧中文 / mobile 结构，仅保留作能力参考
+
+## 本地运行
+
+推荐开两个终端：先起后端，再起前端。
+
+### 1. 启动后端
+
+```bash
+cd /Users/lijiabo/cosmeles/backend
+PYTHONPATH='/Users/lijiabo/cosmeles/backend' conda run -n cosmeles uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+说明：
+
+- 后端地址：`http://127.0.0.1:8000`
+- 如果需要 Doubao 能力，先补 `backend/.env.local`
+- 健康检查：
+
+```bash
+curl -s http://127.0.0.1:8000/healthz
+curl -s http://127.0.0.1:8000/readyz
+```
+
+### 2. 启动前端
+
+另开一个终端：
+
+```bash
+cd /Users/lijiabo/cosmeles/frontend
+npm run dev
+```
+
+说明：
+
+- 前端地址：`http://127.0.0.1:3000`
+- 前端 `/api/*` 会转发到本地 `8000`
+- 如果要显示真实 support contact，可补 `frontend/.env.local`
+
+### 3. 本地访问入口
+
+- 主站：`http://127.0.0.1:3000`
+- Commerce 工作台：`http://127.0.0.1:3000/ops/commerce`
+
+### 4. 中文切换 demo
+
+- 用 header 里的 `EN / 中` 切换
+- 当前 demo 只切壳层：
+  - header / footer 语气
+  - 导航标签
+  - 中文品牌字标 `婕选`
+- 页面正文目前大多仍保持英文，这是刻意控制范围的 demo，不是全站 i18n
+
+### 5. 验证命令
+
+前端 lint：
+
+```bash
+cd /Users/lijiabo/cosmeles/frontend
+node ./node_modules/eslint/bin/eslint.js app components lib --max-warnings=0
+```
+
+前端 build：
+
+```bash
+cd /Users/lijiabo/cosmeles/frontend
+node ./node_modules/next/dist/bin/next build --debug
+```
+
+后端 pytest：
+
+```bash
+PYTHONPATH='/Users/lijiabo/cosmeles:/Users/lijiabo/cosmeles/backend' conda run -n cosmeles pytest '/Users/lijiabo/cosmeles/backend/tests/test_mobile_compare.py' -q
+```
 
 ## 当前产品定位
 

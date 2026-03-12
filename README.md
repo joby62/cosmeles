@@ -1,6 +1,6 @@
 # Jeslect / Cosmeles
 
-> Last updated: March 12, 2026
+> Last updated: March 13, 2026
 
 Chinese version: [README.zh-CN.md](README.zh-CN.md)
 
@@ -152,6 +152,79 @@ backend/                    FastAPI + SQLite + file storage
 frontend/                   Active Jeslect standalone storefront
 frontend-legacy/            Frozen legacy frontend for reference only
 docs/                       Operational and project notes
+```
+
+## Local Run
+
+Run the storefront in two terminals: backend first, frontend second.
+
+### 1. Backend
+
+Recommended local command for this repo:
+
+```bash
+cd /Users/lijiabo/cosmeles/backend
+PYTHONPATH='/Users/lijiabo/cosmeles/backend' conda run -n cosmeles uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Notes:
+
+- The backend listens on `http://127.0.0.1:8000`
+- If Doubao-related env vars are needed, configure `backend/.env.local` first
+- Health checks:
+
+```bash
+curl -s http://127.0.0.1:8000/healthz
+curl -s http://127.0.0.1:8000/readyz
+```
+
+### 2. Frontend
+
+In a second terminal:
+
+```bash
+cd /Users/lijiabo/cosmeles/frontend
+npm run dev
+```
+
+Notes:
+
+- The storefront runs at `http://127.0.0.1:3000`
+- Frontend API rewrites point to `http://127.0.0.1:8000`
+- Optional support contact values can be added to `frontend/.env.local`
+
+### 3. Open the site
+
+- Main storefront: `http://127.0.0.1:3000`
+- Internal commerce workbench: `http://127.0.0.1:3000/ops/commerce`
+
+### 4. Chinese shell demo
+
+- Use the header switcher: `EN / 中`
+- This demo currently changes the shell layer only:
+  brand lockup, nav labels, footer tone, and the `婕选` logo treatment
+- Core page bodies remain mostly English on purpose; this is a shell-level demo, not full i18n
+
+### 5. Verification commands
+
+Frontend lint:
+
+```bash
+cd /Users/lijiabo/cosmeles/frontend
+node ./node_modules/eslint/bin/eslint.js app components lib --max-warnings=0
+```
+
+Frontend build:
+
+```bash
+cd /Users/lijiabo/cosmeles/frontend
+node ./node_modules/next/dist/bin/next build --debug
+```
+
+Backend pytest:
+
+```bash
+PYTHONPATH='/Users/lijiabo/cosmeles:/Users/lijiabo/cosmeles/backend' conda run -n cosmeles pytest '/Users/lijiabo/cosmeles/backend/tests/test_mobile_compare.py' -q
 ```
 
 ## Phase Plan
