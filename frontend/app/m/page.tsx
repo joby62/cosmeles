@@ -113,23 +113,25 @@ export default function MobileHome() {
               >
                 开始测配
               </MobileTrackedLink>
-              <MobileTrackedLink
-                href="/m/wiki"
-                eventName="mobile_intro_cta_click"
-                eventProps={{
-                  page: "mobile_intro",
-                  route: "/m",
-                  source: "m_intro",
-                  action: "browse_wiki",
-                  target_path: "/m/wiki",
-                }}
-                className="m-pressable mt-3 inline-flex h-11 w-full items-center justify-center rounded-full border border-black/8 bg-white/72 text-[14px] font-semibold text-black/68 active:bg-black/[0.03] dark:border-white/10 dark:bg-white/6 dark:text-white/72 dark:active:bg-white/[0.08]"
-              >
-                先逛百科
-              </MobileTrackedLink>
               <p className="mt-3 text-center text-[12px] leading-[1.5] text-black/46 dark:text-white/48">
                 从这里开始，更快知道什么更适合你。
               </p>
+              <div className="mt-2 text-center">
+                <MobileTrackedLink
+                  href="/m/wiki"
+                  eventName="mobile_intro_cta_click"
+                  eventProps={{
+                    page: "mobile_intro",
+                    route: "/m",
+                    source: "m_intro",
+                    action: "browse_wiki",
+                    target_path: "/m/wiki",
+                  }}
+                  className="m-pressable text-[12px] font-medium text-black/34 underline underline-offset-4 hover:text-black/46 dark:text-white/32 dark:hover:text-white/46"
+                >
+                  想先看看百科
+                </MobileTrackedLink>
+              </div>
             </div>
           </div>
         </div>
