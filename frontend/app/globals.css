@@ -520,12 +520,12 @@ html[data-nav-open="1"] #app-main{
     --m-topbar-dot: rgba(255,255,255,0.38);
     --m-press: rgba(255,255,255,0.1);
 
-    --m-nav-bg: rgba(30,37,54,0.58);
-    --m-nav-border: rgba(255,255,255,0.18);
+    --m-nav-bg: rgba(16,23,36,0.78);
+    --m-nav-border: rgba(255,255,255,0.14);
     --m-nav-text: rgba(255,255,255,0.76);
     --m-nav-text-strong: rgba(255,255,255,0.84);
-    --m-nav-item-active-bg: rgba(255,255,255,0.1);
-    --m-nav-active-bg: rgba(114,182,255,0.24);
+    --m-nav-item-active-bg: rgba(255,255,255,0.08);
+    --m-nav-active-bg: rgba(114,182,255,0.2);
     --m-nav-active-text: #72b6ff;
     --m-profile-step-index: rgba(177,194,226,0.62);
     --m-profile-title: rgba(246,249,255,0.96);
@@ -1506,10 +1506,11 @@ html[data-nav-open="1"] #app-main{
 
 .m-choose-action-section {
   margin-top: 24px;
+  padding-bottom: calc(76px + env(safe-area-inset-bottom) + var(--m-chrome-bottom-inset));
 }
 
 .m-choose-history-section {
-  margin-top: 40px;
+  margin-top: 0;
   padding-top: 22px;
   border-top: 1px solid var(--m-choose-image-shell-border);
 }
