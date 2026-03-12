@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import {
+  canRequestMobileLocationContext,
   dismissMobileLocationPrompt,
   getStoredMobileLocationContext,
   getStoredMobileLocationPromptState,
@@ -30,6 +31,10 @@ export default function MobileLocationConsent() {
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
+      if (!canRequestMobileLocationContext()) {
+        setVisible(false);
+        return;
+      }
       const storedState = getStoredMobileLocationPromptState();
       const storedContext = getStoredMobileLocationContext();
       if (storedState === "dismissed" || storedState === "denied") {
@@ -55,9 +60,9 @@ export default function MobileLocationConsent() {
     if (result.status === "granted") {
       setVisible(false);
       void trackMobileEvent("location_context_captured", {
-        page: "mobile_shell",
+        page: "selection_profile",
         route: pathname,
-        source: "mobile_location_consent",
+        source: "mobile_profile_location_consent",
         detail: `近似位置 ${result.context.location_label}`,
         ...result.context,
       });
@@ -78,8 +83,7 @@ export default function MobileLocationConsent() {
   if (!visible) return null;
 
   return (
-    <aside className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+86px)] z-40 px-4">
-      <div className="pointer-events-auto mx-auto max-w-[680px] rounded-[28px] border border-[#d7e6fb] bg-[linear-gradient(180deg,rgba(255,255,255,0.96)_0%,rgba(247,251,255,0.96)_100%)] px-4 py-4 shadow-[0_20px_50px_rgba(26,56,107,0.16)] backdrop-blur">
+    <div className="mt-4 rounded-[28px] border border-[#d7e6fb] bg-[linear-gradient(180deg,rgba(255,255,255,0.96)_0%,rgba(247,251,255,0.96)_100%)] px-4 py-4 shadow-[0_20px_50px_rgba(26,56,107,0.12)]">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="max-w-[420px]">
             <div className="text-[12px] font-semibold tracking-[0.08em] text-[#356ab7] uppercase">位置授权</div>
@@ -109,7 +113,6 @@ export default function MobileLocationConsent() {
         </div>
 
         {error ? <div className="mt-3 rounded-[18px] border border-[#f0b3ab] bg-[#fff4f2] px-3 py-3 text-[12px] leading-[1.6] text-[#7f2b21]">{error}</div> : null}
-      </div>
-    </aside>
+    </div>
   );
 }

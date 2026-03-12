@@ -121,6 +121,10 @@ function supportsMobileLocationCapture(): boolean {
   return canUseWindow() && Boolean(window.isSecureContext) && typeof navigator !== "undefined" && "geolocation" in navigator;
 }
 
+export function canRequestMobileLocationContext(): boolean {
+  return supportsMobileLocationCapture();
+}
+
 function readMobileLocationPromptState(): MobileLocationPromptState | null {
   if (!canUseStorage()) return null;
   try {

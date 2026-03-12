@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import MobileLocationConsent from "@/components/mobile/MobileLocationConsent";
 import {
   isCompleteLotionSignals,
   lotionChoiceLabel,
@@ -261,6 +262,7 @@ export default function LotionProfileFlowClient() {
             <div className="m-profile-step-index">润肤霜决策 · 第 {stepIndex + 1}/{STEPS.length} 步</div>
             <TitleTag className="m-profile-step-title">{step.title}</TitleTag>
             <p className="m-profile-step-note">{step.note}</p>
+            {stepIndex === 0 && !selected ? <MobileLocationConsent /> : null}
 
             <div className="mt-6 space-y-3">
               {step.options.map((opt) => {
