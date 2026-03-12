@@ -1,4 +1,6 @@
 import Link from "next/link";
+import MobileEventBeacon from "@/components/mobile/MobileEventBeacon";
+import MobilePageAnalytics from "@/components/mobile/MobilePageAnalytics";
 import { fetchMobileCompareResult } from "@/lib/api";
 import { formatRuntimeError } from "@/lib/error";
 import MobileCompareResultFlow from "./result-flow";
@@ -21,6 +23,7 @@ export default async function MobileCompareResultPage({
   if (!result) {
     return (
       <section className="m-compare-result-page pb-12">
+        <MobilePageAnalytics page="compare_result_error" route={`/m/compare/result/${compareId}`} source="m_compare_result" compareId={compareId} />
         <article className="rounded-[24px] border border-[#ffb39e]/55 bg-[linear-gradient(180deg,#fff8f4_0%,#fff2ed_100%)] px-5 py-5 dark:border-[#b16b58]/45 dark:bg-[linear-gradient(180deg,#35221f_0%,#2a1a18_100%)]">
           <div className="text-[12px] font-semibold tracking-[0.04em] text-[#b6543f] dark:text-[#ffb39d]">对比结果加载失败</div>
           <h1 className="mt-2 text-[26px] leading-[1.18] font-semibold tracking-[-0.02em] text-[#452016] dark:text-[#ffd5cb]">本次对比未能完成展示</h1>
@@ -47,5 +50,28 @@ export default async function MobileCompareResultPage({
     );
   }
 
-  return <MobileCompareResultFlow result={result} />;
+  return (
+    <>
+      <MobilePageAnalytics
+        page="compare_result"
+        route={`/m/compare/result/${compareId}`}
+        source="m_compare_result"
+        category={result.category}
+        compareId={result.compare_id}
+      />
+      <MobileEventBeacon
+        name="compare_result_view"
+        props={{
+          page: "compare_result",
+          route: `/m/compare/result/${compareId}`,
+          source: "m_compare_result",
+          category: result.category,
+          compare_id: result.compare_id,
+          decision: result.verdict.decision,
+          confidence: result.verdict.confidence,
+        }}
+      />
+      <MobileCompareResultFlow result={result} />
+    </>
+  );
 }

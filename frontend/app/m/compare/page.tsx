@@ -14,6 +14,7 @@ import {
   type MobileSelectionCategory,
   uploadMobileCompareCurrentProduct,
 } from "@/lib/api";
+import MobileFeedbackPrompt from "@/components/mobile/MobileFeedbackPrompt";
 import MobilePageAnalytics from "@/components/mobile/MobilePageAnalytics";
 import { trackMobileEvent } from "@/lib/mobileAnalytics";
 import { describeMobileRouteFocus, getMobileCategoryLabel } from "@/lib/mobile/routeCopy";
@@ -81,6 +82,17 @@ type CompareTelemetryError = {
   retryable?: boolean;
   stage?: string;
   stageLabel?: string;
+};
+
+type CompareFeedbackPrompt = {
+  key: string;
+  triggerReason: "compare_upload_fail" | "compare_stage_error" | "compare_restore_failed";
+  category: MobileSelectionCategory | string;
+  compareId?: string | null;
+  stage?: string | null;
+  stageLabel?: string | null;
+  errorCode?: string | null;
+  detail?: string | null;
 };
 
 function normalizeSelectionCategory(raw: unknown): MobileSelectionCategory | null {
@@ -204,6 +216,7 @@ export default function MobileComparePage() {
   const [needsUploadReattach, setNeedsUploadReattach] = useState(false);
   const [chromeVisible, setChromeVisible] = useState(true);
   const [chromeYielded, setChromeYielded] = useState(false);
+  const [feedbackPrompt, setFeedbackPrompt] = useState<CompareFeedbackPrompt | null>(null);
   const activeCompareIdRef = useRef<string | null>(null);
   const lastTrackedStageSignatureRef = useRef<string>("");
   const lastTrackedErrorSignatureRef = useRef<string>("");
@@ -601,6 +614,7 @@ export default function MobileComparePage() {
     setBootstrapError(null);
     setBootstrap(null);
     setRunError(null);
+    setFeedbackPrompt(null);
     setProgressHint("等待开始");
     setActiveStage("prepare");
     setActiveStageLabel(WAITING_STAGE_LABEL.prepare);
@@ -664,6 +678,16 @@ export default function MobileComparePage() {
         if (session.status === "failed") {
           const detail = String(session.error?.detail || "").trim() || "对比任务失败，请重试。";
           setRunError(humanizeCompareError(detail));
+          setFeedbackPrompt({
+            key: ["compare_restore_failed", session.compare_id, session.error?.code || "unknown", detail].join(":"),
+            triggerReason: "compare_restore_failed",
+            category: session.category,
+            compareId: session.compare_id,
+            stage: session.error?.stage || session.stage || undefined,
+            stageLabel: session.error?.stage_label || session.stage_label || undefined,
+            errorCode: session.error?.code || undefined,
+            detail,
+          });
           trackCompareStageError({
             category: session.category,
             compareId: session.compare_id,
@@ -810,6 +834,7 @@ export default function MobileComparePage() {
     setActiveSession(null);
     setRunning(false);
     setRunError(null);
+    setFeedbackPrompt(null);
     setProgressHint("等待开始");
     setActiveStage("prepare");
     setActiveStageLabel(WAITING_STAGE_LABEL.prepare);
@@ -883,6 +908,7 @@ export default function MobileComparePage() {
     setNeedsUploadReattach(false);
     clearActiveCompare();
     clearCompareDraft();
+    setFeedbackPrompt(null);
     setLastProgressUpdateAt(Date.now());
     lastTrackedStageSignatureRef.current = "";
     lastTrackedErrorSignatureRef.current = "";
@@ -917,6 +943,15 @@ export default function MobileComparePage() {
               http_status: telemetry.httpStatus,
               retryable: telemetry.retryable,
               run_mode: runMode,
+            });
+            setFeedbackPrompt({
+              key: ["compare_upload_fail", targetCategory, telemetry.errorCode || "unknown", telemetry.detail || telemetry.raw].join(":"),
+              triggerReason: "compare_upload_fail",
+              category: targetCategory,
+              stage: telemetry.stage,
+              stageLabel: telemetry.stageLabel,
+              errorCode: telemetry.errorCode,
+              detail: telemetry.detail || telemetry.raw,
             });
             throw err;
           }
@@ -1106,30 +1141,48 @@ export default function MobileComparePage() {
         stage: activeSession?.error?.stage || activeSession?.stage || activeStage,
         stageLabel: activeSession?.error?.stage_label || activeSession?.stage_label || activeStageLabel,
       });
-      trackCompareStageError({
-        category: targetCategory,
-        compareId: activeCompareIdRef.current,
-        runMode,
-        hasUpload: trackedTargets.some((item) => item.source === "upload_new"),
-        selectedLibraryCount: trackedTargets.filter((item) => item.source === "history_product").length,
-        totalCount: trackedTargets.length,
-        sourceEvent: "run_catch",
-        error: telemetry,
-      });
-      void safeTrack("compare_run_error", {
-        category: targetCategory,
-        compare_id: String(activeCompareIdRef.current || "").trim() || undefined,
-        error: text,
-        stage: telemetry.stage,
-        stage_label: telemetry.stageLabel,
-        error_code: telemetry.errorCode,
-        detail: telemetry.detail || telemetry.raw,
-        http_status: telemetry.httpStatus,
-        run_mode: runMode,
-        has_upload: trackedTargets.some((item) => item.source === "upload_new"),
-        selected_library_count: trackedTargets.filter((item) => item.source === "history_product").length,
-        total_count: trackedTargets.length,
-      });
+      if (telemetry.stage !== "uploading") {
+        trackCompareStageError({
+          category: targetCategory,
+          compareId: activeCompareIdRef.current,
+          runMode,
+          hasUpload: trackedTargets.some((item) => item.source === "upload_new"),
+          selectedLibraryCount: trackedTargets.filter((item) => item.source === "history_product").length,
+          totalCount: trackedTargets.length,
+          sourceEvent: "run_catch",
+          error: telemetry,
+        });
+        setFeedbackPrompt({
+          key: [
+            "compare_stage_error",
+            String(activeCompareIdRef.current || "").trim() || "pending",
+            telemetry.stage || "unknown",
+            telemetry.errorCode || "unknown",
+            telemetry.detail || telemetry.raw,
+          ].join(":"),
+          triggerReason: "compare_stage_error",
+          category: targetCategory,
+          compareId: activeCompareIdRef.current,
+          stage: telemetry.stage,
+          stageLabel: telemetry.stageLabel,
+          errorCode: telemetry.errorCode,
+          detail: telemetry.detail || telemetry.raw,
+        });
+        void safeTrack("compare_run_error", {
+          category: targetCategory,
+          compare_id: String(activeCompareIdRef.current || "").trim() || undefined,
+          error: text,
+          stage: telemetry.stage,
+          stage_label: telemetry.stageLabel,
+          error_code: telemetry.errorCode,
+          detail: telemetry.detail || telemetry.raw,
+          http_status: telemetry.httpStatus,
+          run_mode: runMode,
+          has_upload: trackedTargets.some((item) => item.source === "upload_new"),
+          selected_library_count: trackedTargets.filter((item) => item.source === "history_product").length,
+          total_count: trackedTargets.length,
+        });
+      }
     } finally {
       setRunning(false);
     }
@@ -1601,6 +1654,24 @@ export default function MobileComparePage() {
     );
   }
 
+  const feedbackPromptCard = feedbackPrompt ? (
+    <MobileFeedbackPrompt
+      key={feedbackPrompt.key}
+      promptKey={feedbackPrompt.key}
+      triggerReason={feedbackPrompt.triggerReason}
+      page="mobile_compare"
+      route="/m/compare"
+      source="m_compare"
+      category={feedbackPrompt.category}
+      compareId={feedbackPrompt.compareId}
+      stage={feedbackPrompt.stage}
+      stageLabel={feedbackPrompt.stageLabel}
+      errorCode={feedbackPrompt.errorCode}
+      detail={feedbackPrompt.detail}
+      onDismiss={() => setFeedbackPrompt(null)}
+    />
+  ) : null;
+
   if (shouldShowTaskPanel) {
     return (
       <section className="m-compare-page pb-10">
@@ -1660,6 +1731,7 @@ export default function MobileComparePage() {
             ) : null}
           </div>
         ) : null}
+        {isFailedTask ? feedbackPromptCard : null}
 
         <div className="mt-4 grid gap-2">
           {isRunningTask ? (
@@ -1706,6 +1778,7 @@ export default function MobileComparePage() {
             {runError}
           </div>
         ) : null}
+        {feedbackPromptCard}
         <article className="relative mt-5 overflow-hidden rounded-[32px] border border-black/10 bg-white/84 px-6 py-7 shadow-[0_18px_48px_rgba(23,52,98,0.12)] backdrop-blur-[14px]">
           <div className="pointer-events-none absolute -right-8 -top-10 h-40 w-40 rounded-full bg-[#6bb3ff]/40 blur-3xl" />
           <div className="pointer-events-none absolute -bottom-14 -left-8 h-44 w-44 rounded-full bg-[#7f8fff]/30 blur-3xl" />
@@ -1775,6 +1848,7 @@ export default function MobileComparePage() {
           {runError}
         </div>
       ) : null}
+      {feedbackPromptCard}
 
       <div className="mt-4 rounded-[26px] border border-black/10 bg-white p-4">{stepBody}</div>
 
