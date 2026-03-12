@@ -2,6 +2,8 @@
 
 > 最后更新：2026-03-12
 
+执行清单版请见：[JESLECT_EXECUTION_CHECKLIST.zh-CN.md](JESLECT_EXECUTION_CHECKLIST.zh-CN.md)
+
 适用范围：
 
 - 当前仓库：`/Users/lijiabo/cosmeles`
