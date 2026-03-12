@@ -561,6 +561,68 @@ def _has_event_environment(props: dict[str, Any]) -> bool:
     )
 
 
+def _event_prop_float(props: dict[str, Any], key: str) -> float | None:
+    value = props.get(key)
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = _normalize_optional_text(value)
+    if not text:
+        return None
+    try:
+        return float(text)
+    except (TypeError, ValueError):
+        return None
+
+
+def _event_location_time_zone(props: dict[str, Any]) -> str | None:
+    return _normalize_optional_text(props.get("location_time_zone"))
+
+
+def _event_location_label(props: dict[str, Any]) -> str | None:
+    label = _normalize_optional_text(props.get("location_label"))
+    if label:
+        return label
+    latitude = _event_prop_float(props, "location_latitude")
+    longitude = _event_prop_float(props, "location_longitude")
+    time_zone = _event_location_time_zone(props)
+    if latitude is None or longitude is None:
+        return time_zone
+    parts = [f"{latitude:.3f}, {longitude:.3f}"]
+    accuracy_m = _event_prop_float(props, "location_accuracy_m")
+    if accuracy_m is not None and accuracy_m > 0:
+        parts.append(f"+-{int(round(accuracy_m))}m")
+    if time_zone:
+        parts.append(time_zone)
+    return " · ".join(parts)
+
+
+def _has_event_location(props: dict[str, Any]) -> bool:
+    return bool(_event_location_label(props))
+
+
+def _event_location_region_key(props: dict[str, Any]) -> str | None:
+    latitude = _event_prop_float(props, "location_latitude")
+    longitude = _event_prop_float(props, "location_longitude")
+    time_zone = _event_location_time_zone(props)
+    if latitude is None or longitude is None:
+        return time_zone or _event_location_label(props)
+    region = f"{round(latitude, 1):.1f}, {round(longitude, 1):.1f}"
+    return f"{region} · {time_zone}" if time_zone else region
+
+
+def _event_location_accuracy_bucket(props: dict[str, Any]) -> str:
+    accuracy_m = _event_prop_float(props, "location_accuracy_m")
+    if accuracy_m is None or accuracy_m <= 0:
+        return "未上报精度"
+    if accuracy_m <= 1000:
+        return "≤1km"
+    if accuracy_m <= 3000:
+        return "1-3km"
+    if accuracy_m <= 10000:
+        return "3-10km"
+    return ">10km"
+
+
 def _percentile_fraction(values: list[float], percentile: float) -> float:
     if not values:
         return 0.0
@@ -1063,6 +1125,7 @@ def get_mobile_analytics_experience(
             "compare_result_cta_click",
             "compare_result_cta_land",
             "compare_run_start",
+            "location_context_captured",
             "wiki_upload_cta_click",
             "profile_result_view",
             "bag_add_success",
@@ -1099,13 +1162,21 @@ def get_mobile_analytics_experience(
     cpu_counter: Counter[str] = Counter()
     touch_counter: Counter[str] = Counter()
     online_counter: Counter[str] = Counter()
+    location_region_counter: Counter[str] = Counter()
+    location_time_zone_counter: Counter[str] = Counter()
+    location_accuracy_counter: Counter[str] = Counter()
 
     page_view_counter: Counter[str] = Counter()
     env_seen_sessions: set[str] = set()
+    session_keys_seen: set[str] = set()
+    location_capture_sessions: set[str] = set()
+    location_capture_events = 0
+    latest_location_by_session: dict[str, dict[str, Any]] = {}
 
     for row, props in rows:
         row_page = _normalize_optional_text(row.page) or "unknown"
         session_key = _session_key_for_event(row)
+        session_keys_seen.add(session_key)
         if session_key not in env_seen_sessions and _has_event_environment(props):
             env_seen_sessions.add(session_key)
             browser_counter[_event_prop_key(props, "browser_family")] += 1
@@ -1118,6 +1189,11 @@ def get_mobile_analytics_experience(
             cpu_counter[_event_prop_key(props, "cpu_core_bucket")] += 1
             touch_counter[_event_prop_key(props, "touch_points_bucket")] += 1
             online_counter[_event_prop_key(props, "online_state")] += 1
+        if _has_event_location(props):
+            latest_location_by_session[session_key] = props
+        if row.name == "location_context_captured":
+            location_capture_events += 1
+            location_capture_sessions.add(session_key)
         if row.name == "page_view":
             continue
         if row.name == "wiki_list_view":
@@ -1262,6 +1338,16 @@ def get_mobile_analytics_experience(
         )
     ]
     env_denominator = len(env_seen_sessions)
+    for props in latest_location_by_session.values():
+        region_key = _event_location_region_key(props)
+        if region_key:
+            location_region_counter[region_key] += 1
+        time_zone = _event_location_time_zone(props)
+        if time_zone:
+            location_time_zone_counter[time_zone] += 1
+        location_accuracy_counter[_event_location_accuracy_bucket(props)] += 1
+    sessions_with_location = len(latest_location_by_session)
+    sessions_without_location = max(0, len(session_keys_seen) - sessions_with_location)
 
     return MobileAnalyticsExperienceResponse(
         status="ok",
@@ -1300,6 +1386,14 @@ def get_mobile_analytics_experience(
         cpu_core_buckets=_build_count_items(cpu_counter, denominator=env_denominator, label_map=ANALYTICS_CPU_LABELS),
         touch_points_buckets=_build_count_items(touch_counter, denominator=env_denominator, label_map=ANALYTICS_TOUCH_LABELS),
         online_states=_build_count_items(online_counter, denominator=env_denominator, label_map=ANALYTICS_ONLINE_LABELS),
+        location_capture_events=location_capture_events,
+        location_capture_sessions=len(location_capture_sessions),
+        sessions_with_location=sessions_with_location,
+        sessions_without_location=sessions_without_location,
+        location_coverage_rate=_rate(sessions_with_location, len(session_keys_seen)),
+        location_regions=_build_count_items(location_region_counter, denominator=sessions_with_location)[:12],
+        location_time_zones=_build_count_items(location_time_zone_counter, denominator=sessions_with_location)[:12],
+        location_accuracy_buckets=_build_count_items(location_accuracy_counter, denominator=sessions_with_location),
     )
 
 
@@ -1362,6 +1456,8 @@ def get_mobile_analytics_sessions(
         compare_value: str | None = None
         latest_error_code: str | None = None
         latest_feedback_reason: str | None = None
+        latest_location_label: str | None = None
+        latest_location_time_zone: str | None = None
         outcome = "browsing"
 
         for row, props in ordered:
@@ -1378,6 +1474,10 @@ def get_mobile_analytics_sessions(
             compare_value = _normalize_optional_text(row.compare_id) or compare_value
             latest_error_code = _normalize_optional_text(row.error_code) or latest_error_code
             latest_feedback_reason = _normalize_optional_text(props.get("reason_label")) or latest_feedback_reason
+            location_label = _event_location_label(props)
+            if location_label:
+                latest_location_label = location_label
+                latest_location_time_zone = _event_location_time_zone(props) or latest_location_time_zone
 
             if row.name == "compare_result_view":
                 outcome = "result_viewed"
@@ -1405,6 +1505,8 @@ def get_mobile_analytics_sessions(
             latest_page=_normalize_optional_text(last_row.page),
             latest_error_code=latest_error_code,
             latest_feedback_reason=latest_feedback_reason,
+            latest_location_label=latest_location_label,
+            latest_location_time_zone=latest_location_time_zone,
             pages=pages,
             events=events[:8],
         )
@@ -1444,6 +1546,8 @@ def get_mobile_analytics_sessions(
                     trigger_reason=_normalize_optional_text(props.get("trigger_reason")),
                     reason_label=_normalize_optional_text(props.get("reason_label")),
                     dwell_ms=row.dwell_ms,
+                    location_label=_event_location_label(props),
+                    location_time_zone=_event_location_time_zone(props),
                 )
             )
         break

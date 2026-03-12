@@ -1819,6 +1819,14 @@ class MobileAnalyticsExperienceResponse(BaseModel):
     cpu_core_buckets: List[MobileAnalyticsCountItem] = Field(default_factory=list)
     touch_points_buckets: List[MobileAnalyticsCountItem] = Field(default_factory=list)
     online_states: List[MobileAnalyticsCountItem] = Field(default_factory=list)
+    location_capture_events: int = 0
+    location_capture_sessions: int = 0
+    sessions_with_location: int = 0
+    sessions_without_location: int = 0
+    location_coverage_rate: float = 0.0
+    location_regions: List[MobileAnalyticsCountItem] = Field(default_factory=list)
+    location_time_zones: List[MobileAnalyticsCountItem] = Field(default_factory=list)
+    location_accuracy_buckets: List[MobileAnalyticsCountItem] = Field(default_factory=list)
 
 
 class MobileAnalyticsSessionSummary(BaseModel):
@@ -1834,6 +1842,8 @@ class MobileAnalyticsSessionSummary(BaseModel):
     latest_page: Optional[str] = None
     latest_error_code: Optional[str] = None
     latest_feedback_reason: Optional[str] = None
+    latest_location_label: Optional[str] = None
+    latest_location_time_zone: Optional[str] = None
     pages: List[str] = Field(default_factory=list)
     events: List[str] = Field(default_factory=list)
 
@@ -1852,6 +1862,8 @@ class MobileAnalyticsSessionEventItem(BaseModel):
     trigger_reason: Optional[str] = None
     reason_label: Optional[str] = None
     dwell_ms: Optional[int] = None
+    location_label: Optional[str] = None
+    location_time_zone: Optional[str] = None
 
 
 class MobileAnalyticsSessionsResponse(BaseModel):

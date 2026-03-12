@@ -262,6 +262,18 @@ function compactText(value: string, maxLength = 88): string {
   return `${value.slice(0, maxLength - 1)}…`;
 }
 
+function buildLocationBadgeLabel(locationLabel?: string | null, timeZone?: string | null): string {
+  const label = valueOrEmpty(locationLabel);
+  if (label) return `近似位置 ${compactText(label, 42)}`;
+  const tz = valueOrEmpty(timeZone);
+  if (tz) return `时区 ${tz}`;
+  return "位置缺省";
+}
+
+function hasLocationContext(locationLabel?: string | null, timeZone?: string | null): boolean {
+  return Boolean(valueOrEmpty(locationLabel) || valueOrEmpty(timeZone));
+}
+
 function formatCompareId(value?: string | null): string {
   const raw = valueOrEmpty(value);
   if (!raw) return "";
@@ -353,12 +365,17 @@ function describeTimelineEvent(item: MobileAnalyticsSessionEventItem): SessionTi
   if (item.error_code) pushUniqueLabel(meta, `错误 ${item.error_code}`);
   if (item.reason_label) pushUniqueLabel(meta, `反馈 ${feedbackReasonLabel(item.reason_label)}`);
   if (item.trigger_reason) pushUniqueLabel(meta, `触发 ${feedbackTriggerLabel(item.trigger_reason)}`);
+  if (hasLocationContext(item.location_label, item.location_time_zone)) {
+    pushUniqueLabel(meta, buildLocationBadgeLabel(item.location_label, item.location_time_zone));
+  }
 
   pushUniqueLabel(rawMeta, `event ${eventName || "unknown"}`);
   if (item.page) pushUniqueLabel(rawMeta, `page ${valueOrEmpty(item.page)}`);
   if (item.route) pushUniqueLabel(rawMeta, `route ${valueOrEmpty(item.route)}`);
   if (item.stage) pushUniqueLabel(rawMeta, `stage ${valueOrEmpty(item.stage)}`);
   if (item.error_code) pushUniqueLabel(rawMeta, `error ${item.error_code}`);
+  if (item.location_label) pushUniqueLabel(rawMeta, `location ${valueOrEmpty(item.location_label)}`);
+  if (item.location_time_zone) pushUniqueLabel(rawMeta, `tz ${valueOrEmpty(item.location_time_zone)}`);
 
   switch (eventName) {
     case "page_view": {
@@ -516,9 +533,13 @@ function describeTimelineEvent(item: MobileAnalyticsSessionEventItem): SessionTi
       return {
         eventName,
         phase: "action",
-        title: "用户允许读取位置",
+        title: "记录用户近似位置",
         flowLabel: "允许位置授权",
-        summary: detail || "已记录近似位置，后续内容可以把它作为呈现依据之一。",
+        summary:
+          detail ||
+          (hasLocationContext(item.location_label, item.location_time_zone)
+            ? `${buildLocationBadgeLabel(item.location_label, item.location_time_zone)}，后续分析与呈现都可以把它作为上下文。`
+            : "已记录近似位置，后续内容可以把它作为呈现依据之一。"),
         significant: true,
         meta,
         rawMeta,
@@ -1124,6 +1145,10 @@ export default function MobileAnalyticsDashboard() {
     sessionDetail.data && sessionDetail.data.timeline.length > 0
       ? buildSessionTimelinePresentation(sessionDetail.data.timeline)
       : null;
+  const selectedSessionSummary =
+    (sessionDetail.data?.items.find((item) => item.session_id === sessionDetail.data?.selected_session_id) ??
+      sessionList.data?.items.find((item) => item.session_id === sessionDetail.data?.selected_session_id)) ||
+    null;
 
   return (
     <section className="mt-8 space-y-6">
@@ -1472,6 +1497,63 @@ export default function MobileAnalyticsDashboard() {
                 </div>
 
                 <div>
+                  <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-black/42">地理识别</div>
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    <article className="rounded-[20px] border border-black/10 bg-[#f7f8fb] px-4 py-4">
+                      <div className="text-[12px] text-black/48">已识别位置会话</div>
+                      <div className="mt-2 text-[24px] font-semibold tracking-[-0.03em] text-black/86">
+                        {formatNumber(experience.data.sessions_with_location)}
+                      </div>
+                      <div className="mt-2 text-[12px] text-black/52">
+                        授权成功会话 {formatNumber(experience.data.location_capture_sessions)}
+                      </div>
+                    </article>
+                    <article className="rounded-[20px] border border-black/10 bg-[#f7f8fb] px-4 py-4">
+                      <div className="text-[12px] text-black/48">位置覆盖率</div>
+                      <div className="mt-2 text-[24px] font-semibold tracking-[-0.03em] text-black/86">
+                        {formatPercent(experience.data.location_coverage_rate)}
+                      </div>
+                      <div className="mt-2 text-[12px] text-black/52">
+                        缺省会话 {formatNumber(experience.data.sessions_without_location)}
+                      </div>
+                    </article>
+                    <article className="rounded-[20px] border border-black/10 bg-[#f7f8fb] px-4 py-4">
+                      <div className="text-[12px] text-black/48">位置授权事件</div>
+                      <div className="mt-2 text-[24px] font-semibold tracking-[-0.03em] text-black/86">
+                        {formatNumber(experience.data.location_capture_events)}
+                      </div>
+                      <div className="mt-2 text-[12px] text-black/52">
+                        仅用户同意后才会出现
+                      </div>
+                    </article>
+                    <article className="rounded-[20px] border border-black/10 bg-[#f7f8fb] px-4 py-4">
+                      <div className="text-[12px] text-black/48">位置缺省保留</div>
+                      <div className="mt-2 text-[24px] font-semibold tracking-[-0.03em] text-black/86">
+                        {formatNumber(experience.data.sessions_without_location)}
+                      </div>
+                      <div className="mt-2 text-[12px] text-black/52">
+                        未授权或未上报时保持为空
+                      </div>
+                    </article>
+                  </div>
+
+                  <div className="mt-4 grid gap-4 md:grid-cols-3">
+                    <div>
+                      <div className="mb-3 text-[12px] text-black/48">近似区域</div>
+                      {renderCountList(experience.data.location_regions, "amber")}
+                    </div>
+                    <div>
+                      <div className="mb-3 text-[12px] text-black/48">时区分布</div>
+                      {renderCountList(experience.data.location_time_zones)}
+                    </div>
+                    <div>
+                      <div className="mb-3 text-[12px] text-black/48">定位精度</div>
+                      {renderCountList(experience.data.location_accuracy_buckets)}
+                    </div>
+                  </div>
+                </div>
+
+                <div>
                   <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-black/42">环境切片</div>
                   <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                     <div>
@@ -1757,6 +1839,17 @@ export default function MobileAnalyticsDashboard() {
                   <div className="mt-2 text-[13px] text-black/60">
                     {categoryLabel(item.category)} · {item.owner_label || "匿名设备"} · {formatDateTime(item.last_event_at)}
                   </div>
+                  <div className="mt-2">
+                    <span
+                      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] ${
+                        hasLocationContext(item.latest_location_label, item.latest_location_time_zone)
+                          ? "border-[#d6e6ff] bg-[#f4f8ff] text-[#305a98]"
+                          : "border-black/10 bg-white text-black/48"
+                      }`}
+                    >
+                      {buildLocationBadgeLabel(item.latest_location_label, item.latest_location_time_zone)}
+                    </span>
+                  </div>
                   <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-black/52">
                     <span>事件 {formatNumber(item.event_count)}</span>
                     <span>时长 {formatDurationSeconds(item.duration_seconds)}</span>
@@ -1786,6 +1879,23 @@ export default function MobileAnalyticsDashboard() {
                     {sessionDetail.data.selected_compare_id ? <span>compare {sessionDetail.data.selected_compare_id}</span> : null}
                     <span>事件数 {formatNumber(sessionDetail.data.timeline.length)}</span>
                   </div>
+                  <div className="mt-3">
+                    <span
+                      className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-medium ${
+                        hasLocationContext(
+                          selectedSessionSummary?.latest_location_label,
+                          selectedSessionSummary?.latest_location_time_zone,
+                        )
+                          ? "border-[#d6e6ff] bg-[#f4f8ff] text-[#305a98]"
+                          : "border-black/10 bg-[#f7f8fb] text-black/48"
+                      }`}
+                    >
+                      {buildLocationBadgeLabel(
+                        selectedSessionSummary?.latest_location_label,
+                        selectedSessionSummary?.latest_location_time_zone,
+                      )}
+                    </span>
+                  </div>
                 </div>
                 {sessionTimelinePresentation ? (
                   <div className={`rounded-[24px] border px-4 py-4 ${phaseSectionClasses(sessionTimelinePresentation.heroPhase)}`}>
@@ -1803,6 +1913,24 @@ export default function MobileAnalyticsDashboard() {
                         <span className={`h-2.5 w-2.5 rounded-full ${phaseDotClass(sessionTimelinePresentation.heroPhase)}`} />
                         {phaseLabel(sessionTimelinePresentation.heroPhase)}
                       </div>
+                    </div>
+
+                    <div className="mt-3">
+                      <span
+                        className={`inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-medium ${
+                          hasLocationContext(
+                            selectedSessionSummary?.latest_location_label,
+                            selectedSessionSummary?.latest_location_time_zone,
+                          )
+                            ? "border-[#d6e6ff] bg-white/80 text-[#305a98]"
+                            : "border-black/10 bg-white/70 text-black/48"
+                        }`}
+                      >
+                        {buildLocationBadgeLabel(
+                          selectedSessionSummary?.latest_location_label,
+                          selectedSessionSummary?.latest_location_time_zone,
+                        )}
+                      </span>
                     </div>
 
                     {sessionTimelinePresentation.flowSteps.length > 0 ? (

@@ -1052,6 +1052,14 @@ export type MobileAnalyticsExperience = {
   cpu_core_buckets: MobileAnalyticsCountItem[];
   touch_points_buckets: MobileAnalyticsCountItem[];
   online_states: MobileAnalyticsCountItem[];
+  location_capture_events: number;
+  location_capture_sessions: number;
+  sessions_with_location: number;
+  sessions_without_location: number;
+  location_coverage_rate: number;
+  location_regions: MobileAnalyticsCountItem[];
+  location_time_zones: MobileAnalyticsCountItem[];
+  location_accuracy_buckets: MobileAnalyticsCountItem[];
 };
 
 export type MobileAnalyticsSessionSummary = {
@@ -1067,6 +1075,8 @@ export type MobileAnalyticsSessionSummary = {
   latest_page?: string | null;
   latest_error_code?: string | null;
   latest_feedback_reason?: string | null;
+  latest_location_label?: string | null;
+  latest_location_time_zone?: string | null;
   pages: string[];
   events: string[];
 };
@@ -1085,6 +1095,8 @@ export type MobileAnalyticsSessionEventItem = {
   trigger_reason?: string | null;
   reason_label?: string | null;
   dwell_ms?: number | null;
+  location_label?: string | null;
+  location_time_zone?: string | null;
 };
 
 export type MobileAnalyticsSessions = {

@@ -125,6 +125,19 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 props_json='{"browser_family":"safari","os_family":"ios","device_type":"phone","viewport_bucket":"md","network_type":"4g","lang":"zh-CN"}',
             ),
             MobileClientEvent(
+                event_id="evt-006b",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="location_context_captured",
+                page="mobile_compare",
+                route="/m/compare",
+                source="mobile_profile_location_consent:shampoo",
+                category="shampoo",
+                created_at="2026-03-12T01:00:05.500000Z",
+                props_json='{"detail":"气候微调授权成功 · 近似位置 31.230, 121.470 +-1200m · Asia/Shanghai","location_permission":"granted","location_source":"browser_geolocation","location_precision":"coarse","location_latitude":31.23,"location_longitude":121.47,"location_accuracy_m":1200,"location_time_zone":"Asia/Shanghai","location_label":"31.230, 121.470 +-1200m · Asia/Shanghai"}',
+            ),
+            MobileClientEvent(
                 event_id="evt-007",
                 owner_type="device",
                 owner_id="owner-alpha",
@@ -136,7 +149,7 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 category="shampoo",
                 compare_id="cmp-1",
                 created_at="2026-03-12T01:00:06.000000Z",
-                props_json='{"run_mode":"with_upload","selected_library_count":1,"total_count":2}',
+                props_json='{"run_mode":"with_upload","selected_library_count":1,"total_count":2,"location_permission":"granted","location_source":"browser_geolocation","location_precision":"coarse","location_latitude":31.23,"location_longitude":121.47,"location_accuracy_m":1200,"location_time_zone":"Asia/Shanghai","location_label":"31.230, 121.470 +-1200m · Asia/Shanghai"}',
             ),
             MobileClientEvent(
                 event_id="evt-008",
@@ -209,7 +222,7 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 category="shampoo",
                 compare_id="cmp-1",
                 created_at="2026-03-12T01:00:16.000000Z",
-                props_json='{"decision":"keep","confidence":0.88}',
+                props_json='{"decision":"keep","confidence":0.88,"location_permission":"granted","location_source":"browser_geolocation","location_precision":"coarse","location_latitude":31.23,"location_longitude":121.47,"location_accuracy_m":1200,"location_time_zone":"Asia/Shanghai","location_label":"31.230, 121.470 +-1200m · Asia/Shanghai"}',
             ),
             MobileClientEvent(
                 event_id="evt-013",
@@ -279,6 +292,19 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 props_json="{}",
             ),
             MobileClientEvent(
+                event_id="evt-017b",
+                owner_type="device",
+                owner_id="owner-beta",
+                session_id="sess-2",
+                name="location_context_captured",
+                page="mobile_compare",
+                route="/m/compare",
+                source="mobile_profile_location_consent:bodywash",
+                category="bodywash",
+                created_at="2026-03-12T02:00:04.500000Z",
+                props_json='{"detail":"气候微调授权成功 · 近似位置 35.680, 139.760 +-4800m · Asia/Tokyo","location_permission":"granted","location_source":"browser_geolocation","location_precision":"coarse","location_latitude":35.68,"location_longitude":139.76,"location_accuracy_m":4800,"location_time_zone":"Asia/Tokyo","location_label":"35.680, 139.760 +-4800m · Asia/Tokyo"}',
+            ),
+            MobileClientEvent(
                 event_id="evt-018",
                 owner_type="device",
                 owner_id="owner-beta",
@@ -293,7 +319,7 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 error_detail="upload gateway timeout",
                 http_status=504,
                 created_at="2026-03-12T02:00:05.000000Z",
-                props_json='{"trigger_reason":"compare_upload_fail","stage_label":"上传当前在用产品"}',
+                props_json='{"trigger_reason":"compare_upload_fail","stage_label":"上传当前在用产品","location_permission":"granted","location_source":"browser_geolocation","location_precision":"coarse","location_latitude":35.68,"location_longitude":139.76,"location_accuracy_m":4800,"location_time_zone":"Asia/Tokyo","location_label":"35.680, 139.760 +-4800m · Asia/Tokyo"}',
             ),
             MobileClientEvent(
                 event_id="evt-019",
@@ -463,7 +489,7 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 category="shampoo",
                 compare_id="cmp-1",
                 created_at="2026-03-12T01:00:18.000000Z",
-                props_json='{"dwell_ms":18200,"max_depth_percent":100,"exit_type":"unmount"}',
+                props_json='{"dwell_ms":18200,"max_depth_percent":100,"exit_type":"unmount","location_permission":"granted","location_source":"browser_geolocation","location_precision":"coarse","location_latitude":31.23,"location_longitude":121.47,"location_accuracy_m":1200,"location_time_zone":"Asia/Shanghai","location_label":"31.230, 121.470 +-1200m · Asia/Shanghai"}',
             ),
             MobileClientEvent(
                 event_id="evt-031",
@@ -790,8 +816,11 @@ def test_mobile_analytics_errors_feedback_and_sessions(mobile_analytics_client: 
     assert sessions_payload["selected_compare_id"] == "cmp-1"
     assert sessions_payload["selected_session_id"] == "sess-1"
     assert sessions_payload["total"] >= 1
+    assert sessions_payload["items"][0]["latest_location_label"] == "31.230, 121.470 +-1200m · Asia/Shanghai"
+    assert sessions_payload["items"][0]["latest_location_time_zone"] == "Asia/Shanghai"
     assert any(item["name"] == "compare_run_success" for item in sessions_payload["timeline"])
     assert any(item["name"] == "compare_result_view" for item in sessions_payload["timeline"])
+    assert any(item["location_label"] == "31.230, 121.470 +-1200m · Asia/Shanghai" for item in sessions_payload["timeline"])
 
 
 def test_mobile_analytics_experience(mobile_analytics_client: TestClient):
@@ -872,3 +901,17 @@ def test_mobile_analytics_experience(mobile_analytics_client: TestClient):
     assert touch_counts["5_plus"] == 4
     online_counts = {item["key"]: item["count"] for item in payload["online_states"]}
     assert online_counts["online"] == 4
+    assert payload["location_capture_events"] == 2
+    assert payload["location_capture_sessions"] == 2
+    assert payload["sessions_with_location"] == 2
+    assert payload["sessions_without_location"] == 3
+    assert payload["location_coverage_rate"] == 0.4
+    region_counts = {item["key"]: item["count"] for item in payload["location_regions"]}
+    assert region_counts["31.2, 121.5 · Asia/Shanghai"] == 1
+    assert region_counts["35.7, 139.8 · Asia/Tokyo"] == 1
+    timezone_counts = {item["key"]: item["count"] for item in payload["location_time_zones"]}
+    assert timezone_counts["Asia/Shanghai"] == 1
+    assert timezone_counts["Asia/Tokyo"] == 1
+    accuracy_counts = {item["key"]: item["count"] for item in payload["location_accuracy_buckets"]}
+    assert accuracy_counts["1-3km"] == 1
+    assert accuracy_counts["3-10km"] == 1
