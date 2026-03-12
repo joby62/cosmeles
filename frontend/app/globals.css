@@ -1296,18 +1296,10 @@ html[data-nav-open="1"] #app-main{
 
 .m-choose-head-note {
   margin-top: 12px;
-  max-width: 21rem;
-  font-size: 16px;
-  line-height: 1.56;
+  max-width: 18rem;
+  font-size: 15px;
+  line-height: 1.52;
   color: var(--m-choose-card-note);
-}
-
-.m-choose-head-context {
-  margin-top: 12px;
-  font-size: 13px;
-  font-weight: 570;
-  letter-spacing: -0.01em;
-  color: var(--m-choose-card-meta);
 }
 
 .m-choose-recent {
@@ -1603,7 +1595,8 @@ html[data-nav-open="1"] #app-main{
   }
 
   .m-choose-head-note {
-    font-size: 15px;
+    max-width: 17rem;
+    font-size: 14px;
   }
 
   .m-choose-history-title {

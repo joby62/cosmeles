@@ -894,8 +894,7 @@ export default function MobileChoose() {
     : selected.focusAudience;
   const remainingSteps = selectedDraft ? selectedDraft.total - selectedDraft.answered : 0;
   const chooseTitle = "先选最像你的一类";
-  const chooseNote = "先凭直觉选一类，后面的题会越答越准。";
-  const chooseContext = `现在先从${selected.zh}开始，更适合${selectedFocusAudience}的人。`;
+  const chooseNote = `先从${selected.zh}开始，更适合${selectedFocusAudience}的人。`;
   const historyKicker = "上次记录";
   const historyTitle = selectedDraft
     ? "这次判断可以直接续上"
@@ -924,7 +923,6 @@ export default function MobileChoose() {
           <div className="m-choose-head-chip">选择测配</div>
           <h1 className="m-choose-head-title">{chooseTitle}</h1>
           <p className="m-choose-head-note">{chooseNote}</p>
-          <p className="m-choose-head-context">{chooseContext}</p>
         </div>
 
         <div className="m-choose-dial-wrap">
