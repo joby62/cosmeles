@@ -2,15 +2,18 @@
 
 import { useState } from "react";
 import { upsertMobileBagItem } from "@/lib/api";
+import { trackMobileEvent } from "@/lib/mobileAnalytics";
 
 export default function AddToBagButton({
   productId,
   className = "",
   compact = false,
+  analyticsProps,
 }: {
   productId: string;
   className?: string;
   compact?: boolean;
+  analyticsProps?: Record<string, unknown>;
 }) {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
@@ -33,9 +36,19 @@ export default function AddToBagButton({
           try {
             await upsertMobileBagItem({ product_id: pid, quantity: 1 });
             setDone(true);
+            void trackMobileEvent("bag_add_success", {
+              product_id: pid,
+              ...analyticsProps,
+            });
             window.setTimeout(() => setDone(false), 1600);
           } catch (err) {
-            setError(err instanceof Error ? err.message : String(err));
+            const detail = err instanceof Error ? err.message : String(err);
+            setError(detail);
+            void trackMobileEvent("bag_add_fail", {
+              product_id: pid,
+              detail,
+              ...analyticsProps,
+            });
           } finally {
             setBusy(false);
           }

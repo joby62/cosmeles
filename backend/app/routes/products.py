@@ -329,6 +329,8 @@ ANALYTICS_CTA_COMPLETION_LABELS: dict[str, str] = {
     "wiki_upload_cta_click": "点击上传一键分析",
     "wiki_category_ingredient_click": "点开成分词条",
     "wiki_category_choose_click": "进入该品类挑选",
+    "profile_result_view": "完成测配结果",
+    "bag_add_success": "加入购物袋",
     "product_showcase_continue_upload_click": "继续上传解析",
     "product_showcase_governance_click": "返回产品治理",
 }
@@ -1052,6 +1054,8 @@ def get_mobile_analytics_experience(
             "compare_result_cta_land",
             "compare_run_start",
             "wiki_upload_cta_click",
+            "profile_result_view",
+            "bag_add_success",
             "product_showcase_continue_upload_click",
             "product_showcase_governance_click",
         ],

@@ -89,6 +89,8 @@ const EVENT_GROUPS = [
       "wiki_upload_cta_click",
       "wiki_category_ingredient_click",
       "wiki_category_choose_click",
+      "profile_result_view",
+      "bag_add_success",
       "product_showcase_continue_upload_click",
       "product_showcase_governance_click",
       "feedback_prompt_show",
@@ -158,6 +160,8 @@ const ANALYTIC_QUESTIONS = [
       "compare_run_start",
       "wiki_upload_cta_click",
       "wiki_category_choose_click",
+      "profile_result_view",
+      "bag_add_success",
       "product_showcase_continue_upload_click",
     ],
   },
@@ -191,9 +195,9 @@ const ANALYTIC_QUESTIONS = [
 
 const DEFERRED_SIGNALS = [
   {
-    title: "更细的业务完成动作",
-    reason: "现在已经能看到落地后的关键动作，但还没继续追到更深业务结果，例如产品页后续是否加入购物袋、百科后是否完成收藏或回流。",
-    items: ["result_to_product_add_to_bag", "wiki_detail_follow_save", "profile_finish_after_choose"],
+    title: "更深的业务留存动作",
+    reason: "现在已经能看到加入购物袋和完成测配结果，但还没继续追到收藏、复购、二次对比等更深留存动作。",
+    items: ["wiki_detail_follow_save", "compare_again_after_result", "bag_to_checkout_intent"],
   },
   {
     title: "设备细颗粒环境",

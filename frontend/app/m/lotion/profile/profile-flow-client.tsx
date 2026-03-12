@@ -13,6 +13,7 @@ import {
   LOTION_LAST_RESULT_QUERY_KEY,
   LOTION_PROFILE_DRAFT_KEY,
 } from "@/lib/mobile/lotionFlowStorage";
+import { applyResultCtaAttribution, parseResultCtaAttribution } from "@/lib/mobile/resultCtaAttribution";
 
 type StepKey = keyof LotionSignals;
 type OptionValue = "A" | "B" | "C" | "D" | "E";
@@ -117,6 +118,7 @@ export default function LotionProfileFlowClient() {
 
   const urlStep = useMemo(() => parseStep(searchParams.get("step")), [searchParams]);
   const urlSignals = useMemo(() => signalsFromSearchParams(searchParams), [searchParams]);
+  const resultAttribution = useMemo(() => parseResultCtaAttribution(searchParams), [searchParams]);
   const signals = urlSignals;
   const answeredChoices = (["q1", "q2", "q3", "q4", "q5"] as StepKey[])
     .map((key) => {
@@ -148,13 +150,14 @@ export default function LotionProfileFlowClient() {
       }
       const nextIdx = firstUnansweredIndex(restored);
       const qp = toLotionSearchParams(restored);
+      applyResultCtaAttribution(qp, resultAttribution);
       qp.set("step", String(nextIdx + 1));
       router.replace(`/m/lotion/profile?${qp.toString()}`, { scroll: false });
       window.requestAnimationFrame(() => scrollToStep(nextIdx, "auto"));
     } catch {
       window.localStorage.removeItem(LOTION_PROFILE_DRAFT_KEY);
     }
-  }, [router, scrollToStep, signals.q1, signals.q2, signals.q3, signals.q4, signals.q5]);
+  }, [resultAttribution, router, scrollToStep, signals.q1, signals.q2, signals.q3, signals.q4, signals.q5]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -205,11 +208,12 @@ export default function LotionProfileFlowClient() {
 
       const merged = normalizeSequentialSignals(next);
       const qp = toLotionSearchParams(merged);
+      applyResultCtaAttribution(qp, resultAttribution);
 
       if (isCompleteLotionSignals(merged)) {
         if (typeof window !== "undefined") {
           window.localStorage.removeItem(LOTION_PROFILE_DRAFT_KEY);
-          window.localStorage.setItem(LOTION_LAST_RESULT_QUERY_KEY, qp.toString());
+          window.localStorage.setItem(LOTION_LAST_RESULT_QUERY_KEY, toLotionSearchParams(merged).toString());
         }
         router.push(`/m/lotion/resolve?${qp.toString()}`);
         return;
@@ -220,18 +224,19 @@ export default function LotionProfileFlowClient() {
       router.replace(`/m/lotion/profile?${qp.toString()}`, { scroll: false });
       window.setTimeout(() => scrollToStep(nextIndex, "smooth"), 48);
     },
-    [router, scrollToStep, signals],
+    [resultAttribution, router, scrollToStep, signals],
   );
 
   const resetAll = useCallback(() => {
     const qp = new URLSearchParams();
+    applyResultCtaAttribution(qp, resultAttribution);
     qp.set("step", "1");
     if (typeof window !== "undefined") {
       window.localStorage.removeItem(LOTION_PROFILE_DRAFT_KEY);
     }
     router.replace(`/m/lotion/profile?${qp.toString()}`, { scroll: false });
     window.setTimeout(() => scrollToStep(0, "smooth"), 24);
-  }, [router, scrollToStep]);
+  }, [resultAttribution, router, scrollToStep]);
 
   return (
     <section className="pb-8">

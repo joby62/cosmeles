@@ -13,6 +13,7 @@ import {
   BODYWASH_LAST_RESULT_QUERY_KEY,
   BODYWASH_PROFILE_DRAFT_KEY,
 } from "@/lib/mobile/bodywashFlowStorage";
+import { applyResultCtaAttribution, parseResultCtaAttribution } from "@/lib/mobile/resultCtaAttribution";
 
 type StepKey = keyof BodyWashSignals;
 type OptionValue = "A" | "B" | "C" | "D";
@@ -114,6 +115,7 @@ export default function BodyWashProfileFlowClient() {
 
   const urlStep = useMemo(() => parseStep(searchParams.get("step")), [searchParams]);
   const urlSignals = useMemo(() => signalsFromSearchParams(searchParams), [searchParams]);
+  const resultAttribution = useMemo(() => parseResultCtaAttribution(searchParams), [searchParams]);
   const signals = urlSignals;
   const answeredChoices = (["q1", "q2", "q3", "q4", "q5"] as StepKey[])
     .map((key) => {
@@ -145,13 +147,14 @@ export default function BodyWashProfileFlowClient() {
       }
       const nextIdx = firstUnansweredIndex(restored);
       const qp = toBodyWashSearchParams(restored);
+      applyResultCtaAttribution(qp, resultAttribution);
       qp.set("step", String(nextIdx + 1));
       router.replace(`/m/bodywash/profile?${qp.toString()}`, { scroll: false });
       window.requestAnimationFrame(() => scrollToStep(nextIdx, "auto"));
     } catch {
       window.localStorage.removeItem(BODYWASH_PROFILE_DRAFT_KEY);
     }
-  }, [router, scrollToStep, signals.q1, signals.q2, signals.q3, signals.q4, signals.q5]);
+  }, [resultAttribution, router, scrollToStep, signals.q1, signals.q2, signals.q3, signals.q4, signals.q5]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -202,11 +205,12 @@ export default function BodyWashProfileFlowClient() {
 
       const merged = normalizeSequentialSignals(next);
       const qp = toBodyWashSearchParams(merged);
+      applyResultCtaAttribution(qp, resultAttribution);
 
       if (isReadyBodyWashResult(merged)) {
         if (typeof window !== "undefined") {
           window.localStorage.removeItem(BODYWASH_PROFILE_DRAFT_KEY);
-          window.localStorage.setItem(BODYWASH_LAST_RESULT_QUERY_KEY, qp.toString());
+          window.localStorage.setItem(BODYWASH_LAST_RESULT_QUERY_KEY, toBodyWashSearchParams(merged).toString());
         }
         router.push(`/m/bodywash/resolve?${qp.toString()}`);
         return;
@@ -217,18 +221,19 @@ export default function BodyWashProfileFlowClient() {
       router.replace(`/m/bodywash/profile?${qp.toString()}`, { scroll: false });
       window.setTimeout(() => scrollToStep(nextIndex, "smooth"), 48);
     },
-    [router, scrollToStep, signals],
+    [resultAttribution, router, scrollToStep, signals],
   );
 
   const resetAll = useCallback(() => {
     const qp = new URLSearchParams();
+    applyResultCtaAttribution(qp, resultAttribution);
     qp.set("step", "1");
     if (typeof window !== "undefined") {
       window.localStorage.removeItem(BODYWASH_PROFILE_DRAFT_KEY);
     }
     router.replace(`/m/bodywash/profile?${qp.toString()}`, { scroll: false });
     window.setTimeout(() => scrollToStep(0, "smooth"), 24);
-  }, [router, scrollToStep]);
+  }, [resultAttribution, router, scrollToStep]);
 
   return (
     <section className="pb-8">

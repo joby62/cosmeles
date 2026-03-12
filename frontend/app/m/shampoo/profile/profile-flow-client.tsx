@@ -12,6 +12,7 @@ import {
   SHAMPOO_LAST_RESULT_QUERY_KEY,
   SHAMPOO_PROFILE_DRAFT_KEY,
 } from "@/lib/mobile/shampooFlowStorage";
+import { applyResultCtaAttribution, parseResultCtaAttribution } from "@/lib/mobile/resultCtaAttribution";
 
 type StepKey = keyof ShampooSignals;
 type Option = { value: "A" | "B" | "C" | "D"; label: string; sub: string };
@@ -90,6 +91,7 @@ export default function ShampooProfilePage() {
 
   const urlStep = useMemo(() => parseStep(searchParams.get("step")), [searchParams]);
   const urlSignals = useMemo(() => signalsFromSearchParams(searchParams), [searchParams]);
+  const resultAttribution = useMemo(() => parseResultCtaAttribution(searchParams), [searchParams]);
   const signals = urlSignals;
   const answeredChoices = (["q1", "q2", "q3"] as StepKey[])
     .map((key) => {
@@ -121,13 +123,14 @@ export default function ShampooProfilePage() {
       }
       const nextIdx = firstUnansweredIndex(restored);
       const qp = toSignalSearchParams(restored);
+      applyResultCtaAttribution(qp, resultAttribution);
       qp.set("step", String(nextIdx + 1));
       router.replace(`/m/shampoo/profile?${qp.toString()}`, { scroll: false });
       window.requestAnimationFrame(() => scrollToStep(nextIdx, "auto"));
     } catch {
       window.localStorage.removeItem(SHAMPOO_PROFILE_DRAFT_KEY);
     }
-  }, [router, scrollToStep, urlSignals.q1, urlSignals.q2, urlSignals.q3]);
+  }, [resultAttribution, router, scrollToStep, urlSignals.q1, urlSignals.q2, urlSignals.q3]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -164,11 +167,12 @@ export default function ShampooProfilePage() {
 
       const merged = normalizeSequentialSignals(next);
       const qp = toSignalSearchParams(merged);
+      applyResultCtaAttribution(qp, resultAttribution);
 
       if (isReadyShampooResult(merged)) {
         if (typeof window !== "undefined") {
           window.localStorage.removeItem(SHAMPOO_PROFILE_DRAFT_KEY);
-          window.localStorage.setItem(SHAMPOO_LAST_RESULT_QUERY_KEY, qp.toString());
+          window.localStorage.setItem(SHAMPOO_LAST_RESULT_QUERY_KEY, toSignalSearchParams(merged).toString());
         }
         router.push(`/m/shampoo/resolve?${qp.toString()}`);
         return;
@@ -179,18 +183,19 @@ export default function ShampooProfilePage() {
       router.replace(`/m/shampoo/profile?${qp.toString()}`, { scroll: false });
       window.setTimeout(() => scrollToStep(nextIndex, "smooth"), 48);
     },
-    [router, scrollToStep, signals],
+    [resultAttribution, router, scrollToStep, signals],
   );
 
   const resetAll = useCallback(() => {
     const qp = new URLSearchParams();
+    applyResultCtaAttribution(qp, resultAttribution);
     qp.set("step", "1");
     if (typeof window !== "undefined") {
       window.localStorage.removeItem(SHAMPOO_PROFILE_DRAFT_KEY);
     }
     router.replace(`/m/shampoo/profile?${qp.toString()}`, { scroll: false });
     window.setTimeout(() => scrollToStep(0, "smooth"), 24);
-  }, [router, scrollToStep]);
+  }, [resultAttribution, router, scrollToStep]);
 
   return (
     <section className="pb-8">

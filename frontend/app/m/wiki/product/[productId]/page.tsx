@@ -266,7 +266,18 @@ export default async function MobileWikiProductDetailPage({
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            <AddToBagButton productId={product.id} />
+            <AddToBagButton
+              productId={product.id}
+              analyticsProps={{
+                page: "wiki_product_detail",
+                route: `/m/wiki/product/${product.id}`,
+                source: resultCta && fromCompareId ? "m_compare_result" : "wiki_product_detail",
+                category: product.category,
+                product_id: product.id,
+                result_cta: resultCta || undefined,
+                from_compare_id: fromCompareId || undefined,
+              }}
+            />
             <Link
               href={`/product/${encodeURIComponent(product.id)}`}
               className="inline-flex h-10 items-center rounded-full border border-black/15 bg-white px-4 text-[12px] font-semibold text-black/75 active:bg-black/[0.03]"

@@ -13,6 +13,7 @@ import {
   CONDITIONER_LAST_RESULT_QUERY_KEY,
   CONDITIONER_PROFILE_DRAFT_KEY,
 } from "@/lib/mobile/conditionerFlowStorage";
+import { applyResultCtaAttribution, parseResultCtaAttribution } from "@/lib/mobile/resultCtaAttribution";
 
 type StepKey = keyof ConditionerSignals;
 type OptionValue = "A" | "B" | "C";
@@ -89,6 +90,7 @@ export default function ConditionerProfileFlowClient() {
 
   const urlStep = useMemo(() => parseStep(searchParams.get("step")), [searchParams]);
   const urlSignals = useMemo(() => signalsFromSearchParams(searchParams), [searchParams]);
+  const resultAttribution = useMemo(() => parseResultCtaAttribution(searchParams), [searchParams]);
   const signals = urlSignals;
   const answeredChoices = (["c_q1", "c_q2", "c_q3"] as StepKey[])
     .map((key) => {
@@ -120,13 +122,14 @@ export default function ConditionerProfileFlowClient() {
       }
       const nextIdx = firstUnansweredIndex(restored);
       const qp = toConditionerSearchParams(restored);
+      applyResultCtaAttribution(qp, resultAttribution);
       qp.set("step", String(nextIdx + 1));
       router.replace(`/m/conditioner/profile?${qp.toString()}`, { scroll: false });
       window.requestAnimationFrame(() => scrollToStep(nextIdx, "auto"));
     } catch {
       window.localStorage.removeItem(CONDITIONER_PROFILE_DRAFT_KEY);
     }
-  }, [router, scrollToStep, signals.c_q1, signals.c_q2, signals.c_q3]);
+  }, [resultAttribution, router, scrollToStep, signals.c_q1, signals.c_q2, signals.c_q3]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -164,11 +167,12 @@ export default function ConditionerProfileFlowClient() {
 
       const merged = normalizeSequentialSignals(next);
       const qp = toConditionerSearchParams(merged);
+      applyResultCtaAttribution(qp, resultAttribution);
 
       if (isCompleteConditionerSignals(merged)) {
         if (typeof window !== "undefined") {
           window.localStorage.removeItem(CONDITIONER_PROFILE_DRAFT_KEY);
-          window.localStorage.setItem(CONDITIONER_LAST_RESULT_QUERY_KEY, qp.toString());
+          window.localStorage.setItem(CONDITIONER_LAST_RESULT_QUERY_KEY, toConditionerSearchParams(merged).toString());
         }
         router.push(`/m/conditioner/resolve?${qp.toString()}`);
         return;
@@ -179,18 +183,19 @@ export default function ConditionerProfileFlowClient() {
       router.replace(`/m/conditioner/profile?${qp.toString()}`, { scroll: false });
       window.setTimeout(() => scrollToStep(nextIndex, "smooth"), 48);
     },
-    [router, scrollToStep, signals],
+    [resultAttribution, router, scrollToStep, signals],
   );
 
   const resetAll = useCallback(() => {
     const qp = new URLSearchParams();
+    applyResultCtaAttribution(qp, resultAttribution);
     qp.set("step", "1");
     if (typeof window !== "undefined") {
       window.localStorage.removeItem(CONDITIONER_PROFILE_DRAFT_KEY);
     }
     router.replace(`/m/conditioner/profile?${qp.toString()}`, { scroll: false });
     window.setTimeout(() => scrollToStep(0, "smooth"), 24);
-  }, [router, scrollToStep]);
+  }, [resultAttribution, router, scrollToStep]);
 
   return (
     <section className="pb-8">

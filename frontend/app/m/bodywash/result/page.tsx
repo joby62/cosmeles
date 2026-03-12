@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import SelectionResultFlow from "@/components/mobile/SelectionResultFlow";
 import { fetchMobileSelectionFitExplanation, resolveMobileSelection } from "@/lib/api";
 import { formatRuntimeError } from "@/lib/error";
+import { applyResultCtaAttribution, parseResultCtaAttribution } from "@/lib/mobile/resultCtaAttribution";
 
 type Search = Record<string, string | string[] | undefined>;
 
@@ -35,9 +36,17 @@ export default async function BodyWashResultPage({
   searchParams?: Promise<Search>;
 }) {
   const raw = (await Promise.resolve(searchParams)) || {};
+  const attribution = parseResultCtaAttribution(raw);
+  const startParams = new URLSearchParams({ step: "1" });
+  applyResultCtaAttribution(startParams, attribution);
+  const startHref = `/m/bodywash/profile?${startParams.toString()}`;
+  const profileParams = new URLSearchParams();
+  applyResultCtaAttribution(profileParams, attribution);
+  const profileQuery = profileParams.toString();
+  const profileHref = profileQuery ? `/m/bodywash/profile?${profileQuery}` : "/m/bodywash/profile";
   const answers = parseAnswers(raw);
   if (!answers) {
-    redirect("/m/bodywash/profile");
+    redirect(profileHref);
   }
 
   let resolved: Awaited<ReturnType<typeof resolveMobileSelection>> | null = null;
@@ -64,13 +73,13 @@ export default async function BodyWashResultPage({
           </p>
           <div className="mt-4 flex flex-wrap gap-2.5">
             <Link
-              href="/m/bodywash/profile?step=1"
+              href={startHref}
               className="inline-flex h-10 items-center justify-center rounded-full bg-black px-4 text-[14px] font-semibold text-white"
             >
               重新开始
             </Link>
             <Link
-              href="/m/bodywash/profile"
+              href={profileHref}
               className="inline-flex h-10 items-center justify-center rounded-full border border-black/15 px-4 text-[14px] font-semibold text-black/78"
             >
               返回个人情况
@@ -93,11 +102,22 @@ export default async function BodyWashResultPage({
     <SelectionResultFlow
       titlePrefix="沐浴挑选"
       emptyImageLabel="Body Wash"
-      startHref="/m/bodywash/profile?step=1"
-      profileHref="/m/bodywash/profile"
+      startHref={startHref}
+      profileHref={profileHref}
       resolved={resolved}
       explanation={explanation?.item || null}
       explanationError={explanationError}
+      analyticsContext={
+        attribution
+          ? {
+              page: "selection_result",
+              route: "/m/bodywash/result",
+              source: attribution.source || "m_compare_result",
+              resultCta: attribution.resultCta,
+              fromCompareId: attribution.fromCompareId,
+            }
+          : null
+      }
     />
   );
 }

@@ -606,6 +606,61 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 props_json='{"target_path":"/product/pipeline#product-ingest-workbench","result_cta":"recommendation_product","from_compare_id":"cmp-1"}',
             ),
             MobileClientEvent(
+                event_id="evt-036f",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="bag_add_success",
+                page="product_showcase",
+                route="/product/p-9",
+                source="m_compare_result",
+                category="shampoo",
+                product_id="p-9",
+                created_at="2026-03-12T01:00:18.170000Z",
+                props_json='{"result_cta":"recommendation_product","from_compare_id":"cmp-1"}',
+            ),
+            MobileClientEvent(
+                event_id="evt-036g",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="compare_result_cta_click",
+                page="compare_result",
+                route="/m/compare/result/cmp-1",
+                source="m_compare_result",
+                category="shampoo",
+                compare_id="cmp-1",
+                created_at="2026-03-12T01:00:18.180000Z",
+                props_json='{"cta":"recommendation_wiki"}',
+            ),
+            MobileClientEvent(
+                event_id="evt-036h",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="compare_result_cta_land",
+                page="wiki_category",
+                route="/m/wiki/shampoo",
+                source="m_compare_result",
+                category="shampoo",
+                compare_id="cmp-1",
+                created_at="2026-03-12T01:00:18.190000Z",
+                props_json='{"cta":"recommendation_wiki"}',
+            ),
+            MobileClientEvent(
+                event_id="evt-036i",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="profile_result_view",
+                page="selection_result",
+                route="/m/shampoo/result",
+                source="m_compare_result",
+                category="shampoo",
+                created_at="2026-03-12T01:00:18.200000Z",
+                props_json='{"cta":"recommendation_wiki","result_cta":"recommendation_wiki","from_compare_id":"cmp-1"}',
+            ),
+            MobileClientEvent(
                 event_id="evt-037",
                 owner_type="device",
                 owner_id="owner-gamma",
@@ -783,15 +838,20 @@ def test_mobile_analytics_experience(mobile_analytics_client: TestClient):
     cta_counts = {item["key"]: item["count"] for item in payload["result_cta_clicks"]}
     assert cta_counts["rerun_compare"] == 1
     assert cta_counts["recommendation_product"] == 1
+    assert cta_counts["recommendation_wiki"] == 1
     followthrough = {item["cta"]: item for item in payload["result_cta_followthrough"]}
     assert followthrough["rerun_compare"]["landings"] == 1
     assert followthrough["rerun_compare"]["landing_rate"] == 1.0
     assert followthrough["recommendation_product"]["landings"] == 1
+    assert followthrough["recommendation_wiki"]["landings"] == 1
     completions = {(item["cta"], item["completion_key"]): item for item in payload["result_cta_completions"]}
     assert completions[("rerun_compare", "compare_run_start")]["completions"] == 1
     assert completions[("rerun_compare", "compare_run_start")]["completion_rate_from_land"] == 1.0
     assert completions[("recommendation_product", "product_showcase_continue_upload_click")]["completions"] == 1
     assert completions[("recommendation_product", "product_showcase_continue_upload_click")]["completion_rate_from_click"] == 1.0
+    assert completions[("recommendation_product", "bag_add_success")]["completions"] == 1
+    assert completions[("recommendation_wiki", "profile_result_view")]["completions"] == 1
+    assert completions[("recommendation_wiki", "profile_result_view")]["completion_rate_from_land"] == 1.0
 
     browser_counts = {item["key"]: item["count"] for item in payload["browser_families"]}
     assert browser_counts["chrome"] == 3

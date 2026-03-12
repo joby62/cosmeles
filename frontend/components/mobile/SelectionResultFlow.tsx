@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import MobileEventBeacon from "@/components/mobile/MobileEventBeacon";
 import {
   MobileSelectionFitExplanationItem,
   MobileSelectionResolveResponse,
@@ -29,6 +30,13 @@ type Props = {
   resolved: MobileSelectionResolveResponse;
   explanation?: MobileSelectionFitExplanationItem | null;
   explanationError?: string | null;
+  analyticsContext?: {
+    page: string;
+    route: string;
+    source: string;
+    resultCta: string;
+    fromCompareId: string;
+  } | null;
 };
 
 export default function SelectionResultFlow({
@@ -39,6 +47,7 @@ export default function SelectionResultFlow({
   resolved,
   explanation,
   explanationError,
+  analyticsContext,
 }: Props) {
   const product = resolved.recommended_product;
   const matrix = explanation?.matrix_analysis || resolved.matrix_analysis;
@@ -53,6 +62,19 @@ export default function SelectionResultFlow({
 
   return (
     <section className="pb-12">
+      {analyticsContext ? (
+        <MobileEventBeacon
+          name="profile_result_view"
+          props={{
+            page: analyticsContext.page,
+            route: analyticsContext.route,
+            source: analyticsContext.source,
+            category: resolved.category,
+            compare_id: analyticsContext.fromCompareId,
+            cta: analyticsContext.resultCta,
+          }}
+        />
+      ) : null}
       <div className="text-[13px] font-medium text-black/45">{titlePrefix} · 推荐解释</div>
       <h1 className="mt-2 text-[30px] leading-[1.12] font-semibold tracking-[-0.02em] text-black/92">
         {resolved.route.title}

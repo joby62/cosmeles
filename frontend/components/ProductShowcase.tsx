@@ -4,6 +4,7 @@ import {
   ProductRouteMappingResult,
   resolveStoredImageUrl,
 } from "@/lib/api";
+import AddToBagButton from "@/components/mobile/AddToBagButton";
 import MobileTrackedLink from "@/components/mobile/MobileTrackedLink";
 
 export default function ProductShowcase({
@@ -64,6 +65,11 @@ export default function ProductShowcase({
             >
               继续上传解析
             </MobileTrackedLink>
+            <AddToBagButton
+              productId={id}
+              compact
+              analyticsProps={baseEventProps}
+            />
             <span className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/62">ID: {id}</span>
           </div>
 
