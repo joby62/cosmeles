@@ -1,134 +1,359 @@
-# 予选（MatchUp）
+# Jeslect / Cosmeles
 
-浴室里的最终答案。  
-省下挑花眼的时间，只留最合适的一件。
+> Last updated: March 12, 2026
 
-## 项目定位
-- 产品类型：洗护用品决策工具（不是展示型官网）
-- 决策原则：`One Answer Policy`（每个品类只给一个最终推荐）
-- 交互原则：路径清晰、一屏一事、强引导、弱干扰
-- 端侧策略：`Desktop 冻结`，`Mobile (/m) 持续迭代`
+## Current Direction
 
-## 目录结构
+`jeslect.com` is now the primary product direction.
+
+The current target is:
+
+- Market: United States first, United Kingdom second
+- Product type: English-first beauty and personal-care independent storefront
+- Operating scope: pre-checkout storefront
+- Core model: fit-first shopping, not SKU-first shopping
+- Current commerce boundary: checkout and payment are intentionally out of scope for now
+
+In practical terms, Jeslect is not yet a full ecommerce stack.
+It is a US-facing storefront that helps users understand, compare, and save the right product path before checkout exists.
+
+The legacy Chinese/mobile structure is retained as reference in `frontend-legacy/`.
+The active standalone storefront lives in `frontend/`.
+
+## Product Positioning
+
+### One-line definition
+
+Jeslect helps users find products that fit their routine, with less guesswork and clearer product guidance.
+
+### Internal product definition
+
+Jeslect is a fit-first pre-checkout beauty storefront for hair, body, and skin care.
+
+### What the site is trying to do
+
+- Reduce product-choice anxiety
+- Explain fit more clearly than a normal shop grid
+- Surface shipping, returns, and support before checkout
+- Preserve user progress across Bag, Match, Compare, and Saved states
+- Connect learning and product selection in one journey
+
+### What the site is not trying to do yet
+
+- Full checkout and payment
+- Order management
+- Post-purchase logistics handling
+- A fake “complete store” with invented price, stock, or ETA data
+
+## User Value
+
+Jeslect currently delivers value in four layers:
+
+### 1. Clarity
+
+Users can understand:
+
+- what a product is
+- who it is for
+- who it is not ideal for
+- why it fits a route
+
+### 2. Fit
+
+Users are not forced to guess from a large catalog.
+They can narrow decisions through:
+
+- `Match`
+- `Compare`
+- `Learn`
+- concern-first browsing
+
+### 3. Confidence
+
+Users can see trust basics before checkout exists:
+
+- shipping framing
+- returns framing
+- support routing
+- ingredient transparency
+- privacy / terms / cookies scope
+
+### 4. Continuity
+
+Users do not lose progress when they leave.
+The storefront currently supports recovery for:
+
+- Bag
+- Saved
+- Match history
+- Compare history
+- recent product views
+
+## Brand Language
+
+Jeslect should sound:
+
+- calm
+- precise
+- useful
+- non-judgmental
+
+Jeslect should avoid:
+
+- hype-heavy luxury language
+- vague “technology” claims
+- overpromising efficacy
+- pressure-first ecommerce copy
+
+### Recommended homepage Hero
+
+- Eyebrow: `Jeslect US`
+- Headline: `Find products that fit your routine.`
+- Subheadline: `Shop hair, body, and skin care with clearer fit, cleaner comparisons, and less guesswork.`
+- Primary CTA: `Find my match`
+- Secondary CTA: `Shop by concern`
+
+## Current Information Architecture
+
+Public storefront routes currently in scope:
+
+- `/`
+- `/shop`
+- `/shop/[category]`
+- `/collections/[slug]`
+- `/product/[id]`
+- `/match`
+- `/match/[sessionId]`
+- `/compare`
+- `/compare/[compareId]`
+- `/learn`
+- `/learn/product/[productId]`
+- `/learn/ingredient/[category]/[ingredientId]`
+- `/search`
+- `/bag`
+- `/saved`
+- `/support`
+- `/support/shipping`
+- `/support/returns`
+- `/support/faq`
+- `/support/contact`
+- `/privacy`
+- `/terms`
+- `/cookies`
+- `/about`
+- `/ops/commerce` (internal operations route)
+
+## Repo Layout
+
 ```text
-backend/                  FastAPI + SQLite + 文件存储
-frontend/                 Next.js App Router（desktop + mobile 双栈）
-deploy/nginx/             历史 nginx 反向代理配置
-docs/OPERATIONS_RUNBOOK.md  运维手册（Caddy / Docker / 502 排障）
+backend/                    FastAPI + SQLite + file storage
+frontend/                   Active Jeslect standalone storefront
+frontend-legacy/            Frozen legacy frontend for reference only
+docs/                       Operational and project notes
 ```
 
-## 开发与部署模式
+## Phase Plan
 
-### 1) 前端开发模式（热更新）
-使用 `docker-compose.dev.yml`：
-- 容器：`backend-dev` + `frontend-dev`
-- 端口：
-  - `5001 -> frontend-dev:3000`
-  - `8000 -> backend-dev:8000`
-- 说明：前后端都支持热更新（`next dev` + `uvicorn --reload`）
-- Doubao：默认 `DOUBAO_MODE=real`（需配置 `backend/.env.local` 的 `DOUBAO_API_KEY`）
+This roadmap is based on the real state of the current branch, not a greenfield wishlist.
 
-```bash
-docker compose -f docker-compose.dev.yml up -d --build --remove-orphans
-```
+### P0 | US Pre-checkout Launch Baseline
 
-### 2) 线上生产模式（当前推荐）
-使用 `docker-compose.prod.yml`：
-- 容器：`cosmeles-backend` + `cosmeles-frontend`
-- 端口：`5001 -> 3000`
-- 本机后端健康检查：`127.0.0.1:8000`
-- 反代：Caddy -> `172.17.0.1:5001`（当 Caddy 在 Docker 内）
-- Doubao：默认 `DOUBAO_MODE=real`（建议在部署环境注入 `DOUBAO_API_KEY`）
+Status:
 
-```bash
-docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
-```
+- Progress: about 93% to 95%
+- Stage: late P0 / launch hardening
 
-### 3) 历史全栈模式（backend + frontend + nginx）
-使用 `docker-compose.yml`：
-- 对外端口：`5000`（nginx）
-- 本机后端健康检查：`127.0.0.1:8000`
-- 适合本地联调
+Goal:
 
-```bash
-docker compose up -d --build --remove-orphans
-```
+Ship a US-facing English storefront that can support discovery, fit, compare, learn, save, and support visibility without pretending checkout already exists.
 
-## 本地开发（不走 Docker）
+P0 scope:
+
+- English standalone storefront shell
+- US-first IA
+- fit-first product decision flow
+- support and legal baseline
+- saved-state continuity
+- commerce readiness and feed plumbing
+- no payment, no checkout, no order management
+
+P0 already completed:
+
+- New standalone storefront in `frontend/`
+- Legacy frontend frozen into `frontend-legacy/`
+- Home, Shop, Category, Product, Match, Compare, Learn, Bag, Saved, Search, Collections
+- Support hub plus Shipping / Returns / FAQ / Contact / Privacy / Terms / Cookies
+- Device-level recovery for Bag, Saved, Match, Compare, recent product views
+- Product commerce readiness exposed from backend to frontend
+- Internal commerce operations workbench
+- JSON / CSV / TSV commerce import
+- Configurable support contact entry
+- Evidence-based trust layer across Product / Learn / Compare
+- Public product sorting now biased toward stronger commerce completeness
+
+P0 still remaining:
+
+- Fill real commerce data across a larger percentage of products:
+  price, inventory, shipping ETA, pack size
+- Configure a real support inbox in production environment
+- Finish one launch-grade QA pass across:
+  mobile layout
+  desktop layout
+  empty states
+  error states
+  support/legal cross-links
+- Tighten homepage / About / trust language so the brand reads as launch-ready, not just functionally complete
+
+P0 explicit non-goals:
+
+- checkout
+- payment
+- shipping method selection
+- order creation
+- post-purchase support operations
+
+P0 exit criteria:
+
+- A US user can move from discovery to decision without dead ends
+- No Chinese copy appears in the new storefront
+- No fake commerce data is shown
+- Trust pages are visible and internally consistent
+- Saved-state continuity works across the main decision flow
+- Commerce coverage is good enough that the storefront does not feel hollow on first browse
+
+Current P0 risk concentration:
+
+- real product data completeness
+- social proof strategy
+- operational support readiness
+
+### P1 | Launch Hardening + Conversion Foundation
+
+Status:
+
+- Progress: about 25% to 35%
+- Stage: groundwork laid, not yet fully executed
+
+Goal:
+
+Turn the current storefront from “usable and honest” into “launch-resilient and conversion-capable.”
+
+P1 focus areas:
+
+- Broader commerce coverage across the live catalog
+- Better product ranking based on fit confidence and commerce completeness
+- Stronger brand trust and quality language
+- Formal review / proof strategy
+- Search and collection page hardening
+- Analytics, accessibility, and performance pass
+- Better support operations handoff
+
+P1 concrete deliverables:
+
+- Higher coverage of price / inventory / shipping ETA across products
+- Review strategy and display logic:
+  real review source or explicit evidence-first alternative
+- Stronger About page and brand standards page structure
+- Improved category and collection sorting logic
+- Better search result ordering
+- Final trust polish on homepage and PDP
+- Monitoring of key pre-checkout funnel events:
+  landing
+  PDP view
+  match completion
+  compare completion
+  add to bag
+  saved recovery
+
+P1 exit criteria:
+
+- Most high-intent users see enough real commerce data to continue
+- The storefront has a coherent trust strategy, not just support links
+- Search, category, collection, and PDP feel like one conversion system
+- The site is ready for traffic scaling before checkout exists
+
+### P2 | Full Shop + Regional Expansion
+
+Status:
+
+- Progress: about 5% to 10%
+- Stage: intentionally deferred
+
+Goal:
+
+Turn Jeslect from a pre-checkout storefront into a real operating shop, then expand beyond the initial US-first foundation.
+
+P2 scope:
+
+- checkout
+- payment
+- address handling
+- shipping methods
+- order confirmation
+- order history
+- post-purchase support operations
+- UK regionalization
+- stronger lifecycle systems:
+  email flows
+  account layer
+  loyalty / bundles / subscriptions if justified
+
+P2 prerequisites:
+
+- P0 must be truly stable
+- P1 trust and commerce coverage must be strong enough
+- payment and order systems must be intentionally designed, not patched in
+
+P2 exit criteria:
+
+- Jeslect can actually transact
+- storefront promises match operational reality
+- US and UK policy, shipping, and support differences are handled explicitly
+
+## Current Progress Summary
+
+As of March 12, 2026:
+
+- P0 is almost complete in pre-checkout terms
+- P1 groundwork is partly in place but still needs execution
+- P2 is intentionally not active yet
+
+In one sentence:
+
+Jeslect has already crossed the “new standalone storefront exists and works” threshold, and is now primarily blocked by launch hardening, content/data completeness, and trust operations rather than missing page architecture.
+
+## Local Development
 
 ### Backend
+
 ```bash
-cd backend
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+cd /Users/lijiabo/cosmeles/backend
+PYTHONPATH='/Users/lijiabo/cosmeles/backend' conda run -n cosmeles uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 ### Frontend
+
 ```bash
-cd frontend
-npm ci
+cd /Users/lijiabo/cosmeles/frontend
 npm run dev
 ```
 
-## Mobile IA（当前主线）
-- `/m`：默认重定向到 `/m/choose`
-- `/m/wiki`：成份百科（按类目查看成分作用）
-- `/m/choose`：开始选择（品类入口）
-- `/m/shampoo/start`
-- `/m/shampoo/profile`
-- `/m/shampoo/resolve`
-- `/m/shampoo/result`
-- `/m/bodywash/*`、`/m/conditioner/*`、`/m/lotion/*`、`/m/cleanser/*`
-- `/m/me`：我的（记录已完成挑选与结果卡）
+Then open:
 
-说明：桌面端页面保留，不再作为主要迭代对象。
+- `http://127.0.0.1:3000`
 
-## 文档导航
-- 总运维手册：[docs/OPERATIONS_RUNBOOK.md](docs/OPERATIONS_RUNBOOK.md)
-- 前端说明：[frontend/README.md](frontend/README.md)
-- 后端说明：[backend/README.md](backend/README.md)
+### Optional support contact env
 
-## 上传解析（当前）
-- `/upload` 走后端 `/api/upload`
-- 豆包链路：`mini(看图提字)` -> `lite(基于文本结构化 JSON)`
-- 两阶段原始输出会落盘到 `backend/storage/doubao_runs/`，并回传到前端上传页展示
-- 若要前端分步展示，可走：`/api/upload/stage1` -> `/api/upload/stage2`
-- 可定期调用清理接口：`POST /api/maintenance/cleanup-doubao?days=14`
+Add these to `frontend/.env.local` if you want the support page to show a live contact channel:
 
-## 服务器重启后快速恢复（必看）
-以下命令在服务器执行（`~/cosmeles`）：
-
-### A. 生产恢复（推荐）
-```bash
-cd ~/cosmeles
-git pull origin main
-
-# 启动前后端 prod
-docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
-
-# 重启 caddy（若你用 docker 跑 caddy）
-docker restart caddy
-
-# 验证
-curl -I http://127.0.0.1:5001
-curl -I http://127.0.0.1:8000/healthz
-curl -I https://yuexuan.xyz
+```env
+SUPPORT_EMAIL=hello@jeslect.com
+SUPPORT_RESPONSE_WINDOW=Replies within 1-2 business days
+SUPPORT_HOURS=Mon-Fri, 9:00 AM-6:00 PM ET
+SUPPORT_SCOPE_NOTE=Pre-purchase fit, shipping, and policy questions only.
 ```
 
-### B. 开发热更新恢复（dev）
-```bash
-cd ~/cosmeles
-git pull origin main
+## Legacy Note
 
-docker compose -f docker-compose.dev.yml down --remove-orphans
-docker compose -f docker-compose.dev.yml up -d --build --remove-orphans
-
-# 验证
-curl -I http://127.0.0.1:5001
-curl -I http://127.0.0.1:8000/healthz
-```
-
-### C. 常见故障一句话判断
-- `5001 能开，8000 不通`：后端没起来。
-- 域名 502/503：优先检查 caddy upstream 与前端容器状态。
-- `port is already allocated`：端口被旧容器占用，先 `down --remove-orphans`。
+The older MatchUp / mobile-first Chinese implementation remains in this repo for reference and capability reuse.
+It is not the active product direction for the current Jeslect US standalone storefront.
