@@ -4,6 +4,9 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import MobileFrictionSignals from "@/components/mobile/MobileFrictionSignals";
+import MobilePageAnalytics from "@/components/mobile/MobilePageAnalytics";
+import MobileScrollDepthAnalytics from "@/components/mobile/MobileScrollDepthAnalytics";
 import {
   fetchIngredientLibrary,
   fetchMobileWikiProducts,
@@ -12,6 +15,7 @@ import {
   type MobileWikiFacet,
   type MobileWikiProductItem,
 } from "@/lib/api";
+import { trackMobileEvent, trackMobileEventWithBeacon } from "@/lib/mobileAnalytics";
 import { isWikiCategoryKey, WIKI_MAP, WIKI_ORDER, type WikiCategoryKey } from "@/lib/mobile/ingredientWiki";
 
 type CategoryTheme = {
@@ -42,6 +46,7 @@ type SearchParamsLike = {
 } | null | undefined;
 
 const ALL_SECONDARY_KEY = "all";
+const WIKI_PAGE_SIZE = 24;
 
 const ENTRY_TABS: Array<{ key: WikiEntryTab; label: string }> = [
   { key: "product", label: "产品" },
@@ -230,6 +235,36 @@ function writeStoredScroll(key: string, y: number): void {
   }
 }
 
+function mergeUniqueProductItems(
+  prev: MobileWikiProductItem[],
+  next: MobileWikiProductItem[],
+): MobileWikiProductItem[] {
+  const seen = new Set<string>();
+  const out: MobileWikiProductItem[] = [];
+  for (const item of [...prev, ...next]) {
+    const id = String(item.product.id || "").trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(item);
+  }
+  return out;
+}
+
+function mergeUniqueIngredientItems(
+  prev: IngredientLibraryListItem[],
+  next: IngredientLibraryListItem[],
+): IngredientLibraryListItem[] {
+  const seen = new Set<string>();
+  const out: IngredientLibraryListItem[] = [];
+  for (const item of [...prev, ...next]) {
+    const id = String(item.ingredient_id || "").trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(item);
+  }
+  return out;
+}
+
 function matchesIngredientSecondary(item: IngredientLibraryListItem, filter: IngredientSecondaryFilter | undefined): boolean {
   if (!filter) return true;
   const haystack = `${item.ingredient_name} ${item.ingredient_name_en || ""} ${item.summary}`.toLowerCase();
@@ -295,17 +330,24 @@ function MobileWikiPageContent() {
   const [searchOpen, setSearchOpen] = useState(() => Boolean(initialState.query));
   const [searchFocused, setSearchFocused] = useState(false);
   const [ingredientItems, setIngredientItems] = useState<IngredientLibraryListItem[]>([]);
+  const [ingredientTotal, setIngredientTotal] = useState(0);
   const [ingredientLoading, setIngredientLoading] = useState(() => initialState.entryTab === "ingredient");
+  const [ingredientLoadingMore, setIngredientLoadingMore] = useState(false);
   const [ingredientError, setIngredientError] = useState<string | null>(null);
   const [productItems, setProductItems] = useState<MobileWikiProductItem[]>([]);
+  const [productTotal, setProductTotal] = useState(0);
   const [productSubtypes, setProductSubtypes] = useState<MobileWikiFacet[]>([]);
   const [productLoading, setProductLoading] = useState(() => initialState.entryTab === "product");
+  const [productLoadingMore, setProductLoadingMore] = useState(false);
   const [productError, setProductError] = useState<string | null>(null);
 
   const normalizedQuery = query.trim();
   const theme = CATEGORY_THEME[active];
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const hasRestoredInitialScrollRef = useRef(false);
+  const latestProductQueryRef = useRef("");
+  const latestIngredientQueryRef = useRef("");
+  const lastTrackedListViewRef = useRef("");
 
   const stateQueryString = useMemo(
     () =>
@@ -320,6 +362,7 @@ function MobileWikiPageContent() {
   );
   const currentQueryString = searchParams.toString();
   const returnTo = stateQueryString ? `${pathname}?${stateQueryString}` : pathname;
+  const currentRoute = currentQueryString ? `${pathname}?${currentQueryString}` : pathname;
   const scrollStorageKey = useMemo(() => `m:wiki:scroll:${returnTo}`, [returnTo]);
 
   useEffect(() => {
@@ -377,55 +420,85 @@ function MobileWikiPageContent() {
   }, [searchOpen]);
 
   useEffect(() => {
+    latestProductQueryRef.current = [active, normalizedQuery, productSubtypeKey].join("|");
+  }, [active, normalizedQuery, productSubtypeKey]);
+
+  useEffect(() => {
+    latestIngredientQueryRef.current = [active, normalizedQuery].join("|");
+  }, [active, normalizedQuery]);
+
+  useEffect(() => {
     if (entryTab !== "product") return;
     let cancelled = false;
+    const load = async () => {
+      setProductLoading(true);
+      setProductLoadingMore(false);
+      setProductError(null);
+      setProductItems([]);
+      setProductSubtypes([]);
+      setProductTotal(0);
 
-    fetchMobileWikiProducts({
-      category: active,
-      q: normalizedQuery || undefined,
-      limit: 120,
-    })
-      .then((resp) => {
+      try {
+        const resp = await fetchMobileWikiProducts({
+          category: active,
+          target_type_key: productSubtypeKey !== ALL_SECONDARY_KEY ? productSubtypeKey : undefined,
+          q: normalizedQuery || undefined,
+          offset: 0,
+          limit: WIKI_PAGE_SIZE,
+        });
         if (cancelled) return;
         setProductItems(resp.items || []);
         setProductSubtypes(resp.subtypes || []);
-      })
-      .catch((e) => {
+        setProductTotal(Math.max(Number(resp.total || 0), (resp.items || []).length));
+      } catch (e) {
         if (cancelled) return;
         setProductItems([]);
         setProductSubtypes([]);
+        setProductTotal(0);
         setProductError(e instanceof Error ? e.message : String(e));
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setProductLoading(false);
-      });
+      }
+    };
+
+    void load();
 
     return () => {
       cancelled = true;
     };
-  }, [active, entryTab, normalizedQuery]);
+  }, [active, entryTab, normalizedQuery, productSubtypeKey]);
 
   useEffect(() => {
     if (entryTab !== "ingredient") return;
     let cancelled = false;
+    const load = async () => {
+      setIngredientLoading(true);
+      setIngredientLoadingMore(false);
+      setIngredientError(null);
+      setIngredientItems([]);
+      setIngredientTotal(0);
 
-    fetchIngredientLibrary({
-      category: active,
-      q: normalizedQuery || undefined,
-      limit: 120,
-    })
-      .then((resp) => {
+      try {
+        const resp = await fetchIngredientLibrary({
+          category: active,
+          q: normalizedQuery || undefined,
+          offset: 0,
+          limit: WIKI_PAGE_SIZE,
+        });
         if (cancelled) return;
         setIngredientItems(resp.items);
-      })
-      .catch((e) => {
+        setIngredientTotal(Math.max(Number(resp.total || 0), (resp.items || []).length));
+      } catch (e) {
         if (cancelled) return;
         setIngredientItems([]);
+        setIngredientTotal(0);
         setIngredientError(e instanceof Error ? e.message : String(e));
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setIngredientLoading(false);
-      });
+      }
+    };
+
+    void load();
 
     return () => {
       cancelled = true;
@@ -470,14 +543,9 @@ function MobileWikiPageContent() {
     return [{ key: ALL_SECONDARY_KEY, label: "全部分类" }, ...facets];
   }, [productSubtypes]);
 
-  const filteredProductItems = useMemo(() => {
-    if (productSubtypeKey === ALL_SECONDARY_KEY) return productItems;
-    return productItems.filter((item) => {
-      const targetTypeKey = normalizeLine(item.target_type_key || "");
-      const secondaryTypeKey = normalizeLine(item.secondary_type_key || "");
-      return targetTypeKey === productSubtypeKey || secondaryTypeKey === productSubtypeKey;
-    });
-  }, [productItems, productSubtypeKey]);
+  const filteredProductItems = productItems;
+  const productHasMore = productItems.length < productTotal;
+  const ingredientHasMore = ingredientItems.length < ingredientTotal;
 
   const featuredProductItem = filteredProductItems[0] || null;
   const listProductItems = featuredProductItem ? filteredProductItems.slice(1) : filteredProductItems;
@@ -494,14 +562,117 @@ function MobileWikiPageContent() {
   const ingredientListItems = featuredIngredientItem ? filteredIngredientItems.slice(1) : filteredIngredientItems;
   const searchPlaceholder = entryTab === "product" ? "搜索产品百科" : "搜索成分百科";
 
+  useEffect(() => {
+    const listReady =
+      entryTab === "product"
+        ? !productLoading && !productError
+        : !ingredientLoading && !ingredientError;
+    if (!listReady) return;
+
+    const visibleCount = entryTab === "product" ? filteredProductItems.length : filteredIngredientItems.length;
+    const totalCount = entryTab === "product" ? productTotal : ingredientTotal;
+    const signature = [
+      entryTab,
+      active,
+      normalizedQuery,
+      productSubtypeKey,
+      ingredientFilterKey,
+      visibleCount,
+      totalCount,
+      currentRoute,
+    ].join("|");
+    if (signature === lastTrackedListViewRef.current) return;
+    lastTrackedListViewRef.current = signature;
+
+    void trackMobileEvent("wiki_list_view", {
+      page: "wiki_list",
+      route: currentRoute,
+      source: "m_wiki",
+      category: active,
+      entry_tab: entryTab,
+      query: normalizedQuery || undefined,
+      product_subtype_key: entryTab === "product" && productSubtypeKey !== ALL_SECONDARY_KEY ? productSubtypeKey : undefined,
+      ingredient_filter_key: entryTab === "ingredient" && ingredientFilterKey !== ALL_SECONDARY_KEY ? ingredientFilterKey : undefined,
+      visible_count: visibleCount,
+      total_count: totalCount,
+    });
+  }, [
+    active,
+    currentRoute,
+    entryTab,
+    filteredIngredientItems.length,
+    filteredProductItems.length,
+    ingredientError,
+    ingredientFilterKey,
+    ingredientLoading,
+    ingredientTotal,
+    normalizedQuery,
+    productError,
+    productLoading,
+    productSubtypeKey,
+    productTotal,
+  ]);
+
   const beginProductLoad = () => {
     setProductLoading(true);
+    setProductLoadingMore(false);
     setProductError(null);
   };
 
   const beginIngredientLoad = () => {
     setIngredientLoading(true);
+    setIngredientLoadingMore(false);
     setIngredientError(null);
+  };
+
+  const loadMoreProducts = () => {
+    if (productLoading || productLoadingMore || !productHasMore) return;
+    const requestKey = [active, normalizedQuery, productSubtypeKey].join("|");
+    setProductLoadingMore(true);
+    setProductError(null);
+    void fetchMobileWikiProducts({
+      category: active,
+      target_type_key: productSubtypeKey !== ALL_SECONDARY_KEY ? productSubtypeKey : undefined,
+      q: normalizedQuery || undefined,
+      offset: productItems.length,
+      limit: WIKI_PAGE_SIZE,
+    })
+      .then((resp) => {
+        if (latestProductQueryRef.current !== requestKey) return;
+        setProductItems((prev) => mergeUniqueProductItems(prev, resp.items || []));
+        setProductSubtypes(resp.subtypes || []);
+        setProductTotal(Math.max(Number(resp.total || 0), productItems.length + (resp.items || []).length));
+      })
+      .catch((e) => {
+        setProductError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        setProductLoadingMore(false);
+      });
+  };
+
+  const loadMoreIngredients = () => {
+    if (ingredientLoading || ingredientLoadingMore || !ingredientHasMore) return;
+    const requestKey = [active, normalizedQuery].join("|");
+    setIngredientLoadingMore(true);
+    setIngredientError(null);
+    void fetchIngredientLibrary({
+      category: active,
+      q: normalizedQuery || undefined,
+      offset: ingredientItems.length,
+      limit: WIKI_PAGE_SIZE,
+    })
+      .then((resp) => {
+        if (latestIngredientQueryRef.current !== requestKey) return;
+        setIngredientItems((prev) => mergeUniqueIngredientItems(prev, resp.items || []));
+        setIngredientTotal(Math.max(Number(resp.total || 0), ingredientItems.length + (resp.items || []).length));
+      })
+      .catch((e) => {
+        setIngredientError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        setIngredientLoadingMore(false);
+      });
   };
 
   const switchTab = (nextTab: WikiEntryTab) => {
@@ -547,6 +718,28 @@ function MobileWikiPageContent() {
 
   return (
     <section className="m-wiki-page -mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[color:var(--m-wiki-canvas)] px-4 pb-36 pt-4 text-white">
+      <MobilePageAnalytics page="wiki_list" route={currentRoute} source="m_wiki" category={active} />
+      <MobileScrollDepthAnalytics
+        page="wiki_list"
+        route={currentRoute}
+        source="m_wiki"
+        category={active}
+        extra={{
+          entry_tab: entryTab,
+          query: normalizedQuery || undefined,
+        }}
+      />
+      <MobileFrictionSignals
+        page="wiki_list"
+        route={currentRoute}
+        source="m_wiki"
+        category={active}
+        stallAfterMs={20000}
+        extra={{
+          entry_tab: entryTab,
+          query: normalizedQuery || undefined,
+        }}
+      />
       <div className="space-y-5">
         <div className="space-y-3">
           {searchOpen ? (
@@ -614,6 +807,7 @@ function MobileWikiPageContent() {
                         role="tab"
                         aria-selected={activeTab}
                         type="button"
+                        data-analytics-id={`wiki:tab:${tab.key}`}
                         onClick={() => {
                           switchTab(tab.key);
                         }}
@@ -632,6 +826,7 @@ function MobileWikiPageContent() {
                 <button
                   type="button"
                   aria-label="打开搜索"
+                  data-analytics-id="wiki:search:open"
                   onClick={() => {
                     setSearchOpen(true);
                   }}
@@ -655,6 +850,7 @@ function MobileWikiPageContent() {
                     <button
                       key={item.key}
                       type="button"
+                      data-analytics-id={`wiki:category:${item.key}`}
                       onClick={() => {
                         switchCategory(key);
                       }}
@@ -685,8 +881,11 @@ function MobileWikiPageContent() {
                   <button
                     key={`${entryTab}-${item.key}`}
                     type="button"
+                    data-analytics-id={`wiki:${entryTab}:filter:${item.key}`}
                     onClick={() => {
                       if (entryTab === "product") {
+                        if (productSubtypeKey === item.key) return;
+                        beginProductLoad();
                         setProductSubtypeKey(item.key);
                         return;
                       }
@@ -712,6 +911,22 @@ function MobileWikiPageContent() {
               {featuredProductItem ? (
                 <Link
                   href={buildReturnHref(`/m/wiki/product/${encodeURIComponent(featuredProductItem.product.id)}`, returnTo)}
+                  prefetch={false}
+                  data-analytics-id={`wiki:product:featured:${featuredProductItem.product.id}`}
+                  onClick={() => {
+                    trackMobileEventWithBeacon("wiki_product_click", {
+                      page: "wiki_list",
+                      route: currentRoute,
+                      source: "m_wiki",
+                      category: active,
+                      product_id: featuredProductItem.product.id,
+                      target_type_key: featuredProductItem.target_type_key,
+                      position: 1,
+                      featured: true,
+                      query: normalizedQuery || undefined,
+                      target_path: `/m/wiki/product/${featuredProductItem.product.id}`,
+                    });
+                  }}
                   className="m-wiki-hero-card m-pressable block overflow-hidden rounded-[34px] transition-transform active:scale-[0.996]"
                 >
                   <div className={`${theme.heroClass} relative overflow-hidden px-5 pb-5 pt-5`}>
@@ -772,6 +987,22 @@ function MobileWikiPageContent() {
                   <Link
                     key={product.id}
                     href={buildReturnHref(`/m/wiki/product/${encodeURIComponent(product.id)}`, returnTo)}
+                    prefetch={false}
+                    data-analytics-id={`wiki:product:list:${product.id}`}
+                    onClick={() => {
+                      trackMobileEventWithBeacon("wiki_product_click", {
+                        page: "wiki_list",
+                        route: currentRoute,
+                        source: "m_wiki",
+                        category: active,
+                        product_id: product.id,
+                        target_type_key: item.target_type_key,
+                        position: featuredProductItem ? indexInProductList(listProductItems, product.id) + 2 : indexInProductList(listProductItems, product.id) + 1,
+                        featured: false,
+                        query: normalizedQuery || undefined,
+                        target_path: `/m/wiki/product/${product.id}`,
+                      });
+                    }}
                     className="m-wiki-card-soft m-pressable group block overflow-hidden rounded-[28px] border border-white/10 px-4 py-4 transition-transform active:scale-[0.997]"
                   >
                     <div className="flex items-start gap-3.5">
@@ -827,12 +1058,46 @@ function MobileWikiPageContent() {
                   当前分类暂无匹配产品，请调整关键词、一级分类或二级分类。
                 </div>
               ) : null}
+
+              {!productLoading && !productError && filteredProductItems.length > 0 ? (
+                <div className="flex flex-col items-center gap-3 pt-1">
+                  <p className="text-[12px] text-white/46">
+                    已显示 {filteredProductItems.length} / {productTotal || filteredProductItems.length}
+                  </p>
+                  {productHasMore ? (
+                    <button
+                      type="button"
+                      onClick={loadMoreProducts}
+                      disabled={productLoadingMore}
+                      data-analytics-id="wiki:product:load-more"
+                      className="m-pressable inline-flex h-11 items-center justify-center rounded-full border border-white/14 bg-white/[0.08] px-5 text-[14px] font-medium text-white/86 disabled:cursor-not-allowed disabled:opacity-55"
+                    >
+                      {productLoadingMore ? "正在加载更多产品..." : "加载更多产品"}
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
             </section>
           ) : (
             <section className="space-y-4">
               {featuredIngredientItem && featuredIngredientName ? (
                 <Link
                   href={buildReturnHref(`/m/wiki/${active}/${featuredIngredientItem.ingredient_id}`, returnTo)}
+                  prefetch={false}
+                  data-analytics-id={`wiki:ingredient:featured:${featuredIngredientItem.ingredient_id}`}
+                  onClick={() => {
+                    trackMobileEventWithBeacon("wiki_ingredient_click", {
+                      page: "wiki_list",
+                      route: currentRoute,
+                      source: "m_wiki",
+                      category: active,
+                      ingredient_id: featuredIngredientItem.ingredient_id,
+                      position: 1,
+                      featured: true,
+                      query: normalizedQuery || undefined,
+                      target_path: `/m/wiki/${active}/${featuredIngredientItem.ingredient_id}`,
+                    });
+                  }}
                   className="m-wiki-hero-card m-pressable block overflow-hidden rounded-[34px] transition-transform active:scale-[0.996]"
                 >
                   <div className={`${theme.heroClass} relative overflow-hidden px-5 pb-5 pt-5`}>
@@ -882,6 +1147,23 @@ function MobileWikiPageContent() {
                   <Link
                     key={item.ingredient_id}
                     href={buildReturnHref(`/m/wiki/${active}/${item.ingredient_id}`, returnTo)}
+                    prefetch={false}
+                    data-analytics-id={`wiki:ingredient:list:${item.ingredient_id}`}
+                    onClick={() => {
+                      trackMobileEventWithBeacon("wiki_ingredient_click", {
+                        page: "wiki_list",
+                        route: currentRoute,
+                        source: "m_wiki",
+                        category: active,
+                        ingredient_id: item.ingredient_id,
+                        position: featuredIngredientItem
+                          ? indexInIngredientList(ingredientListItems, item.ingredient_id) + 2
+                          : indexInIngredientList(ingredientListItems, item.ingredient_id) + 1,
+                        featured: false,
+                        query: normalizedQuery || undefined,
+                        target_path: `/m/wiki/${active}/${item.ingredient_id}`,
+                      });
+                    }}
                     className="m-wiki-card-soft m-pressable group block overflow-hidden rounded-[28px] border border-white/10 px-4 py-4 transition-transform active:scale-[0.997]"
                   >
                     <div className="flex items-start gap-3.5">
@@ -929,11 +1211,44 @@ function MobileWikiPageContent() {
                   当前分类暂无匹配成分，请调整关键词、一级分类或二级分类。
                 </div>
               ) : null}
+
+              {!ingredientLoading && !ingredientError && ingredientItems.length > 0 ? (
+                <div className="flex flex-col items-center gap-3 pt-1">
+                  <p className="text-[12px] text-white/46">
+                    已加载 {ingredientItems.length} / {ingredientTotal || ingredientItems.length}
+                  </p>
+                  {ingredientHasMore ? (
+                    <button
+                      type="button"
+                      onClick={loadMoreIngredients}
+                      disabled={ingredientLoadingMore}
+                      data-analytics-id="wiki:ingredient:load-more"
+                      className="m-pressable inline-flex h-11 items-center justify-center rounded-full border border-white/14 bg-white/[0.08] px-5 text-[14px] font-medium text-white/86 disabled:cursor-not-allowed disabled:opacity-55"
+                    >
+                      {ingredientLoadingMore ? "正在加载更多成分..." : "加载更多成分"}
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
             </section>
           )}
         </div>
       </div>
     </section>
+  );
+}
+
+function indexInProductList(list: MobileWikiProductItem[], productId: string): number {
+  return Math.max(
+    0,
+    list.findIndex((item) => item.product.id === productId),
+  );
+}
+
+function indexInIngredientList(list: IngredientLibraryListItem[], ingredientId: string): number {
+  return Math.max(
+    0,
+    list.findIndex((item) => item.ingredient_id === ingredientId),
   );
 }
 

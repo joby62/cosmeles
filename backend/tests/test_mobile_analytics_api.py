@@ -398,6 +398,196 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 created_at="2026-03-12T03:00:04.000000Z",
                 props_json='{"trigger_reason":"compare_stage_error","stage_label":"结构化成分信息"}',
             ),
+            MobileClientEvent(
+                event_id="evt-026",
+                owner_type="device",
+                owner_id="owner-gamma",
+                session_id="sess-4",
+                name="wiki_list_view",
+                page="wiki_list",
+                route="/m/wiki",
+                source="m_wiki",
+                category="shampoo",
+                created_at="2026-03-12T04:00:00.000000Z",
+                props_json='{"entry_tab":"product","visible_count":24,"total_count":48}',
+            ),
+            MobileClientEvent(
+                event_id="evt-027",
+                owner_type="device",
+                owner_id="owner-gamma",
+                session_id="sess-4",
+                name="wiki_product_click",
+                page="wiki_list",
+                route="/m/wiki",
+                source="m_wiki",
+                category="shampoo",
+                product_id="p-5",
+                created_at="2026-03-12T04:00:01.000000Z",
+                props_json='{"position":1,"featured":true,"target_path":"/m/wiki/product/p-5"}',
+            ),
+            MobileClientEvent(
+                event_id="evt-028",
+                owner_type="device",
+                owner_id="owner-gamma",
+                session_id="sess-5",
+                name="wiki_list_view",
+                page="wiki_list",
+                route="/m/wiki?tab=ingredient",
+                source="m_wiki",
+                category="shampoo",
+                created_at="2026-03-12T04:05:00.000000Z",
+                props_json='{"entry_tab":"ingredient","visible_count":24,"total_count":60}',
+            ),
+            MobileClientEvent(
+                event_id="evt-029",
+                owner_type="device",
+                owner_id="owner-gamma",
+                session_id="sess-5",
+                name="wiki_ingredient_click",
+                page="wiki_list",
+                route="/m/wiki?tab=ingredient",
+                source="m_wiki",
+                category="shampoo",
+                created_at="2026-03-12T04:05:01.000000Z",
+                props_json='{"position":1,"target_path":"/m/wiki/ingredients/ing-1"}',
+            ),
+            MobileClientEvent(
+                event_id="evt-030",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="compare_result_leave",
+                page="compare_result",
+                route="/m/compare/result/cmp-1",
+                source="m_compare_result",
+                category="shampoo",
+                compare_id="cmp-1",
+                created_at="2026-03-12T01:00:18.000000Z",
+                props_json='{"dwell_ms":18200,"max_depth_percent":100,"exit_type":"unmount"}',
+            ),
+            MobileClientEvent(
+                event_id="evt-031",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="scroll_depth",
+                page="compare_result",
+                route="/m/compare/result/cmp-1",
+                source="m_compare_result",
+                category="shampoo",
+                compare_id="cmp-1",
+                created_at="2026-03-12T01:00:17.000000Z",
+                props_json='{"depth_percent":75,"max_depth_percent":79}',
+            ),
+            MobileClientEvent(
+                event_id="evt-032",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="scroll_depth",
+                page="compare_result",
+                route="/m/compare/result/cmp-1",
+                source="m_compare_result",
+                category="shampoo",
+                compare_id="cmp-1",
+                created_at="2026-03-12T01:00:17.500000Z",
+                props_json='{"depth_percent":100,"max_depth_percent":100}',
+            ),
+            MobileClientEvent(
+                event_id="evt-033",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="stall_detected",
+                page="compare_result",
+                route="/m/compare/result/cmp-1",
+                source="m_compare_result",
+                category="shampoo",
+                compare_id="cmp-1",
+                created_at="2026-03-12T01:00:17.700000Z",
+                props_json='{"dwell_ms":19000,"idle_ms":18000}',
+            ),
+            MobileClientEvent(
+                event_id="evt-034",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="rage_click",
+                page="compare_result",
+                route="/m/compare/result/cmp-1",
+                source="m_compare_result",
+                category="shampoo",
+                compare_id="cmp-1",
+                created_at="2026-03-12T01:00:17.800000Z",
+                props_json='{"target_id":"result:cta:rerun-compare","click_count":3}',
+            ),
+            MobileClientEvent(
+                event_id="evt-035",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="compare_result_cta_click",
+                page="compare_result",
+                route="/m/compare/result/cmp-1",
+                source="m_compare_result",
+                category="shampoo",
+                compare_id="cmp-1",
+                created_at="2026-03-12T01:00:17.900000Z",
+                props_json='{"cta":"rerun_compare"}',
+            ),
+            MobileClientEvent(
+                event_id="evt-036",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="compare_result_cta_click",
+                page="compare_result",
+                route="/m/compare/result/cmp-1",
+                source="m_compare_result",
+                category="shampoo",
+                compare_id="cmp-1",
+                created_at="2026-03-12T01:00:18.100000Z",
+                props_json='{"cta":"recommendation_product"}',
+            ),
+            MobileClientEvent(
+                event_id="evt-037",
+                owner_type="device",
+                owner_id="owner-gamma",
+                session_id="sess-4",
+                name="scroll_depth",
+                page="wiki_list",
+                route="/m/wiki",
+                source="m_wiki",
+                category="shampoo",
+                created_at="2026-03-12T04:00:02.000000Z",
+                props_json='{"depth_percent":50,"max_depth_percent":54,"entry_tab":"product"}',
+            ),
+            MobileClientEvent(
+                event_id="evt-038",
+                owner_type="device",
+                owner_id="owner-gamma",
+                session_id="sess-4",
+                name="stall_detected",
+                page="wiki_list",
+                route="/m/wiki",
+                source="m_wiki",
+                category="shampoo",
+                created_at="2026-03-12T04:00:20.000000Z",
+                props_json='{"dwell_ms":21000,"idle_ms":20000}',
+            ),
+            MobileClientEvent(
+                event_id="evt-039",
+                owner_type="device",
+                owner_id="owner-gamma",
+                session_id="sess-4",
+                name="rage_click",
+                page="wiki_list",
+                route="/m/wiki",
+                source="m_wiki",
+                category="shampoo",
+                created_at="2026-03-12T04:00:21.000000Z",
+                props_json='{"target_id":"wiki:search:open","click_count":3}',
+            ),
         ]
         db.add_all(rows)
         db.commit()
@@ -477,3 +667,46 @@ def test_mobile_analytics_errors_feedback_and_sessions(mobile_analytics_client: 
     assert sessions_payload["total"] >= 1
     assert any(item["name"] == "compare_run_success" for item in sessions_payload["timeline"])
     assert any(item["name"] == "compare_result_view" for item in sessions_payload["timeline"])
+
+
+def test_mobile_analytics_experience(mobile_analytics_client: TestClient):
+    client = mobile_analytics_client
+    query = "date_from=2026-03-10&date_to=2026-03-12"
+
+    experience = client.get(f"/api/products/analytics/mobile/experience?{query}")
+    assert experience.status_code == 200
+    payload = experience.json()
+
+    assert payload["wiki_product_list_views"] == 1
+    assert payload["wiki_product_clicks"] == 1
+    assert payload["wiki_product_ctr"] == 1.0
+    assert payload["wiki_ingredient_list_views"] == 1
+    assert payload["wiki_ingredient_clicks"] == 1
+    assert payload["wiki_ingredient_ctr"] == 1.0
+    assert payload["compare_result_views"] == 1
+    assert payload["compare_result_leaves"] == 1
+    assert payload["avg_result_dwell_ms"] == 18200.0
+    assert payload["p50_result_dwell_ms"] == 18200.0
+    assert payload["result_scroll_75"] == 1
+    assert payload["result_scroll_100"] == 1
+    assert payload["result_scroll_75_rate"] == 1.0
+    assert payload["result_scroll_100_rate"] == 1.0
+    assert payload["stall_detected"] == 2
+    assert payload["rage_clicks"] == 2
+
+    depth_items = {(item["page"], item["depth_percent"]): item for item in payload["scroll_depth_by_page"]}
+    assert depth_items[("compare_result", 75)]["count"] == 1
+    assert depth_items[("compare_result", 100)]["rate"] == 1.0
+    assert depth_items[("wiki_list", 50)]["rate"] == 0.5
+
+    stall_by_page = {item["key"]: item["count"] for item in payload["stall_by_page"]}
+    assert stall_by_page["compare_result"] == 1
+    assert stall_by_page["wiki_list"] == 1
+
+    rage_targets = {(item["page"], item["target_id"]): item["count"] for item in payload["rage_click_targets"]}
+    assert rage_targets[("compare_result", "result:cta:rerun-compare")] == 1
+    assert rage_targets[("wiki_list", "wiki:search:open")] == 1
+
+    cta_counts = {item["key"]: item["count"] for item in payload["result_cta_clicks"]}
+    assert cta_counts["rerun_compare"] == 1
+    assert cta_counts["recommendation_product"] == 1

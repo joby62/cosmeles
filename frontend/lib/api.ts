@@ -962,6 +962,45 @@ export type MobileAnalyticsFeedback = {
   recent_text_samples: MobileAnalyticsFeedbackTextSample[];
 };
 
+export type MobileAnalyticsPageDepthItem = {
+  page: string;
+  depth_percent: number;
+  count: number;
+  rate: number;
+};
+
+export type MobileAnalyticsRageClickTargetItem = {
+  page: string;
+  target_id: string;
+  count: number;
+  rate: number;
+};
+
+export type MobileAnalyticsExperience = {
+  status: string;
+  filters: MobileAnalyticsFilterState;
+  wiki_product_list_views: number;
+  wiki_product_clicks: number;
+  wiki_product_ctr: number;
+  wiki_ingredient_list_views: number;
+  wiki_ingredient_clicks: number;
+  wiki_ingredient_ctr: number;
+  compare_result_views: number;
+  compare_result_leaves: number;
+  avg_result_dwell_ms: number;
+  p50_result_dwell_ms: number;
+  result_scroll_75: number;
+  result_scroll_100: number;
+  result_scroll_75_rate: number;
+  result_scroll_100_rate: number;
+  stall_detected: number;
+  rage_clicks: number;
+  scroll_depth_by_page: MobileAnalyticsPageDepthItem[];
+  stall_by_page: MobileAnalyticsCountItem[];
+  rage_click_targets: MobileAnalyticsRageClickTargetItem[];
+  result_cta_clicks: MobileAnalyticsCountItem[];
+};
+
 export type MobileAnalyticsSessionSummary = {
   session_id: string;
   owner_label?: string | null;
@@ -2159,6 +2198,14 @@ export async function fetchMobileAnalyticsFeedback(params?: MobileAnalyticsQuery
   const query = buildMobileAnalyticsQuery(params);
   const path = query ? `/api/products/analytics/mobile/feedback?${query}` : "/api/products/analytics/mobile/feedback";
   return apiFetch<MobileAnalyticsFeedback>(path, {
+    cacheProfile: "dynamic",
+  });
+}
+
+export async function fetchMobileAnalyticsExperience(params?: MobileAnalyticsQuery): Promise<MobileAnalyticsExperience> {
+  const query = buildMobileAnalyticsQuery(params);
+  const path = query ? `/api/products/analytics/mobile/experience?${query}` : "/api/products/analytics/mobile/experience";
+  return apiFetch<MobileAnalyticsExperience>(path, {
     cacheProfile: "dynamic",
   });
 }

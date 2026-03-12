@@ -139,6 +139,9 @@ from app.schemas import (
     MobileAnalyticsFeedbackTextSample,
     MobileAnalyticsFeedbackMatrixItem,
     MobileAnalyticsFeedbackResponse,
+    MobileAnalyticsPageDepthItem,
+    MobileAnalyticsRageClickTargetItem,
+    MobileAnalyticsExperienceResponse,
     MobileAnalyticsSessionSummary,
     MobileAnalyticsSessionEventItem,
     MobileAnalyticsSessionsResponse,
@@ -457,7 +460,7 @@ def _event_detail(row: MobileClientEvent, props: dict[str, Any]) -> str | None:
     )
 
 
-def _percentile(values: list[float], percentile: float) -> float:
+def _percentile_fraction(values: list[float], percentile: float) -> float:
     if not values:
         return 0.0
     ordered = sorted(values)
@@ -805,8 +808,8 @@ def get_mobile_analytics_errors(
             stage_label=duration_label_map.get(stage_key, stage_key),
             samples=len(values),
             avg_seconds=round(sum(values) / len(values), 2) if values else 0.0,
-            p50_seconds=_percentile(values, 0.5),
-            p95_seconds=_percentile(values, 0.95),
+            p50_seconds=_percentile_fraction(values, 0.5),
+            p95_seconds=_percentile_fraction(values, 0.95),
         )
         for stage_key, values in sorted(duration_by_stage.items(), key=lambda item: (-len(item[1]), item[0]))
     ]
@@ -908,6 +911,167 @@ def get_mobile_analytics_feedback(
         by_reason_label=_build_count_items(reason_counter, denominator=total_submissions),
         trigger_reason_matrix=matrix_items,
         recent_text_samples=text_samples[:12],
+    )
+
+
+@router.get("/products/analytics/mobile/experience", response_model=MobileAnalyticsExperienceResponse)
+def get_mobile_analytics_experience(
+    since_hours: int | None = Query(None, ge=1, le=24 * 365),
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
+    category: str | None = Query(None),
+    page: str | None = Query(None),
+    db: Session = Depends(get_db),
+):
+    filters, start_iso, end_iso = _resolve_mobile_analytics_filters(
+        since_hours=since_hours,
+        date_from=date_from,
+        date_to=date_to,
+        category=category,
+        page=page,
+        stage=None,
+        error_code=None,
+        trigger_reason=None,
+        session_id=None,
+        compare_id=None,
+        owner_id=None,
+    )
+    rows = _query_mobile_client_events(
+        db=db,
+        filters=filters,
+        start_iso=start_iso,
+        end_iso=end_iso,
+        names=[
+            "wiki_list_view",
+            "wiki_product_click",
+            "wiki_ingredient_click",
+            "compare_result_view",
+            "compare_result_leave",
+            "scroll_depth",
+            "stall_detected",
+            "rage_click",
+            "compare_result_cta_click",
+        ],
+    )
+
+    wiki_product_list_views = 0
+    wiki_product_clicks = 0
+    wiki_ingredient_list_views = 0
+    wiki_ingredient_clicks = 0
+    compare_result_views = 0
+    compare_result_leaves = 0
+    result_dwell_values: list[float] = []
+    scroll_depth_counter: Counter[tuple[str, int]] = Counter()
+    result_scroll_75_keys: set[str] = set()
+    result_scroll_100_keys: set[str] = set()
+    stall_counter: Counter[str] = Counter()
+    rage_counter: Counter[tuple[str, str]] = Counter()
+    result_cta_counter: Counter[str] = Counter()
+
+    page_view_counter: Counter[str] = Counter()
+
+    for row, props in rows:
+        row_page = _normalize_optional_text(row.page) or "unknown"
+        if row.name == "wiki_list_view":
+            entry_tab = _normalize_optional_text(props.get("entry_tab")) or "product"
+            page_view_counter[row_page] += 1
+            if entry_tab == "ingredient":
+                wiki_ingredient_list_views += 1
+            else:
+                wiki_product_list_views += 1
+            continue
+        if row.name == "wiki_product_click":
+            wiki_product_clicks += 1
+            continue
+        if row.name == "wiki_ingredient_click":
+            wiki_ingredient_clicks += 1
+            continue
+        if row.name == "compare_result_view":
+            compare_result_views += 1
+            page_view_counter[row_page] += 1
+            continue
+        if row.name == "compare_result_leave":
+            compare_result_leaves += 1
+            dwell_ms = props.get("dwell_ms")
+            if isinstance(dwell_ms, (int, float)):
+                result_dwell_values.append(float(dwell_ms))
+            continue
+        if row.name == "scroll_depth":
+            depth_value = props.get("depth_percent")
+            if not isinstance(depth_value, (int, float)):
+                continue
+            depth_percent = int(depth_value)
+            scroll_depth_counter[(row_page, depth_percent)] += 1
+            if row_page != "compare_result":
+                continue
+            compare_key = _compare_key_for_event(row)
+            session_key = _normalize_optional_text(row.session_id) or compare_key
+            unique_key = f"{session_key}:{_normalize_optional_text(row.route) or ''}:{depth_percent}"
+            if depth_percent == 75:
+                result_scroll_75_keys.add(unique_key)
+            if depth_percent == 100:
+                result_scroll_100_keys.add(unique_key)
+            continue
+        if row.name == "stall_detected":
+            stall_counter[row_page] += 1
+            continue
+        if row.name == "rage_click":
+            target_id = _normalize_optional_text(props.get("target_id")) or "unknown"
+            rage_counter[(row_page, target_id)] += 1
+            continue
+        if row.name == "compare_result_cta_click":
+            cta_key = _normalize_optional_text(props.get("cta")) or "unknown"
+            result_cta_counter[cta_key] += 1
+
+    scroll_depth_items = [
+        MobileAnalyticsPageDepthItem(
+            page=page_key,
+            depth_percent=depth_percent,
+            count=count,
+            rate=_rate(count, page_view_counter.get(page_key, count)),
+        )
+        for (page_key, depth_percent), count in sorted(
+            scroll_depth_counter.items(),
+            key=lambda item: (item[0][0], item[0][1]),
+        )
+    ]
+    total_rage_clicks = sum(rage_counter.values())
+    rage_click_targets = [
+        MobileAnalyticsRageClickTargetItem(
+            page=page_key,
+            target_id=target_id,
+            count=count,
+            rate=_rate(count, total_rage_clicks),
+        )
+        for (page_key, target_id), count in sorted(
+            rage_counter.items(),
+            key=lambda item: (-item[1], item[0][0], item[0][1]),
+        )[:12]
+    ]
+
+    return MobileAnalyticsExperienceResponse(
+        status="ok",
+        filters=filters,
+        wiki_product_list_views=wiki_product_list_views,
+        wiki_product_clicks=wiki_product_clicks,
+        wiki_product_ctr=_rate(wiki_product_clicks, wiki_product_list_views),
+        wiki_ingredient_list_views=wiki_ingredient_list_views,
+        wiki_ingredient_clicks=wiki_ingredient_clicks,
+        wiki_ingredient_ctr=_rate(wiki_ingredient_clicks, wiki_ingredient_list_views),
+        compare_result_views=compare_result_views,
+        compare_result_leaves=compare_result_leaves,
+        avg_result_dwell_ms=round(sum(result_dwell_values) / len(result_dwell_values), 2) if result_dwell_values else 0.0,
+        p50_result_dwell_ms=_percentile_fraction(result_dwell_values, 0.5),
+        result_scroll_75=len(result_scroll_75_keys),
+        result_scroll_100=len(result_scroll_100_keys),
+        result_scroll_75_rate=_rate(len(result_scroll_75_keys), compare_result_views),
+        result_scroll_100_rate=_rate(len(result_scroll_100_keys), compare_result_views),
+        stall_detected=sum(stall_counter.values()),
+        rage_clicks=total_rage_clicks,
+        scroll_depth_by_page=scroll_depth_items,
+        stall_by_page=_build_count_items(stall_counter, denominator=sum(stall_counter.values())),
+        rage_click_targets=rage_click_targets,
+        result_cta_clicks=_build_count_items(result_cta_counter, denominator=sum(result_cta_counter.values())),
     )
 
 
@@ -1522,27 +1686,57 @@ def list_ingredient_library(
     q: str | None = Query(None, description="search ingredient name/summary"),
     offset: int = Query(0, ge=0),
     limit: int = Query(80, ge=1, le=500),
+    db: Session = Depends(get_db),
 ):
     normalized_category = _normalize_optional_category(category)
     query = str(q or "").strip()
     query_lc = query.lower()
+    _ensure_ingredient_index_table(db)
 
-    items: list[IngredientLibraryListItem] = []
-    for rel_path in _iter_ingredient_profile_rel_paths(category=normalized_category):
-        try:
-            doc = _load_ingredient_profile_doc(rel_path=rel_path)
-            item = _to_ingredient_library_list_item(doc=doc, rel_path=rel_path)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Invalid ingredient profile '{rel_path}': {e}") from e
+    base_stmt = select(IngredientLibraryIndex).where(IngredientLibraryIndex.status == "ready")
+    if normalized_category:
+        base_stmt = base_stmt.where(IngredientLibraryIndex.category == normalized_category)
 
-        haystack = f"{item.ingredient_name} {item.summary}".lower()
-        if query_lc and query_lc not in haystack:
-            continue
-        items.append(item)
+    ready_count_stmt = select(func.count(IngredientLibraryIndex.ingredient_id)).select_from(IngredientLibraryIndex).where(
+        IngredientLibraryIndex.status == "ready"
+    )
+    if normalized_category:
+        ready_count_stmt = ready_count_stmt.where(IngredientLibraryIndex.category == normalized_category)
+    ready_count = int(db.execute(ready_count_stmt).scalar() or 0)
+    if ready_count == 0:
+        _backfill_ingredient_index_from_storage(db=db, category=normalized_category)
 
-    items.sort(key=lambda item: (item.generated_at or "", item.ingredient_name.lower(), item.ingredient_id), reverse=True)
-    total = len(items)
-    paged = items[offset : offset + limit]
+    ordered_stmt = base_stmt.order_by(
+        IngredientLibraryIndex.last_generated_at.desc(),
+        IngredientLibraryIndex.ingredient_name.asc(),
+        IngredientLibraryIndex.ingredient_id.asc(),
+    )
+
+    if not query_lc:
+        total_stmt = select(func.count(IngredientLibraryIndex.ingredient_id)).select_from(IngredientLibraryIndex).where(
+            IngredientLibraryIndex.status == "ready"
+        )
+        if normalized_category:
+            total_stmt = total_stmt.where(IngredientLibraryIndex.category == normalized_category)
+        total = int(db.execute(total_stmt).scalar() or 0)
+        rows = (
+            db.execute(ordered_stmt.offset(offset).limit(limit))
+            .scalars()
+            .all()
+        )
+        paged = [_load_ingredient_library_list_item_from_index_row(rec=row) for row in rows]
+    else:
+        rows = db.execute(ordered_stmt).scalars().all()
+        matched_items: list[IngredientLibraryListItem] = []
+        for row in rows:
+            item = _load_ingredient_library_list_item_from_index_row(rec=row)
+            haystack = f"{item.ingredient_name} {item.ingredient_name_en or ''} {item.summary}".lower()
+            if query_lc not in haystack:
+                continue
+            matched_items.append(item)
+        total = len(matched_items)
+        paged = matched_items[offset : offset + limit]
+
     return IngredientLibraryListResponse(
         status="ok",
         category=normalized_category,
@@ -7028,6 +7222,24 @@ def _load_ingredient_profile_doc(rel_path: str) -> dict[str, Any]:
     if not isinstance(doc, dict):
         raise ValueError("document is not an object.")
     return doc
+
+
+def _load_ingredient_library_list_item_from_index_row(*, rec: IngredientLibraryIndex) -> IngredientLibraryListItem:
+    ingredient_id = str(rec.ingredient_id or "").strip().lower()
+    category = str(rec.category or "").strip().lower()
+    rel_path = str(rec.storage_path or "").strip() or ingredient_profile_rel_path(category, ingredient_id)
+    if not rel_path or not exists_rel_path(rel_path):
+        raise HTTPException(
+            status_code=500,
+            detail=f"Ingredient profile missing for '{ingredient_id}' at '{rel_path or '-'}'.",
+        )
+    try:
+        doc = _load_ingredient_profile_doc(rel_path=rel_path)
+        return _to_ingredient_library_list_item(doc=doc, rel_path=rel_path)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Invalid ingredient profile '{rel_path}': {exc}") from exc
 
 
 def _required_text_field(doc: dict[str, Any], key: str) -> str:

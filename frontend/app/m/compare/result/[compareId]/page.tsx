@@ -1,6 +1,9 @@
 import Link from "next/link";
 import MobileEventBeacon from "@/components/mobile/MobileEventBeacon";
+import MobileFrictionSignals from "@/components/mobile/MobileFrictionSignals";
+import MobileLeaveEventAnalytics from "@/components/mobile/MobileLeaveEventAnalytics";
 import MobilePageAnalytics from "@/components/mobile/MobilePageAnalytics";
+import MobileScrollDepthAnalytics from "@/components/mobile/MobileScrollDepthAnalytics";
 import { fetchMobileCompareResult } from "@/lib/api";
 import { formatRuntimeError } from "@/lib/error";
 import MobileCompareResultFlow from "./result-flow";
@@ -58,6 +61,40 @@ export default async function MobileCompareResultPage({
         source="m_compare_result"
         category={result.category}
         compareId={result.compare_id}
+      />
+      <MobileScrollDepthAnalytics
+        page="compare_result"
+        route={`/m/compare/result/${compareId}`}
+        source="m_compare_result"
+        category={result.category}
+        compareId={result.compare_id}
+        extra={{
+          decision: result.verdict.decision,
+          confidence: result.verdict.confidence,
+        }}
+      />
+      <MobileLeaveEventAnalytics
+        eventName="compare_result_leave"
+        page="compare_result"
+        route={`/m/compare/result/${compareId}`}
+        source="m_compare_result"
+        category={result.category}
+        compareId={result.compare_id}
+        extra={{
+          decision: result.verdict.decision,
+          confidence: result.verdict.confidence,
+        }}
+      />
+      <MobileFrictionSignals
+        page="compare_result"
+        route={`/m/compare/result/${compareId}`}
+        source="m_compare_result"
+        category={result.category}
+        compareId={result.compare_id}
+        stallAfterMs={18000}
+        extra={{
+          decision: result.verdict.decision,
+        }}
       />
       <MobileEventBeacon
         name="compare_result_view"

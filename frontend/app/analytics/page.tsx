@@ -33,6 +33,13 @@ const STRUCTURED_FIELDS = [
 
 const EVENT_GROUPS = [
   {
+    title: "百科列表兴趣",
+    status: "已接入",
+    summary: "现在能看百科列表曝光、产品点击、成分点击，开始回答‘用户是不是在列表里就找不到想看的东西’。",
+    events: ["wiki_list_view", "wiki_product_click", "wiki_ingredient_click"],
+    value: "可以直接看产品列表 CTR、成分列表 CTR，以及不同筛选下的兴趣落差。",
+  },
+  {
     title: "会话与退出",
     status: "已接入",
     summary: "已经能按设备与会话看一次真实访问路径，也能看页面离开前停留了多久。",
@@ -69,15 +76,35 @@ const EVENT_GROUPS = [
     value: "能直接按 stage、error_code、http_status 看失败分布。",
   },
   {
-    title: "结果与主观反馈",
+    title: "结果页阅读与主观反馈",
     status: "已接入",
-    summary: "现在不只知道失败，还能知道结果页是否真正被看到，失败后主观上为什么离开。",
-    events: ["compare_result_view", "feedback_prompt_show", "feedback_submit", "feedback_skip"],
-    value: "把“发生了什么”和“用户觉得为什么”放到同一张图里。",
+    summary: "现在不只知道结果页被打开了，还能知道读到多深、停留多久、点了哪个 CTA，以及失败后主观上为什么离开。",
+    events: [
+      "compare_result_view",
+      "compare_result_leave",
+      "scroll_depth",
+      "compare_result_cta_click",
+      "feedback_prompt_show",
+      "feedback_submit",
+      "feedback_skip",
+    ],
+    value: "把“发生了什么”“看到了多少”“用户觉得为什么”放到同一张图里。",
+  },
+  {
+    title: "误触与停滞",
+    status: "已接入",
+    summary: "已经有 rage click 和 stall 信号，能开始判断‘按钮不清楚’还是‘用户卡住没动’。",
+    events: ["rage_click", "stall_detected"],
+    value: "让产品体验分析从后验报错，往前推进到界面摩擦本身。",
   },
 ] as const;
 
 const ANALYTIC_QUESTIONS = [
+  {
+    question: "用户是不是在百科列表阶段就已经丧失兴趣？",
+    answer: "能直接看列表曝光到产品点击、成分点击的转化，不再只盯详情页 CTA。",
+    signals: ["wiki_list_view", "wiki_product_click", "wiki_ingredient_click"],
+  },
   {
     question: "百科详情页的 CTA 是否值得保留？",
     answer: "能看曝光到点击的转化，而不是只看详情页总流量。",
@@ -94,32 +121,32 @@ const ANALYTIC_QUESTIONS = [
     signals: ["compare_run_start", "compare_stage_progress", "compare_stage_error", "compare_run_error"],
   },
   {
-    question: "分析成功后，用户有没有真的看到结果页？",
-    answer: "成功不再等于被消费，已经能区分 run success 和 result view。",
-    signals: ["compare_run_success", "compare_result_view"],
+    question: "分析成功后，用户有没有真的读结果、点下一步？",
+    answer: "现在已经能区分结果页到了没有、读到多深、停留多久，以及结果页 CTA 有没有被点击。",
+    signals: ["compare_run_success", "compare_result_view", "compare_result_leave", "scroll_depth", "compare_result_cta_click"],
   },
   {
     question: "用户主观上为什么放弃？",
     answer: "失败节点已有轻反馈，能看到太慢、看不懂、太麻烦、不信结果的分布。",
     signals: ["feedback_prompt_show", "feedback_submit", "feedback_skip"],
   },
+  {
+    question: "界面是报错劝退，还是用户自己卡住了？",
+    answer: "现在可以把 rage click、stall 和阶段错误并排看，区分可靠性问题和交互问题。",
+    signals: ["rage_click", "stall_detected", "compare_stage_error"],
+  },
 ] as const;
 
 const DEFERRED_SIGNALS = [
   {
-    title: "百科列表行为",
-    reason: "还缺列表曝光、搜索词、筛选与点击路径，所以暂时看不到“用户在列表里选不到产品”的问题。",
-    items: ["wiki_list_view", "wiki_product_click", "search_query", "filter_change"],
+    title: "精确误触",
+    reason: "现在有 rage click，但还没有真正的 dead click 判定，所以‘点了没反应’仍然不够精确。",
+    items: ["dead_click", "dead_click_target", "dead_click_count"],
   },
   {
-    title: "结果页兴趣衰减",
-    reason: "现在只知道结果页被打开了，还看不到用户读了多少、在哪块失去兴趣、有没有继续下一步。",
-    items: ["compare_result_leave", "scroll_depth", "result_cta_click", "next_action"],
-  },
-  {
-    title: "通用卡顿与误触",
-    reason: "还没有 dead click、rage click、stall 这些体验信号，所以对“界面不好懂”的判断还偏后验。",
-    items: ["dead_click", "rage_click", "stall_detected", "first_interaction_ms"],
+    title: "结果页后续动作",
+    reason: "已经知道结果页 CTA 点击了什么，但还没把‘点后有没有完成下一步’串成完整后链路。",
+    items: ["next_action_completed", "result_to_wiki_success", "result_to_product_success"],
   },
   {
     title: "环境维度",
@@ -152,6 +179,12 @@ const FIRST_RELEASE_PANELS = [
     badge: "产品洞察",
     description: "把结构化事件和主观反馈合并看，判断‘慢’还是‘不信结果’更伤转化。",
     outputs: ["反馈分布", "stage x reason 交叉", "文本样本", "触发原因占比"],
+  },
+  {
+    title: "Experience Signals",
+    badge: "体验信号",
+    description: "把列表兴趣、结果页阅读深度、rage click、stall 和 CTA 点击拉到一屏里看。",
+    outputs: ["列表 CTR", "结果页停留", "阅读深度", "误触与停滞目标"],
   },
   {
     title: "Session Explorer",
@@ -208,7 +241,7 @@ const BUILD_PHASES = [
   {
     phase: "Phase 3",
     title: "次优先级信号补齐",
-    detail: "补百科列表、结果页兴趣衰减、dead/rage/stall、环境字段，让分析不再偏后验。",
+    detail: "补 dead click、结果页后续动作、环境字段与更细的实验标记，让分析从行为层再走向解释层。",
   },
   {
     phase: "Phase 4",

@@ -5,16 +5,19 @@ import { useEffect, useRef, useState, useTransition } from "react";
 
 import {
   fetchMobileAnalyticsErrors,
+  fetchMobileAnalyticsExperience,
   fetchMobileAnalyticsFeedback,
   fetchMobileAnalyticsFunnel,
   fetchMobileAnalyticsOverview,
   fetchMobileAnalyticsSessions,
   type MobileAnalyticsCountItem,
   type MobileAnalyticsErrors,
+  type MobileAnalyticsExperience,
   type MobileAnalyticsFeedback,
   type MobileAnalyticsFunnel,
   type MobileAnalyticsOverview,
   type MobileAnalyticsQuery,
+  type MobileAnalyticsRageClickTargetItem,
   type MobileAnalyticsSessionEventItem,
   type MobileAnalyticsSessions,
 } from "@/lib/api";
@@ -88,10 +91,63 @@ function formatDurationSeconds(value?: number | null): string {
   return `${(value / 60).toFixed(1)}m`;
 }
 
+function formatDurationMs(value?: number | null): string {
+  if (typeof value !== "number" || Number.isNaN(value)) return "-";
+  if (value < 1000) return `${Math.round(value)}ms`;
+  return formatDurationSeconds(value / 1000);
+}
+
 function categoryLabel(category?: string | null): string {
   if (!category) return "全部品类";
   const config = CATEGORY_CONFIG[category as keyof typeof CATEGORY_CONFIG];
   return config?.zh || category;
+}
+
+function pageLabel(page?: string | null): string {
+  switch (valueOrEmpty(page)) {
+    case "wiki_list":
+      return "百科列表";
+    case "compare_result":
+      return "结果页";
+    case "mobile_compare":
+      return "横向对比";
+    case "my_use":
+      return "我的在用";
+    default:
+      return valueOrEmpty(page) || "unknown";
+  }
+}
+
+function resultCtaLabel(value?: string | null): string {
+  switch (valueOrEmpty(value)) {
+    case "reason_gallery_anchor":
+      return "看原因";
+    case "rerun_compare":
+      return "再做一次对比";
+    case "open_full_card":
+      return "展开建议卡";
+    case "recommendation_product":
+      return "查看推荐产品";
+    case "recommendation_wiki":
+      return "查看成分百科";
+    default:
+      return valueOrEmpty(value) || "unknown";
+  }
+}
+
+function rageTargetLabel(item: MobileAnalyticsRageClickTargetItem): string {
+  const raw = valueOrEmpty(item.target_id) || "unknown";
+  if (raw.startsWith("result:cta:")) {
+    return `结果页 · ${raw.replace("result:cta:", "")}`;
+  }
+  if (raw.startsWith("wiki:")) {
+    return `百科 · ${raw.replace("wiki:", "")}`;
+  }
+  return `${pageLabel(item.page)} · ${raw}`;
+}
+
+function valueOrEmpty(value?: string | null): string {
+  return String(value || "").trim();
 }
 
 function outcomeLabel(value?: string | null): string {
@@ -131,6 +187,7 @@ export default function MobileAnalyticsDashboard() {
   const [funnel, setFunnel] = useState<ResourceState<MobileAnalyticsFunnel>>(createResourceState());
   const [errors, setErrors] = useState<ResourceState<MobileAnalyticsErrors>>(createResourceState());
   const [feedback, setFeedback] = useState<ResourceState<MobileAnalyticsFeedback>>(createResourceState());
+  const [experience, setExperience] = useState<ResourceState<MobileAnalyticsExperience>>(createResourceState());
   const [sessionList, setSessionList] = useState<ResourceState<MobileAnalyticsSessions>>(createResourceState());
   const [sessionDetail, setSessionDetail] = useState<ResourceState<MobileAnalyticsSessions>>(createResourceState());
   const [sessionQuery, setSessionQuery] = useState("");
@@ -163,14 +220,16 @@ export default function MobileAnalyticsDashboard() {
       setFunnel((current) => ({ ...current, loading: true, error: null }));
       setErrors((current) => ({ ...current, loading: true, error: null }));
       setFeedback((current) => ({ ...current, loading: true, error: null }));
+      setExperience((current) => ({ ...current, loading: true, error: null }));
       setSessionList((current) => ({ ...current, loading: true, error: null }));
       setSessionDetail((current) => ({ ...current, loading: true, error: null }));
 
-      const [overviewResult, funnelResult, errorsResult, feedbackResult, sessionsResult] = await Promise.allSettled([
+      const [overviewResult, funnelResult, errorsResult, feedbackResult, experienceResult, sessionsResult] = await Promise.allSettled([
         fetchMobileAnalyticsOverview(baseQuery),
         fetchMobileAnalyticsFunnel(baseQuery),
         fetchMobileAnalyticsErrors(baseQuery),
         fetchMobileAnalyticsFeedback(baseQuery),
+        fetchMobileAnalyticsExperience(baseQuery),
         fetchMobileAnalyticsSessions({ ...baseQuery, limit: 10 }),
       ]);
 
@@ -195,6 +254,11 @@ export default function MobileAnalyticsDashboard() {
         loading: false,
         data: feedbackResult.status === "fulfilled" ? feedbackResult.value : null,
         error: feedbackResult.status === "fulfilled" ? null : formatError(feedbackResult.reason),
+      });
+      setExperience({
+        loading: false,
+        data: experienceResult.status === "fulfilled" ? experienceResult.value : null,
+        error: experienceResult.status === "fulfilled" ? null : formatError(experienceResult.reason),
       });
       if (sessionsResult.status === "fulfilled") {
         setSessionList({
@@ -316,7 +380,7 @@ export default function MobileAnalyticsDashboard() {
             <div className="text-[12px] font-semibold uppercase tracking-[0.14em] text-black/42">Live Dashboard</div>
             <h2 className="mt-2 text-[30px] font-semibold tracking-[-0.03em] text-black/88">真实数据面板</h2>
             <p className="mt-2 max-w-[720px] text-[14px] leading-[1.7] text-black/62">
-              这里开始展示真实聚合结果。现在已经能直接看 overview、漏斗、阶段错误、反馈分布和会话时间线，不再停留在文档层。
+              这里开始展示真实聚合结果。现在已经能直接看 overview、漏斗、体验信号、阶段错误、反馈分布和会话时间线，不再停留在文档层。
             </p>
           </div>
           <div className="text-right text-[12px] text-black/46">
@@ -457,6 +521,147 @@ export default function MobileAnalyticsDashboard() {
           )}
         </PanelCard>
       </section>
+
+      <PanelCard title="Experience Signals" subtitle="列表兴趣、结果阅读与误触停滞">
+        {experience.error ? (
+          <PanelError message={experience.error} />
+        ) : experience.loading ? (
+          <PanelLoading />
+        ) : experience.data ? (
+          <div className="space-y-5">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <CompactStat
+                title="产品列表 CTR"
+                value={`${formatPercent(experience.data.wiki_product_ctr)} · ${formatNumber(experience.data.wiki_product_clicks)}/${formatNumber(experience.data.wiki_product_list_views)}`}
+              />
+              <CompactStat
+                title="成分列表 CTR"
+                value={`${formatPercent(experience.data.wiki_ingredient_ctr)} · ${formatNumber(experience.data.wiki_ingredient_clicks)}/${formatNumber(experience.data.wiki_ingredient_list_views)}`}
+              />
+              <CompactStat title="结果页平均停留" value={formatDurationMs(experience.data.avg_result_dwell_ms)} />
+              <CompactStat
+                title="结果页深读率"
+                value={`${formatPercent(experience.data.result_scroll_75_rate)} · 75% / ${formatPercent(experience.data.result_scroll_100_rate)} · 100%`}
+              />
+            </div>
+
+            <div className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
+              <div className="space-y-5">
+                <div>
+                  <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-black/42">阅读与离开</div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <article className="rounded-[20px] border border-black/10 bg-[#f7f8fb] px-4 py-4">
+                      <div className="text-[12px] text-black/48">结果页离开</div>
+                      <div className="mt-2 text-[24px] font-semibold tracking-[-0.03em] text-black/86">
+                        {formatNumber(experience.data.compare_result_leaves)}
+                      </div>
+                      <div className="mt-2 text-[12px] text-black/52">
+                        结果页访问 {formatNumber(experience.data.compare_result_views)}
+                      </div>
+                    </article>
+                    <article className="rounded-[20px] border border-black/10 bg-[#f7f8fb] px-4 py-4">
+                      <div className="text-[12px] text-black/48">结果页 P50 停留</div>
+                      <div className="mt-2 text-[24px] font-semibold tracking-[-0.03em] text-black/86">
+                        {formatDurationMs(experience.data.p50_result_dwell_ms)}
+                      </div>
+                      <div className="mt-2 text-[12px] text-black/52">
+                        rage {formatNumber(experience.data.rage_clicks)} · stall {formatNumber(experience.data.stall_detected)}
+                      </div>
+                    </article>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-black/42">结果页 CTA 点击</div>
+                  {experience.data.result_cta_clicks.length === 0 ? (
+                    <EmptyHint label="当前筛选下还没有结果页 CTA 点击。" />
+                  ) : (
+                    <div className="space-y-3">
+                      {experience.data.result_cta_clicks.map((item) => (
+                        <div key={item.key}>
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="text-[13px] font-medium text-black/72">{resultCtaLabel(item.key)}</div>
+                            <div className="text-[12px] text-black/52">
+                              {formatNumber(item.count)} · {formatPercent(item.rate)}
+                            </div>
+                          </div>
+                          <div className="mt-2 h-2 rounded-full bg-black/6">
+                            <div
+                              className="h-2 rounded-full bg-[#0f7c59]"
+                              style={{ width: item.count > 0 ? `${Math.max(8, Math.round(item.rate * 100))}%` : "0%" }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-5">
+                <div>
+                  <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-black/42">页面阅读深度</div>
+                  {experience.data.scroll_depth_by_page.length === 0 ? (
+                    <EmptyHint label="当前筛选下还没有阅读深度样本。" />
+                  ) : (
+                    <div className="overflow-x-auto rounded-[22px] border border-black/10">
+                      <table className="min-w-full border-separate border-spacing-0">
+                        <thead className="bg-[#f7f8fb]">
+                          <tr>
+                            <th className="border-b border-black/10 px-4 py-3 text-left text-[11px] uppercase tracking-[0.08em] text-black/45">Page</th>
+                            <th className="border-b border-black/10 px-4 py-3 text-right text-[11px] uppercase tracking-[0.08em] text-black/45">Depth</th>
+                            <th className="border-b border-black/10 px-4 py-3 text-right text-[11px] uppercase tracking-[0.08em] text-black/45">Count</th>
+                            <th className="border-b border-black/10 px-4 py-3 text-right text-[11px] uppercase tracking-[0.08em] text-black/45">Rate</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {experience.data.scroll_depth_by_page.map((item) => (
+                            <tr key={`${item.page}:${item.depth_percent}`}>
+                              <td className="border-b border-black/[0.06] px-4 py-3 text-[13px] text-black/76">{pageLabel(item.page)}</td>
+                              <td className="border-b border-black/[0.06] px-4 py-3 text-right text-[13px] text-black/64">{item.depth_percent}%</td>
+                              <td className="border-b border-black/[0.06] px-4 py-3 text-right text-[13px] font-semibold text-black/82">{formatNumber(item.count)}</td>
+                              <td className="border-b border-black/[0.06] px-4 py-3 text-right text-[12px] text-black/58">{formatPercent(item.rate)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-black/42">停滞页面</div>
+                    {renderCountList(experience.data.stall_by_page)}
+                  </div>
+                  <div>
+                    <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-black/42">Top Rage Targets</div>
+                    {experience.data.rage_click_targets.length === 0 ? (
+                      <EmptyHint label="当前筛选下还没有 rage click。" />
+                    ) : (
+                      <div className="space-y-2">
+                        {experience.data.rage_click_targets.map((item) => (
+                          <div
+                            key={`${item.page}:${item.target_id}`}
+                            className="flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-black/10 bg-[#f7f8fb] px-4 py-3"
+                          >
+                            <div className="text-[13px] text-black/72">{rageTargetLabel(item)}</div>
+                            <div className="text-[12px] text-black/52">
+                              {formatNumber(item.count)} · {formatPercent(item.rate)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <EmptyHint label="当前筛选下还没有体验信号数据。" />
+        )}
+      </PanelCard>
 
       <section className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
         <PanelCard title="Stage Errors" subtitle="阶段失败、错误码与时长估算">

@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { MobileCompareResult, MobileCompareResultSection } from "@/lib/api";
+import { trackMobileEvent, trackMobileEventWithBeacon } from "@/lib/mobileAnalytics";
 import { describeMobileRouteFocus } from "@/lib/mobile/routeCopy";
 
 type InsightSource = "feel" | "rhythm" | "care" | "consensus" | "ingredient" | "fallback";
@@ -32,6 +33,7 @@ type ProductVisual = {
 
 export default function MobileCompareResultFlow({ result }: { result: MobileCompareResult }) {
   const [activeSheet, setActiveSheet] = useState<SheetState | null>(null);
+  const route = `/m/compare/result/${result.compare_id}`;
 
   const pairResults = useMemo(() => result.pair_results || [], [result.pair_results]);
   const overall = result.overall || null;
@@ -171,6 +173,25 @@ export default function MobileCompareResultFlow({ result }: { result: MobileComp
     return out.slice(0, 3);
   }, [benefits, profileAdvice, watchouts]);
 
+  const trackResultCta = (cta: string, extra?: Record<string, unknown>, useBeacon = false) => {
+    const payload = {
+      page: "compare_result",
+      route,
+      source: "m_compare_result",
+      category: result.category,
+      compare_id: result.compare_id,
+      decision: finalDecision,
+      confidence: finalConfidence / 100,
+      cta,
+      ...extra,
+    };
+    if (useBeacon) {
+      trackMobileEventWithBeacon("compare_result_cta_click", payload);
+      return;
+    }
+    void trackMobileEvent("compare_result_cta_click", payload);
+  };
+
   useEffect(() => {
     if (!activeSheet) return;
     const prevOverflow = document.body.style.overflow;
@@ -256,12 +277,20 @@ export default function MobileCompareResultFlow({ result }: { result: MobileComp
           <div className="mt-6 flex flex-wrap gap-2">
             <a
               href="#reason-gallery"
+              data-analytics-id="result:cta:reason-gallery"
+              onClick={() => {
+                trackResultCta("reason_gallery_anchor");
+              }}
               className="m-pressable inline-flex h-11 items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-6 text-[15px] font-semibold text-white shadow-[0_12px_28px_rgba(0,113,227,0.28)] active:opacity-95"
             >
               看原因
             </a>
             <Link
               href={`/m/compare?category=${encodeURIComponent(result.category)}`}
+              data-analytics-id="result:cta:rerun-compare"
+              onClick={() => {
+                trackResultCta("rerun_compare", undefined, true);
+              }}
               className="m-pressable inline-flex h-11 items-center justify-center rounded-full border border-[#d0d6e0] bg-white px-5 text-[14px] font-medium text-[#2f3b53] active:bg-black/[0.03] dark:border-[#5f6b82] dark:bg-[#1f2a3e] dark:text-[#d7e4ff]"
             >
               再做一次对比
@@ -306,8 +335,13 @@ export default function MobileCompareResultFlow({ result }: { result: MobileComp
                     <button
                       type="button"
                       onClick={() => {
+                        trackResultCta("open_full_card", {
+                          card_source: card.source,
+                          card_key: card.key,
+                        });
                         setActiveSheet({ source: card.source, title: card.title, items: card.items });
                       }}
+                      data-analytics-id={`result:cta:open-full:${card.key}`}
                       className="m-pressable inline-flex h-10 items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-5 text-[14px] font-semibold text-white shadow-[0_12px_24px_rgba(0,113,227,0.26)] active:opacity-95"
                     >
                       全部内容
@@ -337,12 +371,24 @@ export default function MobileCompareResultFlow({ result }: { result: MobileComp
           <div className="mt-5 flex flex-wrap gap-2">
             <Link
               href={result.recommendation.links.product}
+              data-analytics-id="result:cta:product"
+              onClick={() => {
+                trackResultCta("recommendation_product", {
+                  target_path: result.recommendation.links.product,
+                }, true);
+              }}
               className="m-pressable inline-flex h-11 items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-6 text-[15px] font-semibold text-white shadow-[0_12px_28px_rgba(0,113,227,0.28)] active:opacity-95"
             >
               查看推荐产品
             </Link>
             <Link
               href={result.recommendation.links.wiki}
+              data-analytics-id="result:cta:wiki"
+              onClick={() => {
+                trackResultCta("recommendation_wiki", {
+                  target_path: result.recommendation.links.wiki,
+                }, true);
+              }}
               className="m-pressable inline-flex h-11 items-center justify-center rounded-full border border-[#d0d6e0] bg-white px-5 text-[14px] font-medium text-[#2f3b53] active:bg-black/[0.03] dark:border-[#5f6b82] dark:bg-[#1f2a3e] dark:text-[#d7e4ff]"
             >
               查看成分百科

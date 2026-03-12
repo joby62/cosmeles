@@ -67,6 +67,7 @@ export default function MobilePageAnalytics(props: Props) {
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
+      emitExit("unmount");
       window.removeEventListener("pagehide", handlePageHide);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };

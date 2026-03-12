@@ -1536,6 +1536,45 @@ class MobileAnalyticsFeedbackResponse(BaseModel):
     recent_text_samples: List[MobileAnalyticsFeedbackTextSample] = Field(default_factory=list)
 
 
+class MobileAnalyticsPageDepthItem(BaseModel):
+    page: str
+    depth_percent: int
+    count: int = 0
+    rate: float = 0.0
+
+
+class MobileAnalyticsRageClickTargetItem(BaseModel):
+    page: str
+    target_id: str
+    count: int = 0
+    rate: float = 0.0
+
+
+class MobileAnalyticsExperienceResponse(BaseModel):
+    status: str
+    filters: MobileAnalyticsFilterState
+    wiki_product_list_views: int = 0
+    wiki_product_clicks: int = 0
+    wiki_product_ctr: float = 0.0
+    wiki_ingredient_list_views: int = 0
+    wiki_ingredient_clicks: int = 0
+    wiki_ingredient_ctr: float = 0.0
+    compare_result_views: int = 0
+    compare_result_leaves: int = 0
+    avg_result_dwell_ms: float = 0.0
+    p50_result_dwell_ms: float = 0.0
+    result_scroll_75: int = 0
+    result_scroll_100: int = 0
+    result_scroll_75_rate: float = 0.0
+    result_scroll_100_rate: float = 0.0
+    stall_detected: int = 0
+    rage_clicks: int = 0
+    scroll_depth_by_page: List[MobileAnalyticsPageDepthItem] = Field(default_factory=list)
+    stall_by_page: List[MobileAnalyticsCountItem] = Field(default_factory=list)
+    rage_click_targets: List[MobileAnalyticsRageClickTargetItem] = Field(default_factory=list)
+    result_cta_clicks: List[MobileAnalyticsCountItem] = Field(default_factory=list)
+
+
 class MobileAnalyticsSessionSummary(BaseModel):
     session_id: str
     owner_label: Optional[str] = None
