@@ -487,6 +487,7 @@ def _forward_selection_result_model_event(
                 "answers_hash": answers_hash,
                 "delta": delta,
                 "text": delta,
+                "stream_kind": str(payload.get("stream_kind") or ""),
             },
         )
         return

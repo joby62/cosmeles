@@ -203,6 +203,7 @@ class ProductWorkbenchJobView(BaseModel):
     current_item_id: Optional[str] = None
     current_item_name: Optional[str] = None
     counters: ProductWorkbenchJobCounters = Field(default_factory=ProductWorkbenchJobCounters)
+    live_text: Optional[str] = None
     logs: List[str] = []
     result: Optional[dict[str, Any]] = None
     error: Optional[ProductWorkbenchJobError] = None
@@ -395,7 +396,9 @@ class UploadIngestJobView(BaseModel):
     stage1_model_tier: Optional[Literal["mini", "lite", "pro"]] = None
     stage2_model_tier: Optional[Literal["mini", "lite", "pro"]] = None
     stage1_text: Optional[str] = None
+    stage1_reasoning_text: Optional[str] = None
     stage2_text: Optional[str] = None
+    stage2_reasoning_text: Optional[str] = None
     missing_fields: List[str] = []
     required_view: Optional[str] = None
     models: Optional[dict[str, Any]] = None

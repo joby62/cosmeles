@@ -165,3 +165,56 @@ def test_governance_cleanup_workbench_jobs_create_list_cancel_retry(
     retried_job = retried.json()
     assert retried_job["status"] == "queued"
     assert retried_job["job_type"] == job_type
+
+
+def test_product_workbench_live_text_merges_output_and_reasoning_blocks():
+    state = None
+    state = products_routes._update_product_workbench_live_text_state_json(
+        state,
+        updated_at="2026-03-12T14:00:00Z",
+        step="product_analysis_model_delta",
+        stage_label="模型输出",
+        text="第一段",
+        item_id="prod-1",
+        item_name="shampoo",
+        stream_kind="output_text",
+    )
+    state = products_routes._update_product_workbench_live_text_state_json(
+        state,
+        updated_at="2026-03-12T14:00:01Z",
+        step="product_analysis_model_delta",
+        stage_label="模型输出",
+        text="结论。",
+        item_id="prod-1",
+        item_name="shampoo",
+        stream_kind="output_text",
+    )
+    state = products_routes._update_product_workbench_live_text_state_json(
+        state,
+        updated_at="2026-03-12T14:00:02Z",
+        step="product_analysis_model_delta",
+        stage_label="思考摘要",
+        text="先判断成分。",
+        item_id="prod-1",
+        item_name="shampoo",
+        stream_kind="reasoning_summary",
+    )
+    state = products_routes._update_product_workbench_live_text_state_json(
+        state,
+        updated_at="2026-03-12T14:00:03Z",
+        step="product_analysis_done",
+        stage_label="单项完成",
+        text="[1/1] 分析完成",
+        item_id="prod-1",
+        item_name="shampoo",
+    )
+
+    live_text = products_routes._product_workbench_live_text_from_json(state)
+
+    assert live_text is not None
+    assert "模型输出（response.output_text）" in live_text
+    assert "思考摘要（response.reasoning_summary_text）" in live_text
+    assert "shampoo / prod-1" in live_text
+    assert "第一段结论。" in live_text
+    assert "先判断成分。" in live_text
+    assert "单项完成 | [1/1] 分析完成" in live_text

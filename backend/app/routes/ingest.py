@@ -11,7 +11,7 @@ from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException, Q
 from fastapi.responses import StreamingResponse, Response
 from pydantic import ValidationError
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy import select
+from sqlalchemy import inspect as sa_inspect, select, text
 
 from app.ai.errors import AIServiceError
 from app.constants import VALID_CATEGORIES, VALID_SOURCES
@@ -668,7 +668,9 @@ async def create_upload_ingest_job(
         stage1_model_tier=normalized_stage1_model_tier,
         stage2_model_tier=normalized_stage2_model_tier,
         stage1_text=None,
+        stage1_reasoning_text=None,
         stage2_text=None,
+        stage2_reasoning_text=None,
         missing_fields_json="[]",
         required_view=None,
         models_json=None,
@@ -778,7 +780,9 @@ def retry_upload_ingest_job(job_id: str, db: Session = Depends(get_db)):
     rec.percent = 3
     rec.cancel_requested = False
     rec.stage1_text = None
+    rec.stage1_reasoning_text = None
     rec.stage2_text = None
+    rec.stage2_reasoning_text = None
     rec.missing_fields_json = "[]"
     rec.required_view = None
     rec.models_json = None
@@ -1172,6 +1176,17 @@ class UploadIngestJobCancelledError(RuntimeError):
 def _ensure_upload_ingest_job_table(db: Session) -> None:
     bind = db.get_bind()
     UploadIngestJob.__table__.create(bind=bind, checkfirst=True)
+    inspector = sa_inspect(bind)
+    columns = {item["name"] for item in inspector.get_columns("upload_ingest_jobs")}
+    statements: list[str] = []
+    if "stage1_reasoning_text" not in columns:
+        statements.append("ALTER TABLE upload_ingest_jobs ADD COLUMN stage1_reasoning_text TEXT")
+    if "stage2_reasoning_text" not in columns:
+        statements.append("ALTER TABLE upload_ingest_jobs ADD COLUMN stage2_reasoning_text TEXT")
+    if statements:
+        with bind.begin() as conn:
+            for stmt in statements:
+                conn.execute(text(stmt))
 
 
 def _submit_upload_ingest_job(*, bind: Any, job_id: str, resume: bool) -> None:
@@ -1567,10 +1582,15 @@ def _append_upload_job_stage_event(*, bind: Any, job_id: str, event: dict[str, A
         payload = event if isinstance(event, dict) else {}
         stage = str(payload.get("stage") or "").strip().lower()
         event_type = str(payload.get("type") or "").strip().lower()
+        stream_kind = str(payload.get("stream_kind") or "").strip().lower()
         text = str(payload.get("message") or payload.get("text") or "").strip()
         delta = str(payload.get("delta") or "").strip()
 
-        if stage.startswith("stage1") and delta:
+        if stage.startswith("stage1") and delta and stream_kind == "reasoning_summary":
+            rec.stage1_reasoning_text = f"{rec.stage1_reasoning_text or ''}{delta}"
+        elif stage.startswith("stage2") and delta and stream_kind == "reasoning_summary":
+            rec.stage2_reasoning_text = f"{rec.stage2_reasoning_text or ''}{delta}"
+        elif stage.startswith("stage1") and delta:
             rec.stage1_text = f"{rec.stage1_text or ''}{delta}"
         elif stage.startswith("stage2") and delta:
             rec.stage2_text = f"{rec.stage2_text or ''}{delta}"
@@ -1872,7 +1892,9 @@ def _to_upload_ingest_job_view(rec: UploadIngestJob) -> UploadIngestJobView:
         stage1_model_tier=_normalize_model_tier_optional_for_view(rec.stage1_model_tier),
         stage2_model_tier=_normalize_model_tier_optional_for_view(rec.stage2_model_tier),
         stage1_text=str(rec.stage1_text or "").strip() or None,
+        stage1_reasoning_text=str(rec.stage1_reasoning_text or "").strip() or None,
         stage2_text=str(rec.stage2_text or "").strip() or None,
+        stage2_reasoning_text=str(rec.stage2_reasoning_text or "").strip() or None,
         missing_fields=missing_fields,
         required_view=str(rec.required_view or "").strip() or None,
         models=models or None,

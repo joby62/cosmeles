@@ -103,6 +103,7 @@ export type ProductWorkbenchJob = {
   current_item_id?: string | null;
   current_item_name?: string | null;
   counters: ProductWorkbenchJobCounters;
+  live_text?: string | null;
   logs: string[];
   result?: Record<string, unknown> | null;
   error?: ProductWorkbenchJobError | null;
@@ -3045,7 +3046,9 @@ export type UploadIngestJob = {
   stage1_model_tier?: "mini" | "lite" | "pro" | null;
   stage2_model_tier?: "mini" | "lite" | "pro" | null;
   stage1_text?: string | null;
+  stage1_reasoning_text?: string | null;
   stage2_text?: string | null;
+  stage2_reasoning_text?: string | null;
   missing_fields: string[];
   required_view?: string | null;
   models?: Record<string, unknown> | null;

@@ -113,6 +113,68 @@ def test_upload_job_can_run_to_done(test_client, monkeypatch: pytest.MonkeyPatch
     assert leftovers == []
 
 
+def test_upload_job_separates_reasoning_summary_from_output_text(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, storage_dir = test_client
+    _install_fake_convert(monkeypatch, storage_dir)
+
+    def fake_stage1(image_rel: str, trace_id: str, image_paths=None, model_tier=None, event_callback=None):
+        _ = image_rel
+        _ = image_paths
+        _ = model_tier
+        if event_callback:
+            event_callback({"type": "delta", "stage": "stage1_vision", "delta": "【品牌】测试品牌", "stream_kind": "output_text"})
+            event_callback({"type": "delta", "stage": "stage1_vision", "delta": "先识别主图字段。", "stream_kind": "reasoning_summary"})
+        return {
+            "vision_text": "【品牌】测试品牌\n【产品名】测试产品\n【成分表原文】水、甘油",
+            "model": "doubao-stage1-mini",
+            "artifact": f"doubao_runs/{trace_id}/stage1_vision.json",
+        }
+
+    def fake_stage2(*, trace_id: str, category: str | None, brand: str | None, name: str | None, model_tier: str | None, db, event_callback=None):
+        _ = category
+        _ = brand
+        _ = name
+        _ = model_tier
+        _ = db
+        if event_callback:
+            event_callback({"type": "delta", "stage": "stage2_struct", "delta": "{\"ok\":true}", "stream_kind": "output_text"})
+            event_callback({"type": "delta", "stage": "stage2_struct", "delta": "先校验 OCR 再补齐结构。", "stream_kind": "reasoning_summary"})
+        return {
+            "id": trace_id,
+            "status": "ok",
+            "mode": "doubao_two_stage",
+            "category": "shampoo",
+            "image_path": f"images/webp/tmp/{trace_id}.webp",
+            "json_path": f"products/{trace_id}.json",
+            "doubao": {
+                "models": {"vision": "doubao-stage1-mini", "struct": "doubao-stage2-mini"},
+                "struct_text": "{\"ok\":true}",
+                "vision_text": "【品牌】测试品牌",
+                "artifacts": {
+                    "vision": f"doubao_runs/{trace_id}/stage1_vision.json",
+                    "struct": f"doubao_runs/{trace_id}/stage2_struct.json",
+                    "context": f"doubao_runs/{trace_id}/stage1_context.json",
+                },
+            },
+        }
+
+    monkeypatch.setattr(ingest_routes, "_invoke_stage1_analyzer", fake_stage1)
+    monkeypatch.setattr(ingest_routes, "_finalize_stage2", fake_stage2)
+
+    created = client.post(
+        "/api/upload/jobs",
+        files={"image": ("sample-stream.jpg", VALID_TEST_IMAGE_BYTES, "image/jpeg")},
+    )
+    assert created.status_code == 200
+    job_id = created.json()["job_id"]
+
+    done = _wait_upload_job_status(client, job_id=job_id, expected={"done"})
+    assert done["stage1_text"] == "【品牌】测试品牌\n【产品名】测试产品\n【成分表原文】水、甘油"
+    assert done["stage1_reasoning_text"] == "先识别主图字段。"
+    assert done["stage2_text"] == "{\"ok\":true}"
+    assert done["stage2_reasoning_text"] == "先校验 OCR 再补齐结构。"
+
+
 def test_upload_job_can_run_with_initial_two_images(test_client, monkeypatch: pytest.MonkeyPatch):
     client, storage_dir = test_client
     _install_fake_convert(monkeypatch, storage_dir)

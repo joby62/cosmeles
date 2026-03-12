@@ -191,7 +191,7 @@ def _cap_stage1_vision(
             prompt.text,
             model=selected_model,
             stream=event_callback is not None,
-            on_text_delta=(lambda delta: _emit(event_callback, {"type": "delta", "stage": "stage1_vision", "delta": delta})),
+            **_build_doubao_stream_handlers(event_callback=event_callback, stage="stage1_vision"),
         )
         if len(image_data_urls) == 1
         else sdk.chat_with_images(
@@ -199,7 +199,7 @@ def _cap_stage1_vision(
             prompt.text,
             model=selected_model,
             stream=event_callback is not None,
-            on_text_delta=(lambda delta: _emit(event_callback, {"type": "delta", "stage": "stage1_vision", "delta": delta})),
+            **_build_doubao_stream_handlers(event_callback=event_callback, stage="stage1_vision"),
         )
     )
     vision_text = _extract_content(response_raw)
@@ -276,7 +276,7 @@ def _cap_stage2_struct(
             rendered_prompt,
             model=selected_model,
             stream=event_callback is not None,
-            on_text_delta=(lambda delta: _emit(event_callback, {"type": "delta", "stage": "stage2_struct", "delta": delta})),
+            **_build_doubao_stream_handlers(event_callback=event_callback, stage="stage2_struct"),
         )
     )
     struct_text = _extract_content(response_raw)
@@ -373,7 +373,7 @@ def _cap_ingredient_enrich(
             rendered_prompt,
             model=text_model,
             stream=event_callback is not None,
-            on_text_delta=(lambda delta: _emit(event_callback, {"type": "delta", "stage": "ingredient_enrich", "delta": delta})),
+            **_build_doubao_stream_handlers(event_callback=event_callback, stage="ingredient_enrich"),
         )
     )
     text = _extract_content(response_raw)
@@ -475,7 +475,7 @@ def _cap_ingredient_category_profile(
             rendered_prompt,
             model=pro_model,
             stream=event_callback is not None,
-            on_text_delta=(lambda delta: _emit(event_callback, {"type": "delta", "stage": "ingredient_category_profile", "delta": delta})),
+            **_build_doubao_stream_handlers(event_callback=event_callback, stage="ingredient_category_profile"),
         )
     )
     text = _extract_content(response_raw)
@@ -541,7 +541,7 @@ def _cap_image_json_consistency(
             rendered_prompt,
             model=text_model,
             stream=event_callback is not None,
-            on_text_delta=(lambda delta: _emit(event_callback, {"type": "delta", "stage": "image_json_consistency", "delta": delta})),
+            **_build_doubao_stream_handlers(event_callback=event_callback, stage="image_json_consistency"),
         )
     )
     text = _extract_content(response_raw)
@@ -605,7 +605,7 @@ def _cap_product_dedup_decision(
             rendered_prompt,
             model=text_model,
             stream=event_callback is not None,
-            on_text_delta=(lambda delta: _emit(event_callback, {"type": "delta", "stage": "product_dedup_decision", "delta": delta})),
+            **_build_doubao_stream_handlers(event_callback=event_callback, stage="product_dedup_decision"),
         )
     )
     text = _extract_content(response_raw)
@@ -686,7 +686,7 @@ def _cap_product_dedup_group(
             rendered_prompt,
             model=selected_model,
             stream=event_callback is not None,
-            on_text_delta=(lambda delta: _emit(event_callback, {"type": "delta", "stage": "product_dedup_group", "delta": delta})),
+            **_build_doubao_stream_handlers(event_callback=event_callback, stage="product_dedup_group"),
         )
     )
     text = _extract_content(response_raw)
@@ -759,7 +759,7 @@ def _cap_mobile_compare_summary(
             rendered_prompt,
             model=text_model,
             stream=event_callback is not None,
-            on_text_delta=(lambda delta: _emit(event_callback, {"type": "delta", "stage": "mobile_compare_summary", "delta": delta})),
+            **_build_doubao_stream_handlers(event_callback=event_callback, stage="mobile_compare_summary"),
         )
     )
     text = _extract_content(response_raw)
@@ -870,7 +870,7 @@ def _cap_route_mapping(
             rendered_prompt,
             model=pro_model,
             stream=event_callback is not None,
-            on_text_delta=(lambda delta: _emit(event_callback, {"type": "delta", "stage": stage, "delta": delta})),
+            **_build_doubao_stream_handlers(event_callback=event_callback, stage=stage),
         )
     )
     text = _extract_content(response_raw)
@@ -985,7 +985,7 @@ def _cap_product_profile(
             rendered_prompt,
             model=pro_model,
             stream=event_callback is not None,
-            on_text_delta=(lambda delta: _emit(event_callback, {"type": "delta", "stage": stage, "delta": delta})),
+            **_build_doubao_stream_handlers(event_callback=event_callback, stage=stage),
         )
     )
     text = _extract_content(response_raw)
@@ -1100,7 +1100,7 @@ def _cap_mobile_selection_result(
             rendered_prompt,
             model=pro_model,
             stream=event_callback is not None,
-            on_text_delta=(lambda delta: _emit(event_callback, {"type": "delta", "stage": stage, "delta": delta})),
+            **_build_doubao_stream_handlers(event_callback=event_callback, stage=stage),
         )
     )
     text = _extract_content(response_raw)
@@ -2353,3 +2353,53 @@ def _emit(event_callback: Callable[[dict[str, Any]], None] | None, payload: dict
         event_callback(payload)
     except Exception:
         return
+
+
+def _build_doubao_stream_handlers(
+    *,
+    event_callback: Callable[[dict[str, Any]], None] | None,
+    stage: str,
+) -> dict[str, Callable[..., None] | None]:
+    if event_callback is None:
+        return {"on_text_delta": None, "on_stream_event": None}
+    return {
+        "on_text_delta": lambda delta: _emit(
+            event_callback,
+            {
+                "type": "delta",
+                "stage": stage,
+                "delta": delta,
+                "stream_kind": "output_text",
+                "stream_field": "response.output_text.delta.delta",
+            },
+        ),
+        "on_stream_event": lambda event: _forward_doubao_stream_event(
+            event_callback=event_callback,
+            stage=stage,
+            event=event,
+        ),
+    }
+
+
+def _forward_doubao_stream_event(
+    *,
+    event_callback: Callable[[dict[str, Any]], None] | None,
+    stage: str,
+    event: dict[str, Any],
+) -> None:
+    kind = str(event.get("kind") or "").strip()
+    if kind != "reasoning_summary_delta":
+        return
+    delta = str(event.get("delta") or "")
+    if not delta:
+        return
+    _emit(
+        event_callback,
+        {
+            "type": "delta",
+            "stage": stage,
+            "delta": delta,
+            "stream_kind": "reasoning_summary",
+            "stream_field": str(event.get("field") or "response.reasoning_summary_text.delta.delta"),
+        },
+    )

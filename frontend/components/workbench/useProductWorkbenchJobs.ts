@@ -17,6 +17,7 @@ export type WorkbenchJobLike = {
   stage?: string | null;
   stage_label?: string | null;
   message?: string | null;
+  live_text?: string | null;
   percent?: number | null;
   current_index?: number | null;
   current_total?: number | null;
@@ -161,6 +162,13 @@ function defaultAssembleLiveText<TJob extends WorkbenchJobLike>(
   previous: WorkbenchLiveTextState,
 ): WorkbenchLiveTextState {
   if (!job) return createEmptyLiveTextState();
+  const liveText = String(job.live_text || "").trim();
+  if (liveText) {
+    return {
+      text: liveText,
+      meta: { jobId: job.job_id, source: "backend_live_text" },
+    };
+  }
   if ("logs" in job && Array.isArray((job as { logs?: unknown }).logs)) {
     return {
       text: ((job as { logs: string[] }).logs || []).join("\n"),

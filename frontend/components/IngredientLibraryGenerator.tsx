@@ -626,7 +626,7 @@ function formatIngredientActiveMessage(job: IngredientLibraryBuildJob | null): s
   if (!job) return "待命 · 等待创建任务";
   const stage = String(job.stage_label || job.stage || "待命");
   const stageKey = String(job.stage || "").trim().toLowerCase();
-  if (stageKey === "ingredient_model_delta") return `${stage} · 模型流式输出中…`;
+  if (stageKey === "ingredient_model_delta") return `${stage} · ${job.message || "流式生成中…"}`;
   return `${stage} · ${job.message || "处理中"}`;
 }
 

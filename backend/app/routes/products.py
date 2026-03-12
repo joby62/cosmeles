@@ -172,6 +172,7 @@ PRODUCT_WORKBENCH_JOB_HEARTBEAT_SECONDS = 2
 PRODUCT_WORKBENCH_JOB_STALE_SECONDS = max(60 * 30, PRODUCT_WORKBENCH_JOB_HEARTBEAT_SECONDS * 300)
 PRODUCT_WORKBENCH_JOB_PROCESS_STARTED_AT = datetime.now(timezone.utc)
 PRODUCT_WORKBENCH_LOG_LIMIT = 240
+LIVE_TEXT_LOG_LIMIT = 200
 INGREDIENT_NORMALIZATION_PACKAGE_VERSION = "v2026-03-06.1"
 INGREDIENT_NORMALIZATION_PACKAGES: tuple[dict[str, Any], ...] = (
     {
@@ -1773,6 +1774,7 @@ def cancel_ingredient_library_build_job(job_id: str, db: Session = Depends(get_d
         stage_label=str(rec.stage_label or "").strip() or _ingredient_build_stage_label(str(rec.stage or rec.status or "")),
         text=str(rec.message or ""),
         ingredient_id=rec.current_ingredient_id,
+        ingredient_name=rec.current_ingredient_name,
     )
     db.add(rec)
     try:
@@ -3483,9 +3485,10 @@ def _build_ingredient_library_impl(
                     "source_samples": item["source_samples"],
                 },
                 trace_id=ingredient_id,
-                event_callback=lambda e, _iid=ingredient_id, _cat=category_name: _forward_ingredient_model_event(
+                event_callback=lambda e, _iid=ingredient_id, _iname=ingredient_name, _cat=category_name: _forward_ingredient_model_event(
                     event_callback=event_callback,
                     ingredient_id=_iid,
+                    ingredient_name=_iname,
                     category=_cat,
                     payload=e,
                 ),
@@ -4029,12 +4032,13 @@ def _apply_ingredient_build_job_progress(
     step = str(payload.get("step") or "").strip().lower()
     now = now_iso()
     text = str(payload.get("text") or "").strip()
-    if text:
-        rec.message = text
+    stream_kind = _normalize_live_text_stream_kind(str(payload.get("stream_kind") or ""))
 
     if step:
         rec.stage = step
         rec.stage_label = _ingredient_build_stage_label(step)
+        if step == "ingredient_model_delta" and stream_kind == "reasoning_summary":
+            rec.stage_label = "思考摘要"
 
     if step == "ingredient_build_start":
         rec.scanned_products = _safe_positive_int(payload.get("scanned_products"), fallback=rec.scanned_products)
@@ -4064,6 +4068,12 @@ def _apply_ingredient_build_job_progress(
 
     rec.current_ingredient_id = str(payload.get("ingredient_id") or rec.current_ingredient_id or "").strip() or rec.current_ingredient_id
     rec.current_ingredient_name = str(payload.get("ingredient_name") or rec.current_ingredient_name or "").strip() or rec.current_ingredient_name
+    if text:
+        if step == "ingredient_model_delta":
+            target_label = _live_text_target_label(item_id=rec.current_ingredient_id, item_name=rec.current_ingredient_name)
+            rec.message = f"{target_label} · {'思考摘要' if stream_kind == 'reasoning_summary' else '模型输出'}流式生成中"
+        else:
+            rec.message = text
     rec.live_text_json = _update_ingredient_build_live_text_state_json(
         rec.live_text_json,
         updated_at=now,
@@ -4071,6 +4081,8 @@ def _apply_ingredient_build_job_progress(
         stage_label=str(rec.stage_label or "").strip() or _ingredient_build_stage_label(step),
         text=text,
         ingredient_id=rec.current_ingredient_id,
+        ingredient_name=rec.current_ingredient_name,
+        stream_kind=stream_kind,
     )
 
     index_value = _safe_positive_int(payload.get("index"), fallback=rec.current_index or 0)
@@ -4124,6 +4136,7 @@ def _mark_ingredient_build_job_done(
             stage_label=_ingredient_build_stage_label("done"),
             text=str(rec.message or ""),
             ingredient_id=rec.current_ingredient_id,
+            ingredient_name=rec.current_ingredient_name,
         )
         rec.result_json = json.dumps(result.model_dump(), ensure_ascii=False)
         rec.error_json = None
@@ -4160,6 +4173,7 @@ def _mark_ingredient_build_job_cancelled(
             stage_label=_ingredient_build_stage_label("cancelled"),
             text=str(rec.message or ""),
             ingredient_id=rec.current_ingredient_id,
+            ingredient_name=rec.current_ingredient_name,
         )
         rec.finished_at = now
         rec.updated_at = now
@@ -4195,6 +4209,7 @@ def _mark_ingredient_build_job_failed(
             stage_label=_ingredient_build_stage_label("failed"),
             text=str(detail or ""),
             ingredient_id=rec.current_ingredient_id,
+            ingredient_name=rec.current_ingredient_name,
         )
         rec.error_json = json.dumps(
             {
@@ -4212,29 +4227,71 @@ def _mark_ingredient_build_job_failed(
         db.close()
 
 
-def _update_ingredient_build_live_text_state_json(
+def _normalize_live_text_stream_kind(value: str | None) -> str:
+    key = str(value or "").strip().lower()
+    if key in {"reasoning_summary", "reasoning_summary_text"}:
+        return "reasoning_summary"
+    return "output_text"
+
+
+def _live_text_target_label(*, item_id: str | None, item_name: str | None) -> str:
+    identifier = str(item_id or "").strip()
+    label = str(item_name or "").strip()
+    if label and identifier and label != identifier:
+        return f"{label} / {identifier}"
+    return label or identifier or "-"
+
+
+def _load_stream_live_text_state(raw: str | None) -> dict[str, Any]:
+    parsed = _safe_load_json_object(raw) or {}
+    logs_raw = parsed.get("logs")
+    logs = [str(item).strip() for item in logs_raw] if isinstance(logs_raw, list) else []
+    out: dict[str, Any] = {"logs": [item for item in logs if item]}
+    for prefix in ("output", "reasoning"):
+        index_raw = parsed.get(f"{prefix}_log_index")
+        out[f"{prefix}_buffer"] = str(parsed.get(f"{prefix}_buffer") or "")
+        out[f"{prefix}_target"] = str(parsed.get(f"{prefix}_target") or "")
+        out[f"{prefix}_log_index"] = index_raw if isinstance(index_raw, int) else None
+    return out
+
+
+def _stream_live_text_from_json(raw: str | None) -> str | None:
+    state = _load_stream_live_text_state(raw)
+    logs = state["logs"]
+    if not logs:
+        return None
+    return "\n\n".join(logs)
+
+
+def _update_stream_live_text_state_json(
     raw: str | None,
     *,
     updated_at: str,
     step: str,
     stage_label: str,
     text: str,
-    ingredient_id: str | None,
+    stream_kind: str | None,
+    target_label: str | None,
 ) -> str | None:
-    state = _load_ingredient_build_live_text_state(raw)
+    state = _load_stream_live_text_state(raw)
     logs = list(state["logs"])
-    model_buffer = str(state["model_buffer"])
-    model_ingredient = str(state["model_ingredient"])
-    model_log_index = state["model_log_index"]
+    output_buffer = str(state["output_buffer"])
+    output_target = str(state["output_target"])
+    output_log_index = state["output_log_index"]
+    reasoning_buffer = str(state["reasoning_buffer"])
+    reasoning_target = str(state["reasoning_target"])
+    reasoning_log_index = state["reasoning_log_index"]
 
     def trim_logs() -> None:
-        nonlocal logs, model_log_index
-        if len(logs) <= 200:
+        nonlocal logs, output_log_index, reasoning_log_index
+        if len(logs) <= LIVE_TEXT_LOG_LIMIT:
             return
-        overflow = len(logs) - 200
+        overflow = len(logs) - LIVE_TEXT_LOG_LIMIT
         logs = logs[overflow:]
-        if isinstance(model_log_index, int):
-            model_log_index = max(0, model_log_index - overflow)
+        if isinstance(output_log_index, int):
+            output_log_index = None if output_log_index < overflow else (output_log_index - overflow)
+        if isinstance(reasoning_log_index, int):
+            reasoning_log_index = None if reasoning_log_index < overflow else (reasoning_log_index - overflow)
 
     def append_line(line: str) -> None:
         nonlocal logs
@@ -4246,78 +4303,116 @@ def _update_ingredient_build_live_text_state_json(
         logs.append(value)
         trim_logs()
 
-    def sync_model_line() -> None:
-        nonlocal logs, model_log_index
-        merged = re.sub(r"\s+", " ", model_buffer).strip()
+    def stream_block(kind: str, merged: str, target: str) -> str:
+        title = "模型输出（response.output_text）" if kind == "output_text" else "思考摘要（response.reasoning_summary_text）"
+        return f"[{updated_at}] {title} | {target or '-'}\n{merged}"
+
+    def sync_stream(kind: str) -> None:
+        nonlocal logs, output_log_index, reasoning_log_index
+        if kind == "reasoning_summary":
+            merged = reasoning_buffer.strip()
+            if not merged:
+                return
+            line = stream_block(kind, merged, reasoning_target)
+            if isinstance(reasoning_log_index, int) and 0 <= reasoning_log_index < len(logs):
+                logs[reasoning_log_index] = line
+            else:
+                logs.append(line)
+                reasoning_log_index = len(logs) - 1
+                trim_logs()
+            return
+        merged = output_buffer.strip()
         if not merged:
             return
-        current_ingredient = str(ingredient_id or model_ingredient or "").strip() or "-"
-        line = f"[{updated_at}] 模型输出流 | {current_ingredient} | {merged}"
-        if isinstance(model_log_index, int) and 0 <= model_log_index < len(logs):
-            logs[model_log_index] = line
+        line = stream_block(kind, merged, output_target)
+        if isinstance(output_log_index, int) and 0 <= output_log_index < len(logs):
+            logs[output_log_index] = line
         else:
             logs.append(line)
-            model_log_index = len(logs) - 1
+            output_log_index = len(logs) - 1
             trim_logs()
 
-    def flush_model_line() -> None:
-        nonlocal model_buffer, model_log_index
-        sync_model_line()
-        model_buffer = ""
-        model_log_index = None
+    def freeze_streams(*, clear_targets: bool) -> None:
+        nonlocal output_buffer, output_target, output_log_index, reasoning_buffer, reasoning_target, reasoning_log_index
+        sync_stream("output_text")
+        sync_stream("reasoning_summary")
+        output_buffer = ""
+        output_log_index = None
+        reasoning_buffer = ""
+        reasoning_log_index = None
+        if clear_targets:
+            output_target = ""
+            reasoning_target = ""
 
-    if step == "ingredient_model_delta":
-        current_ingredient = str(ingredient_id or "").strip()
-        if current_ingredient and model_ingredient and model_ingredient != current_ingredient:
-            flush_model_line()
-        if current_ingredient:
-            model_ingredient = current_ingredient
-        if text:
-            model_buffer = f"{model_buffer}{text}"
-            sync_model_line()
+    is_stream_delta = step.endswith("_model_delta") or step == "ingredient_model_delta"
+    if is_stream_delta:
+        normalized_kind = _normalize_live_text_stream_kind(stream_kind)
+        if normalized_kind == "reasoning_summary":
+            next_target = str(target_label or reasoning_target or "").strip() or "-"
+            if reasoning_buffer.strip() and reasoning_target and reasoning_target != next_target:
+                sync_stream("reasoning_summary")
+                reasoning_buffer = ""
+                reasoning_log_index = None
+            reasoning_target = next_target
+            if text:
+                reasoning_buffer = f"{reasoning_buffer}{text}"
+                sync_stream("reasoning_summary")
+        else:
+            next_target = str(target_label or output_target or "").strip() or "-"
+            if output_buffer.strip() and output_target and output_target != next_target:
+                sync_stream("output_text")
+                output_buffer = ""
+                output_log_index = None
+            output_target = next_target
+            if text:
+                output_buffer = f"{output_buffer}{text}"
+                sync_stream("output_text")
     else:
-        flush_model_line()
+        freeze_streams(clear_targets=step in {"ingredient_build_done", "ingredient_build_cancelled", "done", "failed", "cancelled"})
         if text:
             append_line(f"[{updated_at}] {stage_label or step or '处理中'} | {text}")
 
-    if step in {"ingredient_build_done", "ingredient_build_cancelled", "done", "failed", "cancelled"}:
-        flush_model_line()
-        model_ingredient = ""
-
-    if not logs and not model_buffer:
+    if not logs and not output_buffer.strip() and not reasoning_buffer.strip():
         return None
 
     return json.dumps(
         {
             "logs": logs,
-            "model_buffer": model_buffer,
-            "model_ingredient": model_ingredient,
-            "model_log_index": model_log_index,
+            "output_buffer": output_buffer,
+            "output_target": output_target,
+            "output_log_index": output_log_index,
+            "reasoning_buffer": reasoning_buffer,
+            "reasoning_target": reasoning_target,
+            "reasoning_log_index": reasoning_log_index,
         },
         ensure_ascii=False,
     )
 
 
-def _load_ingredient_build_live_text_state(raw: str | None) -> dict[str, Any]:
-    parsed = _safe_load_json_object(raw) or {}
-    logs_raw = parsed.get("logs")
-    logs = [str(item).strip() for item in logs_raw] if isinstance(logs_raw, list) else []
-    model_log_index_raw = parsed.get("model_log_index")
-    model_log_index = model_log_index_raw if isinstance(model_log_index_raw, int) else None
-    return {
-        "logs": [item for item in logs if item],
-        "model_buffer": str(parsed.get("model_buffer") or ""),
-        "model_ingredient": str(parsed.get("model_ingredient") or ""),
-        "model_log_index": model_log_index,
-    }
+def _update_ingredient_build_live_text_state_json(
+    raw: str | None,
+    *,
+    updated_at: str,
+    step: str,
+    stage_label: str,
+    text: str,
+    ingredient_id: str | None,
+    ingredient_name: str | None,
+    stream_kind: str | None = None,
+) -> str | None:
+    return _update_stream_live_text_state_json(
+        raw,
+        updated_at=updated_at,
+        step=step,
+        stage_label=stage_label,
+        text=text,
+        stream_kind=stream_kind,
+        target_label=_live_text_target_label(item_id=ingredient_id, item_name=ingredient_name),
+    )
 
 
 def _ingredient_build_live_text_from_json(raw: str | None) -> str | None:
-    state = _load_ingredient_build_live_text_state(raw)
-    logs = state["logs"]
-    if not logs:
-        return None
-    return "\n".join(logs)
+    return _stream_live_text_from_json(raw)
 
 
 def _ingredient_build_progress_percent(
@@ -4450,9 +4545,44 @@ def _safe_load_json_list(raw: str | None) -> list[Any]:
     return parsed if isinstance(parsed, list) else []
 
 
+def _update_product_workbench_live_text_state_json(
+    raw: str | None,
+    *,
+    updated_at: str,
+    step: str,
+    stage_label: str,
+    text: str,
+    item_id: str | None,
+    item_name: str | None,
+    stream_kind: str | None = None,
+) -> str | None:
+    return _update_stream_live_text_state_json(
+        raw,
+        updated_at=updated_at,
+        step=step,
+        stage_label=stage_label,
+        text=text,
+        stream_kind=stream_kind,
+        target_label=_live_text_target_label(item_id=item_id, item_name=item_name),
+    )
+
+
+def _product_workbench_live_text_from_json(raw: str | None) -> str | None:
+    return _stream_live_text_from_json(raw)
+
+
 def _ensure_product_workbench_job_table(db: Session) -> None:
     bind = db.get_bind()
     ProductWorkbenchJob.__table__.create(bind=bind, checkfirst=True)
+    inspector = inspect(bind)
+    columns = {item["name"] for item in inspector.get_columns("product_workbench_jobs")}
+    statements: list[str] = []
+    if "live_text_json" not in columns:
+        statements.append("ALTER TABLE product_workbench_jobs ADD COLUMN live_text_json TEXT")
+    if statements:
+        with bind.begin() as conn:
+            for stmt in statements:
+                conn.execute(text(stmt))
 
 
 def _create_product_workbench_job(
@@ -4480,6 +4610,7 @@ def _create_product_workbench_job(
         current_item_name=None,
         counters_json=json.dumps({}, ensure_ascii=False),
         logs_json="[]",
+        live_text_json=None,
         result_json=None,
         error_json=None,
         cancel_requested=False,
@@ -4572,6 +4703,15 @@ def _cancel_product_workbench_job(
         rec.stage = "cancelling"
         rec.stage_label = _product_workbench_stage_label(job_type=normalized_job_type, stage="cancelling")
         rec.message = "已收到取消请求，当前处理单元结束后停止。"
+    rec.live_text_json = _update_product_workbench_live_text_state_json(
+        rec.live_text_json,
+        updated_at=now,
+        step=str(rec.stage or rec.status or "").strip().lower(),
+        stage_label=str(rec.stage_label or "").strip() or _product_workbench_stage_label(job_type=normalized_job_type, stage=str(rec.stage or rec.status or "")),
+        text=str(rec.message or ""),
+        item_id=str(rec.current_item_id or "").strip() or None,
+        item_name=str(rec.current_item_name or "").strip() or None,
+    )
     db.add(rec)
     db.commit()
     db.refresh(rec)
@@ -4609,6 +4749,7 @@ def _retry_product_workbench_job(
     rec.current_item_name = None
     rec.counters_json = json.dumps({}, ensure_ascii=False)
     rec.logs_json = "[]"
+    rec.live_text_json = None
     rec.result_json = None
     rec.error_json = None
     rec.cancel_requested = False
@@ -4891,8 +5032,11 @@ def _apply_product_workbench_job_progress(*, bind: Any, job_id: str, payload: di
         stage = step or str(rec.stage or "running").strip().lower()
         stage_label = _product_workbench_stage_label(job_type=job_type, stage=stage)
         text = str(payload.get("text") or payload.get("message") or "").strip()
+        stream_kind = _normalize_live_text_stream_kind(str(payload.get("stream_kind") or ""))
         if not text and step.endswith("_model_delta"):
             text = str(payload.get("delta") or "").strip()
+        if step.endswith("_model_delta") and stream_kind == "reasoning_summary":
+            stage_label = "思考摘要"
 
         counters = _safe_load_json_object(rec.counters_json) or {}
         _merge_product_workbench_counters(
@@ -4925,14 +5069,28 @@ def _apply_product_workbench_job_progress(*, bind: Any, job_id: str, payload: di
         rec.stage = stage or "running"
         rec.stage_label = stage_label
         if text:
-            rec.message = text
-            logs = _safe_load_json_list(rec.logs_json)
-            line = f"[{now}] {stage_label} | {text}"
-            if not logs or str(logs[-1]) != line:
-                logs.append(line)
-                if len(logs) > PRODUCT_WORKBENCH_LOG_LIMIT:
-                    logs = logs[-PRODUCT_WORKBENCH_LOG_LIMIT:]
-                rec.logs_json = json.dumps(logs, ensure_ascii=False)
+            if step.endswith("_model_delta"):
+                target_label = _live_text_target_label(item_id=current_item_id, item_name=current_item_name)
+                rec.message = f"{target_label} · {'思考摘要' if stream_kind == 'reasoning_summary' else '模型输出'}流式生成中"
+            else:
+                rec.message = text
+                logs = _safe_load_json_list(rec.logs_json)
+                line = f"[{now}] {stage_label} | {text}"
+                if not logs or str(logs[-1]) != line:
+                    logs.append(line)
+                    if len(logs) > PRODUCT_WORKBENCH_LOG_LIMIT:
+                        logs = logs[-PRODUCT_WORKBENCH_LOG_LIMIT:]
+                    rec.logs_json = json.dumps(logs, ensure_ascii=False)
+            rec.live_text_json = _update_product_workbench_live_text_state_json(
+                rec.live_text_json,
+                updated_at=now,
+                step=step,
+                stage_label=stage_label,
+                text=text,
+                item_id=current_item_id,
+                item_name=current_item_name,
+                stream_kind=stream_kind,
+            )
         rec.updated_at = now
         if not str(rec.started_at or "").strip():
             rec.started_at = now
@@ -4970,6 +5128,15 @@ def _mark_product_workbench_job_done(
         rec.stage_label = _product_workbench_stage_label(job_type=job_type, stage="done")
         rec.message = str(message or "").strip() or "任务完成。"
         rec.percent = 100
+        rec.live_text_json = _update_product_workbench_live_text_state_json(
+            rec.live_text_json,
+            updated_at=now,
+            step="done",
+            stage_label=rec.stage_label,
+            text=rec.message,
+            item_id=str(rec.current_item_id or "").strip() or None,
+            item_name=str(rec.current_item_name or "").strip() or None,
+        )
         rec.result_json = json.dumps(result or {}, ensure_ascii=False)
         rec.error_json = None
         rec.finished_at = now
@@ -5008,6 +5175,15 @@ def _mark_product_workbench_job_cancelled(
         rec.stage_label = _product_workbench_stage_label(job_type=job_type, stage="cancelled")
         rec.message = str(message or "任务已取消。")
         rec.percent = max(0, min(99, int(rec.percent or 0)))
+        rec.live_text_json = _update_product_workbench_live_text_state_json(
+            rec.live_text_json,
+            updated_at=now,
+            step="cancelled",
+            stage_label=rec.stage_label,
+            text=rec.message,
+            item_id=str(rec.current_item_id or "").strip() or None,
+            item_name=str(rec.current_item_name or "").strip() or None,
+        )
         if isinstance(result, dict):
             rec.result_json = json.dumps(result, ensure_ascii=False)
         rec.finished_at = now
@@ -5038,6 +5214,15 @@ def _mark_product_workbench_job_failed(
         rec.stage = "failed"
         rec.stage_label = _product_workbench_stage_label(job_type=job_type, stage="failed")
         rec.message = str(detail or "任务失败。")
+        rec.live_text_json = _update_product_workbench_live_text_state_json(
+            rec.live_text_json,
+            updated_at=now,
+            step="failed",
+            stage_label=rec.stage_label,
+            text=rec.message,
+            item_id=str(rec.current_item_id or "").strip() or None,
+            item_name=str(rec.current_item_name or "").strip() or None,
+        )
         rec.error_json = json.dumps(
             {
                 "code": str(code or "product_workbench_failed"),
@@ -5074,6 +5259,15 @@ def _reconcile_product_workbench_job_state(*, db: Session, rec: ProductWorkbench
             "任务已取消：检测到后台执行线程不存在，"
             f"reason={reason}，stage={active_stage}，last_update={last_updated}。"
         )
+        rec.live_text_json = _update_product_workbench_live_text_state_json(
+            rec.live_text_json,
+            updated_at=now,
+            step="cancelled",
+            stage_label=rec.stage_label,
+            text=rec.message,
+            item_id=str(rec.current_item_id or "").strip() or None,
+            item_name=str(rec.current_item_name or "").strip() or None,
+        )
         rec.error_json = None
     else:
         detail = (
@@ -5084,6 +5278,15 @@ def _reconcile_product_workbench_job_state(*, db: Session, rec: ProductWorkbench
         rec.stage = "failed"
         rec.stage_label = _product_workbench_stage_label(job_type=job_type, stage="failed")
         rec.message = detail
+        rec.live_text_json = _update_product_workbench_live_text_state_json(
+            rec.live_text_json,
+            updated_at=now,
+            step="failed",
+            stage_label=rec.stage_label,
+            text=rec.message,
+            item_id=str(rec.current_item_id or "").strip() or None,
+            item_name=str(rec.current_item_name or "").strip() or None,
+        )
         rec.error_json = json.dumps(
             {
                 "code": "product_workbench_job_orphaned",
@@ -5150,6 +5353,7 @@ def _to_product_workbench_job_view(rec: ProductWorkbenchJob) -> ProductWorkbench
         current_item_id=str(rec.current_item_id or "").strip() or None,
         current_item_name=str(rec.current_item_name or "").strip() or None,
         counters=counters,
+        live_text=_product_workbench_live_text_from_json(rec.live_text_json),
         logs=logs[-PRODUCT_WORKBENCH_LOG_LIMIT:],
         result=result,
         error=error_obj,
@@ -6170,6 +6374,7 @@ def _forward_route_mapping_model_event(
                 "category": category,
                 "delta": delta,
                 "text": delta,
+                "stream_kind": str(payload.get("stream_kind") or ""),
             },
         )
         return
@@ -6635,6 +6840,7 @@ def _forward_product_analysis_model_event(
                 "category": category,
                 "delta": delta,
                 "text": delta,
+                "stream_kind": str(payload.get("stream_kind") or ""),
             },
         )
         return
@@ -7575,6 +7781,7 @@ def _forward_dedup_model_event(
                 "anchor_id": anchor_id,
                 "delta": delta,
                 "text": delta,
+                "stream_kind": str(payload.get("stream_kind") or ""),
             },
         )
         return
@@ -7597,6 +7804,7 @@ def _forward_dedup_model_event(
 def _forward_ingredient_model_event(
     event_callback: Callable[[dict[str, Any]], None] | None,
     ingredient_id: str,
+    ingredient_name: str,
     category: str,
     payload: dict[str, Any],
 ) -> None:
@@ -7610,9 +7818,11 @@ def _forward_ingredient_model_event(
             {
                 "step": "ingredient_model_delta",
                 "ingredient_id": ingredient_id,
+                "ingredient_name": ingredient_name,
                 "category": category,
                 "delta": delta,
                 "text": delta,
+                "stream_kind": str(payload.get("stream_kind") or ""),
             },
         )
         return

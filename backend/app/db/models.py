@@ -144,7 +144,9 @@ class UploadIngestJob(Base):
     stage1_model_tier: Mapped[str | None] = mapped_column(String(16), nullable=True)
     stage2_model_tier: Mapped[str | None] = mapped_column(String(16), nullable=True)
     stage1_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    stage1_reasoning_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     stage2_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    stage2_reasoning_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     missing_fields_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     required_view: Mapped[str | None] = mapped_column(String(128), nullable=True)
     models_json: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -183,6 +185,7 @@ class ProductWorkbenchJob(Base):
 
     counters_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     logs_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    live_text_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 

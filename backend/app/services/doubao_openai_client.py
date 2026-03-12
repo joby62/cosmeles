@@ -38,6 +38,7 @@ class DoubaoOpenAIClient:
         model: str | None = None,
         stream: bool = False,
         on_text_delta: Callable[[str], None] | None = None,
+        on_stream_event: Callable[[dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
         body = {
             "model": model or self.model,
@@ -51,7 +52,12 @@ class DoubaoOpenAIClient:
                 }
             ],
         }
-        return self._responses(body, stream=stream, on_text_delta=on_text_delta)
+        return self._responses(
+            body,
+            stream=stream,
+            on_text_delta=on_text_delta,
+            on_stream_event=on_stream_event,
+        )
 
     def chat_with_images(
         self,
@@ -60,6 +66,7 @@ class DoubaoOpenAIClient:
         model: str | None = None,
         stream: bool = False,
         on_text_delta: Callable[[str], None] | None = None,
+        on_stream_event: Callable[[dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
         urls = [str(item or "").strip() for item in image_urls if str(item or "").strip()]
         if not urls:
@@ -75,7 +82,12 @@ class DoubaoOpenAIClient:
                 }
             ],
         }
-        return self._responses(body, stream=stream, on_text_delta=on_text_delta)
+        return self._responses(
+            body,
+            stream=stream,
+            on_text_delta=on_text_delta,
+            on_stream_event=on_stream_event,
+        )
 
     def chat_with_text(
         self,
@@ -83,6 +95,7 @@ class DoubaoOpenAIClient:
         model: str | None = None,
         stream: bool = False,
         on_text_delta: Callable[[str], None] | None = None,
+        on_stream_event: Callable[[dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
         body = {
             "model": model or self.model,
@@ -93,18 +106,29 @@ class DoubaoOpenAIClient:
                 }
             ],
         }
-        return self._responses(body, stream=stream, on_text_delta=on_text_delta)
+        return self._responses(
+            body,
+            stream=stream,
+            on_text_delta=on_text_delta,
+            on_stream_event=on_stream_event,
+        )
 
     def _responses(
         self,
         body: dict[str, Any],
         stream: bool = False,
         on_text_delta: Callable[[str], None] | None = None,
+        on_stream_event: Callable[[dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
         attempts = self.max_retries + 1
         for attempt in range(1, attempts + 1):
             try:
-                response = self._call_response_api(body, stream=stream, on_text_delta=on_text_delta)
+                response = self._call_response_api(
+                    body,
+                    stream=stream,
+                    on_text_delta=on_text_delta,
+                    on_stream_event=on_stream_event,
+                )
                 break
             except APITimeoutError as e:
                 if attempt >= attempts:
@@ -137,16 +161,25 @@ class DoubaoOpenAIClient:
         body: dict[str, Any],
         stream: bool,
         on_text_delta: Callable[[str], None] | None,
+        on_stream_event: Callable[[dict[str, Any]], None] | None,
     ) -> dict[str, Any]:
         if not stream:
             response = self.client.responses.create(**body)
             return _serialize_response(response)
 
         try:
-            stream_payload = self._stream_with_create(body=body, on_text_delta=on_text_delta)
+            stream_payload = self._stream_with_create(
+                body=body,
+                on_text_delta=on_text_delta,
+                on_stream_event=on_stream_event,
+            )
             if stream_payload is not None:
                 return stream_payload
-            stream_payload = self._stream_with_context_helper(body=body, on_text_delta=on_text_delta)
+            stream_payload = self._stream_with_context_helper(
+                body=body,
+                on_text_delta=on_text_delta,
+                on_stream_event=on_stream_event,
+            )
             if stream_payload is not None:
                 return stream_payload
             response = self.client.responses.create(**body)
@@ -163,6 +196,7 @@ class DoubaoOpenAIClient:
         self,
         body: dict[str, Any],
         on_text_delta: Callable[[str], None] | None,
+        on_stream_event: Callable[[dict[str, Any]], None] | None,
     ) -> dict[str, Any] | None:
         create_api = getattr(self.client.responses, "create", None)
         if not callable(create_api):
@@ -182,6 +216,7 @@ class DoubaoOpenAIClient:
         return _consume_stream(
             stream_obj=stream_obj,
             on_text_delta=on_text_delta,
+            on_stream_event=on_stream_event,
             close_when_done=True,
         )
 
@@ -189,6 +224,7 @@ class DoubaoOpenAIClient:
         self,
         body: dict[str, Any],
         on_text_delta: Callable[[str], None] | None,
+        on_stream_event: Callable[[dict[str, Any]], None] | None,
     ) -> dict[str, Any] | None:
         stream_api = getattr(self.client.responses, "stream", None)
         if not callable(stream_api):
@@ -198,6 +234,7 @@ class DoubaoOpenAIClient:
             return _consume_stream(
                 stream_obj=stream_obj,
                 on_text_delta=on_text_delta,
+                on_stream_event=on_stream_event,
                 close_when_done=False,
             )
 
@@ -260,6 +297,7 @@ def _extract_delta_text(event: Any) -> str:
 def _consume_stream(
     stream_obj: Any,
     on_text_delta: Callable[[str], None] | None,
+    on_stream_event: Callable[[dict[str, Any]], None] | None,
     close_when_done: bool,
 ) -> dict[str, Any]:
     emitted_any_delta = False
@@ -269,6 +307,7 @@ def _consume_stream(
     try:
         # Prefer raw stream events: `text_deltas` helper may coalesce chunks.
         for event in stream_obj:
+            _emit_stream_event_if_needed(_event_to_dict(event), on_stream_event=on_stream_event)
             delta = _extract_delta_text(event)
             if delta:
                 emitted_any_delta = True
@@ -363,7 +402,7 @@ def _event_to_dict(event: Any) -> dict[str, Any] | None:
 
 
 def _extract_delta_text_from_payload(payload: dict[str, Any]) -> str:
-    event_type = str(payload.get("type") or "")
+    event_type = str(payload.get("type") or "").strip()
 
     # Responses API delta events.
     if event_type in {"response.output_text.delta", "response.refusal.delta"}:
@@ -371,6 +410,9 @@ def _extract_delta_text_from_payload(payload: dict[str, Any]) -> str:
             text = _as_text(payload.get(key))
             if text:
                 return text
+
+    if event_type:
+        return ""
 
     # Partial adapters may not include `type`, keep a strict fallback.
     for key in ("delta", "text"):
@@ -391,6 +433,56 @@ def _extract_delta_text_from_payload(payload: dict[str, Any]) -> str:
                 return text
 
     return ""
+
+
+def _emit_stream_event_if_needed(
+    payload: dict[str, Any] | None,
+    *,
+    on_stream_event: Callable[[dict[str, Any]], None] | None,
+) -> None:
+    if not on_stream_event or not isinstance(payload, dict):
+        return
+    event = _extract_stream_event_from_payload(payload)
+    if event is None:
+        return
+    try:
+        on_stream_event(event)
+    except Exception:
+        return
+
+
+def _extract_stream_event_from_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
+    event_type = str(payload.get("type") or "").strip()
+    mappings = {
+        "response.output_text.delta": ("output_text_delta", "delta", "response.output_text.delta.delta"),
+        "response.output_text.done": ("output_text_done", "text", "response.output_text.done.text"),
+        "response.reasoning_summary_text.delta": (
+            "reasoning_summary_delta",
+            "delta",
+            "response.reasoning_summary_text.delta.delta",
+        ),
+        "response.reasoning_summary_text.done": (
+            "reasoning_summary_done",
+            "text",
+            "response.reasoning_summary_text.done.text",
+        ),
+    }
+    mapping = mappings.get(event_type)
+    if mapping is None:
+        return None
+    kind, preferred_key, field = mapping
+    text = _as_text(payload.get(preferred_key))
+    if not text:
+        fallback_key = "text" if preferred_key == "delta" else "delta"
+        text = _as_text(payload.get(fallback_key))
+    if not text:
+        return None
+    out: dict[str, Any] = {"kind": kind, "field": field}
+    if kind.endswith("_done"):
+        out["text"] = text
+    else:
+        out["delta"] = text
+    return out
 
 
 def _as_text(value: Any) -> str:

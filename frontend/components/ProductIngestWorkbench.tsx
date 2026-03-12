@@ -574,8 +574,10 @@ function parseUploadResult(job: UploadIngestJob): IngestResultLike | null {
 function assembleUploadLiveText(job: UploadIngestJob | null): WorkbenchLiveTextState {
   if (!job) return createEmptyLiveTextState();
   const sections: string[] = [];
-  if (job.stage1_text) sections.push(`【Stage1】\n${job.stage1_text.trim()}`);
-  if (job.stage2_text) sections.push(`【Stage2】\n${job.stage2_text.trim()}`);
+  const stage1Block = buildUploadLiveStageBlock("Stage1", job.stage1_text, job.stage1_reasoning_text);
+  const stage2Block = buildUploadLiveStageBlock("Stage2", job.stage2_text, job.stage2_reasoning_text);
+  if (stage1Block) sections.push(stage1Block);
+  if (stage2Block) sections.push(stage2Block);
   if (job.error?.detail) sections.push(`【错误】\n${job.error.detail}`);
   if (sections.length === 0) {
     const fallback = [job.stage_label || job.stage || "待命", job.message || ""].filter(Boolean).join(" | ");
@@ -585,6 +587,20 @@ function assembleUploadLiveText(job: UploadIngestJob | null): WorkbenchLiveTextS
     text: sections.join("\n\n"),
     meta: { jobId: job.job_id },
   };
+}
+
+function buildUploadLiveStageBlock(
+  title: string,
+  outputText?: string | null,
+  reasoningText?: string | null,
+): string | null {
+  const sections: string[] = [];
+  const output = String(outputText || "").trim();
+  const reasoning = String(reasoningText || "").trim();
+  if (output) sections.push(`模型输出（response.output_text）\n${output}`);
+  if (reasoning) sections.push(`思考摘要（response.reasoning_summary_text）\n${reasoning}`);
+  if (sections.length === 0) return null;
+  return `【${title}】\n${sections.join("\n\n")}`;
 }
 
 function buildUploadPrettyText(job: UploadIngestJob | null): string {
