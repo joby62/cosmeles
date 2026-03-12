@@ -1,20 +1,32 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import ProductWorkbenchJobConsole from "@/components/workbench/ProductWorkbenchJobConsole";
+import {
+  formatErrorDetail,
+  useProductWorkbenchJobs,
+} from "@/components/workbench/useProductWorkbenchJobs";
 import {
   Product,
+  ProductAnalysisBuildRequest,
   ProductAnalysisBuildResponse,
   ProductAnalysisDetailResponse,
   ProductAnalysisIndexItem,
-  buildProductAnalysisStream,
+  ProductWorkbenchJob,
+  cancelProductAnalysisJob,
+  createProductAnalysisJob,
   fetchProductAnalysis,
   fetchProductAnalysisIndex,
+  fetchProductAnalysisJob,
+  listProductAnalysisJobs,
+  retryProductAnalysisJob,
 } from "@/lib/api";
 import { CATEGORY_CONFIG } from "@/lib/catalog";
 
 type AnalysisCategory = "all" | "shampoo" | "bodywash" | "conditioner" | "lotion" | "cleanser";
 
 const SUPPORTED_CATEGORIES = ["shampoo", "bodywash", "conditioner", "lotion", "cleanser"] as const;
+const ACTIVE_JOB_STORAGE_KEY = "product-analysis-active-job-id";
 
 export default function ProductAnalysisGenerator({
   initialProducts,
@@ -26,16 +38,47 @@ export default function ProductAnalysisGenerator({
   const [selectedCategory, setSelectedCategory] = useState<AnalysisCategory>("all");
   const [forceRegenerate, setForceRegenerate] = useState(false);
   const [onlyUnanalyzed, setOnlyUnanalyzed] = useState(false);
-  const [running, setRunning] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [liveLogs, setLiveLogs] = useState<string[]>([]);
-  const [result, setResult] = useState<ProductAnalysisBuildResponse | null>(null);
   const [indexItems, setIndexItems] = useState<ProductAnalysisIndexItem[]>(initialAnalysisIndex);
   const [selectedProductId, setSelectedProductId] = useState<string>("");
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [detail, setDetail] = useState<ProductAnalysisDetailResponse | null>(null);
+  const [indexedResultJobId, setIndexedResultJobId] = useState<string | null>(null);
+  const jobService = useMemo(
+    () => ({
+      listJobs: listProductAnalysisJobs,
+      fetchJob: fetchProductAnalysisJob,
+      createJob: createProductAnalysisJob,
+      cancelJob: cancelProductAnalysisJob,
+      retryJob: retryProductAnalysisJob,
+    }),
+    [],
+  );
+
+  const {
+    jobLoading,
+    jobsLoading,
+    errorMessage,
+    setErrorMessage,
+    activeJob,
+    activeRunning,
+    progressValue,
+    liveText,
+    result,
+    resultJobId,
+    sortedJobs,
+    refreshJobs,
+    startJob,
+    cancelActiveJob,
+    retryJob,
+    selectJob,
+  } = useProductWorkbenchJobs<ProductAnalysisBuildRequest, ProductAnalysisBuildResponse>({
+    storageKey: ACTIVE_JOB_STORAGE_KEY,
+    listLimit: 40,
+    parseResult: (job) => parseAnalysisResult(job.result as Record<string, unknown> | undefined),
+    service: jobService,
+  });
 
   const supportedProducts = useMemo(() => {
     return initialProducts.filter((item) => {
@@ -61,9 +104,12 @@ export default function ProductAnalysisGenerator({
   }, [indexItems, selectedCategory]);
 
   useEffect(() => {
-    if (!selectedProductId && filteredIndexItems.length > 0) {
-      setSelectedProductId(filteredIndexItems[0].product_id);
+    if (filteredIndexItems.length === 0) {
+      if (selectedProductId) setSelectedProductId("");
+      return;
     }
+    if (filteredIndexItems.some((item) => item.product_id === selectedProductId)) return;
+    setSelectedProductId(filteredIndexItems[0].product_id);
   }, [filteredIndexItems, selectedProductId]);
 
   useEffect(() => {
@@ -93,7 +139,7 @@ export default function ProductAnalysisGenerator({
     };
   }, [selectedProductId]);
 
-  async function reloadIndex() {
+  const reloadIndex = useCallback(async (options?: { silent?: boolean }) => {
     setRefreshing(true);
     try {
       const resp = await fetchProductAnalysisIndex({
@@ -101,66 +147,58 @@ export default function ProductAnalysisGenerator({
       });
       setIndexItems(resp.items || []);
     } catch (err) {
-      setError(formatErrorDetail(err));
+      if (!options?.silent) {
+        setErrorMessage(formatErrorDetail(err));
+      }
     } finally {
       setRefreshing(false);
     }
-  }
+  }, [selectedCategory, setErrorMessage]);
+
+  useEffect(() => {
+    if (!result || !resultJobId || indexedResultJobId === resultJobId) return;
+    let cancelled = false;
+    void (async () => {
+      await reloadIndex({ silent: true });
+      if (cancelled) return;
+      if (result.items?.[0]?.product_id) {
+        setSelectedProductId(result.items[0].product_id);
+      }
+      setIndexedResultJobId(resultJobId);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [indexedResultJobId, reloadIndex, result, resultJobId]);
 
   async function startBuild() {
-    if (running) return;
-    setRunning(true);
-    setError(null);
-    setLiveLogs([]);
-    setResult(null);
-    try {
-      const final = await buildProductAnalysisStream(
-        {
-          category: selectedCategory === "all" ? undefined : selectedCategory,
-          force_regenerate: forceRegenerate,
-          only_unanalyzed: onlyUnanalyzed,
-        },
-        (event) => {
-          if (event.event === "progress") {
-            const text = typeof event.data.text === "string" ? event.data.text : "";
-            if (text) {
-              setLiveLogs((prev) => {
-                const next = [...prev, text];
-                return next.slice(-240);
-              });
-            }
-          }
-          if (event.event === "result") {
-            setResult(event.data as ProductAnalysisBuildResponse);
-          }
-        },
-      );
-      setResult(final);
-      await reloadIndex();
-      if (final.items?.[0]?.product_id) {
-        setSelectedProductId(final.items[0].product_id);
-      }
-    } catch (err) {
-      setError(formatErrorDetail(err));
-    } finally {
-      setRunning(false);
-    }
+    if (activeRunning) return;
+    setIndexedResultJobId(null);
+    await startJob({
+      category: selectedCategory === "all" ? undefined : selectedCategory,
+      force_regenerate: forceRegenerate,
+      only_unanalyzed: onlyUnanalyzed,
+    });
+  }
+
+  async function refreshAll() {
+    await Promise.all([reloadIndex(), refreshJobs()]);
   }
 
   return (
     <section className="mt-8 rounded-[30px] border border-black/10 bg-gradient-to-br from-[#f7fbff] via-white to-[#f5faf3] p-6">
       <div className="flex flex-wrap items-center gap-2">
         <span className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/62">
-          Stage F · 产品增强分析
+          Stage F · 产品增强分析（后台任务）
         </span>
         <span className="rounded-full border border-black/12 bg-white px-3 py-1 text-[12px] text-black/62">
-          SSE 直连构建
+          Doubao Pro · 刷新可恢复
         </span>
       </div>
 
       <h2 className="mt-3 text-[30px] font-semibold tracking-[-0.02em] text-black/90">产品增强分析台</h2>
       <p className="mt-2 text-[14px] leading-[1.6] text-black/65">
-        在成分分析和类型映射之后，基于二级类目、精简成分上下文和成分库摘要生成 mobile 端专用分析层，不污染 stage2 原始结构。
+        在成分分析和类型映射之后，基于二级类目、精简成分上下文和成分库摘要生成 mobile 端专用分析层。现在已切到统一后台任务架构，支持取消、重试、刷新恢复。
       </p>
 
       <div className="mt-4 flex flex-wrap items-center gap-2.5">
@@ -183,7 +221,7 @@ export default function ProductAnalysisGenerator({
             key={item}
             type="button"
             onClick={() => setSelectedCategory(item)}
-            disabled={running}
+            disabled={activeRunning || jobLoading}
             className={`rounded-full border px-3 py-1 text-[12px] ${
               selectedCategory === item ? "border-black bg-black text-white" : "border-black/12 bg-white text-black/68"
             } disabled:opacity-45`}
@@ -199,7 +237,7 @@ export default function ProductAnalysisGenerator({
             type="checkbox"
             checked={forceRegenerate}
             onChange={(event) => setForceRegenerate(event.target.checked)}
-            disabled={running}
+            disabled={activeRunning || jobLoading}
           />
           强制重跑（忽略已有指纹）
         </label>
@@ -208,7 +246,7 @@ export default function ProductAnalysisGenerator({
             type="checkbox"
             checked={onlyUnanalyzed}
             onChange={(event) => setOnlyUnanalyzed(event.target.checked)}
-            disabled={running}
+            disabled={activeRunning || jobLoading}
           />
           仅处理未分析产品
         </label>
@@ -218,39 +256,50 @@ export default function ProductAnalysisGenerator({
         <button
           type="button"
           onClick={() => void startBuild()}
-          disabled={running || supportedProducts.length === 0}
+          disabled={jobLoading || activeRunning || supportedProducts.length === 0}
           className="inline-flex h-10 items-center justify-center rounded-full bg-black px-5 text-[13px] font-semibold text-white disabled:bg-black/25"
         >
-          {running ? "分析中..." : "一键构建产品增强分析"}
+          {jobLoading && !activeRunning ? "提交中..." : "一键构建产品增强分析（后台）"}
         </button>
         <button
           type="button"
-          onClick={() => void reloadIndex()}
-          disabled={refreshing || running}
+          onClick={() => void cancelActiveJob()}
+          disabled={jobLoading || !activeRunning || !activeJob}
+          className="inline-flex h-10 items-center justify-center rounded-full border border-[#ef4444]/40 bg-[#fff5f5] px-5 text-[13px] font-semibold text-[#b42318] disabled:opacity-45"
+        >
+          中止当前任务
+        </button>
+        <button
+          type="button"
+          onClick={() => void refreshAll()}
+          disabled={refreshing || jobsLoading || activeRunning}
           className="inline-flex h-10 items-center justify-center rounded-full border border-black/14 bg-white px-5 text-[13px] font-semibold text-black/78 disabled:opacity-45"
         >
-          {refreshing ? "刷新中..." : "刷新索引"}
+          {refreshing || jobsLoading ? "刷新中..." : "刷新索引与任务"}
         </button>
       </div>
 
-      {error ? <div className="mt-3 text-[13px] text-[#b42318]">{error}</div> : null}
+      <div className="mt-3 text-[12px] text-black/64">{formatJobHint(activeJob)}</div>
+      {errorMessage ? <div className="mt-2 text-[13px] text-[#b42318]">{errorMessage}</div> : null}
 
-      {(liveLogs.length > 0 || result) && (
-        <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
-          <div className="rounded-xl border border-black/10 bg-[#fbfcff] p-2.5">
-            <div className="text-[11px] font-semibold text-[#3151d8]">实时日志</div>
-            <pre className="mt-1 max-h-56 overflow-auto whitespace-pre-wrap text-[12px] leading-[1.55] text-black/74">
-              {liveLogs.length > 0 ? liveLogs.join("\n") : "-"}
-            </pre>
-          </div>
-          <div className="rounded-xl border border-black/10 bg-white p-2.5">
-            <div className="text-[11px] font-semibold text-[#3151d8]">结果摘要</div>
-            <pre className="mt-1 max-h-56 overflow-auto whitespace-pre-wrap text-[12px] leading-[1.55] text-black/74">
-              {result ? buildSummary(result) : "-"}
-            </pre>
-          </div>
-        </div>
-      )}
+      <ProductWorkbenchJobConsole
+        activeJob={activeJob}
+        activeRunning={activeRunning}
+        progressValue={progressValue}
+        countersText={
+          activeJob
+            ? `scanned ${activeJob.counters.scanned_products} · submitted ${activeJob.counters.submitted_to_model} · created ${activeJob.counters.created} · updated ${activeJob.counters.updated} · skipped ${activeJob.counters.skipped} · failed ${activeJob.counters.failed}`
+            : null
+        }
+        liveText={liveText}
+        prettyText={result ? buildSummary(result) : ""}
+        jobs={sortedJobs}
+        jobLoading={jobLoading}
+        onSelectJob={selectJob}
+        onRetryJob={(jobId) => {
+          void retryJob(jobId);
+        }}
+      />
 
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[380px_minmax(0,1fr)]">
         <div className="rounded-2xl border border-black/10 bg-[#f8fafc] p-4">
@@ -424,6 +473,23 @@ function categoryLabel(category?: string | null): string {
   return CATEGORY_CONFIG[key]?.zh || category;
 }
 
+function parseAnalysisResult(value: Record<string, unknown> | undefined): ProductAnalysisBuildResponse | null {
+  if (!value || typeof value !== "object") return null;
+  const status = String(value.status || "").trim();
+  if (!status) return null;
+  return {
+    status,
+    scanned_products: Number(value.scanned_products || 0),
+    submitted_to_model: Number(value.submitted_to_model || 0),
+    created: Number(value.created || 0),
+    updated: Number(value.updated || 0),
+    skipped: Number(value.skipped || 0),
+    failed: Number(value.failed || 0),
+    items: Array.isArray(value.items) ? (value.items as ProductAnalysisBuildResponse["items"]) : [],
+    failures: Array.isArray(value.failures) ? (value.failures as string[]) : [],
+  };
+}
+
 function buildSummary(result: ProductAnalysisBuildResponse): string {
   const lines: string[] = [];
   lines.push(`状态: ${result.status}`);
@@ -446,12 +512,12 @@ function formatDiagnosticLabel(key: string): string {
     .join(" ");
 }
 
-function formatErrorDetail(err: unknown): string {
-  if (err instanceof Error && err.message) return err.message;
-  if (typeof err === "string") return err;
-  try {
-    return JSON.stringify(err);
-  } catch {
-    return String(err);
-  }
+function formatJobHint(job: ProductWorkbenchJob | null): string {
+  if (!job) return "待命：可创建新的产品增强分析任务。";
+  if (job.status === "queued") return "任务排队中，等待执行。";
+  if (job.status === "running") return "任务运行中，刷新页面后可恢复。";
+  if (job.status === "cancelling") return "已收到取消请求，当前产品完成后停止。";
+  if (job.status === "cancelled") return "任务已取消，可按需重试。";
+  if (job.status === "failed") return "任务失败，可查看日志定位并重试。";
+  return "任务已完成。";
 }

@@ -2183,6 +2183,47 @@ def build_product_analysis_stream(payload: ProductAnalysisBuildRequest, db: Sess
     )
 
 
+@router.post("/products/analysis/jobs", response_model=ProductWorkbenchJobView)
+def create_product_analysis_job(payload: ProductAnalysisBuildRequest, db: Session = Depends(get_db)):
+    return _create_product_workbench_job(
+        db=db,
+        job_type="product_analysis_build",
+        params=payload.model_dump(),
+        queued_message=f"任务已创建，等待执行（并发上限 {PRODUCT_WORKBENCH_MAX_CONCURRENCY}）。",
+    )
+
+
+@router.get("/products/analysis/jobs", response_model=list[ProductWorkbenchJobView])
+def list_product_analysis_jobs(
+    status: str | None = Query(None),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(30, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    return _list_product_workbench_jobs(
+        db=db,
+        job_type="product_analysis_build",
+        status=status,
+        offset=offset,
+        limit=limit,
+    )
+
+
+@router.get("/products/analysis/jobs/{job_id}", response_model=ProductWorkbenchJobView)
+def get_product_analysis_job(job_id: str, db: Session = Depends(get_db)):
+    return _get_product_workbench_job(db=db, job_id=job_id, expected_job_type="product_analysis_build")
+
+
+@router.post("/products/analysis/jobs/{job_id}/cancel", response_model=ProductWorkbenchJobCancelResponse)
+def cancel_product_analysis_job(job_id: str, db: Session = Depends(get_db)):
+    return _cancel_product_workbench_job(db=db, job_id=job_id, expected_job_type="product_analysis_build")
+
+
+@router.post("/products/analysis/jobs/{job_id}/retry", response_model=ProductWorkbenchJobView)
+def retry_product_analysis_job(job_id: str, db: Session = Depends(get_db)):
+    return _retry_product_workbench_job(db=db, job_id=job_id, expected_job_type="product_analysis_build")
+
+
 @router.get("/products/{product_id}/analysis", response_model=ProductAnalysisDetailResponse)
 def get_product_analysis(product_id: str, db: Session = Depends(get_db)):
     rec = db.get(ProductAnalysisIndex, product_id)
@@ -4174,6 +4215,18 @@ def _run_product_workbench_job(*, job_id: str, db: Session) -> None:
                 ),
                 should_cancel=should_cancel,
             )
+        elif job_type == "product_analysis_build":
+            analysis_payload = ProductAnalysisBuildRequest.model_validate(params)
+            result = _build_product_analysis_impl(
+                analysis_payload,
+                db=db,
+                event_callback=lambda payload: _apply_product_workbench_job_progress(
+                    bind=db.get_bind(),
+                    job_id=job_id,
+                    payload=payload,
+                ),
+                should_cancel=should_cancel,
+            )
         elif job_type == "dedup_suggest":
             dedup_payload = ProductDedupSuggestRequest.model_validate(params)
             result = _suggest_product_duplicates_impl(
@@ -4206,6 +4259,14 @@ def _run_product_workbench_job(*, job_id: str, db: Session) -> None:
 
         result_payload = result.model_dump()
         if job_type == "route_mapping_build":
+            done_message = (
+                "任务完成："
+                f"scanned={int(result_payload.get('scanned_products') or 0)}，"
+                f"created={int(result_payload.get('created') or 0)}，"
+                f"updated={int(result_payload.get('updated') or 0)}，"
+                f"failed={int(result_payload.get('failed') or 0)}"
+            )
+        elif job_type == "product_analysis_build":
             done_message = (
                 "任务完成："
                 f"scanned={int(result_payload.get('scanned_products') or 0)}，"
@@ -4526,7 +4587,7 @@ def _to_product_workbench_job_view(rec: ProductWorkbenchJob) -> ProductWorkbench
 
 def _validate_product_workbench_job_type(job_type: str) -> str:
     value = str(job_type or "").strip().lower()
-    if value not in {"route_mapping_build", "dedup_suggest", "selection_result_build"}:
+    if value not in {"route_mapping_build", "product_analysis_build", "dedup_suggest", "selection_result_build"}:
         raise HTTPException(status_code=400, detail=f"Invalid job_type: {job_type}.")
     return value
 
@@ -4565,6 +4626,18 @@ def _product_workbench_stage_label(*, job_type: str, stage: str) -> str:
             "route_mapping_build_done": "任务完成",
         }
         return mapping.get(key, key or "处理中")
+    if job_type == "product_analysis_build":
+        mapping = {
+            "product_analysis_build_start": "扫描产品",
+            "product_analysis_start": "分析中",
+            "product_analysis_model_step": "模型执行",
+            "product_analysis_model_delta": "模型输出",
+            "product_analysis_done": "单项完成",
+            "product_analysis_skip": "跳过未变化项",
+            "product_analysis_error": "单项失败",
+            "product_analysis_build_done": "任务完成",
+        }
+        return mapping.get(key, key or "处理中")
     if job_type == "selection_result_build":
         mapping = {
             "selection_result_build_start": "枚举场景",
@@ -4601,6 +4674,17 @@ def _product_workbench_progress_cursor(
     prev_item_name: str | None,
 ) -> tuple[int | None, int | None, str | None, str | None]:
     if job_type == "route_mapping_build":
+        index_value = _safe_positive_int(payload.get("index"), fallback=prev_index or 0)
+        total_value = _safe_positive_int(payload.get("total"), fallback=prev_total or 0)
+        product_id = str(payload.get("product_id") or prev_item_id or "").strip() or None
+        category = str(payload.get("category") or prev_item_name or "").strip() or None
+        return (
+            index_value if index_value > 0 else None,
+            total_value if total_value > 0 else None,
+            product_id,
+            category,
+        )
+    if job_type == "product_analysis_build":
         index_value = _safe_positive_int(payload.get("index"), fallback=prev_index or 0)
         total_value = _safe_positive_int(payload.get("total"), fallback=prev_total or 0)
         product_id = str(payload.get("product_id") or prev_item_id or "").strip() or None
@@ -4665,6 +4749,23 @@ def _merge_product_workbench_counters(
             if key in payload:
                 set_counter(key, _safe_positive_int(payload.get(key), fallback=0))
         return
+    if job_type == "product_analysis_build":
+        if "scanned_products" in payload:
+            set_counter("scanned_products", _safe_positive_int(payload.get("scanned_products"), fallback=0))
+        if step == "product_analysis_done":
+            status = str(payload.get("status") or "").strip().lower()
+            if status in {"created", "updated", "skipped", "failed"}:
+                inc_counter(status)
+            if status in {"created", "updated"}:
+                inc_counter("submitted_to_model")
+        elif step == "product_analysis_skip":
+            inc_counter("skipped")
+        elif step == "product_analysis_error":
+            inc_counter("failed")
+        for key in ("submitted_to_model", "created", "updated", "skipped", "failed"):
+            if key in payload:
+                set_counter(key, _safe_positive_int(payload.get(key), fallback=0))
+        return
     if job_type == "selection_result_build":
         if "scanned_products" in payload:
             set_counter("scanned_products", _safe_positive_int(payload.get("scanned_products"), fallback=0))
@@ -4723,6 +4824,17 @@ def _product_workbench_progress_percent(
                 return max(value, min(95, computed))
             return max(value, 10)
         if step in {"route_mapping_build_done", "done"}:
+            return 100
+        return value
+    if job_type == "product_analysis_build":
+        if step == "product_analysis_build_start":
+            return max(value, 5)
+        if step in {"product_analysis_start", "product_analysis_done", "product_analysis_skip", "product_analysis_error", "product_analysis_model_step", "product_analysis_model_delta"}:
+            if index is not None and total is not None and total > 0:
+                computed = 10 + int((max(0, min(total, index)) / total) * 85)
+                return max(value, min(95, computed))
+            return max(value, 10)
+        if step in {"product_analysis_build_done", "done"}:
             return 100
         return value
     if job_type == "selection_result_build":

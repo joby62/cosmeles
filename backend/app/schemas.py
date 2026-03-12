@@ -171,7 +171,7 @@ class ProductWorkbenchJobCounters(BaseModel):
 class ProductWorkbenchJobView(BaseModel):
     status: Literal["queued", "running", "cancelling", "cancelled", "done", "failed"] = "queued"
     job_id: str
-    job_type: Literal["route_mapping_build", "dedup_suggest", "selection_result_build"]
+    job_type: Literal["route_mapping_build", "product_analysis_build", "dedup_suggest", "selection_result_build"]
     params: dict[str, Any] = Field(default_factory=dict)
     stage: Optional[str] = None
     stage_label: Optional[str] = None

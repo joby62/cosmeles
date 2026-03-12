@@ -72,7 +72,7 @@ export type ProductWorkbenchJobCounters = {
 export type ProductWorkbenchJob = {
   status: "queued" | "running" | "cancelling" | "cancelled" | "done" | "failed";
   job_id: string;
-  job_type: "route_mapping_build" | "dedup_suggest" | "selection_result_build";
+  job_type: "route_mapping_build" | "product_analysis_build" | "dedup_suggest" | "selection_result_build";
   params: Record<string, unknown>;
   stage?: string | null;
   stage_label?: string | null;
@@ -2158,6 +2158,57 @@ export async function buildProductAnalysisStream(
       headers: { "content-type": "application/json" },
     },
     onEvent,
+  );
+}
+
+export async function createProductAnalysisJob(
+  payload: ProductAnalysisBuildRequest,
+): Promise<ProductWorkbenchJob> {
+  return apiFetch<ProductWorkbenchJob>("/api/products/analysis/jobs", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchProductAnalysisJob(jobId: string): Promise<ProductWorkbenchJob> {
+  const value = jobId.trim();
+  if (!value) throw new Error("jobId is required.");
+  return apiFetch<ProductWorkbenchJob>(`/api/products/analysis/jobs/${encodeURIComponent(value)}`, {
+    cacheProfile: "dynamic",
+  });
+}
+
+export async function listProductAnalysisJobs(params?: {
+  status?: "queued" | "running" | "cancelling" | "cancelled" | "done" | "failed";
+  offset?: number;
+  limit?: number;
+}): Promise<ProductWorkbenchJob[]> {
+  const search = new URLSearchParams();
+  if (params?.status) search.set("status", params.status);
+  if (typeof params?.offset === "number") search.set("offset", String(params.offset));
+  if (typeof params?.limit === "number") search.set("limit", String(params.limit));
+  const query = search.toString();
+  const path = query ? `/api/products/analysis/jobs?${query}` : "/api/products/analysis/jobs";
+  return apiFetch<ProductWorkbenchJob[]>(path, {
+    cacheProfile: "dynamic",
+  });
+}
+
+export async function cancelProductAnalysisJob(jobId: string): Promise<ProductWorkbenchJobCancelResponse> {
+  const value = jobId.trim();
+  if (!value) throw new Error("jobId is required.");
+  return apiFetch<ProductWorkbenchJobCancelResponse>(
+    `/api/products/analysis/jobs/${encodeURIComponent(value)}/cancel`,
+    { method: "POST" },
+  );
+}
+
+export async function retryProductAnalysisJob(jobId: string): Promise<ProductWorkbenchJob> {
+  const value = jobId.trim();
+  if (!value) throw new Error("jobId is required.");
+  return apiFetch<ProductWorkbenchJob>(
+    `/api/products/analysis/jobs/${encodeURIComponent(value)}/retry`,
+    { method: "POST" },
   );
 }
 
