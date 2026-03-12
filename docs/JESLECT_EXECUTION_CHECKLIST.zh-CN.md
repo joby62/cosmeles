@@ -12,6 +12,7 @@
 关联文档：
 
 - 总览版路线图：[JESLECT_PHASE_PLAN.zh-CN.md](JESLECT_PHASE_PLAN.zh-CN.md)
+- 当前周执行面板：[JESLECT_WEEKLY_BOARD.zh-CN.md](JESLECT_WEEKLY_BOARD.zh-CN.md)
 - 中文项目说明：[../README.zh-CN.md](../README.zh-CN.md)
 
 这份文档不是愿景说明，而是执行清单。

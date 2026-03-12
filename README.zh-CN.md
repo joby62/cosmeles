@@ -6,6 +6,7 @@
 
 详细四阶段执行版请见：[docs/JESLECT_PHASE_PLAN.zh-CN.md](docs/JESLECT_PHASE_PLAN.zh-CN.md)
 执行清单版请见：[docs/JESLECT_EXECUTION_CHECKLIST.zh-CN.md](docs/JESLECT_EXECUTION_CHECKLIST.zh-CN.md)
+当前周执行面板请见：[docs/JESLECT_WEEKLY_BOARD.zh-CN.md](docs/JESLECT_WEEKLY_BOARD.zh-CN.md)
 
 ## 当前主线
 
