@@ -20,6 +20,14 @@ import {
   commercePriceLabel,
   commerceShippingEtaLabel,
 } from "@/lib/productCommerce";
+import {
+  analysisConfidenceLabel,
+  analysisCounterProof,
+  analysisPositiveProof,
+  analysisReviewLabel,
+  analysisVerdictLabel,
+  analysisVerdictSummary,
+} from "@/lib/productEvidence";
 import { getCategoryMeta, TRUST_ITEMS } from "@/lib/site";
 import { PDP_SUPPORT_LINKS, PDP_TRUST_NOTES, PRODUCT_RELEASE_NOTES } from "@/lib/storefrontTrust";
 
@@ -114,6 +122,12 @@ export default async function ProductPage({
   const priceLabel = commercePriceLabel(commerce);
   const inventoryLabel = commerceInventoryLabel(commerce);
   const shippingEtaLabel = commerceShippingEtaLabel(commerce);
+  const confidenceLabel = analysisConfidenceLabel(profile?.confidence);
+  const verdictLabel = analysisVerdictLabel(profile?.subtype_fit_verdict);
+  const verdictSummary = analysisVerdictSummary(profile?.subtype_fit_verdict);
+  const reviewLabel = analysisReviewLabel(profile?.needs_review);
+  const positiveProof = analysisPositiveProof(profile, 3);
+  const counterProof = analysisCounterProof(profile, 3);
 
   return (
     <div className="mx-auto max-w-7xl px-4 pb-16 pt-8">
@@ -335,12 +349,70 @@ export default async function ProductPage({
               {fitHeadline || "Jeslect keeps the route explanation and product explanation aligned so the recommendation feels consistent across pages."}
             </p>
 
+            {confidenceLabel || verdictLabel || reviewLabel ? (
+              <div className="mt-5 flex flex-wrap gap-2">
+                {confidenceLabel ? (
+                  <span className="rounded-full border border-black/8 bg-slate-50 px-3 py-1 text-[11px] font-medium text-slate-600">
+                    {confidenceLabel}
+                  </span>
+                ) : null}
+                {verdictLabel ? (
+                  <span className="rounded-full border border-sky-100 bg-sky-50 px-3 py-1 text-[11px] font-medium text-sky-700">
+                    {verdictLabel}
+                  </span>
+                ) : null}
+                {reviewLabel ? (
+                  <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-medium text-amber-700">
+                    {reviewLabel}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
+
             {routeTitle ? (
               <div className="mt-5 rounded-[24px] border border-sky-100 bg-sky-50 px-4 py-4">
                 <div className="text-[12px] font-semibold uppercase tracking-[0.16em] text-sky-700">Matched route</div>
                 <div className="mt-2 text-[20px] font-semibold tracking-[-0.03em] text-slate-950">{routeTitle}</div>
                 {routeSummary ? <p className="mt-2 text-[14px] leading-6 text-slate-700">{routeSummary}</p> : null}
                 {fitReason ? <p className="mt-3 text-[13px] leading-6 text-slate-600">{fitReason}</p> : null}
+                {profile?.subtype_fit_reason ? <p className="mt-3 text-[13px] leading-6 text-slate-600">{profile.subtype_fit_reason}</p> : null}
+              </div>
+            ) : null}
+
+            {verdictSummary || positiveProof.length > 0 || counterProof.length > 0 ? (
+              <div className="mt-5 space-y-4">
+                {verdictSummary ? (
+                  <div className="rounded-[24px] border border-black/8 bg-slate-50 px-4 py-4">
+                    <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-slate-500">Fit summary</p>
+                    <p className="mt-3 text-[14px] leading-6 text-slate-700">{verdictSummary}</p>
+                  </div>
+                ) : null}
+
+                {positiveProof.length > 0 ? (
+                  <div className="rounded-[24px] border border-emerald-100 bg-emerald-50 px-4 py-4">
+                    <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-emerald-700">What supports this fit</p>
+                    <div className="mt-3 space-y-2">
+                      {positiveProof.map((item) => (
+                        <p key={item} className="text-[14px] leading-6 text-slate-700">
+                          {item}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {counterProof.length > 0 ? (
+                  <div className="rounded-[24px] border border-amber-100 bg-amber-50 px-4 py-4">
+                    <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-amber-700">What to keep in mind</p>
+                    <div className="mt-3 space-y-2">
+                      {counterProof.map((item) => (
+                        <p key={item} className="text-[14px] leading-6 text-slate-700">
+                          {item}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ) : null}
 

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import ProductCard from "@/components/site/ProductCard";
 import TrustStrip from "@/components/site/TrustStrip";
+import { analysisCardProofSummary } from "@/lib/productEvidence";
 import { getMatchConfig, getMatchRouteMeta } from "@/lib/match";
 import { fetchAllProducts, fetchProductAnalysisIndex, type Product } from "@/lib/api";
 import { categoryHref, getCategoryMeta, normalizeCategoryKey, TRUST_ITEMS } from "@/lib/site";
@@ -150,6 +151,10 @@ export default async function ShopCategoryPage({
                   headline={analysis?.headline || product.one_sentence}
                   routeTitle={analysis ? getMatchRouteMeta(categoryKey, analysis.route_key)?.title || analysis.route_title : null}
                   routeSummary={analysis ? getMatchRouteMeta(categoryKey, analysis.route_key)?.summary || null : null}
+                  fitConfidence={analysis?.confidence}
+                  fitVerdict={analysis?.subtype_fit_verdict || null}
+                  needsReview={analysis?.needs_review || false}
+                  proofSummary={analysisCardProofSummary(analysis)}
                 />
               );
             })}

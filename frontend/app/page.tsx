@@ -1,7 +1,8 @@
 import Link from "next/link";
 import ProductCard from "@/components/site/ProductCard";
 import TrustStrip from "@/components/site/TrustStrip";
-import { fetchAllProducts, type Product } from "@/lib/api";
+import { fetchAllProducts, fetchProductAnalysisIndex, type Product } from "@/lib/api";
+import { analysisCardProofSummary } from "@/lib/productEvidence";
 import { categoryHref, CATEGORIES, LEARN_TOPICS, SHOP_CONCERNS, TRUST_ITEMS, type CategoryKey } from "@/lib/site";
 import { LAUNCH_STATUS_POINTS } from "@/lib/storefrontTrust";
 
@@ -20,15 +21,17 @@ function pickHighlights(products: Product[]) {
 
 export default async function HomePage() {
   let products: Product[] = [];
+  let analysisItems: Awaited<ReturnType<typeof fetchProductAnalysisIndex>> = [];
   let loadError: string | null = null;
 
   try {
-    products = await fetchAllProducts();
+    [products, analysisItems] = await Promise.all([fetchAllProducts(), fetchProductAnalysisIndex().catch(() => [])]);
   } catch (err) {
     loadError = err instanceof Error ? err.message : String(err);
   }
 
   const highlights = pickHighlights(products).slice(0, 4);
+  const analysisById = new Map(analysisItems.map((item) => [item.product_id, item]));
   const counts = new Map<CategoryKey, number>();
   for (const category of CATEGORIES) counts.set(category.key, 0);
   for (const item of products) {
@@ -139,9 +142,22 @@ export default async function HomePage() {
           </article>
         ) : (
           <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-            {highlights.map((product, index) => (
-              <ProductCard key={product.id} product={product} priority={index < 2} />
-            ))}
+            {highlights.map((product, index) => {
+              const analysis = analysisById.get(product.id);
+              return (
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  priority={index < 2}
+                  headline={analysis?.headline || product.one_sentence}
+                  routeTitle={analysis?.route_title}
+                  fitConfidence={analysis?.confidence}
+                  fitVerdict={analysis?.subtype_fit_verdict || null}
+                  needsReview={analysis?.needs_review || false}
+                  proofSummary={analysisCardProofSummary(analysis)}
+                />
+              );
+            })}
           </div>
         )}
       </section>

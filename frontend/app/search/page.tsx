@@ -2,6 +2,7 @@ import Link from "next/link";
 import ProductCard from "@/components/site/ProductCard";
 import { fetchAllProducts, fetchProductAnalysisIndex, type Product } from "@/lib/api";
 import { getMatchRouteMeta } from "@/lib/match";
+import { analysisCardProofSummary } from "@/lib/productEvidence";
 import { CATEGORIES, normalizeCategoryKey } from "@/lib/site";
 import { SEARCH_SUGGESTIONS, SEARCH_TRUST_POINTS, SHOP_SUPPORT_LINKS } from "@/lib/storefrontTrust";
 
@@ -212,6 +213,10 @@ export default async function SearchPage({
                     headline={analysis?.headline || product.one_sentence}
                     routeTitle={routeMeta?.title || analysis?.route_title}
                     routeSummary={routeMeta?.summary || null}
+                    fitConfidence={analysis?.confidence}
+                    fitVerdict={analysis?.subtype_fit_verdict || null}
+                    needsReview={analysis?.needs_review || false}
+                    proofSummary={analysisCardProofSummary(analysis)}
                   />
                 );
               })}

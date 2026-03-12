@@ -102,17 +102,44 @@ export type ProductAnalysisKeyIngredient = {
   impact: string;
 };
 
+export type ProductAnalysisSubtypeFitVerdict = "strong_fit" | "fit_with_limits" | "weak_fit" | "mismatch";
+
+export type ProductAnalysisMissingCode =
+  | "route_support_missing"
+  | "evidence_too_sparse"
+  | "active_strength_unclear"
+  | "ingredient_order_unclear"
+  | "formula_signal_conflict"
+  | "ingredient_library_absent"
+  | "summary_signal_too_weak";
+
+export type ProductAnalysisEvidenceItem = {
+  ingredient_name_cn: string;
+  ingredient_name_en: string;
+  rank: number;
+  impact: string;
+};
+
+export type ProductAnalysisEvidence = {
+  positive: ProductAnalysisEvidenceItem[];
+  counter: ProductAnalysisEvidenceItem[];
+  missing_codes: ProductAnalysisMissingCode[];
+};
+
 export type ProductAnalysisProfile = {
   category: CategoryKey;
   route_key: string;
   route_title: string;
   headline: string;
   positioning_summary: string;
+  subtype_fit_verdict: ProductAnalysisSubtypeFitVerdict;
+  subtype_fit_reason: string;
   best_for: string[];
   not_ideal_for: string[];
   usage_tips: string[];
   watchouts: string[];
   key_ingredients: ProductAnalysisKeyIngredient[];
+  evidence: ProductAnalysisEvidence;
   confidence: number;
   confidence_reason: string;
   needs_review: boolean;
@@ -133,7 +160,9 @@ export type ProductAnalysisIndexItem = {
   route_key: string;
   route_title: string;
   headline: string;
+  subtype_fit_verdict?: ProductAnalysisSubtypeFitVerdict | null;
   confidence: number;
+  needs_review: boolean;
 };
 
 type ProductAnalysisIndexListResponse = {
