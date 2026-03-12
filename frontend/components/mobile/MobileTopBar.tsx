@@ -183,22 +183,22 @@ export default function MobileTopBar() {
         yielded ? "m-mobile-topbar-yielded" : chromeVisible ? "m-mobile-topbar-visible" : "m-mobile-topbar-hidden"
       }`}
     >
-      <div className="mx-auto flex h-full max-w-[680px] px-4 pt-3">
-        <div className="m-topbar-shell relative flex h-12 w-full items-center justify-between rounded-[24px] border border-[color:var(--m-nav-border)] bg-[color:var(--m-topbar-bg)] px-4 supports-[backdrop-filter]:bg-[color:var(--m-topbar-bg-strong)]">
-          {wikiPath ? (
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-[92px]">
-              <span
-                className="line-clamp-1 w-full text-center text-[15px] font-semibold tracking-[0.004em] text-[color:var(--m-topbar-text)] transition-[opacity,transform] duration-200"
-                style={{
-                  opacity: centerTitleOpacity,
-                  transform: `translateY(${(1 - centerTitleOpacity) * 6}px)`,
-                }}
-              >
-                {inlineTitle || section}
-              </span>
-            </div>
-          ) : null}
+      <div className="m-topbar-shell relative h-12 border-b border-[color:var(--m-topbar-border)] bg-[color:var(--m-topbar-bg)] supports-[backdrop-filter]:bg-[color:var(--m-topbar-bg-strong)]">
+        {wikiPath ? (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center px-[92px]">
+            <span
+              className="line-clamp-1 w-full text-center text-[15px] font-semibold tracking-[0.004em] text-[color:var(--m-topbar-text)] transition-[opacity,transform] duration-200"
+              style={{
+                opacity: centerTitleOpacity,
+                transform: `translateY(${(1 - centerTitleOpacity) * 6}px)`,
+              }}
+            >
+              {inlineTitle || section}
+            </span>
+          </div>
+        ) : null}
 
+        <div className="mx-auto flex h-full max-w-[680px] items-center justify-between px-4">
           <Link
             href="/m"
             className="m-pressable relative z-[1] inline-flex items-center gap-0.5 rounded-full px-1 py-0.5 active:bg-[color:var(--m-press)]"
