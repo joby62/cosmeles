@@ -41,6 +41,12 @@ type IngredientSecondaryFilter = {
   keywords: string[];
 };
 
+type SecondaryOption = {
+  key: string;
+  label: string;
+  count?: number;
+};
+
 type SearchParamsLike = {
   get(name: string): string | null;
 } | null | undefined;
@@ -169,11 +175,61 @@ function splitIngredientName(raw: string): NameParts {
   };
 }
 
-function summaryFocus(summary: string | null | undefined): string {
-  const text = normalizeLine(summary || "");
-  if (!text) return "暂无关键结论";
-  const first = text.split(/[。！？!?.]/).map((part) => part.trim()).find(Boolean) || text;
-  return first.length > 32 ? `${first.slice(0, 31)}…` : first;
+function shortPhrase(value: string, max = 18): string {
+  const text = normalizeLine(value);
+  if (!text) return "";
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+function humanizeAudienceCandidate(raw: string): string {
+  const text = shortPhrase(
+    normalizeLine(raw)
+      .replace(/^[：:、，,\s]+/, "")
+      .replace(/[。！？!?；;].*$/, "")
+      .trim(),
+  );
+  if (!text) return "";
+  if (/(人群|的人|用户|需求|方向)$/.test(text)) return text;
+  if (/(人|肌|肤质|发质|发丝|头皮|皮肤|肌肤)$/.test(text)) return text;
+  return `${text}的人`;
+}
+
+function extractAudiencePhrase(raw: string | null | undefined): string | null {
+  const text = normalizeLine(raw || "");
+  if (!text) return null;
+  const patterns = [
+    /(?:更适合|适合于|适用于|适合|推荐给|面向|针对)([^。！？!?；;]+)/,
+    /([^。！？!?；;]+?)可优先考虑/,
+    /([^。！？!?；;]+?)会更喜欢/,
+  ];
+  for (const pattern of patterns) {
+    const matched = text.match(pattern);
+    const candidate = matched?.[1] ? humanizeAudienceCandidate(matched[1]) : "";
+    if (candidate) return candidate;
+  }
+  return null;
+}
+
+function labelToAudience(label: string | null | undefined, fallback = "在意当前方向的人"): string {
+  const text = shortPhrase(label || "", 14);
+  if (!text) return fallback;
+  return shortPhrase(`在意${text}的人`, 18);
+}
+
+function productAudience(item: MobileWikiProductItem): string {
+  return (
+    extractAudiencePhrase(item.product.one_sentence || item.product.description || "") ||
+    labelToAudience(item.target_type_title || item.secondary_type_title)
+  );
+}
+
+function inferIngredientAudienceLabel(item: IngredientLibraryListItem, category: WikiCategoryKey): string | null {
+  const matched = INGREDIENT_SECONDARY_FILTERS[category].find((filter) => matchesIngredientSecondary(item, filter));
+  return matched?.label || null;
+}
+
+function ingredientAudience(item: IngredientLibraryListItem, category: WikiCategoryKey): string {
+  return extractAudiencePhrase(item.summary) || labelToAudience(inferIngredientAudienceLabel(item, category));
 }
 
 function parseWikiState(searchParams: SearchParamsLike): {
@@ -297,6 +353,24 @@ function ChevronRightIcon({ className = "h-4 w-4" }: { className?: string }) {
   );
 }
 
+function FilterIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden className={className}>
+      <path d="M4 7H20" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+      <path d="M7 12H17" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+      <path d="M10 17H14" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function CheckIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden className={className}>
+      <path d="M6 12.5L10 16.5L18 8.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function WikiPageFallback() {
   return (
     <section className="m-wiki-page -mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[color:var(--m-wiki-canvas)] px-4 pb-36 pt-4 text-white">
@@ -329,6 +403,7 @@ function MobileWikiPageContent() {
   const [ingredientFilterKey, setIngredientFilterKey] = useState(() => initialState.ingredientFilterKey);
   const [searchOpen, setSearchOpen] = useState(() => Boolean(initialState.query));
   const [searchFocused, setSearchFocused] = useState(false);
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [ingredientItems, setIngredientItems] = useState<IngredientLibraryListItem[]>([]);
   const [ingredientTotal, setIngredientTotal] = useState(0);
   const [ingredientLoading, setIngredientLoading] = useState(() => initialState.entryTab === "ingredient");
@@ -403,11 +478,20 @@ function MobileWikiPageContent() {
   }, [scrollStorageKey]);
 
   useEffect(() => {
-    window.dispatchEvent(new CustomEvent("m-bottom-nav-yield", { detail: { active: searchOpen || searchFocused } }));
+    window.dispatchEvent(new CustomEvent("m-bottom-nav-yield", { detail: { active: searchOpen || searchFocused || filterSheetOpen } }));
     return () => {
       window.dispatchEvent(new CustomEvent("m-bottom-nav-yield", { detail: { active: false } }));
     };
-  }, [searchFocused, searchOpen]);
+  }, [filterSheetOpen, searchFocused, searchOpen]);
+
+  useEffect(() => {
+    if (!filterSheetOpen || typeof document === "undefined") return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [filterSheetOpen]);
 
   useEffect(() => {
     if (!searchOpen) return;
@@ -513,7 +597,7 @@ function MobileWikiPageContent() {
     });
   }, [ingredientItems]);
 
-  const ingredientSecondaryOptions = useMemo(() => {
+  const ingredientSecondaryOptions = useMemo<SecondaryOption[]>(() => {
     return [
       { key: ALL_SECONDARY_KEY, label: "全部分类" },
       ...INGREDIENT_SECONDARY_FILTERS[active].map((item) => ({
@@ -533,15 +617,27 @@ function MobileWikiPageContent() {
     return sortedIngredientItems.filter((item) => matchesIngredientSecondary(item, activeIngredientSecondary));
   }, [activeIngredientSecondary, ingredientFilterKey, sortedIngredientItems]);
 
-  const productSecondaryOptions = useMemo(() => {
+  const productSecondaryOptions = useMemo<SecondaryOption[]>(() => {
     const facets = productSubtypes
       .filter((item) => normalizeLine(item.label))
       .map((item) => ({
         key: item.key,
         label: item.label,
+        count: item.count,
       }));
     return [{ key: ALL_SECONDARY_KEY, label: "全部分类" }, ...facets];
   }, [productSubtypes]);
+
+  const secondaryOptions: SecondaryOption[] = entryTab === "product" ? productSecondaryOptions : ingredientSecondaryOptions;
+  const activeSecondaryKey = entryTab === "product" ? productSubtypeKey : ingredientFilterKey;
+  const activeSecondaryOption = secondaryOptions.find((item) => item.key === activeSecondaryKey) || secondaryOptions[0] || null;
+  const hasActiveSecondary = activeSecondaryKey !== ALL_SECONDARY_KEY;
+  const filterButtonLabel = hasActiveSecondary ? "调整筛选" : "筛选";
+  const filterSummary = hasActiveSecondary
+    ? `已按 ${activeSecondaryOption?.label || "当前方向"} 收窄`
+    : entryTab === "product"
+      ? "需要时再细化产品类型"
+      : "需要时再细化成分方向";
 
   const filteredProductItems = productItems;
   const productHasMore = productItems.length < productTotal;
@@ -555,10 +651,11 @@ function MobileWikiPageContent() {
         featuredProductItem.product.name ||
         "未命名产品"
       : "";
-  const featuredProductHeadline = summaryFocus(featuredProductItem?.product.one_sentence);
+  const featuredProductAudience = featuredProductItem ? productAudience(featuredProductItem) : "";
 
   const featuredIngredientItem = filteredIngredientItems[0] || null;
   const featuredIngredientName = featuredIngredientItem ? splitIngredientName(featuredIngredientItem.ingredient_name) : null;
+  const featuredIngredientAudience = featuredIngredientItem ? ingredientAudience(featuredIngredientItem, active) : "";
   const ingredientListItems = featuredIngredientItem ? filteredIngredientItems.slice(1) : filteredIngredientItems;
   const searchPlaceholder = entryTab === "product" ? "搜索产品百科" : "搜索成分百科";
 
@@ -677,6 +774,7 @@ function MobileWikiPageContent() {
 
   const switchTab = (nextTab: WikiEntryTab) => {
     if (nextTab === entryTab) return;
+    setFilterSheetOpen(false);
     if (nextTab === "product") {
       beginProductLoad();
     } else {
@@ -687,6 +785,7 @@ function MobileWikiPageContent() {
 
   const switchCategory = (nextCategory: WikiCategoryKey) => {
     if (nextCategory === active) return;
+    setFilterSheetOpen(false);
     if (entryTab === "product") {
       beginProductLoad();
     } else {
@@ -714,6 +813,26 @@ function MobileWikiPageContent() {
     }
     setSearchFocused(false);
     setSearchOpen(false);
+  };
+
+  const applySecondaryFilter = (key: string) => {
+    if (entryTab === "product") {
+      if (productSubtypeKey === key) {
+        setFilterSheetOpen(false);
+        return;
+      }
+      beginProductLoad();
+      setProductSubtypeKey(key);
+      setFilterSheetOpen(false);
+      return;
+    }
+
+    if (ingredientFilterKey === key) {
+      setFilterSheetOpen(false);
+      return;
+    }
+    setIngredientFilterKey(key);
+    setFilterSheetOpen(false);
   };
 
   return (
@@ -828,6 +947,7 @@ function MobileWikiPageContent() {
                   aria-label="打开搜索"
                   data-analytics-id="wiki:search:open"
                   onClick={() => {
+                    setFilterSheetOpen(false);
                     setSearchOpen(true);
                   }}
                   className="m-pressable inline-flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-[26px] border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)] text-[color:var(--m-wiki-text-mid)] shadow-[0_10px_24px_rgba(16,29,52,0.06)]"
@@ -873,37 +993,107 @@ function MobileWikiPageContent() {
             </div>
           </section>
 
-          <section className="overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            <div className="flex min-w-max gap-2.5 pb-1">
-              {(entryTab === "product" ? productSecondaryOptions : ingredientSecondaryOptions).map((item) => {
-                const activeSecondary = entryTab === "product" ? productSubtypeKey === item.key : ingredientFilterKey === item.key;
-                return (
-                  <button
-                    key={`${entryTab}-${item.key}`}
-                    type="button"
-                    data-analytics-id={`wiki:${entryTab}:filter:${item.key}`}
-                    onClick={() => {
-                      if (entryTab === "product") {
-                        if (productSubtypeKey === item.key) return;
-                        beginProductLoad();
-                        setProductSubtypeKey(item.key);
-                        return;
-                      }
-                      setIngredientFilterKey(item.key);
-                    }}
-                    className={`m-pressable inline-flex h-8 items-center rounded-full border px-4 text-[13px] font-medium transition-colors ${
-                      activeSecondary
-                        ? "border-[rgba(10,132,255,0.18)] bg-[rgba(10,132,255,0.10)] text-[#0a84ff] shadow-none"
-                        : "border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)] text-[color:var(--m-wiki-text-soft)] active:bg-white/90"
-                    }`}
-                  >
-                    {item.label}
-                  </button>
-                );
-              })}
-            </div>
-          </section>
+          {secondaryOptions.length > 1 ? (
+            <section>
+              <div className="flex items-center justify-between gap-3 pt-0.5">
+                <p className="min-w-0 flex-1 line-clamp-1 text-[12px] text-[color:var(--m-wiki-text-soft)]">
+                  {filterSummary}
+                </p>
+                <button
+                  type="button"
+                  data-analytics-id={`wiki:${entryTab}:filter:open`}
+                  onClick={() => {
+                    setFilterSheetOpen(true);
+                  }}
+                  className="m-pressable inline-flex h-9 shrink-0 items-center gap-2 rounded-full border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)] px-4 text-[13px] font-semibold text-[color:var(--m-wiki-text-strong)] shadow-[0_8px_20px_rgba(16,29,52,0.06)] active:bg-white/90"
+                >
+                  <FilterIcon className="h-[15px] w-[15px]" />
+                  {filterButtonLabel}
+                </button>
+              </div>
+            </section>
+          ) : null}
         </div>
+
+        {filterSheetOpen ? (
+          <div
+            className="fixed inset-0 z-[80]"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${entryTab === "product" ? "产品" : "成分"}筛选`}
+          >
+            <button
+              type="button"
+              aria-label="关闭筛选"
+              onClick={() => {
+                setFilterSheetOpen(false);
+              }}
+              className="m-wiki-sheet-mask absolute inset-0 backdrop-blur-sm"
+            />
+
+            <div className="m-wiki-sheet m-sheet-enter absolute inset-x-0 bottom-0 max-h-[82dvh] overflow-hidden rounded-t-[30px] border shadow-[0_-28px_72px_rgba(0,0,0,0.56)] backdrop-blur-2xl">
+              <div className="m-wiki-sheet-handle mx-auto mt-2 h-1 w-11 rounded-full" />
+              <div className="flex items-center justify-between border-b border-white/10 px-5 py-3">
+                <div className="min-w-0">
+                  <h3 className="text-[17px] font-semibold text-white/92">筛选</h3>
+                  <p className="mt-1 text-[12px] text-white/58">
+                    {entryTab === "product" ? "需要时再按产品类型继续缩小。" : "需要时再按成分方向继续缩小。"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilterSheetOpen(false);
+                  }}
+                  className="m-pressable inline-flex h-8 items-center rounded-full border border-white/16 bg-white/[0.08] px-3 text-[12px] font-medium text-white/86 active:bg-white/[0.14]"
+                >
+                  关闭
+                </button>
+              </div>
+
+              <div className="max-h-[calc(82dvh-88px)] overflow-y-auto px-4 pb-6 pt-3">
+                <div className="space-y-2.5">
+                  {secondaryOptions.map((item) => {
+                    const selectedOption = activeSecondaryKey === item.key;
+                    return (
+                      <button
+                        key={`${entryTab}-${item.key}`}
+                        type="button"
+                        data-analytics-id={`wiki:${entryTab}:filter:${item.key}`}
+                        onClick={() => {
+                          applySecondaryFilter(item.key);
+                        }}
+                        className={`m-wiki-sheet-item m-pressable flex w-full items-center justify-between gap-3 rounded-[22px] border px-4 py-3 text-left transition-colors ${
+                          selectedOption
+                            ? "border-[rgba(10,132,255,0.26)] bg-[rgba(10,132,255,0.10)] text-[#0a84ff]"
+                            : "text-[color:var(--m-wiki-text-strong)] active:bg-white/90"
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="line-clamp-1 text-[15px] font-semibold">{item.label}</p>
+                          {typeof item.count === "number" && item.key !== ALL_SECONDARY_KEY ? (
+                            <p className="mt-1 text-[12px] text-[color:var(--m-wiki-text-soft)]">{item.count} 个结果</p>
+                          ) : item.key === ALL_SECONDARY_KEY ? (
+                            <p className="mt-1 text-[12px] text-[color:var(--m-wiki-text-soft)]">先看这一类下的全部内容</p>
+                          ) : null}
+                        </div>
+                        <span
+                          className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${
+                            selectedOption
+                              ? "border-[rgba(10,132,255,0.18)] bg-[rgba(10,132,255,0.16)] text-[#0a84ff]"
+                              : "border-white/10 bg-white/[0.06] text-white/30"
+                          }`}
+                        >
+                          <CheckIcon className="h-[14px] w-[14px]" />
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         <div key={entryTab} className="m-wiki-pane pt-1">
           {entryTab === "product" ? (
@@ -937,20 +1127,27 @@ function MobileWikiPageContent() {
                     <div className="relative z-[1] flex items-start justify-between gap-4">
                       <div className="min-w-0 flex-1">
                         <div className="inline-flex rounded-full border border-white/26 bg-white/14 px-2.5 py-1 text-[12px] font-medium text-white/84 backdrop-blur-lg">
-                          {featuredProductItem.target_type_title || featuredProductItem.category_label}
+                          推荐你先看
                         </div>
-                        <p className="m-wiki-kicker mt-4 text-[11px] text-white/68">推荐你先看</p>
+                        <p className="m-wiki-kicker mt-4 text-[11px] text-white/68">更适合</p>
                         <h2 className="mt-1 line-clamp-2 text-[27px] leading-[1.1] font-semibold tracking-[-0.03em] text-white">
-                          {featuredProductHeadline}
+                          {featuredProductAudience ? `更适合${featuredProductAudience}` : "更适合先从这里看起"}
                         </h2>
-                        <p className="mt-2 line-clamp-2 text-[14px] leading-[1.48] text-white/76">{featuredProductTitle}</p>
+                        <p className="mt-2 line-clamp-2 text-[15px] leading-[1.45] font-semibold text-white/84">{featuredProductTitle}</p>
                         <div className="mt-4 flex flex-wrap gap-2">
-                          <span className="inline-flex h-7 items-center rounded-full border border-white/18 bg-white/[0.08] px-3 text-[11px] text-white/78">
-                            {featuredProductItem.mapping_ready ? "映射已完成" : "映射进行中"}
-                          </span>
+                          {featuredProductItem.target_type_title ? (
+                            <span className="inline-flex h-7 items-center rounded-full border border-white/18 bg-white/[0.08] px-3 text-[11px] text-white/78">
+                              {featuredProductItem.target_type_title}
+                            </span>
+                          ) : null}
                           {typeof featuredProductItem.primary_confidence === "number" ? (
                             <span className="inline-flex h-7 items-center rounded-full border border-[#89c1ff]/28 bg-[#2f5e9f]/16 px-3 text-[11px] text-[#d6eaff]">
                               置信度 {featuredProductItem.primary_confidence}%
+                            </span>
+                          ) : null}
+                          {!featuredProductItem.mapping_ready ? (
+                            <span className="inline-flex h-7 items-center rounded-full border border-white/18 bg-white/[0.08] px-3 text-[11px] text-white/70">
+                              分析仍在补充
                             </span>
                           ) : null}
                         </div>
@@ -969,8 +1166,8 @@ function MobileWikiPageContent() {
 
                     <div className="relative z-[1] mt-5 flex items-center justify-between gap-3 rounded-[22px] border border-white/10 bg-white/[0.08] px-4 py-3 backdrop-blur-xl">
                       <div className="min-w-0 flex-1">
-                        <p className="text-[13px] font-medium text-white/86">完整分析</p>
-                        <p className="mt-0.5 text-[12px] leading-[1.45] text-white/62">点开看成分拆解、适配建议与使用结论</p>
+                        <p className="text-[13px] font-medium text-white/86">看适配理由</p>
+                        <p className="mt-0.5 text-[12px] leading-[1.45] text-white/62">点开看成分拆解、使用感和为什么更适合你</p>
                       </div>
                       <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/12 bg-white/[0.12] text-white/74">
                         <ChevronRightIcon />
@@ -983,6 +1180,7 @@ function MobileWikiPageContent() {
               {listProductItems.map((item) => {
                 const product = item.product;
                 const productTitle = [product.brand, product.name].filter(Boolean).join(" ").trim() || product.name || "未命名产品";
+                const audience = productAudience(item);
                 return (
                   <Link
                     key={product.id}
@@ -1018,25 +1216,31 @@ function MobileWikiPageContent() {
 
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-3">
-                          <div className="flex flex-wrap gap-1.5">
-                            <span className="inline-flex h-6 items-center rounded-full border border-white/14 bg-white/[0.08] px-2.5 text-[11px] text-white/72">
-                              {item.target_type_title || item.category_label}
-                            </span>
-                            {typeof item.primary_confidence === "number" ? (
-                              <span className="inline-flex h-6 items-center rounded-full border border-[#89c1ff]/25 bg-[#2f5e9f]/14 px-2.5 text-[11px] text-[#d6eaff]">
-                                {item.primary_confidence}%
-                              </span>
-                            ) : null}
-                          </div>
+                          <p className="line-clamp-2 min-w-0 flex-1 text-[18px] leading-[1.3] font-semibold tracking-[-0.02em] text-white/92">
+                            {`更适合${audience}`}
+                          </p>
                           <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-white/52 transition-colors group-hover:bg-white/[0.14] group-hover:text-white/72">
                             <ChevronRightIcon className="h-[15px] w-[15px]" />
                           </span>
                         </div>
-                        <p className="mt-2 line-clamp-2 text-[17px] leading-[1.34] font-semibold text-white/92">
-                          {summaryFocus(product.one_sentence)}
-                        </p>
-                        <p className="mt-1 line-clamp-1 text-[13px] text-white/60">{productTitle}</p>
-                        <p className="mt-2 text-[12px] text-white/50">{item.mapping_ready ? "直接看完整分析" : "先看基础信息，分析仍在补充"}</p>
+                        <p className="mt-1 line-clamp-1 text-[14px] font-semibold text-white/74">{productTitle}</p>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {item.target_type_title ? (
+                            <span className="inline-flex h-6 items-center rounded-full border border-white/14 bg-white/[0.08] px-2.5 text-[11px] text-white/72">
+                              {item.target_type_title}
+                            </span>
+                          ) : null}
+                          {typeof item.primary_confidence === "number" ? (
+                            <span className="inline-flex h-6 items-center rounded-full border border-[#89c1ff]/25 bg-[#2f5e9f]/14 px-2.5 text-[11px] text-[#d6eaff]">
+                              {item.primary_confidence}%
+                            </span>
+                          ) : null}
+                          {!item.mapping_ready ? (
+                            <span className="inline-flex h-6 items-center rounded-full border border-white/14 bg-white/[0.08] px-2.5 text-[11px] text-white/62">
+                              分析补充中
+                            </span>
+                          ) : null}
+                        </div>
                       </div>
                     </div>
                   </Link>
@@ -1055,7 +1259,7 @@ function MobileWikiPageContent() {
 
               {!productLoading && !productError && filteredProductItems.length === 0 ? (
                 <div className="m-wiki-card-soft rounded-[24px] px-4 py-5 text-[14px] text-white/65">
-                  当前分类暂无匹配产品，请调整关键词、一级分类或二级分类。
+                  当前分类暂无匹配产品，请调整关键词、一级分类或筛选方向。
                 </div>
               ) : null}
 
@@ -1108,11 +1312,11 @@ function MobileWikiPageContent() {
                     <div className="relative z-[1] flex items-start justify-between gap-4">
                       <div className="min-w-0 flex-1">
                         <div className="inline-flex rounded-full border border-white/26 bg-white/14 px-2.5 py-1 text-[12px] font-medium text-white/84 backdrop-blur-lg">
-                          {WIKI_MAP[active].label}
+                          推荐你先看
                         </div>
-                        <p className="m-wiki-kicker mt-4 text-[11px] text-white/68">一句话重点</p>
+                        <p className="m-wiki-kicker mt-4 text-[11px] text-white/68">更适合</p>
                         <h2 className="mt-1 line-clamp-2 text-[27px] leading-[1.1] font-semibold tracking-[-0.03em] text-white">
-                          {summaryFocus(featuredIngredientItem.summary)}
+                          {featuredIngredientAudience ? `更适合${featuredIngredientAudience}` : "更适合先从这里看起"}
                         </h2>
                         <p className="mt-2 line-clamp-1 text-[15px] font-semibold text-white/84">{featuredIngredientName.main}</p>
                         {featuredIngredientName.sub ? <p className="mt-0.5 line-clamp-1 text-[13px] text-white/62">{featuredIngredientName.sub}</p> : null}
@@ -1130,8 +1334,8 @@ function MobileWikiPageContent() {
 
                     <div className="relative z-[1] mt-5 flex items-center justify-between gap-3 rounded-[22px] border border-white/10 bg-white/[0.08] px-4 py-3 backdrop-blur-xl">
                       <div className="min-w-0 flex-1">
-                        <p className="text-[13px] font-medium text-white/86">继续查看</p>
-                        <p className="mt-0.5 text-[12px] leading-[1.45] text-white/62">展开完整收益、风险边界与使用方式</p>
+                        <p className="text-[13px] font-medium text-white/86">看完整边界</p>
+                        <p className="mt-0.5 text-[12px] leading-[1.45] text-white/62">展开收益、风险边界和使用方式</p>
                       </div>
                       <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/12 bg-white/[0.12] text-white/74">
                         <ChevronRightIcon />
@@ -1143,6 +1347,7 @@ function MobileWikiPageContent() {
 
               {ingredientListItems.map((item) => {
                 const name = splitIngredientName(item.ingredient_name);
+                const audience = ingredientAudience(item, active);
                 return (
                   <Link
                     key={item.ingredient_id}
@@ -1173,23 +1378,25 @@ function MobileWikiPageContent() {
 
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-3">
-                          <div className="flex flex-wrap gap-1.5">
-                            <span className="inline-flex h-6 items-center rounded-full border border-white/14 bg-white/[0.08] px-2.5 text-[11px] text-white/72">
-                              {WIKI_MAP[active].label}
-                            </span>
-                            <span className="inline-flex h-6 items-center rounded-full border border-white/14 bg-white/[0.08] px-2.5 text-[11px] text-white/62">
-                              {item.source_count} 条样本
-                            </span>
-                          </div>
+                          <p className="line-clamp-2 min-w-0 flex-1 text-[18px] leading-[1.3] font-semibold tracking-[-0.02em] text-white/92">
+                            {`更适合${audience}`}
+                          </p>
                           <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-white/52 transition-colors group-hover:bg-white/[0.14] group-hover:text-white/72">
                             <ChevronRightIcon className="h-[15px] w-[15px]" />
                           </span>
                         </div>
-                        <p className="mt-2 line-clamp-2 text-[17px] leading-[1.34] font-semibold text-white/92">
-                          {summaryFocus(item.summary)}
-                        </p>
-                        <p className="mt-1 line-clamp-1 text-[13px] text-white/62">{name.main}</p>
+                        <p className="mt-1 line-clamp-1 text-[14px] font-semibold text-white/74">{name.main}</p>
                         {name.sub ? <p className="mt-0.5 line-clamp-1 text-[12px] text-white/48">{name.sub}</p> : null}
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          <span className="inline-flex h-6 items-center rounded-full border border-white/14 bg-white/[0.08] px-2.5 text-[11px] text-white/62">
+                            {item.source_count} 条样本
+                          </span>
+                          {activeIngredientSecondary ? (
+                            <span className="inline-flex h-6 items-center rounded-full border border-white/14 bg-white/[0.08] px-2.5 text-[11px] text-white/62">
+                              {activeIngredientSecondary.label}
+                            </span>
+                          ) : null}
+                        </div>
                       </div>
                     </div>
                   </Link>
@@ -1208,7 +1415,7 @@ function MobileWikiPageContent() {
 
               {!ingredientLoading && !ingredientError && filteredIngredientItems.length === 0 ? (
                 <div className="m-wiki-card-soft rounded-[24px] px-4 py-5 text-[14px] text-white/65">
-                  当前分类暂无匹配成分，请调整关键词、一级分类或二级分类。
+                  当前分类暂无匹配成分，请调整关键词、一级分类或筛选方向。
                 </div>
               ) : null}
 
