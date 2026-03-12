@@ -71,6 +71,12 @@ const CATEGORY_OPTIONS = [
   { value: "cleanser", label: CATEGORY_CONFIG.cleanser.zh },
 ] as const;
 
+const LOCATION_PRESENCE_OPTIONS = [
+  { value: "all", label: "全部位置" },
+  { value: "with_location", label: "仅已识别位置" },
+  { value: "without_location", label: "仅位置缺省" },
+] as const;
+
 const ANALYTICS_STAGE_LABELS: Record<string, string> = {
   uploading: "上传当前在用产品",
   prepare: "准备对比任务",
@@ -264,7 +270,7 @@ function compactText(value: string, maxLength = 88): string {
 
 function buildLocationBadgeLabel(locationLabel?: string | null, timeZone?: string | null): string {
   const label = valueOrEmpty(locationLabel);
-  if (label) return `近似位置 ${compactText(label, 42)}`;
+  if (label) return compactText(label, 42);
   const tz = valueOrEmpty(timeZone);
   if (tz) return `时区 ${tz}`;
   return "位置缺省";
@@ -536,10 +542,9 @@ function describeTimelineEvent(item: MobileAnalyticsSessionEventItem): SessionTi
         title: "记录用户近似位置",
         flowLabel: "允许位置授权",
         summary:
-          detail ||
           (hasLocationContext(item.location_label, item.location_time_zone)
             ? `${buildLocationBadgeLabel(item.location_label, item.location_time_zone)}，后续分析与呈现都可以把它作为上下文。`
-            : "已记录近似位置，后续内容可以把它作为呈现依据之一。"),
+            : detail || "已记录近似位置，后续内容可以把它作为呈现依据之一。"),
         significant: true,
         meta,
         rawMeta,
@@ -952,6 +957,8 @@ function phaseSectionClasses(phase: SessionTimelinePhase): string {
 export default function MobileAnalyticsDashboard() {
   const [sinceHours, setSinceHours] = useState<number>(24 * 7);
   const [category, setCategory] = useState<string>("all");
+  const [locationPresence, setLocationPresence] = useState<string>("all");
+  const [locationTimeZone, setLocationTimeZone] = useState<string>("");
   const [overview, setOverview] = useState<ResourceState<MobileAnalyticsOverview>>(createResourceState());
   const [funnel, setFunnel] = useState<ResourceState<MobileAnalyticsFunnel>>(createResourceState());
   const [errors, setErrors] = useState<ResourceState<MobileAnalyticsErrors>>(createResourceState());
@@ -977,11 +984,15 @@ export default function MobileAnalyticsDashboard() {
     activeCompareIdRef.current = activeCompareId;
   }, [activeCompareId]);
 
+  const locationTimeZoneOptions = experience.data?.location_time_zones || [];
+
   useEffect(() => {
     let cancelled = false;
     const baseQuery: MobileAnalyticsQuery = {
       sinceHours,
       category: category === "all" ? undefined : category,
+      locationPresence: locationPresence === "all" ? undefined : locationPresence,
+      locationTimeZone: locationPresence === "without_location" ? undefined : locationTimeZone || undefined,
     };
 
     async function loadDashboard() {
@@ -1086,12 +1097,14 @@ export default function MobileAnalyticsDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [category, refreshNonce, sinceHours]);
+  }, [category, locationPresence, locationTimeZone, refreshNonce, sinceHours]);
 
   async function loadSessionDetail(next: { sessionId?: string; compareId?: string }) {
     const baseQuery: MobileAnalyticsQuery = {
       sinceHours,
       category: category === "all" ? undefined : category,
+      locationPresence: locationPresence === "all" ? undefined : locationPresence,
+      locationTimeZone: locationPresence === "without_location" ? undefined : locationTimeZone || undefined,
       sessionId: next.sessionId,
       compareId: next.compareId,
       limit: 10,
@@ -1194,6 +1207,50 @@ export default function MobileAnalyticsDashboard() {
             >
               {CATEGORY_OPTIONS.map((item) => (
                 <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="inline-flex items-center gap-2 rounded-full border border-black/10 bg-[#f7f8fb] px-4 py-2 text-[13px] text-black/68">
+            <span>位置</span>
+            <select
+              value={locationPresence}
+              onChange={(event) =>
+                startTransition(() => {
+                  const nextValue = event.target.value;
+                  setLocationPresence(nextValue);
+                  if (nextValue === "without_location") setLocationTimeZone("");
+                })
+              }
+              className="bg-transparent text-[13px] font-semibold text-black/82 outline-none"
+            >
+              {LOCATION_PRESENCE_OPTIONS.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label
+            className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-[13px] ${
+              locationPresence === "without_location"
+                ? "border-black/8 bg-[#fbfbfc] text-black/34"
+                : "border-black/10 bg-[#f7f8fb] text-black/68"
+            }`}
+          >
+            <span>时区</span>
+            <select
+              value={locationTimeZone}
+              disabled={locationPresence === "without_location"}
+              onChange={(event) => startTransition(() => setLocationTimeZone(event.target.value))}
+              className="bg-transparent text-[13px] font-semibold text-black/82 outline-none disabled:text-black/34"
+            >
+              <option value="">全部时区</option>
+              {locationTimeZoneOptions.map((item) => (
+                <option key={item.key} value={item.key}>
                   {item.label}
                 </option>
               ))}

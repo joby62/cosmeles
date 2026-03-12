@@ -863,6 +863,8 @@ export type MobileAnalyticsQuery = {
   sessionId?: string;
   compareId?: string;
   ownerId?: string;
+  locationPresence?: string;
+  locationTimeZone?: string;
   limit?: number;
 };
 
@@ -878,6 +880,8 @@ export type MobileAnalyticsFilterState = {
   session_id?: string | null;
   compare_id?: string | null;
   owner_id?: string | null;
+  location_presence?: string | null;
+  location_time_zone?: string | null;
   limit?: number | null;
 };
 
@@ -2643,6 +2647,8 @@ function buildMobileAnalyticsQuery(params?: MobileAnalyticsQuery): string {
   if (params?.sessionId) search.set("session_id", params.sessionId);
   if (params?.compareId) search.set("compare_id", params.compareId);
   if (params?.ownerId) search.set("owner_id", params.ownerId);
+  if (params?.locationPresence) search.set("location_presence", params.locationPresence);
+  if (params?.locationTimeZone) search.set("location_time_zone", params.locationTimeZone);
   if (typeof params?.limit === "number") search.set("limit", String(params.limit));
   return search.toString();
 }

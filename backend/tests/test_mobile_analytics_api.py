@@ -816,11 +816,11 @@ def test_mobile_analytics_errors_feedback_and_sessions(mobile_analytics_client: 
     assert sessions_payload["selected_compare_id"] == "cmp-1"
     assert sessions_payload["selected_session_id"] == "sess-1"
     assert sessions_payload["total"] >= 1
-    assert sessions_payload["items"][0]["latest_location_label"] == "31.230, 121.470 +-1200m · Asia/Shanghai"
+    assert sessions_payload["items"][0]["latest_location_label"] == "上海时区 · 31.230, 121.470 · 约1.2km"
     assert sessions_payload["items"][0]["latest_location_time_zone"] == "Asia/Shanghai"
     assert any(item["name"] == "compare_run_success" for item in sessions_payload["timeline"])
     assert any(item["name"] == "compare_result_view" for item in sessions_payload["timeline"])
-    assert any(item["location_label"] == "31.230, 121.470 +-1200m · Asia/Shanghai" for item in sessions_payload["timeline"])
+    assert any(item["location_label"] == "上海时区 · 31.230, 121.470 · 约1.2km" for item in sessions_payload["timeline"])
 
 
 def test_mobile_analytics_experience(mobile_analytics_client: TestClient):
@@ -907,11 +907,39 @@ def test_mobile_analytics_experience(mobile_analytics_client: TestClient):
     assert payload["sessions_without_location"] == 3
     assert payload["location_coverage_rate"] == 0.4
     region_counts = {item["key"]: item["count"] for item in payload["location_regions"]}
-    assert region_counts["31.2, 121.5 · Asia/Shanghai"] == 1
-    assert region_counts["35.7, 139.8 · Asia/Tokyo"] == 1
+    assert region_counts["31.2, 121.5|Asia/Shanghai"] == 1
+    assert region_counts["35.7, 139.8|Asia/Tokyo"] == 1
+    region_labels = {item["key"]: item["label"] for item in payload["location_regions"]}
+    assert region_labels["31.2, 121.5|Asia/Shanghai"] == "上海时区 · 31.2, 121.5"
+    assert region_labels["35.7, 139.8|Asia/Tokyo"] == "东京时区 · 35.7, 139.8"
     timezone_counts = {item["key"]: item["count"] for item in payload["location_time_zones"]}
     assert timezone_counts["Asia/Shanghai"] == 1
     assert timezone_counts["Asia/Tokyo"] == 1
+    timezone_labels = {item["key"]: item["label"] for item in payload["location_time_zones"]}
+    assert timezone_labels["Asia/Shanghai"] == "上海时区"
+    assert timezone_labels["Asia/Tokyo"] == "东京时区"
     accuracy_counts = {item["key"]: item["count"] for item in payload["location_accuracy_buckets"]}
     assert accuracy_counts["1-3km"] == 1
     assert accuracy_counts["3-10km"] == 1
+
+
+def test_mobile_analytics_geo_filters(mobile_analytics_client: TestClient):
+    client = mobile_analytics_client
+    query = "date_from=2026-03-10&date_to=2026-03-12"
+
+    filtered_experience = client.get(
+        f"/api/products/analytics/mobile/experience?{query}&location_presence=with_location&location_time_zone=Asia/Shanghai"
+    )
+    assert filtered_experience.status_code == 200
+    filtered_payload = filtered_experience.json()
+    assert filtered_payload["sessions_with_location"] == 1
+    assert filtered_payload["sessions_without_location"] == 0
+    assert filtered_payload["location_coverage_rate"] == 1.0
+    assert filtered_payload["location_time_zones"][0]["key"] == "Asia/Shanghai"
+    assert filtered_payload["location_time_zones"][0]["label"] == "上海时区"
+
+    missing_sessions = client.get(f"/api/products/analytics/mobile/sessions?{query}&location_presence=without_location")
+    assert missing_sessions.status_code == 200
+    missing_payload = missing_sessions.json()
+    assert missing_payload["total"] == 3
+    assert all(item["latest_location_label"] is None for item in missing_payload["items"])

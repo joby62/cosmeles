@@ -334,6 +334,26 @@ ANALYTICS_ONLINE_LABELS: dict[str, str] = {
     "offline": "离线",
     "unknown": "未知",
 }
+ANALYTICS_TIME_ZONE_LABELS: dict[str, str] = {
+    "Asia/Shanghai": "上海时区",
+    "Asia/Hong_Kong": "香港时区",
+    "Asia/Tokyo": "东京时区",
+    "Asia/Seoul": "首尔时区",
+    "Asia/Singapore": "新加坡时区",
+    "Asia/Taipei": "台北时区",
+    "Asia/Bangkok": "曼谷时区",
+    "Asia/Dubai": "迪拜时区",
+    "Europe/London": "伦敦时区",
+    "Europe/Paris": "巴黎时区",
+    "Europe/Berlin": "柏林时区",
+    "America/Los_Angeles": "洛杉矶时区",
+    "America/Denver": "丹佛时区",
+    "America/Chicago": "芝加哥时区",
+    "America/New_York": "纽约时区",
+    "America/Toronto": "多伦多时区",
+    "Australia/Sydney": "悉尼时区",
+    "UTC": "UTC",
+}
 ANALYTICS_CTA_COMPLETION_LABELS: dict[str, str] = {
     "compare_run_start": "再次开始对比",
     "wiki_upload_cta_click": "点击上传一键分析",
@@ -399,6 +419,8 @@ def _resolve_mobile_analytics_filters(
     session_id: str | None,
     compare_id: str | None,
     owner_id: str | None,
+    location_presence: str | None,
+    location_time_zone: str | None,
     limit: int | None = None,
 ) -> tuple[MobileAnalyticsFilterState, str, str]:
     category_value = _normalize_optional_text(category)
@@ -428,6 +450,13 @@ def _resolve_mobile_analytics_filters(
     if start_dt > end_dt:
         raise HTTPException(status_code=400, detail="date_from must be earlier than date_to.")
 
+    location_presence_value = _normalize_optional_text(location_presence)
+    if location_presence_value and location_presence_value not in {"with_location", "without_location"}:
+        raise HTTPException(status_code=400, detail=f"Invalid location_presence: {location_presence_value}.")
+    location_time_zone_value = _normalize_optional_text(location_time_zone)
+    if location_presence_value == "without_location" and location_time_zone_value:
+        raise HTTPException(status_code=400, detail="location_time_zone cannot be used with location_presence=without_location.")
+
     filters = MobileAnalyticsFilterState(
         since_hours=since_hours_value,
         date_from=_normalize_optional_text(date_from),
@@ -440,6 +469,8 @@ def _resolve_mobile_analytics_filters(
         session_id=_normalize_optional_text(session_id),
         compare_id=_normalize_optional_text(compare_id),
         owner_id=_normalize_optional_text(owner_id),
+        location_presence=location_presence_value,
+        location_time_zone=location_time_zone_value,
         limit=limit,
     )
     return filters, _analytics_datetime_to_iso(start_dt), _analytics_datetime_to_iso(end_dt)
@@ -458,6 +489,50 @@ def _safe_event_props(value: str | None) -> dict[str, Any]:
         return {}
 
 
+def _query_mobile_client_location_session_keys(
+    *,
+    db: Session,
+    filters: MobileAnalyticsFilterState,
+    start_iso: str,
+    end_iso: str,
+) -> set[str]:
+    stmt = select(MobileClientEvent).where(
+        MobileClientEvent.created_at >= start_iso,
+        MobileClientEvent.created_at <= end_iso,
+    )
+    if filters.category:
+        stmt = stmt.where(MobileClientEvent.category == filters.category)
+    if filters.session_id:
+        stmt = stmt.where(MobileClientEvent.session_id == filters.session_id)
+    if filters.compare_id:
+        stmt = stmt.where(MobileClientEvent.compare_id == filters.compare_id)
+    if filters.owner_id:
+        stmt = stmt.where(MobileClientEvent.owner_id == filters.owner_id)
+
+    rows = db.execute(stmt).scalars().all()
+    session_has_location: dict[str, bool] = {}
+    session_time_zones: dict[str, set[str]] = defaultdict(set)
+    for row in rows:
+        props = _safe_event_props(row.props_json)
+        session_key = _session_key_for_event(row)
+        has_location = _has_event_location(props)
+        session_has_location[session_key] = session_has_location.get(session_key, False) or has_location
+        time_zone = _event_location_time_zone(props)
+        if time_zone:
+            session_time_zones[session_key].add(time_zone)
+
+    matched: set[str] = set()
+    for session_key, has_location in session_has_location.items():
+        if filters.location_presence == "with_location" and not has_location:
+            continue
+        if filters.location_presence == "without_location" and has_location:
+            continue
+        if filters.location_time_zone and filters.location_time_zone not in session_time_zones.get(session_key, set()):
+            continue
+        matched.add(session_key)
+    return matched
+
+
 def _query_mobile_client_events(
     *,
     db: Session,
@@ -468,6 +543,17 @@ def _query_mobile_client_events(
     desc: bool = False,
     row_limit: int | None = None,
 ) -> list[tuple[MobileClientEvent, dict[str, Any]]]:
+    matched_session_keys: set[str] | None = None
+    if filters.location_presence or filters.location_time_zone:
+        matched_session_keys = _query_mobile_client_location_session_keys(
+            db=db,
+            filters=filters,
+            start_iso=start_iso,
+            end_iso=end_iso,
+        )
+        if not matched_session_keys:
+            return []
+
     stmt = select(MobileClientEvent).where(
         MobileClientEvent.created_at >= start_iso,
         MobileClientEvent.created_at <= end_iso,
@@ -501,6 +587,8 @@ def _query_mobile_client_events(
             trigger_reason = _normalize_optional_text(props.get("trigger_reason"))
             if trigger_reason != filters.trigger_reason:
                 continue
+        if matched_session_keys is not None and _session_key_for_event(row) not in matched_session_keys:
+            continue
         out.append((row, props))
     return out
 
@@ -578,22 +666,44 @@ def _event_location_time_zone(props: dict[str, Any]) -> str | None:
     return _normalize_optional_text(props.get("location_time_zone"))
 
 
+def _humanize_location_time_zone(value: str | None) -> str | None:
+    time_zone = _normalize_optional_text(value)
+    if not time_zone:
+        return None
+    if time_zone in ANALYTICS_TIME_ZONE_LABELS:
+        return ANALYTICS_TIME_ZONE_LABELS[time_zone]
+    leaf = time_zone.split("/")[-1].replace("_", " ").strip()
+    return f"{leaf} 时区" if leaf else time_zone
+
+
+def _format_location_accuracy_label(value: float | None) -> str | None:
+    if value is None or value <= 0:
+        return None
+    if value >= 1000:
+        return f"约{round(value / 1000, 1):.1f}km"
+    return f"约{int(round(value))}m"
+
+
 def _event_location_label(props: dict[str, Any]) -> str | None:
-    label = _normalize_optional_text(props.get("location_label"))
-    if label:
-        return label
     latitude = _event_prop_float(props, "location_latitude")
     longitude = _event_prop_float(props, "location_longitude")
     time_zone = _event_location_time_zone(props)
-    if latitude is None or longitude is None:
-        return time_zone
-    parts = [f"{latitude:.3f}, {longitude:.3f}"]
     accuracy_m = _event_prop_float(props, "location_accuracy_m")
-    if accuracy_m is not None and accuracy_m > 0:
-        parts.append(f"+-{int(round(accuracy_m))}m")
-    if time_zone:
-        parts.append(time_zone)
-    return " · ".join(parts)
+    parts: list[str] = []
+    time_zone_label = _humanize_location_time_zone(time_zone)
+    if time_zone_label:
+        parts.append(time_zone_label)
+    if latitude is not None and longitude is not None:
+        parts.append(f"{latitude:.3f}, {longitude:.3f}")
+    accuracy_label = _format_location_accuracy_label(accuracy_m)
+    if accuracy_label:
+        parts.append(accuracy_label)
+    if parts:
+        return " · ".join(parts)
+    label = _normalize_optional_text(props.get("location_label"))
+    if label:
+        return label
+    return time_zone_label or time_zone
 
 
 def _has_event_location(props: dict[str, Any]) -> bool:
@@ -607,7 +717,17 @@ def _event_location_region_key(props: dict[str, Any]) -> str | None:
     if latitude is None or longitude is None:
         return time_zone or _event_location_label(props)
     region = f"{round(latitude, 1):.1f}, {round(longitude, 1):.1f}"
-    return f"{region} · {time_zone}" if time_zone else region
+    return f"{region}|{time_zone}" if time_zone else region
+
+
+def _event_location_region_label(props: dict[str, Any]) -> str | None:
+    latitude = _event_prop_float(props, "location_latitude")
+    longitude = _event_prop_float(props, "location_longitude")
+    time_zone_label = _humanize_location_time_zone(_event_location_time_zone(props))
+    if latitude is None or longitude is None:
+        return time_zone_label or _event_location_label(props)
+    region = f"{round(latitude, 1):.1f}, {round(longitude, 1):.1f}"
+    return f"{time_zone_label} · {region}" if time_zone_label else region
 
 
 def _event_location_accuracy_bucket(props: dict[str, Any]) -> str:
@@ -658,6 +778,8 @@ def get_mobile_analytics_overview(
     stage: str | None = Query(None),
     error_code: str | None = Query(None),
     trigger_reason: str | None = Query(None),
+    location_presence: str | None = Query(None),
+    location_time_zone: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
     filters, start_iso, end_iso = _resolve_mobile_analytics_filters(
@@ -672,6 +794,8 @@ def get_mobile_analytics_overview(
         session_id=None,
         compare_id=None,
         owner_id=None,
+        location_presence=location_presence,
+        location_time_zone=location_time_zone,
     )
     rows = _query_mobile_client_events(
         db=db,
@@ -779,6 +903,8 @@ def get_mobile_analytics_funnel(
     date_from: str | None = Query(None),
     date_to: str | None = Query(None),
     category: str | None = Query(None),
+    location_presence: str | None = Query(None),
+    location_time_zone: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
     filters, start_iso, end_iso = _resolve_mobile_analytics_filters(
@@ -793,6 +919,8 @@ def get_mobile_analytics_funnel(
         session_id=None,
         compare_id=None,
         owner_id=None,
+        location_presence=location_presence,
+        location_time_zone=location_time_zone,
     )
     rows = _query_mobile_client_events(
         db=db,
@@ -866,6 +994,8 @@ def get_mobile_analytics_errors(
     category: str | None = Query(None),
     stage: str | None = Query(None),
     error_code: str | None = Query(None),
+    location_presence: str | None = Query(None),
+    location_time_zone: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
     filters, start_iso, end_iso = _resolve_mobile_analytics_filters(
@@ -880,6 +1010,8 @@ def get_mobile_analytics_errors(
         session_id=None,
         compare_id=None,
         owner_id=None,
+        location_presence=location_presence,
+        location_time_zone=location_time_zone,
     )
     rows = _query_mobile_client_events(
         db=db,
@@ -1001,6 +1133,8 @@ def get_mobile_analytics_feedback(
     date_to: str | None = Query(None),
     category: str | None = Query(None),
     trigger_reason: str | None = Query(None),
+    location_presence: str | None = Query(None),
+    location_time_zone: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
     filters, start_iso, end_iso = _resolve_mobile_analytics_filters(
@@ -1015,6 +1149,8 @@ def get_mobile_analytics_feedback(
         session_id=None,
         compare_id=None,
         owner_id=None,
+        location_presence=location_presence,
+        location_time_zone=location_time_zone,
     )
     rows = _query_mobile_client_events(
         db=db,
@@ -1089,6 +1225,8 @@ def get_mobile_analytics_experience(
     date_to: str | None = Query(None),
     category: str | None = Query(None),
     page: str | None = Query(None),
+    location_presence: str | None = Query(None),
+    location_time_zone: str | None = Query(None),
     db: Session = Depends(get_db),
 ):
     filters, start_iso, end_iso = _resolve_mobile_analytics_filters(
@@ -1103,6 +1241,8 @@ def get_mobile_analytics_experience(
         session_id=None,
         compare_id=None,
         owner_id=None,
+        location_presence=location_presence,
+        location_time_zone=location_time_zone,
     )
     rows = _query_mobile_client_events(
         db=db,
@@ -1165,6 +1305,8 @@ def get_mobile_analytics_experience(
     location_region_counter: Counter[str] = Counter()
     location_time_zone_counter: Counter[str] = Counter()
     location_accuracy_counter: Counter[str] = Counter()
+    location_region_labels: dict[str, str] = {}
+    location_time_zone_labels: dict[str, str] = {}
 
     page_view_counter: Counter[str] = Counter()
     env_seen_sessions: set[str] = set()
@@ -1342,9 +1484,11 @@ def get_mobile_analytics_experience(
         region_key = _event_location_region_key(props)
         if region_key:
             location_region_counter[region_key] += 1
+            location_region_labels[region_key] = _event_location_region_label(props) or region_key
         time_zone = _event_location_time_zone(props)
         if time_zone:
             location_time_zone_counter[time_zone] += 1
+            location_time_zone_labels[time_zone] = _humanize_location_time_zone(time_zone) or time_zone
         location_accuracy_counter[_event_location_accuracy_bucket(props)] += 1
     sessions_with_location = len(latest_location_by_session)
     sessions_without_location = max(0, len(session_keys_seen) - sessions_with_location)
@@ -1391,8 +1535,16 @@ def get_mobile_analytics_experience(
         sessions_with_location=sessions_with_location,
         sessions_without_location=sessions_without_location,
         location_coverage_rate=_rate(sessions_with_location, len(session_keys_seen)),
-        location_regions=_build_count_items(location_region_counter, denominator=sessions_with_location)[:12],
-        location_time_zones=_build_count_items(location_time_zone_counter, denominator=sessions_with_location)[:12],
+        location_regions=_build_count_items(
+            location_region_counter,
+            denominator=sessions_with_location,
+            label_map=location_region_labels,
+        )[:12],
+        location_time_zones=_build_count_items(
+            location_time_zone_counter,
+            denominator=sessions_with_location,
+            label_map=location_time_zone_labels,
+        )[:12],
         location_accuracy_buckets=_build_count_items(location_accuracy_counter, denominator=sessions_with_location),
     )
 
@@ -1410,6 +1562,8 @@ def get_mobile_analytics_sessions(
     session_id: str | None = Query(None),
     compare_id: str | None = Query(None),
     owner_id: str | None = Query(None),
+    location_presence: str | None = Query(None),
+    location_time_zone: str | None = Query(None),
     limit: int = Query(12, ge=1, le=ANALYTICS_MAX_SESSION_LIMIT),
     db: Session = Depends(get_db),
 ):
@@ -1425,9 +1579,17 @@ def get_mobile_analytics_sessions(
         session_id=session_id,
         compare_id=compare_id,
         owner_id=owner_id,
+        location_presence=location_presence,
+        location_time_zone=location_time_zone,
         limit=limit,
     )
-    row_limit = None if filters.session_id or filters.compare_id or filters.owner_id else ANALYTICS_SESSION_SCAN_LIMIT
+    row_limit = None if (
+        filters.session_id
+        or filters.compare_id
+        or filters.owner_id
+        or filters.location_presence
+        or filters.location_time_zone
+    ) else ANALYTICS_SESSION_SCAN_LIMIT
     rows = _query_mobile_client_events(
         db=db,
         filters=filters,
