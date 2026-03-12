@@ -876,40 +876,31 @@ export default function MobileChoose() {
   const recentEntryHref = selectedRecentResultHref || "/m/me/history?tab=selection";
   const selectedAudience = selectedDraft?.audience || selected.audience;
   const remainingSteps = selectedDraft ? selectedDraft.total - selectedDraft.answered : 0;
-  const headKicker = selectedDraft ? "继续这次判断" : selectedRecentResultHref ? "上次结论还在" : "先选最像你的一类";
-  const headTitle = selectedDraft
+  const chooseTitle = "先选最像你的一类";
+  const chooseNote = "左右滑动图片卡，找到当前最像你的那一类，再直接开始测配。";
+  const historyKicker = selectedDraft ? "继续这次判断" : selectedRecentResultHref ? "上次结论还在" : "历史记录";
+  const historyTitle = selectedDraft
     ? `${selected.zh} 已完成 ${selectedDraft.answered}/${selectedDraft.total}`
     : selectedRecentResultHref
       ? `${selected.zh} 的上次结论还能直接回看`
-      : `${selected.zh} 更适合谁`;
-  const headNote = selectedDraft
+      : "上次结果会留在这里";
+  const historyNote = selectedDraft
     ? `你已经先圈住${selectedAudience}，再答${remainingSteps}题就能把选择收得更准。`
     : selectedRecentResultHref
       ? `如果你现在仍然更像${selectedAudience}这类需求，可以先回看上次结果；状态变了，再重新测一遍。`
-      : `更适合${selectedAudience}的人，从这里开始会更省事。`;
+      : "完成一次后，上次结果会保留在这里，回来可以直接接着看。";
   const recentEntryLabel = selectedRecentResultHref ? "回看上次结果" : "查看历史";
 
   return (
     <div className="m-choose-shell" onPointerDownCapture={stopAutoCycle} onTouchStartCapture={stopAutoCycle} onWheelCapture={stopAutoCycle}>
       <div className="m-choose-head">
         <div className="m-choose-status-card">
-          <div className="m-choose-head-topline">
-            <div className="m-choose-head-chip">{headKicker}</div>
-            <Link href={recentEntryHref} className="m-choose-recent m-pressable">
-              {recentEntryLabel}
-            </Link>
-          </div>
-          <h1 className="m-choose-head-title">{headTitle}</h1>
-          <p className="m-choose-head-note">{headNote}</p>
+          <div className="m-choose-head-chip">选择测配</div>
+          <h1 className="m-choose-head-title">{chooseTitle}</h1>
+          <p className="m-choose-head-note">{chooseNote}</p>
           <div className="m-choose-status-meta">
             <span className="m-choose-status-pill">{selected.summary}</span>
-            {selectedDraft ? (
-              <span className="m-choose-status-pill">{`还差 ${remainingSteps} 题`}</span>
-            ) : selectedRecentResultHref ? (
-              <span className="m-choose-status-pill">上次结果可直接回看</span>
-            ) : (
-              <span className="m-choose-status-pill">一步一题，判断会慢慢收拢</span>
-            )}
+            <span className="m-choose-status-pill">{`更适合${selectedAudience}的人`}</span>
           </div>
         </div>
       </div>
@@ -974,15 +965,36 @@ export default function MobileChoose() {
         })}
       </div>
 
-      <div className="m-choose-cta-dock">
-        <div className="m-choose-cta-inner">
-          <div className="m-choose-action-wrap">
-            <Link
-              href={selectedDraft ? selectedDraft.continueHref : selected.startHref}
-              className="m-profile-primary-btn m-choose-primary-btn inline-flex items-center justify-center"
-            >
-              {selectedDraft ? "继续测配" : "开始测配"}
+      <div className="m-choose-action-section">
+        <div className="m-choose-action-wrap">
+          <Link
+            href={selectedDraft ? selectedDraft.continueHref : selected.startHref}
+            className="m-profile-primary-btn m-choose-primary-btn inline-flex items-center justify-center"
+          >
+            {selectedDraft ? "继续测配" : "开始测配"}
+          </Link>
+        </div>
+      </div>
+
+      <div className="m-choose-history-section">
+        <div className="m-choose-status-card">
+          <div className="m-choose-head-topline">
+            <div className="m-choose-head-chip">{historyKicker}</div>
+            <Link href={recentEntryHref} className="m-choose-recent m-pressable">
+              {recentEntryLabel}
             </Link>
+          </div>
+          <h2 className="m-choose-head-title m-choose-history-title">{historyTitle}</h2>
+          <p className="m-choose-head-note">{historyNote}</p>
+          <div className="m-choose-status-meta">
+            <span className="m-choose-status-pill">{selected.summary}</span>
+            {selectedDraft ? (
+              <span className="m-choose-status-pill">{`还差 ${remainingSteps} 题`}</span>
+            ) : selectedRecentResultHref ? (
+              <span className="m-choose-status-pill">上次结果可直接回看</span>
+            ) : (
+              <span className="m-choose-status-pill">完成后会自动留在这里</span>
+            )}
           </div>
         </div>
       </div>

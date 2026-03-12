@@ -1232,7 +1232,7 @@ html[data-nav-open="1"] #app-main{
 }
 
 .m-choose-shell {
-  padding-bottom: calc(244px + env(safe-area-inset-bottom) + var(--m-chrome-bottom-inset));
+  padding-bottom: calc(128px + env(safe-area-inset-bottom) + var(--m-chrome-bottom-inset));
 }
 
 .m-choose-head {
@@ -1467,22 +1467,22 @@ html[data-nav-open="1"] #app-main{
   background: var(--m-choose-image-bg);
 }
 
-.m-choose-cta-dock {
-  position: fixed;
-  inset-inline: 0;
-  bottom: calc(88px + max(env(safe-area-inset-bottom), 0px) + var(--m-chrome-bottom-inset));
-  z-index: 55;
-  padding: 0 16px;
-  pointer-events: none;
+.m-choose-action-section {
+  margin-top: 18px;
 }
 
-.m-choose-cta-inner {
-  margin: 0 auto;
-  max-width: 680px;
-  pointer-events: auto;
+.m-choose-history-section {
+  margin-top: 18px;
+}
+
+.m-choose-history-title {
+  font-size: 28px;
+  line-height: 1.12;
 }
 
 .m-choose-action-wrap {
+  margin: 0 auto;
+  max-width: 680px;
   border-radius: 28px;
   border: 1px solid var(--m-choose-action-border);
   background: linear-gradient(180deg, rgba(248,250,255,0.88), rgba(242,246,255,0.72));
@@ -1511,7 +1511,7 @@ html[data-nav-open="1"] #app-main{
 
 @media (max-width: 420px) {
   .m-choose-shell {
-    padding-bottom: calc(236px + env(safe-area-inset-bottom) + var(--m-chrome-bottom-inset));
+    padding-bottom: calc(124px + env(safe-area-inset-bottom) + var(--m-chrome-bottom-inset));
   }
 
   .m-choose-dial-item {
@@ -1527,6 +1527,10 @@ html[data-nav-open="1"] #app-main{
 
   .m-choose-head-title {
     font-size: 28px;
+  }
+
+  .m-choose-history-title {
+    font-size: 25px;
   }
 
   .m-choose-focus-card {
