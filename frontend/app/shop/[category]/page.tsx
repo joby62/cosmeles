@@ -5,6 +5,7 @@ import TrustStrip from "@/components/site/TrustStrip";
 import { analysisCardProofSummary } from "@/lib/productEvidence";
 import { getMatchConfig, getMatchRouteMeta } from "@/lib/match";
 import { fetchAllProducts, fetchProductAnalysisIndex, type Product } from "@/lib/api";
+import { sortProductsByCommerceReadiness } from "@/lib/productCommerce";
 import { categoryHref, getCategoryMeta, normalizeCategoryKey, TRUST_ITEMS } from "@/lib/site";
 import { SHOP_SUPPORT_LINKS } from "@/lib/storefrontTrust";
 
@@ -33,7 +34,9 @@ export default async function ShopCategoryPage({
     loadError = err instanceof Error ? err.message : String(err);
   }
 
-  const visibleProducts = products.filter((item) => String(item.category || "").trim().toLowerCase() === categoryKey);
+  const visibleProducts = sortProductsByCommerceReadiness(
+    products.filter((item) => String(item.category || "").trim().toLowerCase() === categoryKey),
+  );
   const analysisById = new Map(analysisItems.map((item) => [item.product_id, item]));
   const routeGuide = Object.values(getMatchConfig(categoryKey).routes);
 

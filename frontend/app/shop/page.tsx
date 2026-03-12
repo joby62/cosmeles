@@ -4,6 +4,7 @@ import TrustStrip from "@/components/site/TrustStrip";
 import { analysisCardProofSummary } from "@/lib/productEvidence";
 import { getMatchConfig } from "@/lib/match";
 import { fetchAllProducts, fetchProductAnalysisIndex, type Product } from "@/lib/api";
+import { sortProductsByCommerceReadiness } from "@/lib/productCommerce";
 import { categoryHref, CATEGORIES, SHOP_CONCERNS, TRUST_ITEMS, type CategoryKey } from "@/lib/site";
 import { LAUNCH_STATUS_POINTS, SHOP_SUPPORT_LINKS } from "@/lib/storefrontTrust";
 
@@ -28,8 +29,9 @@ export default async function ShopHubPage() {
     }
   }
 
+  const storefrontOrder = sortProductsByCommerceReadiness(products);
   const firstEdit = CATEGORIES.map((category) =>
-    products.find((product) => String(product.category || "").trim().toLowerCase() === category.key),
+    storefrontOrder.find((product) => String(product.category || "").trim().toLowerCase() === category.key),
   ).filter((item): item is Product => Boolean(item));
   const routePreview = CATEGORIES.map((category) => {
     const routes = Object.values(getMatchConfig(category.key).routes).slice(0, 2);

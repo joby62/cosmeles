@@ -10,11 +10,15 @@ import {
   updateProduct,
 } from "@/lib/api";
 import {
+  buildCommerceCoverageSummary,
   commerceBadgeLabel,
+  commerceCoveragePercent,
+  commerceHasField,
   commerceInventoryLabel,
   commercePackSizeLabel,
   commercePriceLabel,
   commerceShippingEtaLabel,
+  sortProductsByCommerceReadiness,
 } from "@/lib/productCommerce";
 import { CATEGORIES, getCategoryMeta, normalizeCategoryKey } from "@/lib/site";
 
@@ -69,17 +73,6 @@ function makeEditorState(product: Product | null): EditorState {
         ? String(commerce.pack_size.value)
         : "",
   };
-}
-
-function sortProducts(items: Product[]): Product[] {
-  return [...items].sort((left, right) => {
-    const leftStatus = left.commerce?.status || "catalog_only";
-    const rightStatus = right.commerce?.status || "catalog_only";
-    const statusOrder = { ready: 0, partial: 1, catalog_only: 2 } as const;
-    const statusDelta = statusOrder[leftStatus] - statusOrder[rightStatus];
-    if (statusDelta !== 0) return statusDelta;
-    return `${left.brand || ""} ${left.name || ""}`.localeCompare(`${right.brand || ""} ${right.name || ""}`);
-  });
 }
 
 function buildCommercePayload(state: EditorState): ProductCommerceUpdatePayload {
@@ -233,9 +226,11 @@ function parseImportPayload(raw: string): ImportRow[] {
 }
 
 export default function CommerceWorkbench({ initialProducts }: CommerceWorkbenchProps) {
-  const [products, setProducts] = useState<Product[]>(() => sortProducts(initialProducts));
+  const [products, setProducts] = useState<Product[]>(() => sortProductsByCommerceReadiness(initialProducts, "ops"));
   const [selectedProductId, setSelectedProductId] = useState<string>(initialProducts[0]?.id || "");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [missingFieldFilter, setMissingFieldFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [editor, setEditor] = useState<EditorState>(() => makeEditorState(initialProducts[0] || null));
   const [saveState, setSaveState] = useState<"idle" | "saving" | "done">("idle");
@@ -249,6 +244,16 @@ export default function CommerceWorkbench({ initialProducts }: CommerceWorkbench
     return products.filter((item) => {
       const category = normalizeCategoryKey(item.category);
       if (categoryFilter !== "all" && category !== categoryFilter) return false;
+      const status = item.commerce?.status || "catalog_only";
+      if (statusFilter !== "all" && status !== statusFilter) return false;
+      if (missingFieldFilter === "complete" && (item.commerce?.missing_fields || []).length > 0) return false;
+      if (
+        missingFieldFilter !== "all" &&
+        missingFieldFilter !== "complete" &&
+        !commerceHasField(item.commerce, missingFieldFilter as "price" | "inventory" | "shipping_eta")
+      ) {
+        return false;
+      }
       if (!deferredQuery) return true;
       const haystack = [item.brand, item.name, item.one_sentence, commercePriceLabel(item.commerce), commerceInventoryLabel(item.commerce)]
         .filter(Boolean)
@@ -256,24 +261,14 @@ export default function CommerceWorkbench({ initialProducts }: CommerceWorkbench
         .toLowerCase();
       return haystack.includes(deferredQuery);
     });
-  }, [products, categoryFilter, deferredQuery]);
+  }, [products, categoryFilter, statusFilter, missingFieldFilter, deferredQuery]);
 
   const selectedProduct = useMemo(
     () => products.find((item) => item.id === selectedProductId) || filteredProducts[0] || null,
     [products, selectedProductId, filteredProducts],
   );
 
-  const summary = useMemo(() => {
-    const counts = {
-      ready: 0,
-      partial: 0,
-      catalog_only: 0,
-    };
-    for (const product of products) {
-      counts[product.commerce?.status || "catalog_only"] += 1;
-    }
-    return counts;
-  }, [products]);
+  const summary = useMemo(() => buildCommerceCoverageSummary(products), [products]);
 
   useEffect(() => {
     if (!selectedProduct) return;
@@ -296,7 +291,7 @@ export default function CommerceWorkbench({ initialProducts }: CommerceWorkbench
         commerce: buildCommercePayload(editor),
       });
       setProducts((current) =>
-        sortProducts(current.map((item) => (item.id === updated.id ? { ...item, ...updated } : item))),
+        sortProductsByCommerceReadiness(current.map((item) => (item.id === updated.id ? { ...item, ...updated } : item)), "ops"),
       );
       setSaveState("done");
       window.setTimeout(() => setSaveState("idle"), 1800);
@@ -331,7 +326,7 @@ export default function CommerceWorkbench({ initialProducts }: CommerceWorkbench
       }
 
       setProducts((current) =>
-        sortProducts(current.map((item) => updatesById.get(item.id) || item)),
+        sortProductsByCommerceReadiness(current.map((item) => updatesById.get(item.id) || item), "ops"),
       );
       setImportState("done");
       setImportMessage(`Applied ${applied} commerce updates.`);
@@ -359,6 +354,47 @@ export default function CommerceWorkbench({ initialProducts }: CommerceWorkbench
         </article>
       </section>
 
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <article className="rounded-[24px] border border-black/8 bg-slate-50 px-5 py-5">
+          <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-slate-500">Price coverage</p>
+          <div className="mt-3 flex items-end gap-2">
+            <div className="text-[28px] font-semibold tracking-[-0.04em] text-slate-950">{summary.fields.price}</div>
+            <div className="pb-1 text-[13px] text-slate-500">/ {summary.total}</div>
+          </div>
+          <p className="mt-2 text-[13px] leading-6 text-slate-600">{commerceCoveragePercent(summary.fields.price, summary.total)}% of products show a price label.</p>
+        </article>
+        <article className="rounded-[24px] border border-black/8 bg-slate-50 px-5 py-5">
+          <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-slate-500">Inventory coverage</p>
+          <div className="mt-3 flex items-end gap-2">
+            <div className="text-[28px] font-semibold tracking-[-0.04em] text-slate-950">{summary.fields.inventory}</div>
+            <div className="pb-1 text-[13px] text-slate-500">/ {summary.total}</div>
+          </div>
+          <p className="mt-2 text-[13px] leading-6 text-slate-600">
+            {commerceCoveragePercent(summary.fields.inventory, summary.total)}% of products show an inventory label.
+          </p>
+        </article>
+        <article className="rounded-[24px] border border-black/8 bg-slate-50 px-5 py-5">
+          <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-slate-500">Shipping ETA coverage</p>
+          <div className="mt-3 flex items-end gap-2">
+            <div className="text-[28px] font-semibold tracking-[-0.04em] text-slate-950">{summary.fields.shipping_eta}</div>
+            <div className="pb-1 text-[13px] text-slate-500">/ {summary.total}</div>
+          </div>
+          <p className="mt-2 text-[13px] leading-6 text-slate-600">
+            {commerceCoveragePercent(summary.fields.shipping_eta, summary.total)}% of products show a shipping window.
+          </p>
+        </article>
+        <article className="rounded-[24px] border border-black/8 bg-slate-50 px-5 py-5">
+          <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-slate-500">Pack size coverage</p>
+          <div className="mt-3 flex items-end gap-2">
+            <div className="text-[28px] font-semibold tracking-[-0.04em] text-slate-950">{summary.fields.pack_size}</div>
+            <div className="pb-1 text-[13px] text-slate-500">/ {summary.total}</div>
+          </div>
+          <p className="mt-2 text-[13px] leading-6 text-slate-600">
+            {commerceCoveragePercent(summary.fields.pack_size, summary.total)}% of products show a pack size.
+          </p>
+        </article>
+      </section>
+
       <section className="grid gap-6 xl:grid-cols-[1.02fr_0.98fr]">
         <article className="rounded-[32px] border border-black/8 bg-white/94 p-6 shadow-[0_20px_46px_rgba(15,23,42,0.06)]">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -374,7 +410,7 @@ export default function CommerceWorkbench({ initialProducts }: CommerceWorkbench
             </Link>
           </div>
 
-          <div className="mt-5 grid gap-3 md:grid-cols-[0.9fr_0.42fr]">
+          <div className="mt-5 grid gap-3 xl:grid-cols-[0.9fr_0.42fr_0.42fr_0.42fr]">
             <input
               type="search"
               value={searchQuery}
@@ -394,10 +430,31 @@ export default function CommerceWorkbench({ initialProducts }: CommerceWorkbench
                 </option>
               ))}
             </select>
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+              className="h-11 rounded-full border border-black/10 bg-white px-4 text-[14px] text-slate-900 outline-none transition focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
+            >
+              <option value="all">All statuses</option>
+              <option value="catalog_only">Catalog only</option>
+              <option value="partial">Partial commerce</option>
+              <option value="ready">Commerce ready</option>
+            </select>
+            <select
+              value={missingFieldFilter}
+              onChange={(event) => setMissingFieldFilter(event.target.value)}
+              className="h-11 rounded-full border border-black/10 bg-white px-4 text-[14px] text-slate-900 outline-none transition focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
+            >
+              <option value="all">All field states</option>
+              <option value="price">Has price</option>
+              <option value="inventory">Has inventory</option>
+              <option value="shipping_eta">Has shipping ETA</option>
+              <option value="complete">No missing fields</option>
+            </select>
           </div>
 
           <div className="mt-5 space-y-3">
-            {filteredProducts.map((product) => {
+            {filteredProducts.length > 0 ? filteredProducts.map((product) => {
               const category = getCategoryMeta(product.category);
               const isSelected = selectedProduct?.id === product.id;
               return (
@@ -461,7 +518,11 @@ export default function CommerceWorkbench({ initialProducts }: CommerceWorkbench
                   </div>
                 </button>
               );
-            })}
+            }) : (
+              <article className="rounded-[24px] border border-black/8 bg-slate-50 px-4 py-4 text-[14px] leading-6 text-slate-600">
+                No products match the current filters. Try widening category, status, or field coverage.
+              </article>
+            )}
           </div>
         </article>
 

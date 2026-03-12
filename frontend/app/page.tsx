@@ -2,14 +2,16 @@ import Link from "next/link";
 import ProductCard from "@/components/site/ProductCard";
 import TrustStrip from "@/components/site/TrustStrip";
 import { fetchAllProducts, fetchProductAnalysisIndex, type Product } from "@/lib/api";
+import { sortProductsByCommerceReadiness } from "@/lib/productCommerce";
 import { analysisCardProofSummary } from "@/lib/productEvidence";
 import { categoryHref, CATEGORIES, LEARN_TOPICS, SHOP_CONCERNS, TRUST_ITEMS, type CategoryKey } from "@/lib/site";
 import { LAUNCH_STATUS_POINTS } from "@/lib/storefrontTrust";
 
 function pickHighlights(products: Product[]) {
+  const sorted = sortProductsByCommerceReadiness(products);
   const byCategory = new Map<CategoryKey, Product>();
 
-  for (const item of products) {
+  for (const item of sorted) {
     const key = String(item.category || "").trim().toLowerCase() as CategoryKey;
     if (!byCategory.has(key)) {
       byCategory.set(key, item);

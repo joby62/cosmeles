@@ -2,6 +2,7 @@ import Link from "next/link";
 import ProductCard from "@/components/site/ProductCard";
 import { fetchAllProducts, fetchProductAnalysisIndex, type Product } from "@/lib/api";
 import { getMatchRouteMeta } from "@/lib/match";
+import { sortProductsByCommerceReadiness } from "@/lib/productCommerce";
 import { analysisCardProofSummary } from "@/lib/productEvidence";
 import { CATEGORIES, normalizeCategoryKey } from "@/lib/site";
 import { SEARCH_SUGGESTIONS, SEARCH_TRUST_POINTS, SHOP_SUPPORT_LINKS } from "@/lib/storefrontTrust";
@@ -49,7 +50,7 @@ export default async function SearchPage({
   }
 
   const analysisById = new Map(analysisItems.map((item) => [item.product_id, item]));
-  const results = query ? products.filter((product) => matchesQuery(product, query)).slice(0, 18) : [];
+  const results = query ? sortProductsByCommerceReadiness(products.filter((product) => matchesQuery(product, query))).slice(0, 18) : [];
   const resultCategories = Array.from(
     new Set(results.map((product) => normalizeCategoryKey(product.category)).filter(Boolean)),
   );
