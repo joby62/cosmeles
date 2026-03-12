@@ -50,6 +50,7 @@ function NavIcon({ name }: { name: "choose" | "compare" | "wiki" | "features" | 
 
 export default function MobileBottomNav() {
   const pathname = usePathname() || "/m/choose";
+  const introPath = pathname === "/m";
   const chooseItem = getChooseItem(pathname);
   const [chromeBottomInset, setChromeBottomInset] = useState(0);
   const [navVisible, setNavVisible] = useState(true);
@@ -275,6 +276,10 @@ export default function MobileBottomNav() {
       }),
     );
   }, [chromeVisible, yielded]);
+
+  if (introPath) {
+    return null;
+  }
 
   return (
     <nav

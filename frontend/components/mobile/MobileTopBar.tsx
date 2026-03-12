@@ -85,6 +85,8 @@ function getSloganLevel(pathname: string | null): number {
 
 export default function MobileTopBar() {
   const pathname = usePathname();
+  const introPath = pathname === "/m";
+  const homeHref = introPath ? "/m" : "/m/choose";
   const section = getSectionLabel(pathname);
   const wikiPath = Boolean(pathname?.startsWith("/m/wiki"));
   const topbarSlogan = MOBILE_TOPBAR_SLOGANS[getSloganLevel(pathname) % 2];
@@ -173,7 +175,7 @@ export default function MobileTopBar() {
   const sloganOpacity = wikiPath ? Math.max(0.26, 1 - collapseProgress * 1.18) : 1;
   const sloganOffset = wikiPath ? collapseProgress * 4 : 0;
 
-  if (wikiPath) {
+  if (wikiPath || introPath) {
     return null;
   }
 
@@ -200,7 +202,7 @@ export default function MobileTopBar() {
 
         <div className="mx-auto flex h-full max-w-[680px] items-center justify-between px-4">
           <Link
-            href="/m"
+            href={homeHref}
             className="m-pressable relative z-[1] inline-flex items-center gap-0.5 rounded-full px-1 py-0.5 active:bg-[color:var(--m-press)]"
             style={{ opacity: sectionOpacity }}
           >
