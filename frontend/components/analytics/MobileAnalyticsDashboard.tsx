@@ -1665,9 +1665,25 @@ export default function MobileAnalyticsDashboard() {
                     </article>
                   </div>
 
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <div className="rounded-[18px] border border-[#d9e4f8] bg-[#f4f8ff] px-4 py-3 text-[12px] leading-[1.7] text-[#305a98]">
+                      下方“时区分布 / 近似区域 / 定位精度”的占比，分母都是当前筛选下
+                      <span className="font-semibold">已识别位置会话 {formatNumber(experience.data.sessions_with_location)}</span>
+                      ，位置缺省不计入分母。
+                    </div>
+                    <div className="rounded-[18px] border border-[#efe4c8] bg-[#fffaf0] px-4 py-3 text-[12px] leading-[1.7] text-[#8b6a21]">
+                      近似区域按经纬度
+                      <span className="font-semibold">1 位小数聚类</span>
+                      ，量级约 10km，只用于找样本和钻取，不代表精确城市定位。
+                    </div>
+                  </div>
+
                   <div className="mt-4 grid gap-4 md:grid-cols-3">
                     <div>
-                      <div className="mb-3 text-[12px] text-black/48">近似区域</div>
+                      <div className="mb-3 flex items-center gap-2 text-[12px] text-black/48">
+                        <span>近似区域</span>
+                        <HoverHint label="点击后只下钻 Session Explorer；不改上面的整体漏斗与概览。" />
+                      </div>
                       {renderSelectableCountList(experience.data.location_regions, {
                         activeKey: sessionLocationRegionKey,
                         tone: "amber",
@@ -1686,7 +1702,10 @@ export default function MobileAnalyticsDashboard() {
                       })}
                     </div>
                     <div>
-                      <div className="mb-3 text-[12px] text-black/48">时区分布</div>
+                      <div className="mb-3 flex items-center gap-2 text-[12px] text-black/48">
+                        <span>时区分布</span>
+                        <HoverHint label="点击后会联动整个 dashboard，适合先看区域差异，再看整体漏斗和错误分布。" />
+                      </div>
                       {renderSelectableCountList(experience.data.location_time_zones, {
                         activeKey: locationTimeZone,
                         emptyLabel: "当前筛选下还没有时区样本。",
@@ -1701,7 +1720,10 @@ export default function MobileAnalyticsDashboard() {
                       })}
                     </div>
                     <div>
-                      <div className="mb-3 text-[12px] text-black/48">定位精度</div>
+                      <div className="mb-3 flex items-center gap-2 text-[12px] text-black/48">
+                        <span>定位精度</span>
+                        <HoverHint label="这里反映的是浏览器返回的位置精度区间，不等于用户主动输入地址。" />
+                      </div>
                       {renderCountList(experience.data.location_accuracy_buckets)}
                     </div>
                   </div>
@@ -2242,6 +2264,23 @@ function PanelLoading() {
 
 function EmptyHint({ label }: { label: string }) {
   return <div className="rounded-[20px] border border-dashed border-black/12 bg-[#fafbfc] px-4 py-5 text-[13px] leading-[1.65] text-black/54">{label}</div>;
+}
+
+function HoverHint({ label }: { label: string }) {
+  return (
+    <span className="group relative inline-flex">
+      <button
+        type="button"
+        className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-black/10 bg-white text-[11px] font-semibold text-black/48"
+        aria-label={label}
+      >
+        ?
+      </button>
+      <span className="pointer-events-none absolute left-0 top-full z-10 mt-2 w-[220px] rounded-[14px] border border-black/10 bg-white px-3 py-2 text-[11px] leading-[1.6] text-black/62 opacity-0 shadow-[0_12px_30px_rgba(16,24,40,0.08)] transition group-hover:opacity-100 group-focus-within:opacity-100">
+        {label}
+      </span>
+    </span>
+  );
 }
 
 function TimelineItem({ item }: { item: SessionTimelineNarrative & { stepNumber: number } }) {
