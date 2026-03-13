@@ -3,6 +3,7 @@ import json
 import queue
 import threading
 import re
+from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 from itertools import combinations
 from pathlib import Path
@@ -38,6 +39,10 @@ from app.db.session import get_db
 from app.schemas import (
     MobileCompareBatchDeleteRequest,
     MobileCompareBatchDeleteResponse,
+    MobileCompareHistoryCleanupDeleteResponse,
+    MobileCompareHistoryCleanupPreviewItem,
+    MobileCompareHistoryCleanupPreviewResponse,
+    MobileCompareHistoryCleanupRequest,
     MobileBagDeleteResponse,
     MobileBagItem as MobileBagItemView,
     MobileBagListResponse,
@@ -77,6 +82,10 @@ from app.schemas import (
     MobileSelectionFitExplanationResponse,
     MobileSelectionBatchDeleteRequest,
     MobileSelectionBatchDeleteResponse,
+    MobileSelectionHistoryCleanupDeleteResponse,
+    MobileSelectionHistoryCleanupPreviewItem,
+    MobileSelectionHistoryCleanupPreviewResponse,
+    MobileSelectionHistoryCleanupRequest,
     MobileSelectionMatrixAnalysis,
     MobileSelectionMatrixQuestionContribution,
     MobileSelectionMatrixQuestionRouteDelta,
@@ -1016,6 +1025,84 @@ def publish_selection_result(
         ) from exc
 
     return MobileSelectionResultPublishResponse(status="ok", item=to_mobile_selection_result_index_item(rec))
+
+
+@router.post(
+    "/selection/sessions/cleanup/preview",
+    response_model=MobileSelectionHistoryCleanupPreviewResponse,
+)
+def preview_mobile_selection_history_cleanup(
+    payload: MobileSelectionHistoryCleanupRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    owner_type, owner_id, owner_cookie_new = _resolve_owner(request)
+    rows = _match_mobile_selection_cleanup_rows(
+        db=db,
+        owner_type=owner_type,
+        owner_id=owner_id,
+        older_than_days=payload.older_than_days,
+        exclude_pinned=payload.exclude_pinned,
+    )
+    if owner_cookie_new:
+        _set_owner_cookie(response, owner_id, request)
+    return MobileSelectionHistoryCleanupPreviewResponse(
+        status="ok",
+        older_than_days=payload.older_than_days,
+        exclude_pinned=payload.exclude_pinned,
+        matched_count=len(rows),
+        sample=[
+            MobileSelectionHistoryCleanupPreviewItem(
+                session_id=str(row.id),
+                category=str(row.category or ""),
+                created_at=str(row.created_at or ""),
+                route_title=str(row.route_title or ""),
+                is_pinned=bool(row.is_pinned),
+            )
+            for row in rows[: payload.limit_preview]
+        ],
+    )
+
+
+@router.post(
+    "/selection/sessions/cleanup/delete",
+    response_model=MobileSelectionHistoryCleanupDeleteResponse,
+)
+def delete_mobile_selection_history_cleanup(
+    payload: MobileSelectionHistoryCleanupRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    owner_type, owner_id, owner_cookie_new = _resolve_owner(request)
+    rows = _match_mobile_selection_cleanup_rows(
+        db=db,
+        owner_type=owner_type,
+        owner_id=owner_id,
+        older_than_days=payload.older_than_days,
+        exclude_pinned=payload.exclude_pinned,
+    )
+    sample = _build_mobile_selection_cleanup_sample(rows, payload.limit_preview)
+    deleted_at = now_iso()
+    deleted_by = f"{owner_type}:{owner_id}"
+    deleted_ids: list[str] = []
+    for row in rows:
+        row.deleted_at = deleted_at
+        row.deleted_by = deleted_by
+        deleted_ids.append(str(row.id))
+    if rows:
+        db.commit()
+    if owner_cookie_new:
+        _set_owner_cookie(response, owner_id, request)
+    return MobileSelectionHistoryCleanupDeleteResponse(
+        status="ok",
+        older_than_days=payload.older_than_days,
+        exclude_pinned=payload.exclude_pinned,
+        matched_count=len(rows),
+        sample=sample,
+        deleted_ids=deleted_ids,
+    )
 
 
 @router.post(
@@ -1980,6 +2067,91 @@ def list_mobile_compare_sessions(
     if owner_cookie_new:
         _set_owner_cookie(response, owner_id, request)
     return records
+
+
+@router.post(
+    "/compare/sessions/cleanup/preview",
+    response_model=MobileCompareHistoryCleanupPreviewResponse,
+)
+def preview_mobile_compare_history_cleanup(
+    payload: MobileCompareHistoryCleanupRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    owner_type, owner_id, owner_cookie_new = _resolve_owner(request)
+    statuses = _normalize_mobile_compare_cleanup_statuses(payload.statuses)
+    rows = _match_mobile_compare_cleanup_rows(
+        db=db,
+        owner_type=owner_type,
+        owner_id=owner_id,
+        older_than_days=payload.older_than_days,
+        statuses=statuses,
+    )
+    if owner_cookie_new:
+        _set_owner_cookie(response, owner_id, request)
+    return MobileCompareHistoryCleanupPreviewResponse(
+        status="ok",
+        older_than_days=payload.older_than_days,
+        statuses=statuses,
+        matched_count=len(rows),
+        sample=[
+            MobileCompareHistoryCleanupPreviewItem(
+                compare_id=str(row.compare_id or ""),
+                category=str(row.category or ""),
+                status=str(row.status or "running"),
+                updated_at=str(row.updated_at or ""),
+                message=str(row.message or ""),
+            )
+            for row in rows[: payload.limit_preview]
+        ],
+    )
+
+
+@router.post(
+    "/compare/sessions/cleanup/delete",
+    response_model=MobileCompareHistoryCleanupDeleteResponse,
+)
+def delete_mobile_compare_history_cleanup(
+    payload: MobileCompareHistoryCleanupRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    owner_type, owner_id, owner_cookie_new = _resolve_owner(request)
+    statuses = _normalize_mobile_compare_cleanup_statuses(payload.statuses)
+    rows = _match_mobile_compare_cleanup_rows(
+        db=db,
+        owner_type=owner_type,
+        owner_id=owner_id,
+        older_than_days=payload.older_than_days,
+        statuses=statuses,
+    )
+    sample = _build_mobile_compare_cleanup_sample(rows, payload.limit_preview)
+    deleted_ids: list[str] = []
+    removed_files = 0
+    removed_dirs = 0
+    for row in rows:
+        compare_id = str(row.compare_id or "")
+        db.delete(row)
+        files_count, dirs_count = remove_rel_dir(f"doubao_runs/{compare_id}")
+        removed_files += files_count
+        removed_dirs += dirs_count
+        deleted_ids.append(compare_id)
+    if rows:
+        db.commit()
+    if owner_cookie_new:
+        _set_owner_cookie(response, owner_id, request)
+    return MobileCompareHistoryCleanupDeleteResponse(
+        status="ok",
+        older_than_days=payload.older_than_days,
+        statuses=statuses,
+        matched_count=len(rows),
+        sample=sample,
+        deleted_ids=deleted_ids,
+        removed_files=removed_files,
+        removed_dirs=removed_dirs,
+    )
 
 
 @router.post(
@@ -4413,6 +4585,113 @@ def _list_mobile_compare_sessions(
         if normalized is not None:
             records.append(normalized)
     return records
+
+
+def _mobile_cleanup_cutoff_iso(older_than_days: int) -> str:
+    return (datetime.now(timezone.utc) - timedelta(days=max(1, older_than_days))).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def _build_mobile_selection_cleanup_sample(
+    rows: list[MobileSelectionSession],
+    limit_preview: int,
+) -> list[MobileSelectionHistoryCleanupPreviewItem]:
+    return [
+        MobileSelectionHistoryCleanupPreviewItem(
+            session_id=str(row.id),
+            category=str(row.category or ""),
+            created_at=str(row.created_at or ""),
+            route_title=str(row.route_title or ""),
+            is_pinned=bool(row.is_pinned),
+        )
+        for row in rows[:limit_preview]
+    ]
+
+
+def _build_mobile_compare_cleanup_sample(
+    rows: list[MobileCompareSessionIndex],
+    limit_preview: int,
+) -> list[MobileCompareHistoryCleanupPreviewItem]:
+    return [
+        MobileCompareHistoryCleanupPreviewItem(
+            compare_id=str(row.compare_id or ""),
+            category=str(row.category or ""),
+            status=str(row.status or "running"),
+            updated_at=str(row.updated_at or ""),
+            message=str(row.message or ""),
+        )
+        for row in rows[:limit_preview]
+    ]
+
+
+def _normalize_mobile_compare_cleanup_statuses(values: list[str]) -> list[Literal["running", "done", "failed"]]:
+    allowed = {"running", "done", "failed"}
+    normalized: list[Literal["running", "done", "failed"]] = []
+    for value in values:
+        text = str(value or "").strip().lower()
+        if text in allowed and text not in normalized:
+            normalized.append(text)  # type: ignore[arg-type]
+    if not normalized:
+        raise HTTPException(status_code=400, detail="statuses cannot be empty.")
+    return normalized
+
+
+def _match_mobile_selection_cleanup_rows(
+    *,
+    db: Session,
+    owner_type: str,
+    owner_id: str,
+    older_than_days: int,
+    exclude_pinned: bool,
+) -> list[MobileSelectionSession]:
+    cutoff_iso = _mobile_cleanup_cutoff_iso(older_than_days)
+    stmt = (
+        select(MobileSelectionSession)
+        .where(MobileSelectionSession.owner_type == owner_type)
+        .where(MobileSelectionSession.owner_id == owner_id)
+        .where(MobileSelectionSession.deleted_at.is_(None))
+        .where(MobileSelectionSession.created_at < cutoff_iso)
+    )
+    if exclude_pinned:
+        stmt = stmt.where(MobileSelectionSession.is_pinned.is_(False))
+    return (
+        db.execute(
+            stmt.order_by(
+                MobileSelectionSession.created_at.asc(),
+                MobileSelectionSession.id.asc(),
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+def _match_mobile_compare_cleanup_rows(
+    *,
+    db: Session,
+    owner_type: str,
+    owner_id: str,
+    older_than_days: int,
+    statuses: list[Literal["running", "done", "failed"]],
+) -> list[MobileCompareSessionIndex]:
+    cutoff_iso = _mobile_cleanup_cutoff_iso(older_than_days)
+    stmt = (
+        select(MobileCompareSessionIndex)
+        .where(MobileCompareSessionIndex.owner_type == owner_type)
+        .where(MobileCompareSessionIndex.owner_id == owner_id)
+        .where(MobileCompareSessionIndex.updated_at < cutoff_iso)
+        .where(MobileCompareSessionIndex.status.in_(statuses))
+    )
+    return (
+        db.execute(
+            stmt.order_by(
+                MobileCompareSessionIndex.updated_at.asc(),
+                MobileCompareSessionIndex.created_at.asc(),
+                MobileCompareSessionIndex.compare_id.asc(),
+            )
+        )
+        .scalars()
+        .all()
+    )
 
 
 def _increase_product_usage_count(

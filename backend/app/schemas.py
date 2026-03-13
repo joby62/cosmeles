@@ -1344,6 +1344,32 @@ class MobileSelectionBatchDeleteResponse(BaseModel):
     forbidden_ids: List[str] = Field(default_factory=list)
 
 
+class MobileSelectionHistoryCleanupRequest(BaseModel):
+    older_than_days: int = Field(default=90, ge=1, le=3650)
+    exclude_pinned: bool = True
+    limit_preview: int = Field(default=20, ge=1, le=100)
+
+
+class MobileSelectionHistoryCleanupPreviewItem(BaseModel):
+    session_id: str
+    category: str
+    created_at: str
+    route_title: str
+    is_pinned: bool = False
+
+
+class MobileSelectionHistoryCleanupPreviewResponse(BaseModel):
+    status: str
+    older_than_days: int
+    exclude_pinned: bool = True
+    matched_count: int = 0
+    sample: List[MobileSelectionHistoryCleanupPreviewItem] = Field(default_factory=list)
+
+
+class MobileSelectionHistoryCleanupDeleteResponse(MobileSelectionHistoryCleanupPreviewResponse):
+    deleted_ids: List[str] = Field(default_factory=list)
+
+
 class MobileSelectionPinRequest(BaseModel):
     pinned: bool = True
 
@@ -1965,5 +1991,33 @@ class MobileCompareBatchDeleteResponse(BaseModel):
     deleted_ids: List[str] = Field(default_factory=list)
     not_found_ids: List[str] = Field(default_factory=list)
     forbidden_ids: List[str] = Field(default_factory=list)
+    removed_files: int = 0
+    removed_dirs: int = 0
+
+
+class MobileCompareHistoryCleanupRequest(BaseModel):
+    older_than_days: int = Field(default=90, ge=1, le=3650)
+    statuses: List[Literal["running", "done", "failed"]] = Field(default_factory=lambda: ["done", "failed"])
+    limit_preview: int = Field(default=20, ge=1, le=100)
+
+
+class MobileCompareHistoryCleanupPreviewItem(BaseModel):
+    compare_id: str
+    category: str
+    status: Literal["running", "done", "failed"] = "running"
+    updated_at: str
+    message: Optional[str] = None
+
+
+class MobileCompareHistoryCleanupPreviewResponse(BaseModel):
+    status: str
+    older_than_days: int
+    statuses: List[Literal["running", "done", "failed"]] = Field(default_factory=list)
+    matched_count: int = 0
+    sample: List[MobileCompareHistoryCleanupPreviewItem] = Field(default_factory=list)
+
+
+class MobileCompareHistoryCleanupDeleteResponse(MobileCompareHistoryCleanupPreviewResponse):
+    deleted_ids: List[str] = Field(default_factory=list)
     removed_files: int = 0
     removed_dirs: int = 0

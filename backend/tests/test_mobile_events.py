@@ -8,7 +8,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 import app.routes.mobile as mobile_routes
-from app.db.models import Base, MobileClientEvent
+from app.db.models import Base, MobileClientEvent, MobileCompareSessionIndex, MobileSelectionSession
 from app.db.session import get_db
 from app.routes.mobile import router as mobile_router
 from app.settings import settings
@@ -234,3 +234,150 @@ def test_mobile_events_endpoint_enriches_location_context_captured(mobile_events
         assert props["location_city"] == "上海市"
         assert props["location_district"] == "浦东新区"
         assert props["location_label"] == "上海市 浦东新区 · 31.230, 121.470 · 约1.2km"
+
+
+def test_mobile_compare_history_cleanup_preview_and_delete(mobile_events_client):
+    client, SessionLocal, _storage_dir = mobile_events_client
+    client.cookies.set("mx_device_id", "device-cleanup")
+
+    with SessionLocal() as db:
+        db.add_all(
+            [
+                MobileCompareSessionIndex(
+                    compare_id="cmp-old-done",
+                    owner_type="device",
+                    owner_id="device-cleanup",
+                    category="shampoo",
+                    status="done",
+                    message="old done",
+                    created_at="2025-09-01T00:00:00.000000Z",
+                    updated_at="2025-09-01T00:00:00.000000Z",
+                ),
+                MobileCompareSessionIndex(
+                    compare_id="cmp-old-failed",
+                    owner_type="device",
+                    owner_id="device-cleanup",
+                    category="bodywash",
+                    status="failed",
+                    message="old failed",
+                    created_at="2025-09-10T00:00:00.000000Z",
+                    updated_at="2025-09-10T00:00:00.000000Z",
+                ),
+                MobileCompareSessionIndex(
+                    compare_id="cmp-recent-done",
+                    owner_type="device",
+                    owner_id="device-cleanup",
+                    category="cleanser",
+                    status="done",
+                    message="recent done",
+                    created_at="2026-03-10T00:00:00.000000Z",
+                    updated_at="2026-03-10T00:00:00.000000Z",
+                ),
+            ]
+        )
+        db.commit()
+
+    preview = client.post(
+        "/api/mobile/compare/sessions/cleanup/preview",
+        json={"older_than_days": 90, "statuses": ["done", "failed"], "limit_preview": 10},
+    )
+    assert preview.status_code == 200
+    preview_payload = preview.json()
+    assert preview_payload["matched_count"] == 2
+    assert [item["compare_id"] for item in preview_payload["sample"]] == ["cmp-old-done", "cmp-old-failed"]
+
+    deleted = client.post(
+        "/api/mobile/compare/sessions/cleanup/delete",
+        json={"older_than_days": 90, "statuses": ["done", "failed"], "limit_preview": 10},
+    )
+    assert deleted.status_code == 200
+    deleted_payload = deleted.json()
+    assert deleted_payload["deleted_ids"] == ["cmp-old-done", "cmp-old-failed"]
+
+    with SessionLocal() as db:
+        assert db.get(MobileCompareSessionIndex, "cmp-old-done") is None
+        assert db.get(MobileCompareSessionIndex, "cmp-old-failed") is None
+        assert db.get(MobileCompareSessionIndex, "cmp-recent-done") is not None
+
+
+def test_mobile_selection_history_cleanup_preview_and_delete(mobile_events_client):
+    client, SessionLocal, _storage_dir = mobile_events_client
+    client.cookies.set("mx_device_id", "device-selection-cleanup")
+
+    with SessionLocal() as db:
+        db.add_all(
+            [
+                MobileSelectionSession(
+                    id="sel-old",
+                    owner_type="device",
+                    owner_id="device-selection-cleanup",
+                    category="shampoo",
+                    rules_version="2026-03-03",
+                    answers_hash="old",
+                    route_key="deep-oil-control",
+                    route_title="深层控油型",
+                    product_id=None,
+                    answers_json="{}",
+                    result_json="{}",
+                    is_pinned=False,
+                    created_at="2025-09-01T00:00:00.000000Z",
+                ),
+                MobileSelectionSession(
+                    id="sel-old-pinned",
+                    owner_type="device",
+                    owner_id="device-selection-cleanup",
+                    category="bodywash",
+                    rules_version="2026-03-03",
+                    answers_hash="old-pinned",
+                    route_key="rescue",
+                    route_title="恒温舒缓修护型",
+                    product_id=None,
+                    answers_json="{}",
+                    result_json="{}",
+                    is_pinned=True,
+                    pinned_at="2026-01-01T00:00:00.000000Z",
+                    created_at="2025-09-01T00:00:00.000000Z",
+                ),
+                MobileSelectionSession(
+                    id="sel-recent",
+                    owner_type="device",
+                    owner_id="device-selection-cleanup",
+                    category="cleanser",
+                    rules_version="2026-03-03",
+                    answers_hash="recent",
+                    route_key="gentle",
+                    route_title="温和净澈型",
+                    product_id=None,
+                    answers_json="{}",
+                    result_json="{}",
+                    is_pinned=False,
+                    created_at="2026-03-10T00:00:00.000000Z",
+                ),
+            ]
+        )
+        db.commit()
+
+    preview = client.post(
+        "/api/mobile/selection/sessions/cleanup/preview",
+        json={"older_than_days": 90, "exclude_pinned": True, "limit_preview": 10},
+    )
+    assert preview.status_code == 200
+    preview_payload = preview.json()
+    assert preview_payload["matched_count"] == 1
+    assert preview_payload["sample"][0]["session_id"] == "sel-old"
+
+    deleted = client.post(
+        "/api/mobile/selection/sessions/cleanup/delete",
+        json={"older_than_days": 90, "exclude_pinned": True, "limit_preview": 10},
+    )
+    assert deleted.status_code == 200
+    deleted_payload = deleted.json()
+    assert deleted_payload["deleted_ids"] == ["sel-old"]
+
+    with SessionLocal() as db:
+        old_row = db.get(MobileSelectionSession, "sel-old")
+        pinned_row = db.get(MobileSelectionSession, "sel-old-pinned")
+        recent_row = db.get(MobileSelectionSession, "sel-recent")
+        assert old_row is not None and old_row.deleted_at is not None
+        assert pinned_row is not None and pinned_row.deleted_at is None
+        assert recent_row is not None and recent_row.deleted_at is None

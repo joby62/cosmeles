@@ -3,11 +3,15 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
+  deleteMobileSelectionHistoryCleanup,
   deleteMobileSelectionSessionsBatch,
   listMobileSelectionSessions,
   pinMobileSelectionSession,
+  previewMobileSelectionHistoryCleanup,
+  type MobileSelectionHistoryCleanupPreviewResponse,
   type MobileSelectionResolveResponse,
 } from "@/lib/api";
+import MobileHistoryCleanupSheet from "@/components/mobile/MobileHistoryCleanupSheet";
 import { describeMobileRouteFocus, getMobileCategoryLabel } from "@/lib/mobile/routeCopy";
 
 const SWIPE_ACTION_WIDTH = 84;
@@ -94,6 +98,7 @@ export default function MobileSelectionHistoryPanel() {
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const [pinningId, setPinningId] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [openRowId, setOpenRowId] = useState<string | null>(null);
@@ -101,6 +106,12 @@ export default function MobileSelectionHistoryPanel() {
   const [dragOffset, setDragOffset] = useState(0);
   const [confirmDelete, setConfirmDelete] = useState<ConfirmDeleteState>(null);
   const [error, setError] = useState<string | null>(null);
+  const [cleanupOpen, setCleanupOpen] = useState(false);
+  const [cleanupDays, setCleanupDays] = useState(90);
+  const [cleanupExcludePinned, setCleanupExcludePinned] = useState(true);
+  const [cleanupPreview, setCleanupPreview] = useState<MobileSelectionHistoryCleanupPreviewResponse | null>(null);
+  const [cleanupLoading, setCleanupLoading] = useState(false);
+  const [cleanupApplying, setCleanupApplying] = useState(false);
   const dragRef = useRef<DragState | null>(null);
 
   const load = useCallback(async () => {
@@ -206,6 +217,50 @@ export default function MobileSelectionHistoryPanel() {
       message: "删除后无法恢复。",
     });
   }, [selectedIds]);
+
+  const handleCleanupPreview = useCallback(async () => {
+    try {
+      setCleanupLoading(true);
+      setError(null);
+      setNotice(null);
+      const preview = await previewMobileSelectionHistoryCleanup({
+        older_than_days: cleanupDays,
+        exclude_pinned: cleanupExcludePinned,
+        limit_preview: 12,
+      });
+      setCleanupPreview(preview);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCleanupLoading(false);
+    }
+  }, [cleanupDays, cleanupExcludePinned]);
+
+  const handleCleanupApply = useCallback(async () => {
+    if (!cleanupPreview) {
+      setError("请先预览命中的陈旧记录。");
+      return;
+    }
+    try {
+      setCleanupApplying(true);
+      setError(null);
+      const result = await deleteMobileSelectionHistoryCleanup({
+        older_than_days: cleanupDays,
+        exclude_pinned: cleanupExcludePinned,
+        limit_preview: 12,
+      });
+      setCleanupOpen(false);
+      setCleanupPreview(null);
+      setSelectionMode(false);
+      setSelectedIds([]);
+      setNotice(`已清理 ${result.deleted_ids.length} 条历史选择记录。`);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCleanupApplying(false);
+    }
+  }, [cleanupDays, cleanupExcludePinned, cleanupPreview, load]);
 
   const togglePin = useCallback(
     async (entry: MobileSelectionResolveResponse) => {
@@ -335,6 +390,21 @@ export default function MobileSelectionHistoryPanel() {
     return `已选择 ${selectedCount} 条记录。`;
   }, [selectedCount, selectionMode]);
 
+  const cleanupSummary = useMemo(() => {
+    if (!cleanupPreview) return null;
+    return `命中 ${cleanupPreview.matched_count} 条 ${cleanupDays} 天前的记录${cleanupExcludePinned ? "，已排除置顶" : ""}。`;
+  }, [cleanupDays, cleanupExcludePinned, cleanupPreview]);
+
+  const cleanupPreviewItems = useMemo(
+    () =>
+      (cleanupPreview?.sample || []).map((item) => ({
+        id: item.session_id,
+        title: `${getMobileCategoryLabel(item.category)} · ${item.route_title}`,
+        meta: `${formatTime(item.created_at)}${item.is_pinned ? " · 已置顶" : ""}`,
+      })),
+    [cleanupPreview],
+  );
+
   return (
     <section className="m-me-page relative pb-28" onClick={() => {
       if (openRowId && !selectionMode) closeSwipe();
@@ -344,18 +414,31 @@ export default function MobileSelectionHistoryPanel() {
           <h1 className="text-[30px] leading-[1.12] font-semibold tracking-[-0.02em] text-black/90">历史选择</h1>
           <p className="mt-3 text-[15px] leading-[1.55] text-black/60">这里展示当前设备的真实推荐记录。</p>
         </div>
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            setSelectionMode((prev) => !prev);
-            setSelectedIds([]);
-          }}
-          disabled={loading || entries.length === 0 || deleting}
-          className="inline-flex h-9 items-center rounded-full border border-black/15 bg-[rgba(255,255,255,0.62)] px-4 text-[13px] font-medium text-black/78 backdrop-blur disabled:opacity-40 active:bg-[rgba(24,36,58,0.05)] dark:border-[rgba(122,158,214,0.34)] dark:bg-[rgba(42,55,82,0.66)] dark:text-[rgba(220,233,252,0.9)] dark:active:bg-[rgba(70,102,153,0.34)]"
-        >
-          {selectionMode ? "完成" : "多选"}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              setSelectionMode((prev) => !prev);
+              setSelectedIds([]);
+            }}
+            disabled={loading || entries.length === 0 || deleting}
+            className="inline-flex h-9 items-center rounded-full border border-black/15 bg-[rgba(255,255,255,0.62)] px-4 text-[13px] font-medium text-black/78 backdrop-blur disabled:opacity-40 active:bg-[rgba(24,36,58,0.05)] dark:border-[rgba(122,158,214,0.34)] dark:bg-[rgba(42,55,82,0.66)] dark:text-[rgba(220,233,252,0.9)] dark:active:bg-[rgba(70,102,153,0.34)]"
+          >
+            {selectionMode ? "完成" : "多选"}
+          </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              setCleanupOpen(true);
+            }}
+            disabled={loading || entries.length === 0 || deleting}
+            className="inline-flex h-9 items-center rounded-full border border-black/15 bg-[rgba(255,255,255,0.62)] px-4 text-[13px] font-medium text-black/78 backdrop-blur disabled:opacity-40"
+          >
+            清理旧记录
+          </button>
+        </div>
       </div>
 
       {selectionMode && (
@@ -372,6 +455,12 @@ export default function MobileSelectionHistoryPanel() {
         {error && (
           <div className="rounded-2xl border border-[#ff8f8f]/45 bg-[#ff5f5f]/10 px-4 py-4 text-[14px] text-[#b53a3a]">
             操作失败：{error}
+          </div>
+        )}
+
+        {notice && (
+          <div className="rounded-2xl border border-[#b7e2c6] bg-[#effaf3] px-4 py-4 text-[14px] text-[#1f6a4e]">
+            {notice}
           </div>
         )}
 
@@ -589,6 +678,48 @@ export default function MobileSelectionHistoryPanel() {
           </div>
         </div>
       )}
+
+      <MobileHistoryCleanupSheet
+        open={cleanupOpen}
+        title="清理陈旧选择记录"
+        description="按时间阈值预览旧记录，默认排除置顶项，避免把你保留的长期样本一起删掉。"
+        days={cleanupDays}
+        onDaysChange={(value) => {
+          setCleanupDays(value);
+          setCleanupPreview(null);
+        }}
+        filterControls={
+          <div>
+            <div className="text-[12px] font-semibold uppercase tracking-[0.08em] text-black/45">保护条件</div>
+            <button
+              type="button"
+              onClick={() => {
+                setCleanupExcludePinned((prev) => !prev);
+                setCleanupPreview(null);
+              }}
+              className={`mt-2 inline-flex h-9 items-center rounded-full border px-4 text-[13px] font-medium ${
+                cleanupExcludePinned ? "border-black bg-black text-white" : "border-black/10 bg-white text-black/68"
+              }`}
+            >
+              {cleanupExcludePinned ? "已排除置顶" : "包含置顶"}
+            </button>
+          </div>
+        }
+        previewSummary={cleanupSummary}
+        previewItems={cleanupPreviewItems}
+        previewLoading={cleanupLoading}
+        applying={cleanupApplying}
+        onPreview={() => {
+          void handleCleanupPreview();
+        }}
+        onApply={() => {
+          void handleCleanupApply();
+        }}
+        onClose={() => {
+          if (cleanupLoading || cleanupApplying) return;
+          setCleanupOpen(false);
+        }}
+      />
     </section>
   );
 }

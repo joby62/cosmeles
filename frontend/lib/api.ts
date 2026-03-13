@@ -1358,6 +1358,32 @@ export type MobileSelectionBatchDeleteResponse = {
   forbidden_ids: string[];
 };
 
+export type MobileSelectionHistoryCleanupRequest = {
+  older_than_days: number;
+  exclude_pinned?: boolean;
+  limit_preview?: number;
+};
+
+export type MobileSelectionHistoryCleanupPreviewItem = {
+  session_id: string;
+  category: string;
+  created_at: string;
+  route_title: string;
+  is_pinned: boolean;
+};
+
+export type MobileSelectionHistoryCleanupPreviewResponse = {
+  status: string;
+  older_than_days: number;
+  exclude_pinned: boolean;
+  matched_count: number;
+  sample: MobileSelectionHistoryCleanupPreviewItem[];
+};
+
+export type MobileSelectionHistoryCleanupDeleteResponse = MobileSelectionHistoryCleanupPreviewResponse & {
+  deleted_ids: string[];
+};
+
 export type MobileSelectionPinRequest = {
   pinned: boolean;
 };
@@ -1655,6 +1681,34 @@ export type MobileCompareBatchDeleteResponse = {
   deleted_ids: string[];
   not_found_ids: string[];
   forbidden_ids: string[];
+  removed_files: number;
+  removed_dirs: number;
+};
+
+export type MobileCompareHistoryCleanupRequest = {
+  older_than_days: number;
+  statuses: Array<"running" | "done" | "failed">;
+  limit_preview?: number;
+};
+
+export type MobileCompareHistoryCleanupPreviewItem = {
+  compare_id: string;
+  category: string;
+  status: "running" | "done" | "failed";
+  updated_at: string;
+  message?: string | null;
+};
+
+export type MobileCompareHistoryCleanupPreviewResponse = {
+  status: string;
+  older_than_days: number;
+  statuses: Array<"running" | "done" | "failed">;
+  matched_count: number;
+  sample: MobileCompareHistoryCleanupPreviewItem[];
+};
+
+export type MobileCompareHistoryCleanupDeleteResponse = MobileCompareHistoryCleanupPreviewResponse & {
+  deleted_ids: string[];
   removed_files: number;
   removed_dirs: number;
 };
@@ -2773,6 +2827,24 @@ export async function deleteMobileSelectionSessionsBatch(
   });
 }
 
+export async function previewMobileSelectionHistoryCleanup(
+  payload: MobileSelectionHistoryCleanupRequest,
+): Promise<MobileSelectionHistoryCleanupPreviewResponse> {
+  return apiFetch<MobileSelectionHistoryCleanupPreviewResponse>("/api/mobile/selection/sessions/cleanup/preview", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteMobileSelectionHistoryCleanup(
+  payload: MobileSelectionHistoryCleanupRequest,
+): Promise<MobileSelectionHistoryCleanupDeleteResponse> {
+  return apiFetch<MobileSelectionHistoryCleanupDeleteResponse>("/api/mobile/selection/sessions/cleanup/delete", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function pinMobileSelectionSession(
   sessionId: string,
   payload: MobileSelectionPinRequest,
@@ -2963,6 +3035,24 @@ export async function deleteMobileCompareSessionsBatch(
   payload: MobileCompareBatchDeleteRequest,
 ): Promise<MobileCompareBatchDeleteResponse> {
   return apiFetch<MobileCompareBatchDeleteResponse>("/api/mobile/compare/sessions/batch/delete", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function previewMobileCompareHistoryCleanup(
+  payload: MobileCompareHistoryCleanupRequest,
+): Promise<MobileCompareHistoryCleanupPreviewResponse> {
+  return apiFetch<MobileCompareHistoryCleanupPreviewResponse>("/api/mobile/compare/sessions/cleanup/preview", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteMobileCompareHistoryCleanup(
+  payload: MobileCompareHistoryCleanupRequest,
+): Promise<MobileCompareHistoryCleanupDeleteResponse> {
+  return apiFetch<MobileCompareHistoryCleanupDeleteResponse>("/api/mobile/compare/sessions/cleanup/delete", {
     method: "POST",
     body: JSON.stringify(payload),
   });
