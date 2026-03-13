@@ -1,5 +1,22 @@
-import DecisionProfileShellPage from "@/features/mobile-decision/DecisionProfileShellPage";
+import { Suspense } from "react";
+import ShampooProfileFlowClient from "./profile-flow-client";
 
-export default function ProfilePage() {
-  return <DecisionProfileShellPage category="shampoo" />;
+function ProfileFallback() {
+  return (
+    <section className="pb-8">
+      <div className="m-profile-step">
+        <div className="m-profile-step-index">洗发挑选 · 第 1/3 步</div>
+        <h1 className="m-profile-step-title">正在准备问题…</h1>
+        <p className="m-profile-step-note">请稍候，马上进入测配流程。</p>
+      </div>
+    </section>
+  );
+}
+
+export default function ShampooProfilePage() {
+  return (
+    <Suspense fallback={<ProfileFallback />}>
+      <ShampooProfileFlowClient />
+    </Suspense>
+  );
 }
