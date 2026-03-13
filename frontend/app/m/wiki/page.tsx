@@ -61,6 +61,8 @@ type SearchParamsLike = {
 
 const ALL_SECONDARY_KEY = "all";
 const WIKI_PAGE_SIZE = 24;
+const PRODUCT_WEAK_CONFIDENCE_THRESHOLD = 60;
+const INGREDIENT_WEAK_SAMPLE_THRESHOLD = 12;
 
 const ENTRY_TABS: Array<{ key: WikiEntryTab; label: string }> = [
   { key: "product", label: "产品" },
@@ -260,6 +262,28 @@ function ingredientAudience(item: IngredientLibraryListItem, category: WikiCateg
   return extractAudiencePhrase(item.summary) || labelToAudience(inferIngredientAudienceLabel(item, category));
 }
 
+function isProductEvidenceWeak(item: MobileWikiProductItem): boolean {
+  if (!item.mapping_ready) return true;
+  return typeof item.primary_confidence === "number" && item.primary_confidence < PRODUCT_WEAK_CONFIDENCE_THRESHOLD;
+}
+
+function isIngredientEvidenceWeak(item: IngredientLibraryListItem): boolean {
+  return item.source_count < INGREDIENT_WEAK_SAMPLE_THRESHOLD;
+}
+
+function productMetaLine(item: MobileWikiProductItem): string {
+  const parts: string[] = [];
+  if (typeof item.primary_confidence === "number") {
+    parts.push(`置信度 ${item.primary_confidence}%`);
+  }
+  parts.push(item.mapping_ready ? "映射完成" : "映射补充中");
+  return parts.join(" · ");
+}
+
+function ingredientMetaLine(item: IngredientLibraryListItem): string {
+  return `样本 ${item.source_count} 条`;
+}
+
 function parseWikiState(searchParams: SearchParamsLike): {
   entryTab: WikiEntryTab;
   active: WikiCategoryKey;
@@ -391,14 +415,6 @@ function FilterIcon({ className = "h-4 w-4" }: { className?: string }) {
   );
 }
 
-function CheckIcon({ className = "h-4 w-4" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden className={className}>
-      <path d="M6 12.5L10 16.5L18 8.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
 function WikiPageFallback() {
   return (
     <section className="m-wiki-page -mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[color:var(--m-wiki-canvas)] px-4 pb-36 pt-4 text-white">
@@ -431,7 +447,7 @@ function MobileWikiPageContent() {
   const [ingredientFilterKey, setIngredientFilterKey] = useState(() => initialState.ingredientFilterKey);
   const [searchOpen, setSearchOpen] = useState(() => Boolean(initialState.query));
   const [searchFocused, setSearchFocused] = useState(false);
-  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  const [secondaryFiltersOpen, setSecondaryFiltersOpen] = useState(() => Boolean(initialState.query));
   const [ingredientItems, setIngredientItems] = useState<IngredientLibraryListItem[]>([]);
   const [ingredientTotal, setIngredientTotal] = useState(0);
   const [ingredientLoading, setIngredientLoading] = useState(() => initialState.entryTab === "ingredient");
@@ -506,20 +522,11 @@ function MobileWikiPageContent() {
   }, [scrollStorageKey]);
 
   useEffect(() => {
-    window.dispatchEvent(new CustomEvent("m-bottom-nav-yield", { detail: { active: searchOpen || searchFocused || filterSheetOpen } }));
+    window.dispatchEvent(new CustomEvent("m-bottom-nav-yield", { detail: { active: searchOpen || searchFocused || secondaryFiltersOpen } }));
     return () => {
       window.dispatchEvent(new CustomEvent("m-bottom-nav-yield", { detail: { active: false } }));
     };
-  }, [filterSheetOpen, searchFocused, searchOpen]);
-
-  useEffect(() => {
-    if (!filterSheetOpen || typeof document === "undefined") return;
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previous;
-    };
-  }, [filterSheetOpen]);
+  }, [searchFocused, searchOpen, secondaryFiltersOpen]);
 
   useEffect(() => {
     if (!searchOpen) return;
@@ -529,6 +536,11 @@ function MobileWikiPageContent() {
     return () => {
       window.cancelAnimationFrame(rafId);
     };
+  }, [searchOpen]);
+
+  useEffect(() => {
+    if (!searchOpen) return;
+    setSecondaryFiltersOpen(true);
   }, [searchOpen]);
 
   useEffect(() => {
@@ -662,10 +674,11 @@ function MobileWikiPageContent() {
   const hasActiveSecondary = activeSecondaryKey !== ALL_SECONDARY_KEY;
   const filterButtonLabel = hasActiveSecondary ? "调整筛选" : "筛选";
   const filterSummary = hasActiveSecondary
-    ? `已按 ${activeSecondaryOption?.label || "当前方向"} 收窄`
+    ? `当前：${activeSecondaryOption?.label || "当前方向"}`
     : entryTab === "product"
-      ? "需要时再细化产品类型"
-      : "需要时再细化成分方向";
+      ? "按需细化产品方向"
+      : "按需细化成分方向";
+  const showSecondaryFilters = secondaryOptions.length > 1 && (secondaryFiltersOpen || searchOpen);
 
   const filteredProductItems = productItems;
   const productHasMore = productItems.length < productTotal;
@@ -680,10 +693,14 @@ function MobileWikiPageContent() {
         "未命名产品"
       : "";
   const featuredProductAudience = featuredProductItem ? productAudience(featuredProductItem) : "";
+  const featuredProductWeakEvidence = featuredProductItem ? isProductEvidenceWeak(featuredProductItem) : false;
+  const featuredProductMeta = featuredProductItem ? productMetaLine(featuredProductItem) : "";
 
   const featuredIngredientItem = filteredIngredientItems[0] || null;
   const featuredIngredientName = featuredIngredientItem ? splitIngredientName(featuredIngredientItem.ingredient_name) : null;
   const featuredIngredientAudience = featuredIngredientItem ? ingredientAudience(featuredIngredientItem, active) : "";
+  const featuredIngredientWeakEvidence = featuredIngredientItem ? isIngredientEvidenceWeak(featuredIngredientItem) : false;
+  const featuredIngredientMeta = featuredIngredientItem ? ingredientMetaLine(featuredIngredientItem) : "";
   const ingredientListItems = featuredIngredientItem ? filteredIngredientItems.slice(1) : filteredIngredientItems;
   const searchPlaceholder = entryTab === "product" ? "搜索产品百科" : "搜索成分百科";
 
@@ -802,7 +819,7 @@ function MobileWikiPageContent() {
 
   const switchTab = (nextTab: WikiEntryTab) => {
     if (nextTab === entryTab) return;
-    setFilterSheetOpen(false);
+    setSecondaryFiltersOpen(false);
     if (nextTab === "product") {
       beginProductLoad();
     } else {
@@ -813,7 +830,7 @@ function MobileWikiPageContent() {
 
   const switchCategory = (nextCategory: WikiCategoryKey) => {
     if (nextCategory === active) return;
-    setFilterSheetOpen(false);
+    setSecondaryFiltersOpen(false);
     if (entryTab === "product") {
       beginProductLoad();
     } else {
@@ -841,26 +858,27 @@ function MobileWikiPageContent() {
     }
     setSearchFocused(false);
     setSearchOpen(false);
+    setSecondaryFiltersOpen(false);
   };
 
   const applySecondaryFilter = (key: string) => {
     if (entryTab === "product") {
       if (productSubtypeKey === key) {
-        setFilterSheetOpen(false);
+        if (!searchOpen) setSecondaryFiltersOpen(false);
         return;
       }
       beginProductLoad();
       setProductSubtypeKey(key);
-      setFilterSheetOpen(false);
+      if (!searchOpen) setSecondaryFiltersOpen(false);
       return;
     }
 
     if (ingredientFilterKey === key) {
-      setFilterSheetOpen(false);
+      if (!searchOpen) setSecondaryFiltersOpen(false);
       return;
     }
     setIngredientFilterKey(key);
-    setFilterSheetOpen(false);
+    if (!searchOpen) setSecondaryFiltersOpen(false);
   };
 
   return (
@@ -887,8 +905,8 @@ function MobileWikiPageContent() {
           query: normalizedQuery || undefined,
         }}
       />
-      <div className="space-y-5">
-        <div className="space-y-3">
+      <div className="space-y-7">
+        <div className="space-y-4">
           {searchOpen ? (
             <form
               className="m-wiki-input-shell flex h-[54px] w-full items-center rounded-[28px] shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_12px_30px_rgba(12,22,38,0.12)]"
@@ -933,63 +951,54 @@ function MobileWikiPageContent() {
               </div>
             </form>
           ) : (
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <h1 data-m-large-title="百科" className="text-[28px] leading-[1.08] font-semibold tracking-[-0.03em] text-[color:var(--m-wiki-text-strong)]">
-                  百科
-                </h1>
+            <div className="flex items-center justify-between gap-3">
+              <div
+                role="tablist"
+                aria-label="百科类型"
+                className="m-wiki-control-rail m-wiki-top-toggle"
+              >
+                {ENTRY_TABS.map((tab) => {
+                  const activeTab = tab.key === entryTab;
+                  const tabTheme = ENTRY_TAB_THEME[tab.key];
+                  return (
+                    <button
+                      key={tab.key}
+                      role="tab"
+                      aria-selected={activeTab}
+                      type="button"
+                      data-analytics-id={`wiki:tab:${tab.key}`}
+                      onClick={() => {
+                        switchTab(tab.key);
+                      }}
+                      style={
+                        activeTab
+                          ? ({
+                              "--m-wiki-top-toggle-active-bg": tabTheme.activeBg,
+                              "--m-wiki-top-toggle-active-border": tabTheme.activeBorder,
+                              "--m-wiki-top-toggle-active-text": tabTheme.activeText,
+                              "--m-wiki-top-toggle-active-shadow": tabTheme.activeShadow,
+                            } as CSSProperties)
+                          : undefined
+                      }
+                      className={`m-wiki-top-toggle-btn m-pressable ${activeTab ? "m-wiki-top-toggle-btn-active" : ""}`}
+                    >
+                      {tab.key === "product" ? "产品" : "成分"}
+                    </button>
+                  );
+                })}
               </div>
 
-              <div className="m-wiki-top-actions">
-                <div
-                  role="tablist"
-                  aria-label="百科类型"
-                  className="m-wiki-control-rail m-wiki-top-toggle"
-                >
-                  {ENTRY_TABS.map((tab) => {
-                    const activeTab = tab.key === entryTab;
-                    const tabTheme = ENTRY_TAB_THEME[tab.key];
-                    return (
-                      <button
-                        key={tab.key}
-                        role="tab"
-                        aria-selected={activeTab}
-                        type="button"
-                        data-analytics-id={`wiki:tab:${tab.key}`}
-                        onClick={() => {
-                          switchTab(tab.key);
-                        }}
-                        style={
-                          activeTab
-                            ? ({
-                                "--m-wiki-top-toggle-active-bg": tabTheme.activeBg,
-                                "--m-wiki-top-toggle-active-border": tabTheme.activeBorder,
-                                "--m-wiki-top-toggle-active-text": tabTheme.activeText,
-                                "--m-wiki-top-toggle-active-shadow": tabTheme.activeShadow,
-                              } as CSSProperties)
-                            : undefined
-                        }
-                        className={`m-wiki-top-toggle-btn m-pressable ${activeTab ? "m-wiki-top-toggle-btn-active" : ""}`}
-                      >
-                        {tab.key === "product" ? "产品" : "成分"}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <button
-                  type="button"
-                  aria-label="打开搜索"
-                  data-analytics-id="wiki:search:open"
-                  onClick={() => {
-                    setFilterSheetOpen(false);
-                    setSearchOpen(true);
-                  }}
-                  className="m-wiki-control-rail m-wiki-top-search m-pressable"
-                >
-                  <SearchIcon className="h-[18px] w-[18px]" />
-                </button>
-              </div>
+              <button
+                type="button"
+                aria-label="打开搜索"
+                data-analytics-id="wiki:search:open"
+                onClick={() => {
+                  setSearchOpen(true);
+                }}
+                className="m-wiki-control-rail m-wiki-top-search m-pressable"
+              >
+                <SearchIcon className="h-[18px] w-[18px]" />
+              </button>
             </div>
           )}
 
@@ -1031,110 +1040,9 @@ function MobileWikiPageContent() {
               })}
             </div>
           </section>
-
-          {secondaryOptions.length > 1 ? (
-            <section>
-              <div className="flex items-center justify-between gap-3 pt-0.5">
-                <p className="min-w-0 flex-1 line-clamp-1 text-[12px] text-[color:var(--m-wiki-text-soft)]">
-                  {filterSummary}
-                </p>
-                <button
-                  type="button"
-                  data-analytics-id={`wiki:${entryTab}:filter:open`}
-                  onClick={() => {
-                    setFilterSheetOpen(true);
-                  }}
-                  className="m-pressable inline-flex h-9 shrink-0 items-center gap-2 rounded-full border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)] px-4 text-[13px] font-semibold text-[color:var(--m-wiki-text-strong)] shadow-[0_8px_20px_rgba(16,29,52,0.06)] active:bg-white/90"
-                >
-                  <FilterIcon className="h-[15px] w-[15px]" />
-                  {filterButtonLabel}
-                </button>
-              </div>
-            </section>
-          ) : null}
         </div>
 
-        {filterSheetOpen ? (
-          <div
-            className="fixed inset-0 z-[80]"
-            role="dialog"
-            aria-modal="true"
-            aria-label={`${entryTab === "product" ? "产品" : "成分"}筛选`}
-          >
-            <button
-              type="button"
-              aria-label="关闭筛选"
-              onClick={() => {
-                setFilterSheetOpen(false);
-              }}
-              className="m-wiki-sheet-mask absolute inset-0 backdrop-blur-sm"
-            />
-
-            <div className="m-wiki-sheet m-sheet-enter absolute inset-x-0 bottom-0 max-h-[82dvh] overflow-hidden rounded-t-[30px] border shadow-[0_-28px_72px_rgba(0,0,0,0.56)] backdrop-blur-2xl">
-              <div className="m-wiki-sheet-handle mx-auto mt-2 h-1 w-11 rounded-full" />
-              <div className="flex items-center justify-between border-b border-white/10 px-5 py-3">
-                <div className="min-w-0">
-                  <h3 className="text-[17px] font-semibold text-white/92">筛选</h3>
-                  <p className="mt-1 text-[12px] text-white/58">
-                    {entryTab === "product" ? "需要时再按产品类型继续缩小。" : "需要时再按成分方向继续缩小。"}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFilterSheetOpen(false);
-                  }}
-                  className="m-pressable inline-flex h-8 items-center rounded-full border border-white/16 bg-white/[0.08] px-3 text-[12px] font-medium text-white/86 active:bg-white/[0.14]"
-                >
-                  关闭
-                </button>
-              </div>
-
-              <div className="max-h-[calc(82dvh-88px)] overflow-y-auto px-4 pb-6 pt-3">
-                <div className="space-y-2.5">
-                  {secondaryOptions.map((item) => {
-                    const selectedOption = activeSecondaryKey === item.key;
-                    return (
-                      <button
-                        key={`${entryTab}-${item.key}`}
-                        type="button"
-                        data-analytics-id={`wiki:${entryTab}:filter:${item.key}`}
-                        onClick={() => {
-                          applySecondaryFilter(item.key);
-                        }}
-                        className={`m-wiki-sheet-item m-pressable flex w-full items-center justify-between gap-3 rounded-[22px] border px-4 py-3 text-left transition-colors ${
-                          selectedOption
-                            ? "border-[rgba(10,132,255,0.26)] bg-[rgba(10,132,255,0.10)] text-[#0a84ff]"
-                            : "text-[color:var(--m-wiki-text-strong)] active:bg-white/90"
-                        }`}
-                      >
-                        <div className="min-w-0 flex-1">
-                          <p className="line-clamp-1 text-[15px] font-semibold">{item.label}</p>
-                          {typeof item.count === "number" && item.key !== ALL_SECONDARY_KEY ? (
-                            <p className="mt-1 text-[12px] text-[color:var(--m-wiki-text-soft)]">{item.count} 个结果</p>
-                          ) : item.key === ALL_SECONDARY_KEY ? (
-                            <p className="mt-1 text-[12px] text-[color:var(--m-wiki-text-soft)]">先看这一类下的全部内容</p>
-                          ) : null}
-                        </div>
-                        <span
-                          className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${
-                            selectedOption
-                              ? "border-[rgba(10,132,255,0.18)] bg-[rgba(10,132,255,0.16)] text-[#0a84ff]"
-                              : "border-white/10 bg-white/[0.06] text-white/30"
-                          }`}
-                        >
-                          <CheckIcon className="h-[14px] w-[14px]" />
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : null}
-
-        <div key={entryTab} className="m-wiki-pane pt-1">
+        <div key={entryTab} className="m-wiki-pane pt-2">
           {entryTab === "product" ? (
             <section className="space-y-4">
               {featuredProductItem ? (
@@ -1158,38 +1066,24 @@ function MobileWikiPageContent() {
                   }}
                   className="m-wiki-hero-card m-pressable block overflow-hidden rounded-[34px] transition-transform active:scale-[0.996]"
                 >
-                  <div className={`${theme.heroClass} relative overflow-hidden px-5 pb-5 pt-5`}>
+                  <div className={`${theme.heroClass} relative overflow-hidden px-5 pb-5 pt-6`}>
                     <div className={`absolute inset-0 ${theme.hazeClass} opacity-70`} />
                     <div className={`absolute right-[-34px] top-[-28px] h-[164px] w-[164px] rounded-full ${theme.accentClass} opacity-22 blur-3xl`} />
                     <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.26)_0%,rgba(255,255,255,0.06)_32%,rgba(255,255,255,0)_100%)]" />
 
                     <div className="relative z-[1] flex items-start justify-between gap-4">
                       <div className="min-w-0 flex-1">
-                        <div className="inline-flex rounded-full border border-white/26 bg-white/14 px-2.5 py-1 text-[12px] font-medium text-white/84 backdrop-blur-lg">
-                          推荐你先看
-                        </div>
-                        <p className="m-wiki-kicker mt-4 text-[11px] text-white/68">更适合</p>
-                        <h2 className="mt-1 line-clamp-2 text-[27px] leading-[1.1] font-semibold tracking-[-0.03em] text-white">
+                        <p className="m-wiki-kicker text-[11px] text-white/66">更适合谁</p>
+                        <h2 className="mt-2 line-clamp-2 text-[27px] leading-[1.1] font-semibold tracking-[-0.03em] text-white">
                           {featuredProductAudience ? `更适合${featuredProductAudience}` : "更适合先从这里看起"}
                         </h2>
-                        <p className="mt-2 line-clamp-2 text-[15px] leading-[1.45] font-semibold text-white/84">{featuredProductTitle}</p>
-                        <div className="mt-4 flex flex-wrap gap-2">
-                          {featuredProductItem.target_type_title ? (
-                            <span className="inline-flex h-7 items-center rounded-full border border-white/18 bg-white/[0.08] px-3 text-[11px] text-white/78">
-                              {featuredProductItem.target_type_title}
-                            </span>
-                          ) : null}
-                          {typeof featuredProductItem.primary_confidence === "number" ? (
-                            <span className="inline-flex h-7 items-center rounded-full border border-[#89c1ff]/28 bg-[#2f5e9f]/16 px-3 text-[11px] text-[#d6eaff]">
-                              置信度 {featuredProductItem.primary_confidence}%
-                            </span>
-                          ) : null}
-                          {!featuredProductItem.mapping_ready ? (
-                            <span className="inline-flex h-7 items-center rounded-full border border-white/18 bg-white/[0.08] px-3 text-[11px] text-white/70">
-                              分析仍在补充
-                            </span>
-                          ) : null}
-                        </div>
+                        {featuredProductWeakEvidence ? (
+                          <p className="mt-2 inline-flex rounded-full border border-[color:var(--m-wiki-alert-border)] bg-[color:var(--m-wiki-alert-bg)] px-2.5 py-1 text-[11px] font-medium text-[color:var(--m-wiki-alert-text)]">
+                            证据较弱
+                          </p>
+                        ) : null}
+                        <p className="mt-3 line-clamp-2 text-[15px] leading-[1.45] font-semibold text-white/84">{featuredProductTitle}</p>
+                        {featuredProductMeta ? <p className="mt-2 text-[12px] text-white/58">{featuredProductMeta}</p> : null}
                       </div>
 
                       <div className="relative h-[108px] w-[108px] shrink-0 overflow-hidden rounded-[28px] border border-white/20 bg-white/12 shadow-[0_16px_28px_rgba(0,0,0,0.14)]">
@@ -1203,23 +1097,70 @@ function MobileWikiPageContent() {
                       </div>
                     </div>
 
-                    <div className="relative z-[1] mt-5 flex items-center justify-between gap-3 rounded-[22px] border border-white/10 bg-white/[0.08] px-4 py-3 backdrop-blur-xl">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[13px] font-medium text-white/86">看适配理由</p>
-                        <p className="mt-0.5 text-[12px] leading-[1.45] text-white/62">点开看成分拆解、使用感和为什么更适合你</p>
-                      </div>
-                      <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/12 bg-white/[0.12] text-white/74">
-                        <ChevronRightIcon />
+                    <div className="relative z-[1] mt-5 flex justify-end">
+                      <span className="inline-flex h-10 items-center gap-1.5 rounded-full bg-[#0a84ff] px-4 text-[13px] font-semibold text-white shadow-[0_10px_24px_rgba(10,132,255,0.34)]">
+                        查看详情
+                        <ChevronRightIcon className="h-[14px] w-[14px]" />
                       </span>
                     </div>
                   </div>
                 </Link>
               ) : null}
 
+              {secondaryOptions.length > 1 ? (
+                <section className="space-y-2 pt-1">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="min-w-0 flex-1 line-clamp-1 text-[12px] text-[color:var(--m-wiki-text-soft)]">{filterSummary}</p>
+                    <button
+                      type="button"
+                      data-analytics-id={`wiki:${entryTab}:filter:open`}
+                      onClick={() => {
+                        setSecondaryFiltersOpen((prev) => !prev);
+                      }}
+                      className="m-pressable inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)] px-3.5 text-[12px] font-semibold text-[color:var(--m-wiki-text-strong)]"
+                    >
+                      <FilterIcon className="h-[14px] w-[14px]" />
+                      {showSecondaryFilters ? "收起" : filterButtonLabel}
+                    </button>
+                  </div>
+
+                  {showSecondaryFilters ? (
+                    <div className="-mx-4 overflow-x-auto px-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                      <div className="flex min-w-max gap-2 pb-1">
+                        {secondaryOptions.map((item) => {
+                          const selectedOption = activeSecondaryKey === item.key;
+                          return (
+                            <button
+                              key={`${entryTab}-${item.key}`}
+                              type="button"
+                              data-analytics-id={`wiki:${entryTab}:filter:${item.key}`}
+                              onClick={() => {
+                                applySecondaryFilter(item.key);
+                              }}
+                              className={`m-pressable inline-flex h-9 items-center gap-1.5 rounded-full border px-3.5 text-[12px] font-medium ${
+                                selectedOption
+                                  ? "border-[#0a84ff]/36 bg-[#0a84ff]/12 text-[#0a84ff]"
+                                  : "border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)] text-[color:var(--m-wiki-text-mid)]"
+                              }`}
+                            >
+                              <span>{item.label}</span>
+                              {typeof item.count === "number" && item.key !== ALL_SECONDARY_KEY ? (
+                                <span className="text-[11px] opacity-70">{item.count}</span>
+                              ) : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+                </section>
+              ) : null}
+
               {listProductItems.map((item) => {
                 const product = item.product;
                 const productTitle = [product.brand, product.name].filter(Boolean).join(" ").trim() || product.name || "未命名产品";
                 const audience = productAudience(item);
+                const weakEvidence = isProductEvidenceWeak(item);
                 return (
                   <Link
                     key={product.id}
@@ -1242,7 +1183,7 @@ function MobileWikiPageContent() {
                     }}
                     className="m-wiki-card-soft m-pressable group block overflow-hidden rounded-[28px] border border-white/10 px-4 py-4 transition-transform active:scale-[0.997]"
                   >
-                    <div className="flex items-start gap-3.5">
+                    <div className="flex items-start gap-3">
                       <div className="relative h-[86px] w-[86px] shrink-0 overflow-hidden rounded-[20px] border border-white/8 bg-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.16)]">
                         <Image
                           src={resolveImageUrl(product)}
@@ -1254,32 +1195,17 @@ function MobileWikiPageContent() {
                       </div>
 
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-start justify-between gap-3">
-                          <p className="line-clamp-2 min-w-0 flex-1 text-[18px] leading-[1.3] font-semibold tracking-[-0.02em] text-white/92">
-                            {`更适合${audience}`}
+                        <p className="line-clamp-2 text-[18px] leading-[1.3] font-semibold tracking-[-0.02em] text-white/92">{`更适合${audience}`}</p>
+                        {weakEvidence ? (
+                          <p className="mt-1 inline-flex rounded-full border border-[color:var(--m-wiki-alert-border)] bg-[color:var(--m-wiki-alert-bg)] px-2 py-0.5 text-[11px] font-medium text-[color:var(--m-wiki-alert-text)]">
+                            证据较弱
                           </p>
-                          <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-white/52 transition-colors group-hover:bg-white/[0.14] group-hover:text-white/72">
-                            <ChevronRightIcon className="h-[15px] w-[15px]" />
-                          </span>
-                        </div>
-                        <p className="mt-1 line-clamp-1 text-[14px] font-semibold text-white/74">{productTitle}</p>
-                        <div className="mt-2 flex flex-wrap gap-1.5">
-                          {item.target_type_title ? (
-                            <span className="inline-flex h-6 items-center rounded-full border border-white/14 bg-white/[0.08] px-2.5 text-[11px] text-white/72">
-                              {item.target_type_title}
-                            </span>
-                          ) : null}
-                          {typeof item.primary_confidence === "number" ? (
-                            <span className="inline-flex h-6 items-center rounded-full border border-[#89c1ff]/25 bg-[#2f5e9f]/14 px-2.5 text-[11px] text-[#d6eaff]">
-                              {item.primary_confidence}%
-                            </span>
-                          ) : null}
-                          {!item.mapping_ready ? (
-                            <span className="inline-flex h-6 items-center rounded-full border border-white/14 bg-white/[0.08] px-2.5 text-[11px] text-white/62">
-                              分析补充中
-                            </span>
-                          ) : null}
-                        </div>
+                        ) : null}
+                        <p className="mt-1.5 line-clamp-1 text-[14px] font-semibold text-white/74">{productTitle}</p>
+                        <p className="mt-2 text-[12px] text-[color:var(--m-wiki-text-soft)]">{productMetaLine(item)}</p>
+                      </div>
+                      <div className="pt-0.5 text-white/46">
+                        <ChevronRightIcon className="h-[15px] w-[15px]" />
                       </div>
                     </div>
                   </Link>
@@ -1343,27 +1269,25 @@ function MobileWikiPageContent() {
                   }}
                   className="m-wiki-hero-card m-pressable block overflow-hidden rounded-[34px] transition-transform active:scale-[0.996]"
                 >
-                  <div className={`${theme.heroClass} relative overflow-hidden px-5 pb-5 pt-5`}>
+                  <div className={`${theme.heroClass} relative overflow-hidden px-5 pb-5 pt-6`}>
                     <div className={`absolute inset-0 ${theme.hazeClass} opacity-70`} />
                     <div className={`absolute right-[-34px] top-[-28px] h-[164px] w-[164px] rounded-full ${theme.accentClass} opacity-22 blur-3xl`} />
                     <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.26)_0%,rgba(255,255,255,0.06)_32%,rgba(255,255,255,0)_100%)]" />
 
                     <div className="relative z-[1] flex items-start justify-between gap-4">
                       <div className="min-w-0 flex-1">
-                        <div className="inline-flex rounded-full border border-white/26 bg-white/14 px-2.5 py-1 text-[12px] font-medium text-white/84 backdrop-blur-lg">
-                          推荐你先看
-                        </div>
-                        <p className="m-wiki-kicker mt-4 text-[11px] text-white/68">更适合</p>
-                        <h2 className="mt-1 line-clamp-2 text-[27px] leading-[1.1] font-semibold tracking-[-0.03em] text-white">
+                        <p className="m-wiki-kicker text-[11px] text-white/66">更适合谁</p>
+                        <h2 className="mt-2 line-clamp-2 text-[27px] leading-[1.1] font-semibold tracking-[-0.03em] text-white">
                           {featuredIngredientAudience ? `更适合${featuredIngredientAudience}` : "更适合先从这里看起"}
                         </h2>
-                        <p className="mt-2 line-clamp-1 text-[15px] font-semibold text-white/84">{featuredIngredientName.main}</p>
+                        {featuredIngredientWeakEvidence ? (
+                          <p className="mt-2 inline-flex rounded-full border border-[color:var(--m-wiki-alert-border)] bg-[color:var(--m-wiki-alert-bg)] px-2.5 py-1 text-[11px] font-medium text-[color:var(--m-wiki-alert-text)]">
+                            证据较弱
+                          </p>
+                        ) : null}
+                        <p className="mt-3 line-clamp-1 text-[15px] font-semibold text-white/84">{featuredIngredientName.main}</p>
                         {featuredIngredientName.sub ? <p className="mt-0.5 line-clamp-1 text-[13px] text-white/62">{featuredIngredientName.sub}</p> : null}
-                        <div className="mt-4 flex flex-wrap gap-2">
-                          <span className="inline-flex h-7 items-center rounded-full border border-white/18 bg-white/[0.08] px-3 text-[11px] text-white/78">
-                            来源样本 {featuredIngredientItem.source_count} 条
-                          </span>
-                        </div>
+                        <p className="mt-2 text-[12px] text-white/58">{featuredIngredientMeta}</p>
                       </div>
 
                       <div className="relative flex h-[96px] w-[96px] shrink-0 items-center justify-center rounded-[28px] border border-white/20 bg-white/12 shadow-[0_16px_28px_rgba(0,0,0,0.14)]">
@@ -1371,22 +1295,69 @@ function MobileWikiPageContent() {
                       </div>
                     </div>
 
-                    <div className="relative z-[1] mt-5 flex items-center justify-between gap-3 rounded-[22px] border border-white/10 bg-white/[0.08] px-4 py-3 backdrop-blur-xl">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[13px] font-medium text-white/86">看完整边界</p>
-                        <p className="mt-0.5 text-[12px] leading-[1.45] text-white/62">展开收益、风险边界和使用方式</p>
-                      </div>
-                      <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/12 bg-white/[0.12] text-white/74">
-                        <ChevronRightIcon />
+                    <div className="relative z-[1] mt-5 flex justify-end">
+                      <span className="inline-flex h-10 items-center gap-1.5 rounded-full bg-[#0a84ff] px-4 text-[13px] font-semibold text-white shadow-[0_10px_24px_rgba(10,132,255,0.34)]">
+                        查看详情
+                        <ChevronRightIcon className="h-[14px] w-[14px]" />
                       </span>
                     </div>
                   </div>
                 </Link>
               ) : null}
 
+              {secondaryOptions.length > 1 ? (
+                <section className="space-y-2 pt-1">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="min-w-0 flex-1 line-clamp-1 text-[12px] text-[color:var(--m-wiki-text-soft)]">{filterSummary}</p>
+                    <button
+                      type="button"
+                      data-analytics-id={`wiki:${entryTab}:filter:open`}
+                      onClick={() => {
+                        setSecondaryFiltersOpen((prev) => !prev);
+                      }}
+                      className="m-pressable inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)] px-3.5 text-[12px] font-semibold text-[color:var(--m-wiki-text-strong)]"
+                    >
+                      <FilterIcon className="h-[14px] w-[14px]" />
+                      {showSecondaryFilters ? "收起" : filterButtonLabel}
+                    </button>
+                  </div>
+
+                  {showSecondaryFilters ? (
+                    <div className="-mx-4 overflow-x-auto px-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                      <div className="flex min-w-max gap-2 pb-1">
+                        {secondaryOptions.map((item) => {
+                          const selectedOption = activeSecondaryKey === item.key;
+                          return (
+                            <button
+                              key={`${entryTab}-${item.key}`}
+                              type="button"
+                              data-analytics-id={`wiki:${entryTab}:filter:${item.key}`}
+                              onClick={() => {
+                                applySecondaryFilter(item.key);
+                              }}
+                              className={`m-pressable inline-flex h-9 items-center gap-1.5 rounded-full border px-3.5 text-[12px] font-medium ${
+                                selectedOption
+                                  ? "border-[#0a84ff]/36 bg-[#0a84ff]/12 text-[#0a84ff]"
+                                  : "border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)] text-[color:var(--m-wiki-text-mid)]"
+                              }`}
+                            >
+                              <span>{item.label}</span>
+                              {typeof item.count === "number" && item.key !== ALL_SECONDARY_KEY ? (
+                                <span className="text-[11px] opacity-70">{item.count}</span>
+                              ) : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+                </section>
+              ) : null}
+
               {ingredientListItems.map((item) => {
                 const name = splitIngredientName(item.ingredient_name);
                 const audience = ingredientAudience(item, active);
+                const weakEvidence = isIngredientEvidenceWeak(item);
                 return (
                   <Link
                     key={item.ingredient_id}
@@ -1410,32 +1381,24 @@ function MobileWikiPageContent() {
                     }}
                     className="m-wiki-card-soft m-pressable group block overflow-hidden rounded-[28px] border border-white/10 px-4 py-4 transition-transform active:scale-[0.997]"
                   >
-                    <div className="flex items-start gap-3.5">
+                    <div className="flex items-start gap-3">
                       <div className="flex h-[74px] w-[74px] shrink-0 items-center justify-center overflow-hidden rounded-[20px] border border-white/8 bg-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.16)]">
                         <Image src={`/m/categories/${active}.png`} alt={WIKI_MAP[active].label} width={42} height={42} className="h-[42px] w-[42px] rounded-[14px] object-cover" />
                       </div>
 
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-start justify-between gap-3">
-                          <p className="line-clamp-2 min-w-0 flex-1 text-[18px] leading-[1.3] font-semibold tracking-[-0.02em] text-white/92">
-                            {`更适合${audience}`}
+                        <p className="line-clamp-2 text-[18px] leading-[1.3] font-semibold tracking-[-0.02em] text-white/92">{`更适合${audience}`}</p>
+                        {weakEvidence ? (
+                          <p className="mt-1 inline-flex rounded-full border border-[color:var(--m-wiki-alert-border)] bg-[color:var(--m-wiki-alert-bg)] px-2 py-0.5 text-[11px] font-medium text-[color:var(--m-wiki-alert-text)]">
+                            证据较弱
                           </p>
-                          <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/[0.08] text-white/52 transition-colors group-hover:bg-white/[0.14] group-hover:text-white/72">
-                            <ChevronRightIcon className="h-[15px] w-[15px]" />
-                          </span>
-                        </div>
+                        ) : null}
                         <p className="mt-1 line-clamp-1 text-[14px] font-semibold text-white/74">{name.main}</p>
                         {name.sub ? <p className="mt-0.5 line-clamp-1 text-[12px] text-white/48">{name.sub}</p> : null}
-                        <div className="mt-2 flex flex-wrap gap-1.5">
-                          <span className="inline-flex h-6 items-center rounded-full border border-white/14 bg-white/[0.08] px-2.5 text-[11px] text-white/62">
-                            {item.source_count} 条样本
-                          </span>
-                          {activeIngredientSecondary ? (
-                            <span className="inline-flex h-6 items-center rounded-full border border-white/14 bg-white/[0.08] px-2.5 text-[11px] text-white/62">
-                              {activeIngredientSecondary.label}
-                            </span>
-                          ) : null}
-                        </div>
+                        <p className="mt-2 text-[12px] text-[color:var(--m-wiki-text-soft)]">{ingredientMetaLine(item)}</p>
+                      </div>
+                      <div className="pt-0.5 text-white/46">
+                        <ChevronRightIcon className="h-[15px] w-[15px]" />
                       </div>
                     </div>
                   </Link>
