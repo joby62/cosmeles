@@ -14,6 +14,7 @@ import {
   CLEANSER_LAST_RESULT_QUERY_KEY,
   CLEANSER_PROFILE_DRAFT_KEY,
 } from "@/lib/mobile/cleanserFlowStorage";
+import { applyMobileReturnTo, parseMobileReturnTo } from "@/lib/mobile/flowReturn";
 import { applyResultCtaAttribution, parseResultCtaAttribution } from "@/lib/mobile/resultCtaAttribution";
 
 type StepKey = keyof CleanserSignals;
@@ -122,6 +123,7 @@ export default function CleanserProfileFlowClient() {
   const urlStep = useMemo(() => parseStep(searchParams.get("step")), [searchParams]);
   const urlSignals = useMemo(() => signalsFromSearchParams(searchParams), [searchParams]);
   const resultAttribution = useMemo(() => parseResultCtaAttribution(searchParams), [searchParams]);
+  const returnTo = useMemo(() => parseMobileReturnTo(searchParams), [searchParams]);
   const signals = urlSignals;
   const answeredChoices = (["q1", "q2", "q3", "q4", "q5"] as StepKey[])
     .map((key) => {
@@ -154,13 +156,14 @@ export default function CleanserProfileFlowClient() {
       const nextIdx = firstUnansweredIndex(restored);
       const qp = toCleanserSearchParams(restored);
       applyResultCtaAttribution(qp, resultAttribution);
+      applyMobileReturnTo(qp, returnTo);
       qp.set("step", String(nextIdx + 1));
       router.replace(`/m/cleanser/profile?${qp.toString()}`, { scroll: false });
       window.requestAnimationFrame(() => scrollToStep(nextIdx, "auto"));
     } catch {
       window.localStorage.removeItem(CLEANSER_PROFILE_DRAFT_KEY);
     }
-  }, [resultAttribution, router, scrollToStep, signals.q1, signals.q2, signals.q3, signals.q4, signals.q5]);
+  }, [resultAttribution, returnTo, router, scrollToStep, signals.q1, signals.q2, signals.q3, signals.q4, signals.q5]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -212,6 +215,7 @@ export default function CleanserProfileFlowClient() {
       const merged = normalizeSequentialSignals(next);
       const qp = toCleanserSearchParams(merged);
       applyResultCtaAttribution(qp, resultAttribution);
+      applyMobileReturnTo(qp, returnTo);
 
       if (isCompleteCleanserSignals(merged)) {
         if (typeof window !== "undefined") {
@@ -227,19 +231,20 @@ export default function CleanserProfileFlowClient() {
       router.replace(`/m/cleanser/profile?${qp.toString()}`, { scroll: false });
       window.setTimeout(() => scrollToStep(nextIndex, "smooth"), 48);
     },
-    [resultAttribution, router, scrollToStep, signals],
+    [resultAttribution, returnTo, router, scrollToStep, signals],
   );
 
   const resetAll = useCallback(() => {
     const qp = new URLSearchParams();
     applyResultCtaAttribution(qp, resultAttribution);
+    applyMobileReturnTo(qp, returnTo);
     qp.set("step", "1");
     if (typeof window !== "undefined") {
       window.localStorage.removeItem(CLEANSER_PROFILE_DRAFT_KEY);
     }
     router.replace(`/m/cleanser/profile?${qp.toString()}`, { scroll: false });
     window.setTimeout(() => scrollToStep(0, "smooth"), 24);
-  }, [resultAttribution, router, scrollToStep]);
+  }, [resultAttribution, returnTo, router, scrollToStep]);
 
   return (
     <section className="pb-8">

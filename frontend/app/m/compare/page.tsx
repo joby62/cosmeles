@@ -18,6 +18,7 @@ import MobileFeedbackPrompt from "@/components/mobile/MobileFeedbackPrompt";
 import MobileFrictionSignals from "@/components/mobile/MobileFrictionSignals";
 import MobilePageAnalytics from "@/components/mobile/MobilePageAnalytics";
 import { markMobileTargetHandled, trackMobileEvent } from "@/lib/mobileAnalytics";
+import { buildCompareBasisReturnTo } from "@/lib/mobile/flowReturn";
 import { describeMobileRouteFocus, getMobileCategoryLabel } from "@/lib/mobile/routeCopy";
 
 const CATEGORY_ORDER: MobileSelectionCategory[] = ["shampoo", "bodywash", "conditioner", "lotion", "cleanser"];
@@ -263,6 +264,7 @@ function MobileComparePageContent() {
   const minLibrarySelection = hasUpload ? 1 : 2;
   const selectionShortfall = Math.max(0, 2 - totalSelectedCount);
   const landingCategory = normalizeSelectionCategory(searchParams?.get("category")) || category;
+  const profileRefreshed = searchParams?.get("profile_refreshed") === "1";
   const resultCta = String(searchParams?.get("result_cta") || "").trim();
   const fromCompareId = String(searchParams?.get("from_compare_id") || "").trim();
   const analyticsRoute = searchParams?.toString() ? `${pathname}?${searchParams.toString()}` : pathname || "/m/compare";
@@ -298,6 +300,17 @@ function MobileComparePageContent() {
     lastLandingSignatureRef.current = signature;
     void trackMobileEvent("compare_result_cta_land", resultLandingPayload);
   }, [resultLandingPayload]);
+
+  useEffect(() => {
+    if (!profileRefreshed) return;
+    setSelectionNotice("已按新的个人选项更新分析基线。");
+    void safeTrack("compare_basis_refill_returned", { category: landingCategory });
+
+    const params = new URLSearchParams(searchParams?.toString() || "");
+    params.delete("profile_refreshed");
+    const nextQuery = params.toString();
+    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname || "/m/compare", { scroll: false });
+  }, [landingCategory, pathname, profileRefreshed, router, searchParams]);
   const uploadSectionBodyVisible = uploadSectionExpanded || hasUploadSignal;
 
   const canStart =
@@ -1372,7 +1385,7 @@ function MobileComparePageContent() {
           lastCompletedLabel={profileLastCompletedLabel}
           summaryItems={bootstrap?.profile?.summary || []}
           detailButtonLabel="查看依据"
-          rewriteHref={`/m/${category}/profile?step=1`}
+          rewriteHref={`/m/${category}/profile?step=1&return_to=${encodeURIComponent(buildCompareBasisReturnTo(category))}`}
           emptyTitle={`还没有可沿用的“${currentCategoryLabel}”历史首推`}
           emptyDescription={`先完成一次“${currentCategoryLabel}”问答，这次对比才会更贴合你的情况。`}
         />
@@ -1629,7 +1642,7 @@ function MobileComparePageContent() {
             lastCompletedLabel={profileLastCompletedLabel}
             summaryItems={bootstrap?.profile?.summary || []}
             detailButtonLabel="查看带入信息"
-            rewriteHref={`/m/${category}/profile?step=1`}
+            rewriteHref={`/m/${category}/profile?step=1&return_to=${encodeURIComponent(buildCompareBasisReturnTo(category))}`}
             emptyTitle={`“${currentCategoryLabel}”还没有可沿用的历史首推`}
             emptyDescription={`先完成一次“${currentCategoryLabel}”问答，再开始专业对比。`}
             compact

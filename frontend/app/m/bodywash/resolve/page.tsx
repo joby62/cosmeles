@@ -1,4 +1,6 @@
 import { redirect } from "next/navigation";
+import { applyMobileReturnTo, parseMobileReturnTo } from "@/lib/mobile/flowReturn";
+import { applyResultCtaAttribution, parseResultCtaAttribution } from "@/lib/mobile/resultCtaAttribution";
 import {
   isReadyBodyWashResult,
   normalizeBodyWashSignals,
@@ -14,10 +16,19 @@ export default async function BodyWashResolvePage({
 }) {
   const raw = (await Promise.resolve(searchParams)) || {};
   const signals = normalizeBodyWashSignals(raw);
+  const attribution = parseResultCtaAttribution(raw);
+  const returnTo = parseMobileReturnTo(raw);
 
   if (!isReadyBodyWashResult(signals)) {
-    redirect("/m/bodywash/profile");
+    const profileParams = new URLSearchParams();
+    applyResultCtaAttribution(profileParams, attribution);
+    applyMobileReturnTo(profileParams, returnTo);
+    const profileQuery = profileParams.toString();
+    redirect(profileQuery ? `/m/bodywash/profile?${profileQuery}` : "/m/bodywash/profile");
   }
 
-  redirect(`/m/bodywash/result?${toBodyWashSearchParams(signals).toString()}`);
+  const resultParams = toBodyWashSearchParams(signals);
+  applyResultCtaAttribution(resultParams, attribution);
+  applyMobileReturnTo(resultParams, returnTo);
+  redirect(`/m/bodywash/result?${resultParams.toString()}`);
 }

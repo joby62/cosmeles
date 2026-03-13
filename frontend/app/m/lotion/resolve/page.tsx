@@ -1,4 +1,6 @@
 import { redirect } from "next/navigation";
+import { applyMobileReturnTo, parseMobileReturnTo } from "@/lib/mobile/flowReturn";
+import { applyResultCtaAttribution, parseResultCtaAttribution } from "@/lib/mobile/resultCtaAttribution";
 import {
   isCompleteLotionSignals,
   normalizeLotionSignals,
@@ -14,10 +16,19 @@ export default async function LotionResolvePage({
 }) {
   const raw = (await Promise.resolve(searchParams)) || {};
   const signals = normalizeLotionSignals(raw);
+  const attribution = parseResultCtaAttribution(raw);
+  const returnTo = parseMobileReturnTo(raw);
 
   if (!isCompleteLotionSignals(signals)) {
-    redirect("/m/lotion/profile");
+    const profileParams = new URLSearchParams();
+    applyResultCtaAttribution(profileParams, attribution);
+    applyMobileReturnTo(profileParams, returnTo);
+    const profileQuery = profileParams.toString();
+    redirect(profileQuery ? `/m/lotion/profile?${profileQuery}` : "/m/lotion/profile");
   }
 
-  redirect(`/m/lotion/result?${toLotionSearchParams(signals).toString()}`);
+  const resultParams = toLotionSearchParams(signals);
+  applyResultCtaAttribution(resultParams, attribution);
+  applyMobileReturnTo(resultParams, returnTo);
+  redirect(`/m/lotion/result?${resultParams.toString()}`);
 }

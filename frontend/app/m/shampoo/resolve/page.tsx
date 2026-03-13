@@ -1,4 +1,6 @@
 import { redirect } from "next/navigation";
+import { applyMobileReturnTo, parseMobileReturnTo } from "@/lib/mobile/flowReturn";
+import { applyResultCtaAttribution, parseResultCtaAttribution } from "@/lib/mobile/resultCtaAttribution";
 import {
   isReadyShampooResult,
   normalizeShampooSignals,
@@ -14,10 +16,19 @@ export default async function ShampooResolvePage({
 }) {
   const raw = (await Promise.resolve(searchParams)) || {};
   const signals = normalizeShampooSignals(raw);
+  const attribution = parseResultCtaAttribution(raw);
+  const returnTo = parseMobileReturnTo(raw);
 
   if (!isReadyShampooResult(signals)) {
-    redirect("/m/shampoo/profile");
+    const profileParams = new URLSearchParams();
+    applyResultCtaAttribution(profileParams, attribution);
+    applyMobileReturnTo(profileParams, returnTo);
+    const profileQuery = profileParams.toString();
+    redirect(profileQuery ? `/m/shampoo/profile?${profileQuery}` : "/m/shampoo/profile");
   }
 
-  redirect(`/m/shampoo/result?${toSignalSearchParams(signals).toString()}`);
+  const resultParams = toSignalSearchParams(signals);
+  applyResultCtaAttribution(resultParams, attribution);
+  applyMobileReturnTo(resultParams, returnTo);
+  redirect(`/m/shampoo/result?${resultParams.toString()}`);
 }

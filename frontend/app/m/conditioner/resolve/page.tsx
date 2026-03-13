@@ -1,4 +1,6 @@
 import { redirect } from "next/navigation";
+import { applyMobileReturnTo, parseMobileReturnTo } from "@/lib/mobile/flowReturn";
+import { applyResultCtaAttribution, parseResultCtaAttribution } from "@/lib/mobile/resultCtaAttribution";
 import {
   isCompleteConditionerSignals,
   normalizeConditionerSignals,
@@ -14,10 +16,19 @@ export default async function ConditionerResolvePage({
 }) {
   const raw = (await Promise.resolve(searchParams)) || {};
   const signals = normalizeConditionerSignals(raw);
+  const attribution = parseResultCtaAttribution(raw);
+  const returnTo = parseMobileReturnTo(raw);
 
   if (!isCompleteConditionerSignals(signals)) {
-    redirect("/m/conditioner/profile");
+    const profileParams = new URLSearchParams();
+    applyResultCtaAttribution(profileParams, attribution);
+    applyMobileReturnTo(profileParams, returnTo);
+    const profileQuery = profileParams.toString();
+    redirect(profileQuery ? `/m/conditioner/profile?${profileQuery}` : "/m/conditioner/profile");
   }
 
-  redirect(`/m/conditioner/result?${toConditionerSearchParams(signals).toString()}`);
+  const resultParams = toConditionerSearchParams(signals);
+  applyResultCtaAttribution(resultParams, attribution);
+  applyMobileReturnTo(resultParams, returnTo);
+  redirect(`/m/conditioner/result?${resultParams.toString()}`);
 }

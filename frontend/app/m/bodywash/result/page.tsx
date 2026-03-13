@@ -3,6 +3,7 @@ import SelectionPublishedResultFlow from "@/components/mobile/SelectionPublished
 import SelectionResultErrorState from "@/components/mobile/SelectionResultErrorState";
 import { fetchMobileSelectionResult } from "@/lib/api";
 import { formatRuntimeError } from "@/lib/error";
+import { applyMobileReturnTo, parseMobileReturnTo } from "@/lib/mobile/flowReturn";
 import { applyResultCtaAttribution, parseResultCtaAttribution } from "@/lib/mobile/resultCtaAttribution";
 
 type Search = Record<string, string | string[] | undefined>;
@@ -37,11 +38,14 @@ export default async function BodyWashResultPage({
 }) {
   const raw = (await Promise.resolve(searchParams)) || {};
   const attribution = parseResultCtaAttribution(raw);
+  const returnTo = parseMobileReturnTo(raw);
   const startParams = new URLSearchParams({ step: "1" });
   applyResultCtaAttribution(startParams, attribution);
+  applyMobileReturnTo(startParams, returnTo);
   const startHref = `/m/bodywash/profile?${startParams.toString()}`;
   const profileParams = new URLSearchParams();
   applyResultCtaAttribution(profileParams, attribution);
+  applyMobileReturnTo(profileParams, returnTo);
   const profileQuery = profileParams.toString();
   const profileHref = profileQuery ? `/m/bodywash/profile?${profileQuery}` : "/m/bodywash/profile";
   const answers = parseAnswers(raw);
@@ -69,6 +73,10 @@ export default async function BodyWashResultPage({
         profileHref={profileHref}
       />
     );
+  }
+
+  if (returnTo) {
+    redirect(returnTo);
   }
 
   return (

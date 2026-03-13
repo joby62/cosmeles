@@ -1,4 +1,6 @@
 import { redirect } from "next/navigation";
+import { applyMobileReturnTo, parseMobileReturnTo } from "@/lib/mobile/flowReturn";
+import { applyResultCtaAttribution, parseResultCtaAttribution } from "@/lib/mobile/resultCtaAttribution";
 import {
   isCompleteCleanserSignals,
   normalizeCleanserSignals,
@@ -14,10 +16,19 @@ export default async function CleanserResolvePage({
 }) {
   const raw = (await Promise.resolve(searchParams)) || {};
   const signals = normalizeCleanserSignals(raw);
+  const attribution = parseResultCtaAttribution(raw);
+  const returnTo = parseMobileReturnTo(raw);
 
   if (!isCompleteCleanserSignals(signals)) {
-    redirect("/m/cleanser/profile");
+    const profileParams = new URLSearchParams();
+    applyResultCtaAttribution(profileParams, attribution);
+    applyMobileReturnTo(profileParams, returnTo);
+    const profileQuery = profileParams.toString();
+    redirect(profileQuery ? `/m/cleanser/profile?${profileQuery}` : "/m/cleanser/profile");
   }
 
-  redirect(`/m/cleanser/result?${toCleanserSearchParams(signals).toString()}`);
+  const resultParams = toCleanserSearchParams(signals);
+  applyResultCtaAttribution(resultParams, attribution);
+  applyMobileReturnTo(resultParams, returnTo);
+  redirect(`/m/cleanser/result?${resultParams.toString()}`);
 }
