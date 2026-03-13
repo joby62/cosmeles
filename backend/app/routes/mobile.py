@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.ai.errors import AIServiceError
 from app.ai.orchestrator import run_capability_now
 from app.constants import VALID_CATEGORIES, MOBILE_RULES_VERSION, ROUTE_MAPPING_SUPPORTED_CATEGORIES
+from app.domain.mobile.decision import load_mobile_decision_category_config
 from app.db.models import (
     IngredientLibraryAlias,
     IngredientLibraryIndex,
@@ -195,90 +196,9 @@ CATEGORY_ALIASES: dict[str, str] = {
     "洁面乳": "cleanser",
 }
 
-SHAMPOO_ROUTE_TITLES = {
-    "deep-oil-control": "深层控油型",
-    "anti-dandruff-itch": "去屑止痒型",
-    "gentle-soothing": "温和舒缓型",
-    "anti-hair-loss": "防脱强韧型",
-    "moisture-balance": "水油平衡型",
-}
-
-SHAMPOO_MATRIX_MODEL = {
-    "category": "shampoo",
-    "categories": [
-        "deep-oil-control",
-        "anti-dandruff-itch",
-        "gentle-soothing",
-        "anti-hair-loss",
-        "moisture-balance",
-    ],
-    "questions": [
-        {
-            "key": "q1",
-            "title": "头皮出油节奏",
-            "options": {
-                "A": "一天不洗就塌/油 (重度)",
-                "B": "2-3天洗一次正好 (中度)",
-                "C": "3天以上不洗也不油 (干性)",
-            },
-        },
-        {
-            "key": "q2",
-            "title": "头皮核心痛点",
-            "options": {
-                "A": "有头屑且发痒 (真菌)",
-                "B": "头皮发红/刺痛/长痘 (敏感)",
-                "C": "掉发明显/发根脆弱 (脱发)",
-                "D": "无特殊感觉 (健康)",
-            },
-        },
-        {
-            "key": "q3",
-            "title": "发丝状态参考",
-            "options": {
-                "A": "频繁染烫/干枯易断",
-                "B": "细软塌/贴头皮",
-                "C": "原生发/健康",
-            },
-        },
-    ],
-    "scoring_matrix": {
-        "q1": {
-            "A": [15, 5, -10, -15, -15],
-            "B": [-5, 0, 5, 0, 5],
-            "C": [-15, -5, 10, 0, 15],
-        },
-        "q2": {
-            "A": [0, 30, 0, 0, -10],
-            "B": [-20, -15, 30, -10, 5],
-            "C": [5, 0, 5, 30, 0],
-            "D": [2, -5, -5, -5, 5],
-        },
-        "q3": {
-            "A": [-5, 0, 5, 0, 8],
-            "B": [5, 0, 0, 5, -5],
-            "C": [0, 0, 0, 0, 0],
-        },
-    },
-    "veto_masks": [
-        {
-            "trigger": "q2 == 'B'",
-            "mask": [0, 0, 1, 0, 1],
-            "note": "敏感防线：长痘/红肿期禁止使用强去油、强去屑及扩张血管的防脱成分",
-        },
-        {
-            "trigger": "q2 == 'A'",
-            "mask": [1, 1, 1, 1, 0],
-            "note": "真菌防线：真菌感染期禁止使用高保湿平衡型产品，避免养活菌群",
-        },
-        {
-            "trigger": "q1 == 'C'",
-            "mask": [0, 1, 1, 1, 1],
-            "note": "干皮脱脂防线：干性头皮禁止使用重度控油产品",
-        },
-    ],
-}
-SHAMPOO_MATRIX_CONFIG = compile_matrix_config(SHAMPOO_MATRIX_MODEL)
+_SHAMPOO_SHARED_CONFIG = load_mobile_decision_category_config("shampoo")
+SHAMPOO_ROUTE_TITLES = dict(_SHAMPOO_SHARED_CONFIG.route_titles)
+SHAMPOO_MATRIX_CONFIG = compile_matrix_config(_SHAMPOO_SHARED_CONFIG.matrix)
 
 BODYWASH_ROUTE_TITLES = {
     "rescue": "恒温舒缓修护型",

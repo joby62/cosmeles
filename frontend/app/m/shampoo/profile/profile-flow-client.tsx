@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import MobileLocationConsent from "@/components/mobile/MobileLocationConsent";
+import { listShampooProfileSteps, type ShampooProfileOption, type ShampooStepKey } from "@/domain/mobile/decision/shampoo";
 import {
   isReadyShampooResult,
   shampooChoiceLabel,
@@ -16,42 +17,7 @@ import {
 import { applyMobileReturnTo, parseMobileReturnTo } from "@/lib/mobile/flowReturn";
 import { applyResultCtaAttribution, parseResultCtaAttribution } from "@/lib/mobile/resultCtaAttribution";
 
-type StepKey = keyof ShampooSignals;
-type Option = { value: "A" | "B" | "C" | "D"; label: string; sub: string };
-
-const STEPS: Array<{ key: StepKey; title: string; note: string; options: Option[] }> = [
-  {
-    key: "q1",
-    title: "你平时多久会感觉头发变油？",
-    note: "选最接近你日常状态的一项。",
-    options: [
-      { value: "A", label: "A. 一天不洗就塌/油", sub: "先偏向控油清洁底色" },
-      { value: "B", label: "B. 2-3天洗一次正好", sub: "先偏向温和平衡底色" },
-      { value: "C", label: "C. 3天以上不洗也不油", sub: "先偏向滋润舒适底色" },
-    ],
-  },
-  {
-    key: "q2",
-    title: "你现在有没有明显头皮困扰？",
-    note: "选最符合你当前阶段的核心痛点。",
-    options: [
-      { value: "A", label: "A. 有头屑且发痒（真菌）", sub: "优先走去屑止痒方向" },
-      { value: "B", label: "B. 头皮发红/刺痛/长痘（敏感）", sub: "强约束屏障与温和方向" },
-      { value: "C", label: "C. 掉发明显/发根脆弱（脱发）", sub: "强化头皮强韧与防脱方向" },
-      { value: "D", label: "D. 无特殊感觉（健康）", sub: "回到常规平衡优化路线" },
-    ],
-  },
-  {
-    key: "q3",
-    title: "你的发质更接近哪种状态？",
-    note: "最后一步，选完就出最终答案。",
-    options: [
-      { value: "A", label: "A. 频繁染烫/干枯易断", sub: "加修护插件，减少脆断感" },
-      { value: "B", label: "B. 细软塌/贴头皮", sub: "加轻盈插件，保留蓬松度" },
-      { value: "C", label: "C. 原生发/健康", sub: "走简配插件，保持长期稳定" },
-    ],
-  },
-];
+const STEPS = listShampooProfileSteps();
 
 function normalizeSequentialSignals(input: ShampooSignals): ShampooSignals {
   const q1 = input.q1;
@@ -96,10 +62,10 @@ export default function ShampooProfilePage() {
   const resultAttribution = useMemo(() => parseResultCtaAttribution(searchParams), [searchParams]);
   const returnTo = useMemo(() => parseMobileReturnTo(searchParams), [searchParams]);
   const signals = urlSignals;
-  const answeredChoices = (["q1", "q2", "q3"] as StepKey[])
+  const answeredChoices = (["q1", "q2", "q3"] as ShampooStepKey[])
     .map((key) => {
       const value = signals[key];
-      return value ? shampooChoiceLabel(key, value) : null;
+      return value ? shampooChoiceLabel(key as ShampooStepKey, value) : null;
     })
     .filter((value): value is string => Boolean(value));
 
@@ -153,7 +119,7 @@ export default function ShampooProfilePage() {
   }, [scrollToStep, urlSignals, urlStep]);
 
   const handleSelect = useCallback(
-    (stepIndex: number, value: Option["value"]) => {
+    (stepIndex: number, value: ShampooProfileOption["value"]) => {
       const step = STEPS[stepIndex];
       const next: ShampooSignals = { ...signals };
       if (step.key === "q1") {
