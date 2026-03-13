@@ -1,8 +1,18 @@
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import MobileTrackedLink from "@/components/mobile/MobileTrackedLink";
 import { fetchIngredientLibraryItem } from "@/lib/api";
 import { isWikiCategoryKey, type WikiCategoryKey, WIKI_MAP } from "@/lib/mobile/ingredientWiki";
+import {
+  appendMobileUtilityRouteState,
+  describeMobileUtilityReturnLabel,
+  hasMobileUtilityResultContext,
+  hasMobileUtilityRouteContext,
+  parseMobileUtilityRouteState,
+  resolveMobileUtilityReturnHref,
+  resolveMobileUtilitySource,
+} from "@/features/mobile-utility/routeState";
 import { InsightSheetCard } from "./insight-sheet-card";
 
 type Params = { category: string; slug: string };
@@ -191,8 +201,15 @@ export default async function IngredientDetailPage({
   }
 
   const category = raw.category;
+  const utilityRouteState = parseMobileUtilityRouteState(search);
+  const analyticsSource = resolveMobileUtilitySource(utilityRouteState, "wiki_ingredient_detail");
+  const showReturnAction = hasMobileUtilityRouteContext(utilityRouteState);
+  const hasResultContext = hasMobileUtilityResultContext(utilityRouteState);
+  const returnActionHref = resolveMobileUtilityReturnHref(utilityRouteState);
+  const returnActionLabel = describeMobileUtilityReturnLabel(utilityRouteState);
   const returnTo = queryValue(search.return_to);
-  const returnHref = returnTo && returnTo.startsWith("/m/wiki") ? returnTo : `/m/wiki/${category}`;
+  const returnHrefBase = returnTo && returnTo.startsWith("/m/wiki") ? returnTo : `/m/wiki/${category}`;
+  const returnHref = appendMobileUtilityRouteState(returnHrefBase, utilityRouteState, { includeReturnTo: false });
   const ingredientId = raw.slug.trim().toLowerCase();
   if (!INGREDIENT_ID_PATTERN.test(ingredientId)) {
     notFound();
@@ -247,13 +264,35 @@ export default async function IngredientDetailPage({
 
   return (
     <section className="m-wiki-page -mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[color:var(--m-wiki-canvas)] pb-40 pt-4 text-white">
-      <div className="px-4">
+      <div className="flex flex-wrap gap-2 px-4">
         <Link
           href={returnHref}
           className="m-pressable inline-flex h-10 items-center rounded-full border border-white/16 bg-white/10 px-4 text-[13px] font-medium text-white/86 backdrop-blur-xl active:bg-white/15"
         >
           返回成份百科
         </Link>
+        {showReturnAction ? (
+          <MobileTrackedLink
+            href={returnActionHref}
+            eventName={hasResultContext ? "result_secondary_loop_click" : undefined}
+            eventProps={
+              hasResultContext && utilityRouteState.scenarioId
+                ? {
+                    page: "wiki_ingredient_detail",
+                    route: `/m/wiki/${category}/${ingredientId}`,
+                    source: analyticsSource,
+                    category,
+                    scenario_id: utilityRouteState.scenarioId,
+                    target_path: returnActionHref,
+                    action: "wiki_return",
+                  }
+                : undefined
+            }
+            className="m-pressable inline-flex h-10 items-center rounded-full border border-[#8fb9f5]/45 bg-[rgba(255,255,255,0.14)] px-4 text-[13px] font-semibold text-white/92 backdrop-blur-xl active:bg-white/[0.22]"
+          >
+            {returnActionLabel}
+          </MobileTrackedLink>
+        ) : null}
       </div>
 
       <article className="m-wiki-hero-card mt-4 overflow-hidden rounded-[32px]">
