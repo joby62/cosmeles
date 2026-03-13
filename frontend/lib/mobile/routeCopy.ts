@@ -1,22 +1,6 @@
 import type { MobileSelectionCategory } from "@/lib/api";
+import { getDecisionCategoryLabel } from "@/domain/mobile/decision/catalog";
 import type { Lang } from "@/lib/i18n";
-
-const CATEGORY_LABELS: Record<Lang, Record<MobileSelectionCategory, string>> = {
-  zh: {
-    shampoo: "洗发水",
-    bodywash: "沐浴露",
-    conditioner: "护发素",
-    lotion: "润肤霜",
-    cleanser: "洗面奶",
-  },
-  en: {
-    shampoo: "Shampoo",
-    bodywash: "Body Wash",
-    conditioner: "Conditioner",
-    lotion: "Body Lotion",
-    cleanser: "Cleanser",
-  },
-};
 
 const ROUTE_FOCUS_COPY: Record<Lang, Record<MobileSelectionCategory, Record<string, string>>> = {
   zh: {
@@ -113,8 +97,8 @@ export function getMobileCategoryLabel(
   category: MobileSelectionCategory | string | null | undefined,
   lang: Lang = "zh",
 ): string {
-  const normalized = normalizeCategory(category);
-  if (normalized) return CATEGORY_LABELS[lang][normalized];
+  const sharedLabel = getDecisionCategoryLabel(category, lang);
+  if (sharedLabel) return sharedLabel;
   return String(category || "").trim() || (lang === "zh" ? "当前品类" : "Current category");
 }
 

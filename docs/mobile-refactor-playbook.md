@@ -11,6 +11,7 @@
 - Shared result, route-state, and analytics contracts.
 - Domain folder skeletons for frontend and backend.
 - Review gates for worker branches.
+- Worker assignments must be issued as prompt files under `docs/prompts/mobile/`.
 
 ## Worker Prompt A
 ```text

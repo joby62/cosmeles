@@ -7,6 +7,10 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   // Keep SSE chunks uncompressed to reduce buffering in stream UI.
   compress: false,
+  experimental: {
+    // Allow frontend modules to import repo-level shared contracts and decision catalogs.
+    externalDir: true,
+  },
 
   async rewrites() {
     return [

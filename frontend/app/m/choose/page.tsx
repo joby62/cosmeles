@@ -3,6 +3,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { MobileSelectionCategory } from "@/lib/api";
+import { formatDecisionDurationSummary, listDecisionCategories } from "@/domain/mobile/decision/catalog";
 import {
   BODYWASH_LAST_RESULT_QUERY_KEY,
   BODYWASH_PROFILE_DRAFT_KEY,
@@ -29,7 +31,7 @@ import {
   normalizeShampooResultQueryString,
 } from "@/lib/mobile/shampooFlowStorage";
 
-type CategoryKey = "shampoo" | "bodywash" | "conditioner" | "lotion" | "cleanser";
+type CategoryKey = MobileSelectionCategory;
 
 type CategoryMeta = {
   key: CategoryKey;
@@ -56,73 +58,63 @@ type DraftProgress = {
 const DEFAULT_CATEGORY_KEY: CategoryKey = "shampoo";
 const CHOOSE_SELECTED_CATEGORY_KEY = "mx_mobile_choose_selected_category_v1";
 
-const CATS: CategoryMeta[] = [
+const CATEGORY_PRESENTATION: Record<
+  CategoryKey,
   {
-    key: "shampoo",
-    zh: "洗发水",
+    image: string;
+    audience: string;
+    focusAudience: string;
+    draftKey: string;
+  }
+> = {
+  shampoo: {
     image: "/m/categories/shampoo.png",
-    startHref: "/m/shampoo/profile?step=1",
-    resultHref: "/m/shampoo/result",
-    profileHref: "/m/shampoo/profile",
-    totalSteps: 3,
-    summary: "3 步 · 约 30 秒",
     audience: "头皮容易出油，也在意头屑、敏感或发丝状态",
     focusAudience: "头皮容易出油",
     draftKey: SHAMPOO_PROFILE_DRAFT_KEY,
   },
-  {
-    key: "bodywash",
-    zh: "沐浴露",
+  bodywash: {
     image: "/m/categories/bodywash.png",
-    startHref: "/m/bodywash/profile?step=1",
-    resultHref: "/m/bodywash/result",
-    profileHref: "/m/bodywash/profile",
-    totalSteps: 5,
-    summary: "5 步 · 约 45 秒",
     audience: "既想洗得舒服，也想一起判断粗糙、痘痘或耐受问题",
     focusAudience: "想洗得舒服稳定",
     draftKey: BODYWASH_PROFILE_DRAFT_KEY,
   },
-  {
-    key: "conditioner",
-    zh: "护发素",
+  conditioner: {
     image: "/m/categories/conditioner.png",
-    startHref: "/m/conditioner/profile?step=1",
-    resultHref: "/m/conditioner/result",
-    profileHref: "/m/conditioner/profile",
-    totalSteps: 3,
-    summary: "3 步 · 约 30 秒",
     audience: "发丝有受损、毛躁、打结，或很怕一用就塌",
     focusAudience: "发丝毛躁打结",
     draftKey: CONDITIONER_PROFILE_DRAFT_KEY,
   },
-  {
-    key: "lotion",
-    zh: "润肤霜",
+  lotion: {
     image: "/m/categories/lotion.png",
-    startHref: "/m/lotion/profile?step=1",
-    resultHref: "/m/lotion/result",
-    profileHref: "/m/lotion/profile",
-    totalSteps: 5,
-    summary: "5 步 · 约 45 秒",
     audience: "身体容易干痒粗糙，或很在意质地负担和修护续航",
     focusAudience: "身体干痒粗糙",
     draftKey: LOTION_PROFILE_DRAFT_KEY,
   },
-  {
-    key: "cleanser",
-    zh: "洗面奶",
+  cleanser: {
     image: "/m/categories/cleanser.png",
-    startHref: "/m/cleanser/profile?step=1",
-    resultHref: "/m/cleanser/result",
-    profileHref: "/m/cleanser/profile",
-    totalSteps: 5,
-    summary: "5 步 · 约 45 秒",
     audience: "想同时兼顾清洁力、敏感度和洗后肤感",
     focusAudience: "洗后怕紧绷",
     draftKey: CLEANSER_PROFILE_DRAFT_KEY,
   },
-];
+};
+
+const CATS: CategoryMeta[] = listDecisionCategories().map((cat) => {
+  const presentation = CATEGORY_PRESENTATION[cat.key];
+  return {
+    key: cat.key,
+    zh: cat.labelZh,
+    image: presentation.image,
+    startHref: `/m/${cat.key}/profile?step=1`,
+    resultHref: `/m/${cat.key}/result`,
+    profileHref: `/m/${cat.key}/profile`,
+    totalSteps: cat.questionCount,
+    summary: formatDecisionDurationSummary(cat),
+    audience: presentation.audience,
+    focusAudience: presentation.focusAudience,
+    draftKey: presentation.draftKey,
+  };
+});
 
 const CAT_MAP: Record<CategoryKey, CategoryMeta> = CATS.reduce((acc, cat) => {
   acc[cat.key] = cat;
