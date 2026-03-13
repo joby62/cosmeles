@@ -943,3 +943,16 @@ def test_mobile_analytics_geo_filters(mobile_analytics_client: TestClient):
     missing_payload = missing_sessions.json()
     assert missing_payload["total"] == 3
     assert all(item["latest_location_label"] is None for item in missing_payload["items"])
+
+    region_sessions = client.get(
+        "/api/products/analytics/mobile/sessions",
+        params={
+            "date_from": "2026-03-10",
+            "date_to": "2026-03-12",
+            "location_region": "31.2, 121.5|Asia/Shanghai",
+        },
+    )
+    assert region_sessions.status_code == 200
+    region_payload = region_sessions.json()
+    assert region_payload["total"] == 1
+    assert region_payload["items"][0]["session_id"] == "sess-1"

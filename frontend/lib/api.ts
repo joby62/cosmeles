@@ -865,6 +865,7 @@ export type MobileAnalyticsQuery = {
   ownerId?: string;
   locationPresence?: string;
   locationTimeZone?: string;
+  locationRegion?: string;
   limit?: number;
 };
 
@@ -882,6 +883,7 @@ export type MobileAnalyticsFilterState = {
   owner_id?: string | null;
   location_presence?: string | null;
   location_time_zone?: string | null;
+  location_region?: string | null;
   limit?: number | null;
 };
 
@@ -2649,6 +2651,7 @@ function buildMobileAnalyticsQuery(params?: MobileAnalyticsQuery): string {
   if (params?.ownerId) search.set("owner_id", params.ownerId);
   if (params?.locationPresence) search.set("location_presence", params.locationPresence);
   if (params?.locationTimeZone) search.set("location_time_zone", params.locationTimeZone);
+  if (params?.locationRegion) search.set("location_region", params.locationRegion);
   if (typeof params?.limit === "number") search.set("limit", String(params.limit));
   return search.toString();
 }

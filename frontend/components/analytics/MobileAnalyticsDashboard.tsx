@@ -959,6 +959,7 @@ export default function MobileAnalyticsDashboard() {
   const [category, setCategory] = useState<string>("all");
   const [locationPresence, setLocationPresence] = useState<string>("all");
   const [locationTimeZone, setLocationTimeZone] = useState<string>("");
+  const [sessionLocationRegionKey, setSessionLocationRegionKey] = useState("");
   const [overview, setOverview] = useState<ResourceState<MobileAnalyticsOverview>>(createResourceState());
   const [funnel, setFunnel] = useState<ResourceState<MobileAnalyticsFunnel>>(createResourceState());
   const [errors, setErrors] = useState<ResourceState<MobileAnalyticsErrors>>(createResourceState());
@@ -986,13 +987,24 @@ export default function MobileAnalyticsDashboard() {
 
   const locationTimeZoneOptions = experience.data?.location_time_zones || [];
 
+  const activeLocationRegionLabel =
+    experience.data?.location_regions.find((item) => item.key === sessionLocationRegionKey)?.label || sessionLocationRegionKey;
+
+  function scrollToSessionExplorer() {
+    globalThis.document?.getElementById("analytics-session-explorer")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   useEffect(() => {
     let cancelled = false;
-    const baseQuery: MobileAnalyticsQuery = {
+    const dashboardQuery: MobileAnalyticsQuery = {
       sinceHours,
       category: category === "all" ? undefined : category,
       locationPresence: locationPresence === "all" ? undefined : locationPresence,
       locationTimeZone: locationPresence === "without_location" ? undefined : locationTimeZone || undefined,
+    };
+    const sessionQuery: MobileAnalyticsQuery = {
+      ...dashboardQuery,
+      locationRegion: sessionLocationRegionKey || undefined,
     };
 
     async function loadDashboard() {
@@ -1005,12 +1017,12 @@ export default function MobileAnalyticsDashboard() {
       setSessionDetail((current) => ({ ...current, loading: true, error: null }));
 
       const [overviewResult, funnelResult, errorsResult, feedbackResult, experienceResult, sessionsResult] = await Promise.allSettled([
-        fetchMobileAnalyticsOverview(baseQuery),
-        fetchMobileAnalyticsFunnel(baseQuery),
-        fetchMobileAnalyticsErrors(baseQuery),
-        fetchMobileAnalyticsFeedback(baseQuery),
-        fetchMobileAnalyticsExperience(baseQuery),
-        fetchMobileAnalyticsSessions({ ...baseQuery, limit: 10 }),
+        fetchMobileAnalyticsOverview(dashboardQuery),
+        fetchMobileAnalyticsFunnel(dashboardQuery),
+        fetchMobileAnalyticsErrors(dashboardQuery),
+        fetchMobileAnalyticsFeedback(dashboardQuery),
+        fetchMobileAnalyticsExperience(dashboardQuery),
+        fetchMobileAnalyticsSessions({ ...sessionQuery, limit: 10 }),
       ]);
 
       if (cancelled) return;
@@ -1049,7 +1061,7 @@ export default function MobileAnalyticsDashboard() {
         if (activeSessionIdRef.current || activeCompareIdRef.current) {
           try {
             const detail = await fetchMobileAnalyticsSessions({
-              ...baseQuery,
+              ...sessionQuery,
               sessionId: activeSessionIdRef.current || undefined,
               compareId: activeCompareIdRef.current || undefined,
               limit: 10,
@@ -1097,7 +1109,7 @@ export default function MobileAnalyticsDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [category, locationPresence, locationTimeZone, refreshNonce, sinceHours]);
+  }, [category, locationPresence, locationTimeZone, refreshNonce, sessionLocationRegionKey, sinceHours]);
 
   async function loadSessionDetail(next: { sessionId?: string; compareId?: string }) {
     const baseQuery: MobileAnalyticsQuery = {
@@ -1105,6 +1117,7 @@ export default function MobileAnalyticsDashboard() {
       category: category === "all" ? undefined : category,
       locationPresence: locationPresence === "all" ? undefined : locationPresence,
       locationTimeZone: locationPresence === "without_location" ? undefined : locationTimeZone || undefined,
+      locationRegion: sessionLocationRegionKey || undefined,
       sessionId: next.sessionId,
       compareId: next.compareId,
       limit: 10,
@@ -1150,6 +1163,53 @@ export default function MobileAnalyticsDashboard() {
             </div>
           </div>
         ))}
+      </div>
+    );
+  }
+
+  function renderSelectableCountList(
+    items: MobileAnalyticsCountItem[],
+    options: {
+      activeKey?: string;
+      tone?: "emerald" | "amber";
+      emptyLabel: string;
+      onSelect: (item: MobileAnalyticsCountItem) => void;
+    },
+  ) {
+    if (items.length === 0) {
+      return <EmptyHint label={options.emptyLabel} />;
+    }
+    const tone = options.tone || "emerald";
+    return (
+      <div className="space-y-2">
+        {items.map((item) => {
+          const active = options.activeKey === item.key;
+          return (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => options.onSelect(item)}
+              className={`block w-full rounded-[18px] border px-4 py-3 text-left transition ${
+                active
+                  ? "border-black bg-black text-white"
+                  : "border-black/10 bg-[#f7f8fb] text-black/72 hover:bg-[#eef3f8]"
+              }`}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-[13px] font-medium">{item.label}</div>
+                <div className={`text-[12px] ${active ? "text-white/78" : "text-black/52"}`}>
+                  {formatNumber(item.count)} · {formatPercent(item.rate)}
+                </div>
+              </div>
+              <div className={`mt-2 h-2 rounded-full ${active ? "bg-white/18" : "bg-black/6"}`}>
+                <div
+                  className={`h-2 rounded-full ${active ? "bg-white" : tone === "emerald" ? "bg-[#0f7c59]" : "bg-[#a86919]"}`}
+                  style={{ width: item.count > 0 ? `${Math.max(8, Math.round(item.rate * 100))}%` : "0%" }}
+                />
+              </div>
+            </button>
+          );
+        })}
       </div>
     );
   }
@@ -1202,7 +1262,12 @@ export default function MobileAnalyticsDashboard() {
             <span>品类</span>
             <select
               value={category}
-              onChange={(event) => startTransition(() => setCategory(event.target.value))}
+              onChange={(event) =>
+                startTransition(() => {
+                  setCategory(event.target.value);
+                  setSessionLocationRegionKey("");
+                })
+              }
               className="bg-transparent text-[13px] font-semibold text-black/82 outline-none"
             >
               {CATEGORY_OPTIONS.map((item) => (
@@ -1222,6 +1287,7 @@ export default function MobileAnalyticsDashboard() {
                   const nextValue = event.target.value;
                   setLocationPresence(nextValue);
                   if (nextValue === "without_location") setLocationTimeZone("");
+                  setSessionLocationRegionKey("");
                 })
               }
               className="bg-transparent text-[13px] font-semibold text-black/82 outline-none"
@@ -1245,7 +1311,12 @@ export default function MobileAnalyticsDashboard() {
             <select
               value={locationTimeZone}
               disabled={locationPresence === "without_location"}
-              onChange={(event) => startTransition(() => setLocationTimeZone(event.target.value))}
+              onChange={(event) =>
+                startTransition(() => {
+                  setLocationTimeZone(event.target.value);
+                  setSessionLocationRegionKey("");
+                })
+              }
               className="bg-transparent text-[13px] font-semibold text-black/82 outline-none disabled:text-black/34"
             >
               <option value="">全部时区</option>
@@ -1597,11 +1668,37 @@ export default function MobileAnalyticsDashboard() {
                   <div className="mt-4 grid gap-4 md:grid-cols-3">
                     <div>
                       <div className="mb-3 text-[12px] text-black/48">近似区域</div>
-                      {renderCountList(experience.data.location_regions, "amber")}
+                      {renderSelectableCountList(experience.data.location_regions, {
+                        activeKey: sessionLocationRegionKey,
+                        tone: "amber",
+                        emptyLabel: "当前筛选下还没有近似区域样本。",
+                        onSelect: (item) => {
+                          const shouldClear = sessionLocationRegionKey === item.key;
+                          startTransition(() => {
+                            setSessionLocationRegionKey(shouldClear ? "" : item.key);
+                          });
+                          if (!shouldClear) {
+                            globalThis.requestAnimationFrame?.(() => {
+                              scrollToSessionExplorer();
+                            });
+                          }
+                        },
+                      })}
                     </div>
                     <div>
                       <div className="mb-3 text-[12px] text-black/48">时区分布</div>
-                      {renderCountList(experience.data.location_time_zones)}
+                      {renderSelectableCountList(experience.data.location_time_zones, {
+                        activeKey: locationTimeZone,
+                        emptyLabel: "当前筛选下还没有时区样本。",
+                        onSelect: (item) => {
+                          const shouldClear = locationTimeZone === item.key && locationPresence !== "without_location";
+                          startTransition(() => {
+                            setLocationPresence("with_location");
+                            setLocationTimeZone(shouldClear ? "" : item.key);
+                            setSessionLocationRegionKey("");
+                          });
+                        },
+                      })}
                     </div>
                     <div>
                       <div className="mb-3 text-[12px] text-black/48">定位精度</div>
@@ -1819,6 +1916,7 @@ export default function MobileAnalyticsDashboard() {
         </PanelCard>
       </section>
 
+      <div id="analytics-session-explorer">
       <PanelCard title="Session Explorer" subtitle="会话摘要与事件时间线">
         <div className="mb-5 flex flex-wrap items-center gap-3">
           <input
@@ -1854,6 +1952,7 @@ export default function MobileAnalyticsDashboard() {
               setCompareQuery("");
               setActiveSessionId("");
               setActiveCompareId("");
+              setSessionLocationRegionKey("");
               setSessionDetail({
                 loading: false,
                 data: sessionList.data,
@@ -1865,6 +1964,25 @@ export default function MobileAnalyticsDashboard() {
             回到最近会话
           </button>
         </div>
+
+        {sessionLocationRegionKey ? (
+          <div className="mb-4 flex flex-wrap items-center gap-3 rounded-[20px] border border-[#d9e4f8] bg-[#f4f8ff] px-4 py-3">
+            <div className="text-[13px] text-[#305a98]">
+              会话已按近似区域筛选：<span className="font-semibold">{activeLocationRegionLabel}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                startTransition(() => {
+                  setSessionLocationRegionKey("");
+                })
+              }
+              className="inline-flex h-8 items-center rounded-full border border-[#c4d6f6] bg-white px-3 text-[12px] font-semibold text-[#305a98]"
+            >
+              清除区域钻取
+            </button>
+          </div>
+        ) : null}
 
         <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
           <div className="space-y-3">
@@ -2028,6 +2146,7 @@ export default function MobileAnalyticsDashboard() {
           </div>
         </div>
       </PanelCard>
+      </div>
     </section>
   );
 }

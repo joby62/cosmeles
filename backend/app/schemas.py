@@ -1647,6 +1647,7 @@ class MobileAnalyticsFilterState(BaseModel):
     owner_id: Optional[str] = None
     location_presence: Optional[str] = None
     location_time_zone: Optional[str] = None
+    location_region: Optional[str] = None
     limit: Optional[int] = None
 
 

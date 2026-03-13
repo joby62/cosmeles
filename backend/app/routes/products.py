@@ -421,6 +421,7 @@ def _resolve_mobile_analytics_filters(
     owner_id: str | None,
     location_presence: str | None,
     location_time_zone: str | None,
+    location_region: str | None,
     limit: int | None = None,
 ) -> tuple[MobileAnalyticsFilterState, str, str]:
     category_value = _normalize_optional_text(category)
@@ -456,6 +457,9 @@ def _resolve_mobile_analytics_filters(
     location_time_zone_value = _normalize_optional_text(location_time_zone)
     if location_presence_value == "without_location" and location_time_zone_value:
         raise HTTPException(status_code=400, detail="location_time_zone cannot be used with location_presence=without_location.")
+    location_region_value = _normalize_optional_text(location_region)
+    if location_presence_value == "without_location" and location_region_value:
+        raise HTTPException(status_code=400, detail="location_region cannot be used with location_presence=without_location.")
 
     filters = MobileAnalyticsFilterState(
         since_hours=since_hours_value,
@@ -471,6 +475,7 @@ def _resolve_mobile_analytics_filters(
         owner_id=_normalize_optional_text(owner_id),
         location_presence=location_presence_value,
         location_time_zone=location_time_zone_value,
+        location_region=location_region_value,
         limit=limit,
     )
     return filters, _analytics_datetime_to_iso(start_dt), _analytics_datetime_to_iso(end_dt)
@@ -512,6 +517,7 @@ def _query_mobile_client_location_session_keys(
     rows = db.execute(stmt).scalars().all()
     session_has_location: dict[str, bool] = {}
     session_time_zones: dict[str, set[str]] = defaultdict(set)
+    session_regions: dict[str, set[str]] = defaultdict(set)
     for row in rows:
         props = _safe_event_props(row.props_json)
         session_key = _session_key_for_event(row)
@@ -520,6 +526,9 @@ def _query_mobile_client_location_session_keys(
         time_zone = _event_location_time_zone(props)
         if time_zone:
             session_time_zones[session_key].add(time_zone)
+        region_key = _event_location_region_key(props)
+        if region_key:
+            session_regions[session_key].add(region_key)
 
     matched: set[str] = set()
     for session_key, has_location in session_has_location.items():
@@ -528,6 +537,8 @@ def _query_mobile_client_location_session_keys(
         if filters.location_presence == "without_location" and has_location:
             continue
         if filters.location_time_zone and filters.location_time_zone not in session_time_zones.get(session_key, set()):
+            continue
+        if filters.location_region and filters.location_region not in session_regions.get(session_key, set()):
             continue
         matched.add(session_key)
     return matched
@@ -544,7 +555,7 @@ def _query_mobile_client_events(
     row_limit: int | None = None,
 ) -> list[tuple[MobileClientEvent, dict[str, Any]]]:
     matched_session_keys: set[str] | None = None
-    if filters.location_presence or filters.location_time_zone:
+    if filters.location_presence or filters.location_time_zone or filters.location_region:
         matched_session_keys = _query_mobile_client_location_session_keys(
             db=db,
             filters=filters,
@@ -796,6 +807,7 @@ def get_mobile_analytics_overview(
         owner_id=None,
         location_presence=location_presence,
         location_time_zone=location_time_zone,
+        location_region=None,
     )
     rows = _query_mobile_client_events(
         db=db,
@@ -921,6 +933,7 @@ def get_mobile_analytics_funnel(
         owner_id=None,
         location_presence=location_presence,
         location_time_zone=location_time_zone,
+        location_region=None,
     )
     rows = _query_mobile_client_events(
         db=db,
@@ -1012,6 +1025,7 @@ def get_mobile_analytics_errors(
         owner_id=None,
         location_presence=location_presence,
         location_time_zone=location_time_zone,
+        location_region=None,
     )
     rows = _query_mobile_client_events(
         db=db,
@@ -1151,6 +1165,7 @@ def get_mobile_analytics_feedback(
         owner_id=None,
         location_presence=location_presence,
         location_time_zone=location_time_zone,
+        location_region=None,
     )
     rows = _query_mobile_client_events(
         db=db,
@@ -1243,6 +1258,7 @@ def get_mobile_analytics_experience(
         owner_id=None,
         location_presence=location_presence,
         location_time_zone=location_time_zone,
+        location_region=None,
     )
     rows = _query_mobile_client_events(
         db=db,
@@ -1564,6 +1580,7 @@ def get_mobile_analytics_sessions(
     owner_id: str | None = Query(None),
     location_presence: str | None = Query(None),
     location_time_zone: str | None = Query(None),
+    location_region: str | None = Query(None),
     limit: int = Query(12, ge=1, le=ANALYTICS_MAX_SESSION_LIMIT),
     db: Session = Depends(get_db),
 ):
@@ -1581,6 +1598,7 @@ def get_mobile_analytics_sessions(
         owner_id=owner_id,
         location_presence=location_presence,
         location_time_zone=location_time_zone,
+        location_region=location_region,
         limit=limit,
     )
     row_limit = None if (
