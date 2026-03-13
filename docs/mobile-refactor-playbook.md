@@ -13,6 +13,18 @@
 - Review gates for worker branches.
 - Worker assignments must be issued as prompt files under `docs/prompts/mobile/`.
 
+## Phase 1 Exit Criteria
+- Shared decision files exist for all five categories.
+- Frontend questionnaire copy for all five categories reads from shared config.
+- Backend selection matrices for all five categories read from shared config.
+- Contract and loader tests cover the catalog plus per-category config loading.
+
+## Phase 2 Deliverables
+- Backend mobile selection routes split out of the monolithic router.
+- Decision shell route group plus rebuilt `/m` and `/m/choose`.
+- Utility shell route group plus loop-closure routing for wiki/compare/me.
+- Event wiring aligned to the shared analytics contract.
+
 ## Worker Prompt A
 ```text
 You are responsible for the decision kernel and shared contracts.
@@ -78,6 +90,11 @@ Definition of done:
 - Compare/wiki/me all support return-to-result or return-to-choose flows.
 - Event wiring uses contract names and required props only.
 ```
+
+## Phase 2 Prompt Files
+- `docs/prompts/mobile/phase2-worker-a.prompt.md`
+- `docs/prompts/mobile/phase2-worker-b.prompt.md`
+- `docs/prompts/mobile/phase2-worker-c.prompt.md`
 
 ## Review Gates
 - No duplicate questionnaire truth across frontend and backend.

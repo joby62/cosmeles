@@ -4,6 +4,11 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import MobileLocationConsent from "@/components/mobile/MobileLocationConsent";
 import {
+  listBodyWashProfileSteps,
+  type BodyWashProfileOption,
+  type BodyWashStepKey,
+} from "@/domain/mobile/decision/bodywash";
+import {
   bodyWashChoiceLabel,
   isReadyBodyWashResult,
   normalizeBodyWashSignals,
@@ -17,61 +22,7 @@ import {
 import { applyMobileReturnTo, parseMobileReturnTo } from "@/lib/mobile/flowReturn";
 import { applyResultCtaAttribution, parseResultCtaAttribution } from "@/lib/mobile/resultCtaAttribution";
 
-type StepKey = keyof BodyWashSignals;
-type OptionValue = "A" | "B" | "C" | "D";
-type Option = { value: OptionValue; label: string; sub: string };
-
-const STEPS: Array<{ key: StepKey; title: string; note: string; options: Option[] }> = [
-  {
-    key: "q1",
-    title: "Q1 当前气候与微环境更接近哪一类？",
-    note: "这一步决定基础背景权重。",
-    options: [
-      { value: "A", label: "A. 干燥寒冷", sub: "北方冬季常见，易干裂脱屑" },
-      { value: "B", label: "B. 干燥炎热", sub: "日照强、汗液蒸发快，易发烫紧绷" },
-      { value: "C", label: "C. 潮湿闷热", sub: "汗油混合，体感厚重，细菌易滋生" },
-      { value: "D", label: "D. 潮湿寒冷", sub: "阴冷+热水澡常导致过度去脂" },
-    ],
-  },
-  {
-    key: "q2",
-    title: "Q2 你的皮肤基础耐受度？",
-    note: "安全优先级最高，选完我们会先做硬过滤。",
-    options: [
-      { value: "A", label: "A. 极度敏感", sub: "遇热/摩擦易发红，换季刺痛瘙痒" },
-      { value: "B", label: "B. 屏障健康", sub: "对多数产品耐受稳定" },
-    ],
-  },
-  {
-    key: "q3",
-    title: "Q3 当前油脂与角质状态？",
-    note: "这一步决定洗剂基底与功能主线。",
-    options: [
-      { value: "A", label: "A. 出油旺盛", sub: "前胸后背易长痘、午后粘腻" },
-      { value: "B", label: "B. 缺油干涩", sub: "像砂纸，洗后不涂会发痒" },
-      { value: "C", label: "C. 角质堆积", sub: "鸡皮肤/关节厚茧/暗沉" },
-      { value: "D", label: "D. 状态正常", sub: "无明显油痘或粗糙痛点" },
-    ],
-  },
-  {
-    key: "q4",
-    title: "Q4 你更喜欢哪种冲洗肤感？",
-    note: "这一步是肤感修正系数。",
-    options: [
-      { value: "A", label: "A. 清爽干脆", sub: "讨厌残留，偏好“嘎吱响”" },
-      { value: "B", label: "B. 柔滑滋润", sub: "接受轻膜感，喜欢乳液般包裹" },
-    ],
-  },
-  {
-    key: "q5",
-    title: "Q5 有没有特殊限制？",
-    note: "这一步用于成分过滤。",
-    options: [
-      { value: "A", label: "A. 极致纯净", sub: "备孕/母婴/强排香精场景" },
-      { value: "B", label: "B. 情绪留香", sub: "希望有高级香氛体验" },
-    ],
-  },
-];
+const STEPS = listBodyWashProfileSteps();
 
 function normalizeSequentialSignals(input: BodyWashSignals): BodyWashSignals {
   const q1 = input.q1;
@@ -120,7 +71,7 @@ export default function BodyWashProfileFlowClient() {
   const resultAttribution = useMemo(() => parseResultCtaAttribution(searchParams), [searchParams]);
   const returnTo = useMemo(() => parseMobileReturnTo(searchParams), [searchParams]);
   const signals = urlSignals;
-  const answeredChoices = (["q1", "q2", "q3", "q4", "q5"] as StepKey[])
+  const answeredChoices = (["q1", "q2", "q3", "q4", "q5"] as BodyWashStepKey[])
     .map((key) => {
       const value = signals[key];
       return value ? bodyWashChoiceLabel(key, value) : null;
@@ -177,7 +128,7 @@ export default function BodyWashProfileFlowClient() {
   }, [scrollToStep, signals, urlStep]);
 
   const handleSelect = useCallback(
-    (stepIndex: number, value: OptionValue) => {
+    (stepIndex: number, value: BodyWashProfileOption["value"]) => {
       const step = STEPS[stepIndex];
       const next: BodyWashSignals = { ...signals };
 
@@ -244,7 +195,7 @@ export default function BodyWashProfileFlowClient() {
   return (
     <section className="pb-8">
       {STEPS.map((step, stepIndex) => {
-        const selected = signals[step.key] as OptionValue | undefined;
+        const selected = signals[step.key] as BodyWashProfileOption["value"] | undefined;
         const enabled =
           stepIndex === 0 ||
           (stepIndex === 1 && Boolean(signals.q1)) ||

@@ -4,6 +4,11 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import MobileLocationConsent from "@/components/mobile/MobileLocationConsent";
 import {
+  listCleanserProfileSteps,
+  type CleanserProfileOption,
+  type CleanserStepKey,
+} from "@/domain/mobile/decision/cleanser";
+import {
   cleanserChoiceLabel,
   isCompleteCleanserSignals,
   normalizeCleanserSignals,
@@ -17,66 +22,7 @@ import {
 import { applyMobileReturnTo, parseMobileReturnTo } from "@/lib/mobile/flowReturn";
 import { applyResultCtaAttribution, parseResultCtaAttribution } from "@/lib/mobile/resultCtaAttribution";
 
-type StepKey = keyof CleanserSignals;
-type OptionValue = "A" | "B" | "C" | "D" | "E";
-type Option = { value: OptionValue; label: string; sub: string };
-
-const STEPS: Array<{ key: StepKey; title: string; note: string; options: Option[] }> = [
-  {
-    key: "q1",
-    title: "Q1 基础肤质与出油量",
-    note: "先确定皮脂基线，决定清洁强度的主权重。",
-    options: [
-      { value: "A", label: "A. 大油田", sub: "全脸泛油，洗后很快回油" },
-      { value: "B", label: "B. 混油皮", sub: "T区明显出油，U区正常或偏干" },
-      { value: "C", label: "C. 中性/混干", sub: "出油正常，偶发干燥" },
-      { value: "D", label: "D. 大干皮", sub: "极少出油，洗后易紧绷起皮" },
-    ],
-  },
-  {
-    key: "q2",
-    title: "Q2 屏障健康与敏感度",
-    note: "安全优先级最高，这一步会触发强制掩码。",
-    options: [
-      { value: "A", label: "A. 重度敏感", sub: "常泛红发痒，容易刺痛" },
-      { value: "B", label: "B. 轻度敏感", sub: "偶尔泛红，需谨慎选品" },
-      { value: "C", label: "C. 屏障健康", sub: "耐受稳定，对活性成分容忍更高" },
-    ],
-  },
-  {
-    key: "q3",
-    title: "Q3 日常清洁负担",
-    note: "根据彩妆/防晒负担修正洗净力需求。",
-    options: [
-      { value: "A", label: "A. 每天浓妆", sub: "常见防水妆或高倍防晒" },
-      { value: "B", label: "B. 淡妆/通勤防晒", sub: "日常隔离或轻薄底妆" },
-      { value: "C", label: "C. 仅素颜", sub: "只需清理皮脂与灰尘" },
-    ],
-  },
-  {
-    key: "q4",
-    title: "Q4 面部特殊痛点",
-    note: "这一题决定功能路径和排除策略。",
-    options: [
-      { value: "A", label: "A. 黑头与闭口粉刺", sub: "毛孔堵塞与脂栓明显" },
-      { value: "B", label: "B. 红肿破口痘", sub: "处于炎症或破口阶段" },
-      { value: "C", label: "C. 暗沉粗糙", sub: "角质堆积、肤色不匀" },
-      { value: "D", label: "D. 极度缺水紧绷", sub: "洗后立刻干涩刺痛" },
-      { value: "E", label: "E. 无明显痛点", sub: "以健康维稳为主" },
-    ],
-  },
-  {
-    key: "q5",
-    title: "Q5 质地与洗后肤感",
-    note: "最后一步按偏好做轻量收敛，不越过安全边界。",
-    options: [
-      { value: "A", label: "A. 喜欢丰富绵密泡沫", sub: "更有清洁仪式感" },
-      { value: "B", label: "B. 喜欢绝对清爽感", sub: "追求更强去油触感" },
-      { value: "C", label: "C. 喜欢保留水润滑感", sub: "抗拒洗后紧绷" },
-      { value: "D", label: "D. 喜欢无泡/低泡温和感", sub: "只要温和不刺激" },
-    ],
-  },
-];
+const STEPS = listCleanserProfileSteps();
 
 function normalizeSequentialSignals(input: CleanserSignals): CleanserSignals {
   const q1 = input.q1;
@@ -125,7 +71,7 @@ export default function CleanserProfileFlowClient() {
   const resultAttribution = useMemo(() => parseResultCtaAttribution(searchParams), [searchParams]);
   const returnTo = useMemo(() => parseMobileReturnTo(searchParams), [searchParams]);
   const signals = urlSignals;
-  const answeredChoices = (["q1", "q2", "q3", "q4", "q5"] as StepKey[])
+  const answeredChoices = (["q1", "q2", "q3", "q4", "q5"] as CleanserStepKey[])
     .map((key) => {
       const value = signals[key];
       return value ? cleanserChoiceLabel(key, value) : null;
@@ -182,7 +128,7 @@ export default function CleanserProfileFlowClient() {
   }, [scrollToStep, signals, urlStep]);
 
   const handleSelect = useCallback(
-    (stepIndex: number, value: OptionValue) => {
+    (stepIndex: number, value: CleanserProfileOption["value"]) => {
       const step = STEPS[stepIndex];
       const next: CleanserSignals = { ...signals };
 
@@ -249,7 +195,7 @@ export default function CleanserProfileFlowClient() {
   return (
     <section className="pb-8">
       {STEPS.map((step, stepIndex) => {
-        const selected = signals[step.key] as OptionValue | undefined;
+        const selected = signals[step.key] as CleanserProfileOption["value"] | undefined;
         const enabled =
           stepIndex === 0 ||
           (stepIndex === 1 && Boolean(signals.q1)) ||

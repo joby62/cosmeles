@@ -1,3 +1,5 @@
+import { getBodyWashChoiceLabel } from "@/domain/mobile/decision/bodywash";
+
 export type Q1EnvSignal = "A" | "B" | "C" | "D";
 export type Q2ToleranceSignal = "A" | "B";
 export type Q3SkinSignal = "A" | "B" | "C" | "D";
@@ -21,35 +23,6 @@ export type ReadyBodyWashSignals = BodyWashSignals & {
 };
 
 export type BodyWashRouteKey = "rescue" | "purge" | "polish" | "glow" | "shield" | "vibe";
-
-const q1Labels: Record<Q1EnvSignal, string> = {
-  A: "干燥寒冷",
-  B: "干燥炎热",
-  C: "潮湿闷热",
-  D: "潮湿寒冷",
-};
-
-const q2Labels: Record<Q2ToleranceSignal, string> = {
-  A: "极度敏感",
-  B: "屏障健康",
-};
-
-const q3Labels: Record<Q3SkinSignal, string> = {
-  A: "出油旺盛",
-  B: "缺油干涩",
-  C: "角质堆积（鸡皮/厚茧）",
-  D: "状态正常（无明显痛点）",
-};
-
-const q4Labels: Record<Q4FinishSignal, string> = {
-  A: "清爽干脆",
-  B: "柔滑滋润",
-};
-
-const q5Labels: Record<Q5SpecialSignal, string> = {
-  A: "极致纯净",
-  B: "情绪留香",
-};
 
 export function normalizeBodyWashSignals(raw: Record<string, string | string[] | undefined>): BodyWashSignals {
   const value = (k: string) => {
@@ -90,11 +63,11 @@ export function bodyWashChoiceLabel(
   key: "q1" | "q2" | "q3" | "q4" | "q5",
   value: "A" | "B" | "C" | "D",
 ): string {
-  if (key === "q1") return q1Labels[value as Q1EnvSignal];
-  if (key === "q2") return q2Labels[value as Q2ToleranceSignal];
-  if (key === "q3") return q3Labels[value as Q3SkinSignal];
-  if (key === "q4") return q4Labels[value as Q4FinishSignal];
-  return q5Labels[value as Q5SpecialSignal];
+  const choiceLabel = getBodyWashChoiceLabel(key, value);
+  if (!choiceLabel) {
+    throw new Error(`Missing shared bodywash choice label for ${key}:${value}`);
+  }
+  return choiceLabel;
 }
 
 function isQ1(v?: string): v is Q1EnvSignal {

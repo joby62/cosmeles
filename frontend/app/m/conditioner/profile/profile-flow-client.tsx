@@ -4,6 +4,11 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import MobileLocationConsent from "@/components/mobile/MobileLocationConsent";
 import {
+  listConditionerProfileSteps,
+  type ConditionerProfileOption,
+  type ConditionerStepKey,
+} from "@/domain/mobile/decision/conditioner";
+import {
   conditionerChoiceLabel,
   isCompleteConditionerSignals,
   normalizeConditionerSignals,
@@ -17,42 +22,7 @@ import {
 import { applyMobileReturnTo, parseMobileReturnTo } from "@/lib/mobile/flowReturn";
 import { applyResultCtaAttribution, parseResultCtaAttribution } from "@/lib/mobile/resultCtaAttribution";
 
-type StepKey = keyof ConditionerSignals;
-type OptionValue = "A" | "B" | "C";
-type Option = { value: OptionValue; label: string; sub: string };
-
-const STEPS: Array<{ key: StepKey; title: string; note: string; options: Option[] }> = [
-  {
-    key: "c_q1",
-    title: "Q1 发丝受损史",
-    note: "先确认基础受损程度，作为修护权重底盘。",
-    options: [
-      { value: "A", label: "A. 频繁漂/染/烫 (干枯空洞)", sub: "高受损，优先修护与抗断裂能力" },
-      { value: "B", label: "B. 偶尔染烫/经常使用热工具 (轻度受损)", sub: "中度受损，平衡修护与轻盈感" },
-      { value: "C", label: "C. 原生发/几乎不折腾 (健康)", sub: "低受损，避免配方过重导致发丝过载" },
-    ],
-  },
-  {
-    key: "c_q2",
-    title: "Q2 发丝物理形态",
-    note: "这一步会触发质地防线，决定能否用重柔顺路线。",
-    options: [
-      { value: "A", label: "A. 细软少/极易贴头皮", sub: "优先轻盈蓬松，禁重度柔顺" },
-      { value: "B", label: "B. 粗硬/沙发/天生毛躁", sub: "优先抗躁顺滑与服帖度" },
-      { value: "C", label: "C. 正常适中", sub: "不偏科，按目标效果做收敛" },
-    ],
-  },
-  {
-    key: "c_q3",
-    title: "Q3 当前最渴望的视觉效果",
-    note: "最后一步，锁定主诉求并给出唯一推荐路径。",
-    options: [
-      { value: "A", label: "A. 刚染完，需要锁色/固色", sub: "优先锁色膜与色泽维持能力" },
-      { value: "B", label: "B. 打结梳不开，需要极致顺滑", sub: "优先抗毛躁与梳理滑度" },
-      { value: "C", label: "C. 发尾不干枯，保持自然蓬松就行", sub: "优先基础保湿和轻盈平衡" },
-    ],
-  },
-];
+const STEPS = listConditionerProfileSteps();
 
 function normalizeSequentialSignals(input: ConditionerSignals): ConditionerSignals {
   const cQ1 = input.c_q1;
@@ -95,7 +65,7 @@ export default function ConditionerProfileFlowClient() {
   const resultAttribution = useMemo(() => parseResultCtaAttribution(searchParams), [searchParams]);
   const returnTo = useMemo(() => parseMobileReturnTo(searchParams), [searchParams]);
   const signals = urlSignals;
-  const answeredChoices = (["c_q1", "c_q2", "c_q3"] as StepKey[])
+  const answeredChoices = (["c_q1", "c_q2", "c_q3"] as ConditionerStepKey[])
     .map((key) => {
       const value = signals[key];
       return value ? conditionerChoiceLabel(key, value) : null;
@@ -152,7 +122,7 @@ export default function ConditionerProfileFlowClient() {
   }, [scrollToStep, signals, urlStep]);
 
   const handleSelect = useCallback(
-    (stepIndex: number, value: OptionValue) => {
+    (stepIndex: number, value: ConditionerProfileOption["value"]) => {
       const step = STEPS[stepIndex];
       const next: ConditionerSignals = { ...signals };
 
@@ -206,7 +176,7 @@ export default function ConditionerProfileFlowClient() {
   return (
     <section className="pb-8">
       {STEPS.map((step, stepIndex) => {
-        const selected = signals[step.key] as OptionValue | undefined;
+        const selected = signals[step.key] as ConditionerProfileOption["value"] | undefined;
         const enabled =
           stepIndex === 0 ||
           (stepIndex === 1 && Boolean(signals.c_q1)) ||

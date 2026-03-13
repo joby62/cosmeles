@@ -1,3 +1,5 @@
+import { getConditionerChoiceLabel } from "@/domain/mobile/decision/conditioner";
+
 export type CQ1Signal = "A" | "B" | "C";
 export type CQ2Signal = "A" | "B" | "C";
 export type CQ3Signal = "A" | "B" | "C";
@@ -42,19 +44,11 @@ export function toConditionerSearchParams(s: ConditionerSignals): URLSearchParam
 }
 
 export function conditionerChoiceLabel(key: "c_q1" | "c_q2" | "c_q3", value: "A" | "B" | "C"): string {
-  if (key === "c_q1") {
-    if (value === "A") return "频繁漂/染/烫 (干枯空洞)";
-    if (value === "B") return "偶尔染烫/经常使用热工具 (轻度受损)";
-    return "原生发/几乎不折腾 (健康)";
+  const choiceLabel = getConditionerChoiceLabel(key, value);
+  if (!choiceLabel) {
+    throw new Error(`Missing shared conditioner choice label for ${key}:${value}`);
   }
-  if (key === "c_q2") {
-    if (value === "A") return "细软少/极易贴头皮";
-    if (value === "B") return "粗硬/沙发/天生毛躁";
-    return "正常适中";
-  }
-  if (value === "A") return "刚染完，需要锁色/固色";
-  if (value === "B") return "打结梳不开，需要极致顺滑";
-  return "发尾不干枯，保持自然蓬松就行";
+  return choiceLabel;
 }
 
 function isABC(v?: string): v is "A" | "B" | "C" {

@@ -4,6 +4,11 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import MobileLocationConsent from "@/components/mobile/MobileLocationConsent";
 import {
+  listLotionProfileSteps,
+  type LotionProfileOption,
+  type LotionStepKey,
+} from "@/domain/mobile/decision/lotion";
+import {
   isCompleteLotionSignals,
   lotionChoiceLabel,
   normalizeLotionSignals,
@@ -17,64 +22,7 @@ import {
 import { applyMobileReturnTo, parseMobileReturnTo } from "@/lib/mobile/flowReturn";
 import { applyResultCtaAttribution, parseResultCtaAttribution } from "@/lib/mobile/resultCtaAttribution";
 
-type StepKey = keyof LotionSignals;
-type OptionValue = "A" | "B" | "C" | "D" | "E";
-type Option = { value: OptionValue; label: string; sub: string };
-
-const STEPS: Array<{ key: StepKey; title: string; note: string; options: Option[] }> = [
-  {
-    key: "q1",
-    title: "Q1 气候环境与当前季节",
-    note: "先确定环境权重，决定保湿和清爽的底盘。",
-    options: [
-      { value: "A", label: "A. 干燥寒冷 / 长时间待在暖气房", sub: "优先提高封闭保湿能力" },
-      { value: "B", label: "B. 炎热潮湿 / 夏季易出汗环境", sub: "优先轻薄吸收，避免闷黏" },
-      { value: "C", label: "C. 换季温差大 / 经常刮风", sub: "优先平衡修护与舒适感" },
-      { value: "D", label: "D. 气候温和 / 室内温湿度适宜", sub: "按功效诉求做收敛" },
-    ],
-  },
-  {
-    key: "q2",
-    title: "Q2 身体肌肤耐受度",
-    note: "安全优先，这一步会触发敏感掩码。",
-    options: [
-      { value: "A", label: "A. 极度敏感", sub: "易泛红干痒，需严格避刺激" },
-      { value: "B", label: "B. 屏障健康", sub: "耐受较强，可考虑功效型路线" },
-    ],
-  },
-  {
-    key: "q3",
-    title: "Q3 最核心的皮肤痛点",
-    note: "这一题主导路线归属和风险隔离。",
-    options: [
-      { value: "A", label: "A. 极度干屑", sub: "重点缓解干裂瘙痒和脱屑" },
-      { value: "B", label: "B. 躯干痘痘", sub: "重点清痘并避免闷痘" },
-      { value: "C", label: "C. 粗糙颗粒", sub: "重点改善鸡皮和粗糙角质" },
-      { value: "D", label: "D. 暗沉色差", sub: "重点提亮和均匀肤色" },
-      { value: "E", label: "E. 状态正常", sub: "以维稳和体验感为主" },
-    ],
-  },
-  {
-    key: "q4",
-    title: "Q4 身体乳质地与肤感偏好",
-    note: "按肤感偏好微调，不越过风险掩码边界。",
-    options: [
-      { value: "A", label: "A. 秒吸收的轻薄水感", sub: "最怕粘腻沾衣，偏好清爽" },
-      { value: "B", label: "B. 适中滋润的丝滑乳液感", sub: "希望保湿与肤感平衡" },
-      { value: "C", label: "C. 强包裹的丰润油膏感", sub: "需要厚重膜感与修护感" },
-    ],
-  },
-  {
-    key: "q5",
-    title: "Q5 特殊限制与诉求",
-    note: "最后一步做安全过滤与体验偏好收敛。",
-    options: [
-      { value: "A", label: "A. 极致纯净", sub: "孕哺期或严格排斥香精/色素/防腐剂" },
-      { value: "B", label: "B. 情绪留香", sub: "希望有明显调香和伪体香体验" },
-      { value: "C", label: "C. 无特殊限制", sub: "更看重实际功效表现" },
-    ],
-  },
-];
+const STEPS = listLotionProfileSteps();
 
 function normalizeSequentialSignals(input: LotionSignals): LotionSignals {
   const q1 = input.q1;
@@ -123,7 +71,7 @@ export default function LotionProfileFlowClient() {
   const resultAttribution = useMemo(() => parseResultCtaAttribution(searchParams), [searchParams]);
   const returnTo = useMemo(() => parseMobileReturnTo(searchParams), [searchParams]);
   const signals = urlSignals;
-  const answeredChoices = (["q1", "q2", "q3", "q4", "q5"] as StepKey[])
+  const answeredChoices = (["q1", "q2", "q3", "q4", "q5"] as LotionStepKey[])
     .map((key) => {
       const value = signals[key];
       return value ? lotionChoiceLabel(key, value) : null;
@@ -180,7 +128,7 @@ export default function LotionProfileFlowClient() {
   }, [scrollToStep, signals, urlStep]);
 
   const handleSelect = useCallback(
-    (stepIndex: number, value: OptionValue) => {
+    (stepIndex: number, value: LotionProfileOption["value"]) => {
       const step = STEPS[stepIndex];
       const next: LotionSignals = { ...signals };
 
@@ -247,7 +195,7 @@ export default function LotionProfileFlowClient() {
   return (
     <section className="pb-8">
       {STEPS.map((step, stepIndex) => {
-        const selected = signals[step.key] as OptionValue | undefined;
+        const selected = signals[step.key] as LotionProfileOption["value"] | undefined;
         const enabled =
           stepIndex === 0 ||
           (stepIndex === 1 && Boolean(signals.q1)) ||
