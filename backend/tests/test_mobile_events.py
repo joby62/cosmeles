@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+import app.routes.mobile as mobile_routes
 from app.db.models import Base, MobileClientEvent
 from app.db.session import get_db
 from app.routes.mobile import router as mobile_router
@@ -143,3 +144,93 @@ def test_legacy_compare_events_endpoint_remains_compatible_and_writes_artifact(m
     assert artifact["trace_id"] == event_id
     assert artifact["owner_id"] == "device-fixed"
     assert artifact["event_name"] == "compare_run_error"
+
+
+def test_mobile_location_reverse_endpoint_returns_city_fields(mobile_events_client, monkeypatch: pytest.MonkeyPatch):
+    client, _SessionLocal, _storage_dir = mobile_events_client
+
+    monkeypatch.setattr(
+        mobile_routes,
+        "reverse_mobile_location",
+        lambda latitude, longitude: {
+            "status": "resolved",
+            "provider": "amap",
+            "location_city": "上海市",
+            "location_district": "浦东新区",
+            "location_province": "上海市",
+            "location_formatted_address": "上海市浦东新区世纪大道",
+            "location_city_code": "021",
+            "location_adcode": "310115",
+        },
+    )
+
+    resp = client.post(
+        "/api/mobile/location/reverse",
+        json={
+            "latitude": 31.23,
+            "longitude": 121.47,
+            "accuracy_m": 1200,
+            "time_zone": "Asia/Shanghai",
+        },
+    )
+
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["status"] == "resolved"
+    assert payload["provider"] == "amap"
+    assert payload["location_city"] == "上海市"
+    assert payload["location_district"] == "浦东新区"
+
+
+def test_mobile_events_endpoint_enriches_location_context_captured(mobile_events_client, monkeypatch: pytest.MonkeyPatch):
+    client, SessionLocal, _storage_dir = mobile_events_client
+
+    monkeypatch.setattr(
+        mobile_routes,
+        "reverse_mobile_location",
+        lambda latitude, longitude: {
+            "status": "resolved",
+            "provider": "amap",
+            "location_city": "上海市",
+            "location_district": "浦东新区",
+            "location_province": "上海市",
+            "location_formatted_address": "上海市浦东新区世纪大道",
+            "location_city_code": "021",
+            "location_adcode": "310115",
+        },
+    )
+
+    resp = client.post(
+        "/api/mobile/events",
+        json={
+            "name": "location_context_captured",
+            "props": {
+                "session_id": "sess-geo-1",
+                "page": "selection_profile",
+                "route": "/m/shampoo/profile",
+                "source": "mobile_profile_location_consent:shampoo",
+                "category": "shampoo",
+                "location_permission": "granted",
+                "location_source": "browser_geolocation",
+                "location_precision": "coarse",
+                "location_latitude": 31.23,
+                "location_longitude": 121.47,
+                "location_accuracy_m": 1200,
+                "location_time_zone": "Asia/Shanghai",
+                "location_label": "31.230, 121.470 +-1200m",
+            },
+        },
+    )
+
+    assert resp.status_code == 200
+    event_id = resp.json()["event_id"]
+
+    with SessionLocal() as db:
+        row = db.get(MobileClientEvent, event_id)
+        assert row is not None
+        props = json.loads(row.props_json)
+        assert props["location_geocode_status"] == "resolved"
+        assert props["location_geocode_provider"] == "amap"
+        assert props["location_city"] == "上海市"
+        assert props["location_district"] == "浦东新区"
+        assert props["location_label"] == "上海市 浦东新区 · 31.230, 121.470 · 约1.2km"

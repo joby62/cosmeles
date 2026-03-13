@@ -61,6 +61,12 @@ class Settings(BaseSettings):
     # 产品工作台后台任务并发上限（2C4G 推荐 1）
     product_workbench_max_concurrency: int = 1
 
+    # === 移动端地理逆解析（可选）===
+    mobile_reverse_geocode_provider: str = ""
+    mobile_reverse_geocode_key: str = ""
+    mobile_reverse_geocode_endpoint: str = "https://restapi.amap.com/v3/geocode/regeo"
+    mobile_reverse_geocode_timeout_seconds: float = 3.0
+
     # === Pydantic v2 配置 ===
     model_config = SettingsConfigDict(
         env_file=(".env", ".env.local"),

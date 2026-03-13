@@ -1748,6 +1748,8 @@ def get_mobile_analytics_sessions(
                     dwell_ms=row.dwell_ms,
                     location_label=_event_location_label(props),
                     location_time_zone=_event_location_time_zone(props),
+                    location_geocode_status=_normalize_optional_text(props.get("location_geocode_status")),
+                    location_geocode_error=_normalize_optional_text(props.get("location_geocode_error")),
                 )
             )
         break

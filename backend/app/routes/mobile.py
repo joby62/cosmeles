@@ -45,6 +45,8 @@ from app.schemas import (
     MobileCompareBootstrapResponse,
     MobileCompareCategoryItem,
     MobileClientEventRequest,
+    MobileLocationReverseRequest,
+    MobileLocationReverseResponse,
     MobileCompareEventRequest,
     MobileCompareIngredientDiff,
     MobileCompareIngredientOrderDiff,
@@ -118,6 +120,7 @@ from app.services.mobile_selection_results import (
     publish_mobile_selection_result,
     to_mobile_selection_result_index_item,
 )
+from app.services.mobile_location import reverse_mobile_location
 from app.services.parser import normalize_doc
 from app.services.selection_fit import RouteDiagnosticRule, get_route_diagnostic_rules
 from app.services.storage import (
@@ -2111,6 +2114,13 @@ def record_mobile_event(
     )
 
 
+@router.post("/location/reverse", response_model=MobileLocationReverseResponse)
+def reverse_mobile_location_context(payload: MobileLocationReverseRequest):
+    return MobileLocationReverseResponse.model_validate(
+        reverse_mobile_location(latitude=payload.latitude, longitude=payload.longitude)
+    )
+
+
 @router.post("/compare/events")
 def record_mobile_compare_event(
     payload: MobileCompareEventRequest,
@@ -2139,6 +2149,7 @@ def _record_mobile_client_event(
     event_id = new_id()
     created_at = now_iso()
     props = payload.props if isinstance(payload.props, dict) else {}
+    props = _maybe_enrich_mobile_location_props(props, payload.name)
     row = MobileClientEvent(
         event_id=event_id,
         owner_type=owner_type,
@@ -4894,6 +4905,82 @@ def _mobile_event_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _mobile_event_float(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _mobile_location_label_from_props(props: dict[str, Any]) -> str | None:
+    city = _mobile_event_string(props.get("location_city"), limit=128)
+    district = _mobile_event_string(props.get("location_district"), limit=128)
+    latitude = _mobile_event_float(props.get("location_latitude"))
+    longitude = _mobile_event_float(props.get("location_longitude"))
+    accuracy_m = _mobile_event_float(props.get("location_accuracy_m"))
+    parts: list[str] = []
+    if city and district and district not in city:
+        parts.append(f"{city} {district}")
+    elif city:
+        parts.append(city)
+    elif district:
+        parts.append(district)
+    if latitude is not None and longitude is not None:
+        parts.append(f"{latitude:.3f}, {longitude:.3f}")
+    if accuracy_m is not None and accuracy_m > 0:
+        if accuracy_m >= 1000:
+            parts.append(f"约{round(accuracy_m / 1000, 1):.1f}km")
+        else:
+            parts.append(f"约{int(round(accuracy_m))}m")
+    if parts:
+        return " · ".join(parts)
+    return _mobile_event_string(props.get("location_label"), limit=256)
+
+
+def _maybe_enrich_mobile_location_props(props: dict[str, Any], event_name: str) -> dict[str, Any]:
+    enriched = dict(props)
+    if _mobile_event_string(enriched.get("location_city"), limit=128):
+        return enriched
+    if _mobile_event_string(enriched.get("location_geocode_status"), limit=32):
+        return enriched
+    if _mobile_event_string(event_name, limit=128) != "location_context_captured":
+        return enriched
+    latitude = _mobile_event_float(enriched.get("location_latitude"))
+    longitude = _mobile_event_float(enriched.get("location_longitude"))
+    if latitude is None or longitude is None:
+        return enriched
+
+    resolved = reverse_mobile_location(latitude=latitude, longitude=longitude)
+    status = _mobile_event_string(resolved.get("status"), limit=32)
+    provider = _mobile_event_string(resolved.get("provider"), limit=32)
+    error = _mobile_event_string(resolved.get("error"), limit=256)
+    if status:
+        enriched["location_geocode_status"] = status
+    if provider:
+        enriched["location_geocode_provider"] = provider
+    if error:
+        enriched["location_geocode_error"] = error
+
+    for key in (
+        "location_city",
+        "location_district",
+        "location_province",
+        "location_formatted_address",
+        "location_city_code",
+        "location_adcode",
+    ):
+        value = _mobile_event_string(resolved.get(key), limit=256)
+        if value:
+            enriched[key] = value
+
+    label = _mobile_location_label_from_props(enriched)
+    if label:
+        enriched["location_label"] = label
+    return enriched
 
 
 def _mobile_event_detail(props: dict[str, Any]) -> str | None:

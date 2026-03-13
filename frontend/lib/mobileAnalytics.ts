@@ -1,6 +1,7 @@
 "use client";
 
 const MOBILE_EVENT_ENDPOINT = "/api/mobile/events";
+const MOBILE_LOCATION_REVERSE_ENDPOINT = "/api/mobile/location/reverse";
 const MOBILE_SESSION_STORAGE_KEY = "mx_mobile_analytics_session";
 const MOBILE_LOCATION_PROMPT_STATE_KEY = "mx_mobile_location_prompt_state";
 const MOBILE_LOCATION_CONTEXT_KEY = "mx_mobile_location_context";
@@ -16,6 +17,15 @@ type MobileLocationContext = {
   location_longitude: number;
   location_accuracy_m?: number;
   location_time_zone?: string;
+  location_city?: string;
+  location_district?: string;
+  location_province?: string;
+  location_formatted_address?: string;
+  location_city_code?: string;
+  location_adcode?: string;
+  location_geocode_provider?: string;
+  location_geocode_status?: "resolved" | "unconfigured" | "failed";
+  location_geocode_error?: string;
   location_label: string;
   location_captured_at: string;
 };
@@ -35,6 +45,18 @@ type NavigatorWithConnection = Navigator & {
     platform?: string;
     mobile?: boolean;
   };
+};
+
+type MobileLocationReverseResponse = {
+  status: "resolved" | "unconfigured" | "failed";
+  provider?: string | null;
+  error?: string | null;
+  location_city?: string | null;
+  location_district?: string | null;
+  location_province?: string | null;
+  location_formatted_address?: string | null;
+  location_city_code?: string | null;
+  location_adcode?: string | null;
 };
 
 function canUseWindow(): boolean {
@@ -182,16 +204,111 @@ function roundCoordinate(value: number): number {
   return Math.round(value * 1000) / 1000;
 }
 
+function locationAdminLabel(context: {
+  city?: string | null;
+  district?: string | null;
+  province?: string | null;
+}): string {
+  const city = String(context.city || "").trim();
+  const district = String(context.district || "").trim();
+  const province = String(context.province || "").trim();
+  if (city && district && !city.includes(district)) return `${city} ${district}`;
+  if (city) return city;
+  if (district) return district;
+  return province;
+}
+
 function formatLocationLabel(context: {
+  city?: string | null;
+  district?: string | null;
+  province?: string | null;
   latitude: number;
   longitude: number;
   accuracyM?: number;
 }): string {
-  const parts = [`${context.latitude.toFixed(3)}, ${context.longitude.toFixed(3)}`];
+  const parts: string[] = [];
+  const adminLabel = locationAdminLabel(context);
+  if (adminLabel) parts.push(adminLabel);
+  parts.push(`${context.latitude.toFixed(3)}, ${context.longitude.toFixed(3)}`);
   if (typeof context.accuracyM === "number" && Number.isFinite(context.accuracyM) && context.accuracyM > 0) {
     parts.push(`+-${Math.round(context.accuracyM)}m`);
   }
   return parts.join(" · ");
+}
+
+function formatFetchError(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === "string") return error;
+  return "unknown_error";
+}
+
+async function enrichLocationContext(baseContext: MobileLocationContext): Promise<MobileLocationContext> {
+  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timeoutId = controller ? window.setTimeout(() => controller.abort(), 3500) : null;
+  try {
+    const response = await fetch(MOBILE_LOCATION_REVERSE_ENDPOINT, {
+      method: "POST",
+      credentials: "include",
+      cache: "no-store",
+      headers: { "content-type": "application/json" },
+      signal: controller?.signal,
+      body: JSON.stringify({
+        latitude: baseContext.location_latitude,
+        longitude: baseContext.location_longitude,
+        accuracy_m: baseContext.location_accuracy_m,
+        time_zone: baseContext.location_time_zone,
+      }),
+    });
+
+    let payload: MobileLocationReverseResponse | null = null;
+    try {
+      payload = (await response.json()) as MobileLocationReverseResponse;
+    } catch {
+      payload = null;
+    }
+
+    if (!response.ok) {
+      return {
+        ...baseContext,
+        location_geocode_status: "failed",
+        location_geocode_error: String(payload?.error || `http_${response.status}`).trim() || `http_${response.status}`,
+      };
+    }
+
+    const geocodeStatus = payload?.status || "failed";
+    const locationCity = String(payload?.location_city || "").trim() || undefined;
+    const locationDistrict = String(payload?.location_district || "").trim() || undefined;
+    const locationProvince = String(payload?.location_province || "").trim() || undefined;
+    const enrichedContext: MobileLocationContext = {
+      ...baseContext,
+      location_city: locationCity,
+      location_district: locationDistrict,
+      location_province: locationProvince,
+      location_formatted_address: String(payload?.location_formatted_address || "").trim() || undefined,
+      location_city_code: String(payload?.location_city_code || "").trim() || undefined,
+      location_adcode: String(payload?.location_adcode || "").trim() || undefined,
+      location_geocode_provider: String(payload?.provider || "").trim() || undefined,
+      location_geocode_status: geocodeStatus,
+      location_geocode_error: String(payload?.error || "").trim() || undefined,
+      location_label: formatLocationLabel({
+        city: locationCity,
+        district: locationDistrict,
+        province: locationProvince,
+        latitude: baseContext.location_latitude,
+        longitude: baseContext.location_longitude,
+        accuracyM: baseContext.location_accuracy_m,
+      }),
+    };
+    return enrichedContext;
+  } catch (error) {
+    return {
+      ...baseContext,
+      location_geocode_status: "failed",
+      location_geocode_error: formatFetchError(error),
+    };
+  } finally {
+    if (timeoutId != null) window.clearTimeout(timeoutId);
+  }
 }
 
 function geolocationErrorReason(error: GeolocationPositionError): string {
@@ -271,12 +388,12 @@ export async function requestMobileLocationContext(): Promise<MobileLocationRequ
 
   return new Promise((resolve) => {
     navigator.geolocation.getCurrentPosition(
-      (position) => {
+      async (position) => {
         const latitude = roundCoordinate(position.coords.latitude);
         const longitude = roundCoordinate(position.coords.longitude);
         const accuracyM = Number.isFinite(position.coords.accuracy) ? Math.round(position.coords.accuracy) : undefined;
         const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
-        const context: MobileLocationContext = {
+        const baseContext: MobileLocationContext = {
           location_permission: "granted",
           location_source: "browser_geolocation",
           location_precision: "coarse",
@@ -287,6 +404,7 @@ export async function requestMobileLocationContext(): Promise<MobileLocationRequ
           location_label: formatLocationLabel({ latitude, longitude, accuracyM }),
           location_captured_at: new Date().toISOString(),
         };
+        const context = await enrichLocationContext(baseContext);
         writeMobileLocationContext(context);
         writeMobileLocationPromptState("granted");
         resolve({ status: "granted", context });

@@ -374,6 +374,8 @@ function describeTimelineEvent(item: MobileAnalyticsSessionEventItem): SessionTi
   if (hasLocationContext(item.location_label, item.location_time_zone)) {
     pushUniqueLabel(meta, buildLocationBadgeLabel(item.location_label, item.location_time_zone));
   }
+  if (item.location_geocode_status === "failed") pushUniqueLabel(meta, "城市解析失败");
+  if (item.location_geocode_status === "unconfigured") pushUniqueLabel(meta, "城市解析未配置");
 
   pushUniqueLabel(rawMeta, `event ${eventName || "unknown"}`);
   if (item.page) pushUniqueLabel(rawMeta, `page ${valueOrEmpty(item.page)}`);
@@ -382,6 +384,8 @@ function describeTimelineEvent(item: MobileAnalyticsSessionEventItem): SessionTi
   if (item.error_code) pushUniqueLabel(rawMeta, `error ${item.error_code}`);
   if (item.location_label) pushUniqueLabel(rawMeta, `location ${valueOrEmpty(item.location_label)}`);
   if (item.location_time_zone) pushUniqueLabel(rawMeta, `tz ${valueOrEmpty(item.location_time_zone)}`);
+  if (item.location_geocode_status) pushUniqueLabel(rawMeta, `geocode ${valueOrEmpty(item.location_geocode_status)}`);
+  if (item.location_geocode_error) pushUniqueLabel(rawMeta, `geo_error ${valueOrEmpty(item.location_geocode_error)}`);
 
   switch (eventName) {
     case "page_view": {

@@ -1633,6 +1633,25 @@ class MobileClientEventRequest(BaseModel):
     props: dict[str, Any] = Field(default_factory=dict)
 
 
+class MobileLocationReverseRequest(BaseModel):
+    latitude: float
+    longitude: float
+    accuracy_m: Optional[float] = None
+    time_zone: Optional[str] = None
+
+
+class MobileLocationReverseResponse(BaseModel):
+    status: str
+    provider: Optional[str] = None
+    error: Optional[str] = None
+    location_city: Optional[str] = None
+    location_district: Optional[str] = None
+    location_province: Optional[str] = None
+    location_formatted_address: Optional[str] = None
+    location_city_code: Optional[str] = None
+    location_adcode: Optional[str] = None
+
+
 class MobileAnalyticsFilterState(BaseModel):
     since_hours: Optional[int] = None
     date_from: Optional[str] = None
@@ -1867,6 +1886,8 @@ class MobileAnalyticsSessionEventItem(BaseModel):
     dwell_ms: Optional[int] = None
     location_label: Optional[str] = None
     location_time_zone: Optional[str] = None
+    location_geocode_status: Optional[str] = None
+    location_geocode_error: Optional[str] = None
 
 
 class MobileAnalyticsSessionsResponse(BaseModel):

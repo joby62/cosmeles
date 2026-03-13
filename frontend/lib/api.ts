@@ -1103,6 +1103,8 @@ export type MobileAnalyticsSessionEventItem = {
   dwell_ms?: number | null;
   location_label?: string | null;
   location_time_zone?: string | null;
+  location_geocode_status?: string | null;
+  location_geocode_error?: string | null;
 };
 
 export type MobileAnalyticsSessions = {
