@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { type Product, type ProductAnalysisSubtypeFitVerdict, resolveImageUrl } from "@/lib/api";
+import { useSitePreferences } from "@/components/site/SitePreferenceProvider";
 import { getCategoryMeta } from "@/lib/site";
 import AddToBagButton from "@/components/site/AddToBagButton";
 import { commerceBadgeLabel, commerceInventoryLabel, commercePackSizeLabel, commercePriceLabel } from "@/lib/productCommerce";
@@ -29,10 +30,15 @@ export default function ProductCard({
   proofSummary,
   priority = false,
 }: ProductCardProps) {
-  const category = getCategoryMeta(product.category);
-  const productName = product.name || "未命名商品";
+  const { locale } = useSitePreferences();
+  const category = getCategoryMeta(product.category, locale);
+  const productName = product.name || (locale === "zh" ? "未命名商品" : "Untitled product");
   const productBrand = product.brand || category?.label || "Jeslect";
-  const summary = headline || product.one_sentence || product.description || "打开完整画像页查看更多细节。";
+  const summary =
+    headline ||
+    product.one_sentence ||
+    product.description ||
+    (locale === "zh" ? "打开完整画像页查看更多细节。" : "Open the full profile for details.");
   const packSizeLabel = commercePackSizeLabel(product.commerce);
   const statusLabel = commerceBadgeLabel(product.commerce);
   const priceLabel = commercePriceLabel(product.commerce);
@@ -130,7 +136,7 @@ export default function ProductCard({
             href={`/product/${encodeURIComponent(product.id)}`}
             className="inline-flex h-10 items-center justify-center rounded-full border border-black/10 bg-white px-4 text-[13px] font-medium text-slate-700 transition hover:border-slate-300 hover:text-slate-950"
           >
-            查看详情
+            {locale === "zh" ? "查看详情" : "View details"}
           </Link>
           <AddToBagButton productId={product.id} compact />
         </div>

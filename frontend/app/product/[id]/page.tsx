@@ -29,8 +29,9 @@ import {
   analysisVerdictLabel,
   analysisVerdictSummary,
 } from "@/lib/productEvidence";
-import { getCategoryMeta, TRUST_ITEMS } from "@/lib/site";
-import { PDP_SUPPORT_LINKS, PDP_TRUST_NOTES, PRODUCT_RELEASE_NOTES } from "@/lib/storefrontTrust";
+import { getRequestSitePreferences } from "@/lib/sitePreferences.server";
+import { getCategoryMeta, getTrustItems } from "@/lib/site";
+import { getStorefrontTrustCopy } from "@/lib/storefrontTrust";
 
 function mergeUnique(items: string[]): string[] {
   return Array.from(new Set(items.map((item) => item.trim()).filter(Boolean)));
@@ -41,6 +42,7 @@ export default async function ProductPage({
 }: {
   params: Promise<{ id: string }> | { id: string };
 }) {
+  const { locale } = await getRequestSitePreferences();
   const resolvedParams = await Promise.resolve(params);
   const id = String(resolvedParams.id || "").trim();
 
@@ -90,10 +92,12 @@ export default async function ProductPage({
 
   const productName = doc.product.name || "Untitled product";
   const productBrand = doc.product.brand || "Jeslect";
-  const category = getCategoryMeta(doc.product.category);
+  const category = getCategoryMeta(doc.product.category, locale);
   const imageSrc = resolveStoredImageUrl(doc.evidence.image_path);
   const profile = analysis?.item.profile || null;
-  const routeMeta = profile ? getMatchRouteMeta(profile.category, profile.route_key) : null;
+  const routeMeta = profile ? getMatchRouteMeta(profile.category, profile.route_key, locale) : null;
+  const trustItems = getTrustItems(locale);
+  const { PDP_SUPPORT_LINKS, PDP_TRUST_NOTES, PRODUCT_RELEASE_NOTES } = getStorefrontTrustCopy(locale);
   const summaryText = profile?.positioning_summary || doc.summary.one_sentence || "Open the ingredient list and usage notes before you buy.";
   const bestFor = mergeUnique(profile?.best_for || doc.summary.who_for || []);
   const notIdealFor = mergeUnique(profile?.not_ideal_for || doc.summary.who_not_for || []);
@@ -230,7 +234,7 @@ export default async function ProductPage({
               Find my match
             </Link>
           </div>
-          <TrustStrip items={TRUST_ITEMS} className="mt-6" />
+          <TrustStrip items={trustItems} className="mt-6" />
           <div className="mt-6 rounded-[24px] border border-black/8 bg-slate-50 px-4 py-4">
             <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-slate-500">Current release status</p>
             <div className="mt-3 space-y-2">
@@ -377,6 +381,7 @@ export default async function ProductPage({
           </article>
 
           <EvidenceReadout
+            locale={locale}
             eyebrow="Evidence basis"
             title="See how complete this product profile currently is."
             summary={

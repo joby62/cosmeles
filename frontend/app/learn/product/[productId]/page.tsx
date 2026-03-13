@@ -15,6 +15,7 @@ import {
   analysisVerdictLabel,
   analysisVerdictSummary,
 } from "@/lib/productEvidence";
+import { getRequestSitePreferences } from "@/lib/sitePreferences.server";
 import { categoryHref, getCategoryMeta, normalizeCategoryKey } from "@/lib/site";
 
 function mergeUnique(items: string[]): string[] {
@@ -26,6 +27,7 @@ export default async function LearnProductDetailPage({
 }: {
   params: Promise<{ productId: string }> | { productId: string };
 }) {
+  const { locale } = await getRequestSitePreferences();
   const resolvedParams = await Promise.resolve(params);
   const productId = String(resolvedParams.productId || "").trim();
 
@@ -68,12 +70,12 @@ export default async function LearnProductDetailPage({
     );
   }
 
-  const category = getCategoryMeta(item.product.category);
+  const category = getCategoryMeta(item.product.category, locale);
   const productName = item.product.name || "Untitled product";
   const productBrand = item.product.brand || "Jeslect";
   const imageSrc = resolveStoredImageUrl(item.doc.evidence.image_path);
   const profile = analysis?.item.profile || null;
-  const routeMeta = profile ? getMatchRouteMeta(profile.category, profile.route_key) : null;
+  const routeMeta = profile ? getMatchRouteMeta(profile.category, profile.route_key, locale) : null;
   const summaryText =
     profile?.positioning_summary || item.doc.summary.one_sentence || "Open the shopping profile when you want the storefront version.";
   const bestFor = mergeUnique(profile?.best_for || item.doc.summary.who_for || []);
@@ -245,6 +247,7 @@ export default async function LearnProductDetailPage({
 
         <div className="space-y-6">
           <EvidenceReadout
+            locale={locale}
             eyebrow="Evidence basis"
             title="Read the same trust layer that powers the shopping profile."
             summary={

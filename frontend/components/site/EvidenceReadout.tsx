@@ -1,4 +1,5 @@
 type EvidenceReadoutProps = {
+  locale?: "en" | "zh";
   eyebrow: string;
   title: string;
   summary?: string | null;
@@ -13,6 +14,7 @@ type EvidenceReadoutProps = {
 };
 
 export default function EvidenceReadout({
+  locale = "en",
   eyebrow,
   title,
   summary,
@@ -80,7 +82,9 @@ export default function EvidenceReadout({
 
       {note ? (
         <div className="mt-5 rounded-[24px] border border-black/8 bg-slate-50 px-4 py-4">
-          <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-slate-500">决定前先看</p>
+          <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+            {locale === "zh" ? "决定前先看" : "Read before you act"}
+          </p>
           <p className="mt-3 text-[14px] leading-6 text-slate-700">{note}</p>
         </div>
       ) : null}

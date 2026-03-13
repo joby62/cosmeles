@@ -1,16 +1,37 @@
 import FeatureShell from "@/components/site/FeatureShell";
-import { POLICY_SCOPE_NOTE, SHIPPING_POLICY_SECTIONS } from "@/lib/storefrontPolicies";
+import { getStorefrontPolicyCopy } from "@/lib/storefrontPolicies";
+import { getRequestSitePreferences } from "@/lib/sitePreferences.server";
 
-export default function ShippingPage() {
+export default async function ShippingPage() {
+  const { locale } = await getRequestSitePreferences();
+  const { POLICY_SCOPE_NOTE, SHIPPING_POLICY_SECTIONS } = getStorefrontPolicyCopy(locale);
+  const copy =
+    locale === "zh"
+      ? {
+          eyebrow: "配送",
+          title: "在支付开放前，配送信息也应该先讲清楚。",
+          summary: "这里定义的是婕选当前独立站如何表达配送：哪些内容现在就该可见，哪些字段仍依赖后续 commerce feed，以及哪些基础信息不该被隐藏。",
+          highlights: ["美国市场优先", "时效表达可读", "基础配送信息前置"],
+          primaryCta: "返回支持中心",
+          secondaryCta: "查看袋中",
+        }
+      : {
+          eyebrow: "Shipping",
+          title: "Shipping expectations should be readable before checkout exists.",
+          summary: "This page defines how Jeslect frames shipping on the current storefront: which details should already be visible, which fields still depend on a real commerce feed, and which basics should never feel hidden.",
+          highlights: ["US-first framing", "Readable delivery timing", "Shipping basics surface early"],
+          primaryCta: "Back to support",
+          secondaryCta: "View bag",
+        };
   return (
     <FeatureShell
-      eyebrow="配送"
-      title="在支付开放前，配送信息也应该先讲清楚。"
-      summary="这里定义的是婕选当前独立站如何表达配送：哪些内容现在就该可见，哪些字段仍依赖后续 commerce feed，以及哪些基础信息不该被隐藏。"
+      eyebrow={copy.eyebrow}
+      title={copy.title}
+      summary={copy.summary}
       metaNote={POLICY_SCOPE_NOTE}
-      highlights={["美国市场优先", "时效表达可读", "基础配送信息前置"]}
-      primaryCta={{ href: "/support", label: "返回支持中心" }}
-      secondaryCta={{ href: "/bag", label: "查看袋中" }}
+      highlights={copy.highlights}
+      primaryCta={{ href: "/support", label: copy.primaryCta }}
+      secondaryCta={{ href: "/bag", label: copy.secondaryCta }}
     >
       <div className="space-y-4">
         {SHIPPING_POLICY_SECTIONS.map((section) => (

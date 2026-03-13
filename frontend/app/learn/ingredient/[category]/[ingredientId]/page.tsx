@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { fetchIngredientLibraryItem } from "@/lib/api";
+import { getRequestSitePreferences } from "@/lib/sitePreferences.server";
 import { categoryHref, getCategoryMeta, normalizeCategoryKey } from "@/lib/site";
 
 function formatConfidence(value: number): string {
@@ -20,6 +21,7 @@ export default async function LearnIngredientDetailPage({
         ingredientId: string;
       };
 }) {
+  const { locale } = await getRequestSitePreferences();
   const resolvedParams = await Promise.resolve(params);
   const category = normalizeCategoryKey(resolvedParams.category) || resolvedParams.category;
   const ingredientId = String(resolvedParams.ingredientId || "").trim();
@@ -59,7 +61,7 @@ export default async function LearnIngredientDetailPage({
     );
   }
 
-  const categoryMeta = getCategoryMeta(item.category);
+  const categoryMeta = getCategoryMeta(item.category, locale);
   const normalizedItemCategory = normalizeCategoryKey(item.category);
 
   return (
