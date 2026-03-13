@@ -1,4 +1,4 @@
-import rawConfig from "../../../../shared/mobile/decision/lotion.json";
+import rawConfig from "@/generated/mobile/decision/lotion";
 
 import {
   parseDecisionProfileConfig,

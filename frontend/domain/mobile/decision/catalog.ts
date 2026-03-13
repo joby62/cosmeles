@@ -1,18 +1,18 @@
 import type { MobileSelectionCategory } from "@/lib/api";
 import type { Lang } from "@/lib/i18n";
-import rawCatalog from "../../../../shared/mobile/decision/categories.json";
+import rawCatalog from "@/generated/mobile/decision/categories";
 
 type RawDecisionCategoryCatalog = {
   schema_version: string;
   primary_entry: string;
-  capabilities: string[];
-  categories: Array<{
+  capabilities: readonly string[];
+  categories: readonly {
     key: string;
     label_zh: string;
     label_en: string;
     question_count: number;
     estimated_seconds: number;
-  }>;
+  }[];
 };
 
 export type DecisionCategoryCatalogItem = {

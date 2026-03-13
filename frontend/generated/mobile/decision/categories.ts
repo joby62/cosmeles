@@ -1,0 +1,51 @@
+// Generated from shared/mobile/decision/categories.json. Do not edit by hand.
+
+const data = {
+  "schema_version": "mobile_decision_catalog.v1",
+  "primary_entry": "choose",
+  "capabilities": [
+    "choose",
+    "compare",
+    "wiki",
+    "me"
+  ],
+  "categories": [
+    {
+      "key": "shampoo",
+      "label_zh": "洗发水",
+      "label_en": "Shampoo",
+      "question_count": 3,
+      "estimated_seconds": 30
+    },
+    {
+      "key": "bodywash",
+      "label_zh": "沐浴露",
+      "label_en": "Body Wash",
+      "question_count": 5,
+      "estimated_seconds": 45
+    },
+    {
+      "key": "conditioner",
+      "label_zh": "护发素",
+      "label_en": "Conditioner",
+      "question_count": 3,
+      "estimated_seconds": 30
+    },
+    {
+      "key": "lotion",
+      "label_zh": "润肤霜",
+      "label_en": "Body Lotion",
+      "question_count": 5,
+      "estimated_seconds": 45
+    },
+    {
+      "key": "cleanser",
+      "label_zh": "洗面奶",
+      "label_en": "Cleanser",
+      "question_count": 5,
+      "estimated_seconds": 45
+    }
+  ]
+} as const;
+
+export default data;

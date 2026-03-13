@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "sync:mobile-decision": "node ./scripts/sync-mobile-decision-configs.mjs",
+    "prebuild": "npm run sync:mobile-decision",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",

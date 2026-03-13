@@ -1,4 +1,4 @@
-import rawConfig from "../../../../shared/mobile/decision/bodywash.json";
+import rawConfig from "@/generated/mobile/decision/bodywash";
 
 import {
   parseDecisionProfileConfig,

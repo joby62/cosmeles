@@ -16,7 +16,7 @@ type RawDecisionCategoryConfig = {
   schema_version?: string;
   category?: string;
   profile?: {
-    steps?: RawDecisionProfileStep[];
+    steps?: readonly RawDecisionProfileStep[];
   };
 };
 
@@ -24,7 +24,7 @@ type RawDecisionProfileStep = {
   key?: string;
   title?: string;
   note?: string;
-  options?: RawDecisionProfileOption[];
+  options?: readonly RawDecisionProfileOption[];
 };
 
 type RawDecisionProfileOption = {

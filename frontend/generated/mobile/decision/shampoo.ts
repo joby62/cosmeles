@@ -1,0 +1,253 @@
+// Generated from shared/mobile/decision/shampoo.json. Do not edit by hand.
+
+const data = {
+  "schema_version": "mobile_decision_category.v1",
+  "category": "shampoo",
+  "route_titles": {
+    "deep-oil-control": "深层控油型",
+    "anti-dandruff-itch": "去屑止痒型",
+    "gentle-soothing": "温和舒缓型",
+    "anti-hair-loss": "防脱强韧型",
+    "moisture-balance": "水油平衡型"
+  },
+  "matrix": {
+    "category": "shampoo",
+    "categories": [
+      "deep-oil-control",
+      "anti-dandruff-itch",
+      "gentle-soothing",
+      "anti-hair-loss",
+      "moisture-balance"
+    ],
+    "questions": [
+      {
+        "key": "q1",
+        "title": "头皮出油节奏",
+        "options": {
+          "A": "一天不洗就塌/油 (重度)",
+          "B": "2-3天洗一次正好 (中度)",
+          "C": "3天以上不洗也不油 (干性)"
+        }
+      },
+      {
+        "key": "q2",
+        "title": "头皮核心痛点",
+        "options": {
+          "A": "有头屑且发痒 (真菌)",
+          "B": "头皮发红/刺痛/长痘 (敏感)",
+          "C": "掉发明显/发根脆弱 (脱发)",
+          "D": "无特殊感觉 (健康)"
+        }
+      },
+      {
+        "key": "q3",
+        "title": "发丝状态参考",
+        "options": {
+          "A": "频繁染烫/干枯易断",
+          "B": "细软塌/贴头皮",
+          "C": "原生发/健康"
+        }
+      }
+    ],
+    "scoring_matrix": {
+      "q1": {
+        "A": [
+          15,
+          5,
+          -10,
+          -15,
+          -15
+        ],
+        "B": [
+          -5,
+          0,
+          5,
+          0,
+          5
+        ],
+        "C": [
+          -15,
+          -5,
+          10,
+          0,
+          15
+        ]
+      },
+      "q2": {
+        "A": [
+          0,
+          30,
+          0,
+          0,
+          -10
+        ],
+        "B": [
+          -20,
+          -15,
+          30,
+          -10,
+          5
+        ],
+        "C": [
+          5,
+          0,
+          5,
+          30,
+          0
+        ],
+        "D": [
+          2,
+          -5,
+          -5,
+          -5,
+          5
+        ]
+      },
+      "q3": {
+        "A": [
+          -5,
+          0,
+          5,
+          0,
+          8
+        ],
+        "B": [
+          5,
+          0,
+          0,
+          5,
+          -5
+        ],
+        "C": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    "veto_masks": [
+      {
+        "trigger": "q2 == 'B'",
+        "mask": [
+          0,
+          0,
+          1,
+          0,
+          1
+        ],
+        "note": "敏感防线：长痘/红肿期禁止使用强去油、强去屑及扩张血管的防脱成分"
+      },
+      {
+        "trigger": "q2 == 'A'",
+        "mask": [
+          1,
+          1,
+          1,
+          1,
+          0
+        ],
+        "note": "真菌防线：真菌感染期禁止使用高保湿平衡型产品，避免养活菌群"
+      },
+      {
+        "trigger": "q1 == 'C'",
+        "mask": [
+          0,
+          1,
+          1,
+          1,
+          1
+        ],
+        "note": "干皮脱脂防线：干性头皮禁止使用重度控油产品"
+      }
+    ]
+  },
+  "profile": {
+    "steps": [
+      {
+        "key": "q1",
+        "title": "你平时多久会感觉头发变油？",
+        "note": "选最接近你日常状态的一项。",
+        "options": [
+          {
+            "value": "A",
+            "label": "A. 一天不洗就塌/油",
+            "sub": "先偏向控油清洁底色",
+            "choice_label": "一天不洗就塌/油"
+          },
+          {
+            "value": "B",
+            "label": "B. 2-3天洗一次正好",
+            "sub": "先偏向温和平衡底色",
+            "choice_label": "2-3天洗一次正好"
+          },
+          {
+            "value": "C",
+            "label": "C. 3天以上不洗也不油",
+            "sub": "先偏向滋润舒适底色",
+            "choice_label": "3天以上不洗也不油"
+          }
+        ]
+      },
+      {
+        "key": "q2",
+        "title": "你现在有没有明显头皮困扰？",
+        "note": "选最符合你当前阶段的核心痛点。",
+        "options": [
+          {
+            "value": "A",
+            "label": "A. 有头屑且发痒（真菌）",
+            "sub": "优先走去屑止痒方向",
+            "choice_label": "有头屑且发痒"
+          },
+          {
+            "value": "B",
+            "label": "B. 头皮发红/刺痛/长痘（敏感）",
+            "sub": "强约束屏障与温和方向",
+            "choice_label": "头皮发红/刺痛/长痘"
+          },
+          {
+            "value": "C",
+            "label": "C. 掉发明显/发根脆弱（脱发）",
+            "sub": "强化头皮强韧与防脱方向",
+            "choice_label": "掉发明显/发根脆弱"
+          },
+          {
+            "value": "D",
+            "label": "D. 无特殊感觉（健康）",
+            "sub": "回到常规平衡优化路线",
+            "choice_label": "无特殊感觉"
+          }
+        ]
+      },
+      {
+        "key": "q3",
+        "title": "你的发质更接近哪种状态？",
+        "note": "最后一步，选完就出最终答案。",
+        "options": [
+          {
+            "value": "A",
+            "label": "A. 频繁染烫/干枯易断",
+            "sub": "加修护插件，减少脆断感",
+            "choice_label": "频繁染烫/干枯易断"
+          },
+          {
+            "value": "B",
+            "label": "B. 细软塌/贴头皮",
+            "sub": "加轻盈插件，保留蓬松度",
+            "choice_label": "细软塌/贴头皮"
+          },
+          {
+            "value": "C",
+            "label": "C. 原生发/健康",
+            "sub": "走简配插件，保持长期稳定",
+            "choice_label": "原生发/健康"
+          }
+        ]
+      }
+    ]
+  }
+} as const;
+
+export default data;
