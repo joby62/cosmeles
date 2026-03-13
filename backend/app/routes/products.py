@@ -359,7 +359,7 @@ ANALYTICS_CTA_COMPLETION_LABELS: dict[str, str] = {
     "wiki_upload_cta_click": "点击上传一键分析",
     "wiki_category_ingredient_click": "点开成分词条",
     "wiki_category_choose_click": "进入该品类挑选",
-    "profile_result_view": "完成测配结果",
+    "result_view": "完成测评结果",
     "bag_add_success": "加入购物袋",
     "product_showcase_continue_upload_click": "继续上传解析",
     "product_showcase_governance_click": "返回产品治理",
@@ -624,6 +624,17 @@ def _compare_key_for_event(row: MobileClientEvent) -> str:
     return row.event_id
 
 
+def _decision_result_key_for_event(row: MobileClientEvent, props: dict[str, Any]) -> str:
+    session_key = _session_key_for_event(row)
+    scenario_id = _normalize_optional_text(props.get("scenario_id"))
+    if scenario_id:
+        return f"{session_key}:{scenario_id}"
+    route = _normalize_optional_text(row.route)
+    if route:
+        return f"{session_key}:{route}"
+    return session_key
+
+
 def _rate(numerator: int, denominator: int) -> float:
     if denominator <= 0:
         return 0.0
@@ -842,6 +853,9 @@ def get_mobile_analytics_overview(
             "compare_run_start",
             "compare_run_success",
             "compare_result_view",
+            "result_view",
+            "result_primary_cta_click",
+            "result_secondary_loop_click",
             "feedback_prompt_show",
             "feedback_submit",
         ],
@@ -902,6 +916,22 @@ def get_mobile_analytics_overview(
         for row, _props in rows
         if row.name == "compare_result_view"
     }
+    result_view_keys = {
+        _decision_result_key_for_event(row, props)
+        for row, props in rows
+        if row.name == "result_view"
+    }
+    result_primary_cta_click_keys = {
+        _decision_result_key_for_event(row, props)
+        for row, props in rows
+        if row.name == "result_primary_cta_click"
+    }
+    result_secondary_loop_click_keys = {
+        _decision_result_key_for_event(row, props)
+        for row, props in rows
+        if row.name == "result_secondary_loop_click"
+    }
+    result_reach_keys = result_view_keys or compare_result_view_keys
     feedback_prompt_show = sum(1 for row, _props in rows if row.name == "feedback_prompt_show")
     feedback_submit = sum(1 for row, _props in rows if row.name == "feedback_submit")
 
@@ -922,7 +952,10 @@ def get_mobile_analytics_overview(
         compare_run_success=len(compare_run_success_keys),
         compare_completion_rate=_rate(len(compare_run_success_keys), len(compare_run_start_keys)),
         compare_result_view=len(compare_result_view_keys),
-        result_reach_rate=_rate(len(compare_result_view_keys), len(compare_run_success_keys)),
+        result_view=len(result_view_keys),
+        result_primary_cta_click=len(result_primary_cta_click_keys),
+        result_secondary_loop_click=len(result_secondary_loop_click_keys),
+        result_reach_rate=_rate(len(result_reach_keys), len(compare_run_success_keys)),
         feedback_prompt_show=feedback_prompt_show,
         feedback_submit=feedback_submit,
         feedback_submit_rate=_rate(feedback_submit, feedback_prompt_show),
@@ -968,6 +1001,7 @@ def get_mobile_analytics_funnel(
             "compare_run_start",
             "compare_run_success",
             "compare_result_view",
+            "result_view",
         ],
     )
 
@@ -994,7 +1028,7 @@ def get_mobile_analytics_funnel(
             step_sessions["compare_run_start"].add(session_id)
         elif row.name == "compare_run_success":
             step_sessions["compare_run_success"].add(session_id)
-        elif row.name == "compare_result_view":
+        elif row.name in {"compare_result_view", "result_view"}:
             step_sessions["compare_result_view"].add(session_id)
 
     steps: list[MobileAnalyticsFunnelStep] = []
@@ -1303,7 +1337,9 @@ def get_mobile_analytics_experience(
             "compare_run_start",
             "location_context_captured",
             "wiki_upload_cta_click",
-            "profile_result_view",
+            "result_view",
+            "result_primary_cta_click",
+            "result_secondary_loop_click",
             "bag_add_success",
             "product_showcase_continue_upload_click",
             "product_showcase_governance_click",
@@ -1315,6 +1351,9 @@ def get_mobile_analytics_experience(
     wiki_ingredient_list_views = 0
     wiki_ingredient_clicks = 0
     compare_result_views = 0
+    decision_result_views = 0
+    decision_result_primary_cta_clicks = 0
+    decision_result_secondary_loop_clicks = 0
     compare_result_leaves = 0
     result_dwell_values: list[float] = []
     scroll_depth_counter: Counter[tuple[str, int]] = Counter()
@@ -1328,6 +1367,7 @@ def get_mobile_analytics_experience(
     result_cta_click_sessions: dict[str, set[str]] = defaultdict(set)
     result_cta_land_sessions: dict[str, set[str]] = defaultdict(set)
     result_cta_completion_sessions: dict[tuple[str, str], set[str]] = defaultdict(set)
+    result_secondary_loop_action_counter: Counter[str] = Counter()
     browser_counter: Counter[str] = Counter()
     os_counter: Counter[str] = Counter()
     device_counter: Counter[str] = Counter()
@@ -1372,6 +1412,14 @@ def get_mobile_analytics_experience(
         if row.name == "location_context_captured":
             location_capture_events += 1
             location_capture_sessions.add(session_key)
+        if row.name in ANALYTICS_CTA_COMPLETION_LABELS:
+            cta_key = _normalize_optional_text(props.get("result_cta")) or _normalize_optional_text(props.get("cta"))
+            if cta_key:
+                origin_compare_id = _normalize_optional_text(props.get("from_compare_id")) or _normalize_optional_text(row.compare_id) or "no-compare"
+                completion_key = row.name
+                result_cta_completion_sessions[(cta_key, completion_key)].add(
+                    f"{session_key}:{origin_compare_id}:{cta_key}:{completion_key}"
+                )
         if row.name == "page_view":
             continue
         if row.name == "wiki_list_view":
@@ -1391,6 +1439,17 @@ def get_mobile_analytics_experience(
         if row.name == "compare_result_view":
             compare_result_views += 1
             page_view_counter[row_page] += 1
+            continue
+        if row.name == "result_view":
+            decision_result_views += 1
+            continue
+        if row.name == "result_primary_cta_click":
+            decision_result_primary_cta_clicks += 1
+            continue
+        if row.name == "result_secondary_loop_click":
+            decision_result_secondary_loop_clicks += 1
+            action_key = _normalize_optional_text(props.get("action")) or "unknown"
+            result_secondary_loop_action_counter[action_key] += 1
             continue
         if row.name == "compare_result_leave":
             compare_result_leaves += 1
@@ -1438,16 +1497,6 @@ def get_mobile_analytics_experience(
             origin_compare_id = _normalize_optional_text(props.get("from_compare_id")) or _normalize_optional_text(row.compare_id) or "no-compare"
             result_cta_land_sessions[cta_key].add(f"{session_key}:{origin_compare_id}:{cta_key}")
             continue
-        if row.name in ANALYTICS_CTA_COMPLETION_LABELS:
-            cta_key = _normalize_optional_text(props.get("result_cta"))
-            if not cta_key:
-                continue
-            origin_compare_id = _normalize_optional_text(props.get("from_compare_id")) or _normalize_optional_text(row.compare_id) or "no-compare"
-            completion_key = row.name
-            result_cta_completion_sessions[(cta_key, completion_key)].add(
-                f"{session_key}:{origin_compare_id}:{cta_key}:{completion_key}"
-            )
-
     scroll_depth_items = [
         MobileAnalyticsPageDepthItem(
             page=page_key,
@@ -1539,6 +1588,9 @@ def get_mobile_analytics_experience(
         wiki_ingredient_clicks=wiki_ingredient_clicks,
         wiki_ingredient_ctr=_rate(wiki_ingredient_clicks, wiki_ingredient_list_views),
         compare_result_views=compare_result_views,
+        decision_result_views=decision_result_views,
+        decision_result_primary_cta_clicks=decision_result_primary_cta_clicks,
+        decision_result_secondary_loop_clicks=decision_result_secondary_loop_clicks,
         compare_result_leaves=compare_result_leaves,
         avg_result_dwell_ms=round(sum(result_dwell_values) / len(result_dwell_values), 2) if result_dwell_values else 0.0,
         p50_result_dwell_ms=_percentile_fraction(result_dwell_values, 0.5),
@@ -1556,6 +1608,10 @@ def get_mobile_analytics_experience(
         result_cta_clicks=_build_count_items(result_cta_counter, denominator=sum(result_cta_counter.values())),
         result_cta_followthrough=followthrough_items,
         result_cta_completions=completion_items,
+        result_secondary_loop_actions=_build_count_items(
+            result_secondary_loop_action_counter,
+            denominator=sum(result_secondary_loop_action_counter.values()),
+        ),
         browser_families=_build_count_items(browser_counter, denominator=env_denominator, label_map=ANALYTICS_BROWSER_LABELS),
         os_families=_build_count_items(os_counter, denominator=env_denominator, label_map=ANALYTICS_OS_LABELS),
         device_types=_build_count_items(device_counter, denominator=env_denominator, label_map=ANALYTICS_DEVICE_LABELS),
@@ -1679,7 +1735,7 @@ def get_mobile_analytics_sessions(
                 latest_location_label = location_label
                 latest_location_time_zone = _event_location_time_zone(props) or latest_location_time_zone
 
-            if row.name == "compare_result_view":
+            if row.name in {"compare_result_view", "result_view"}:
                 outcome = "result_viewed"
             elif outcome != "result_viewed" and row.name == "feedback_submit":
                 outcome = "feedback_submitted"

@@ -1149,6 +1149,7 @@ class MobileSelectionResultLookupRequest(BaseModel):
 
 
 MobileSelectionResultSchemaVersion = Literal["selection_result_content.v1", "selection_result_content.v2"]
+MobileSelectionResultFixedContractVersion = Literal["selection_result.v3"]
 
 
 class MobileSelectionResultBlock(StrictSchemaModel):
@@ -1177,9 +1178,51 @@ class MobileSelectionResultMeta(StrictSchemaModel):
     prompt_version: str = ""
     model: str = ""
     refresh_reason: str = ""
+    contract_version: MobileSelectionResultFixedContractVersion = "selection_result.v3"
     raw_storage_path: Optional[str] = None
     published_version_path: str = ""
     generated_at: str
+
+
+class MobileSelectionResultSummaryV3(StrictSchemaModel):
+    headline: str
+    body: str
+
+
+class MobileSelectionResultReasonV3(StrictSchemaModel):
+    title: str
+    body: str
+
+
+class MobileSelectionResultNextStepV3(StrictSchemaModel):
+    label: str
+    action: str
+    href: str
+
+
+class MobileSelectionResultSecondaryLoopV3(StrictSchemaModel):
+    action: Literal["compare", "wiki", "me"]
+    label: str
+    href: str
+
+
+class MobileSelectionResultMetaV3(StrictSchemaModel):
+    rules_version: str
+    generated_at: str
+    source: str
+
+
+class MobileSelectionResultContractV3(StrictSchemaModel):
+    schema_version: MobileSelectionResultFixedContractVersion = "selection_result.v3"
+    scenario_id: str
+    category: str
+    route: MobileSelectionRoute
+    summary: MobileSelectionResultSummaryV3
+    recommended_product: ProductCard
+    reasons: List[MobileSelectionResultReasonV3] = Field(default_factory=list)
+    next_step: MobileSelectionResultNextStepV3
+    secondary_loops: List[MobileSelectionResultSecondaryLoopV3] = Field(default_factory=list)
+    meta: MobileSelectionResultMetaV3
 
 
 class MobileSelectionResultProductAnalysisSummary(StrictSchemaModel):
@@ -1720,6 +1763,9 @@ class MobileAnalyticsOverviewResponse(BaseModel):
     compare_run_success: int = 0
     compare_completion_rate: float = 0.0
     compare_result_view: int = 0
+    result_view: int = 0
+    result_primary_cta_click: int = 0
+    result_secondary_loop_click: int = 0
     result_reach_rate: float = 0.0
     feedback_prompt_show: int = 0
     feedback_submit: int = 0
@@ -1840,6 +1886,9 @@ class MobileAnalyticsExperienceResponse(BaseModel):
     wiki_ingredient_clicks: int = 0
     wiki_ingredient_ctr: float = 0.0
     compare_result_views: int = 0
+    decision_result_views: int = 0
+    decision_result_primary_cta_clicks: int = 0
+    decision_result_secondary_loop_clicks: int = 0
     compare_result_leaves: int = 0
     avg_result_dwell_ms: float = 0.0
     p50_result_dwell_ms: float = 0.0
@@ -1857,6 +1906,7 @@ class MobileAnalyticsExperienceResponse(BaseModel):
     result_cta_clicks: List[MobileAnalyticsCountItem] = Field(default_factory=list)
     result_cta_followthrough: List[MobileAnalyticsCtaFollowthroughItem] = Field(default_factory=list)
     result_cta_completions: List[MobileAnalyticsCtaCompletionItem] = Field(default_factory=list)
+    result_secondary_loop_actions: List[MobileAnalyticsCountItem] = Field(default_factory=list)
     browser_families: List[MobileAnalyticsCountItem] = Field(default_factory=list)
     os_families: List[MobileAnalyticsCountItem] = Field(default_factory=list)
     device_types: List[MobileAnalyticsCountItem] = Field(default_factory=list)

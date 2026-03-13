@@ -1,6 +1,14 @@
 {
   "schema_version": "selection_result.v3",
   "description": "Fixed mobile decision result contract for the main flow.",
+  "adapter_boundary": {
+    "accepts_published_schema_versions": [
+      "selection_result_content.v1",
+      "selection_result_content.v2"
+    ],
+    "emits_fixed_contract_version": "selection_result.v3",
+    "validation": "strict"
+  },
   "required_fields": [
     "scenario_id",
     "category",

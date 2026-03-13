@@ -1,5 +1,15 @@
 {
   "schema_version": "mobile_analytics_events.v1",
+  "decision_result_semantics": {
+    "primary_events": [
+      "result_view",
+      "result_primary_cta_click",
+      "result_secondary_loop_click"
+    ],
+    "legacy_aliases_removed": [
+      "profile_result_view"
+    ]
+  },
   "events": {
     "home_view": {
       "required_props": ["page", "route", "source"]

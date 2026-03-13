@@ -7,13 +7,20 @@ from sqlalchemy.orm import Session
 from app.db.models import MobileSelectionResultIndex, ProductAnalysisIndex
 from app.schemas import (
     MobileSelectionLinks,
+    MobileSelectionResultContractV3,
+    MobileSelectionResultFixedContractVersion,
     MobileSelectionPublishedResult,
     MobileSelectionResultSchemaVersion,
     MobileSelectionResultBlock,
     MobileSelectionResultCTA,
     MobileSelectionResultIndexItem,
     MobileSelectionResultMeta,
+    MobileSelectionResultMetaV3,
+    MobileSelectionResultNextStepV3,
+    MobileSelectionResultReasonV3,
     MobileSelectionResultShareCopy,
+    MobileSelectionResultSecondaryLoopV3,
+    MobileSelectionResultSummaryV3,
     MobileSelectionRoute,
     ProductCard,
 )
@@ -27,6 +34,8 @@ from app.services.storage import (
 )
 
 DEFAULT_SELECTION_RESULT_SCHEMA_VERSION = "selection_result_content.v1"
+FIXED_SELECTION_RESULT_CONTRACT_VERSION: MobileSelectionResultFixedContractVersion = "selection_result.v3"
+ALLOWED_SELECTION_RESULT_SECONDARY_LOOP_ACTIONS = {"compare", "wiki", "me"}
 SELECTION_RESULT_STATUS_READY = "ready"
 
 
@@ -102,16 +111,6 @@ def publish_mobile_selection_result(
     )
     normalized_display_order = _normalize_display_order(blocks=blocks, ctas=ctas, display_order=display_order)
 
-    raw_storage_path = None
-    if raw_payload is not None:
-        raw_storage_path = selection_result_raw_version_rel_path(
-            category=category,
-            rules_version=rules_version,
-            answers_hash=answers_hash,
-            version_id=version_id,
-        )
-        save_json_at(raw_storage_path, raw_payload)
-
     storage_path = selection_result_published_rel_path(
         category=category,
         rules_version=rules_version,
@@ -145,11 +144,26 @@ def publish_mobile_selection_result(
             prompt_version=prompt_version.strip(),
             model=model.strip(),
             refresh_reason=refresh_reason.strip(),
-            raw_storage_path=raw_storage_path,
+            contract_version=FIXED_SELECTION_RESULT_CONTRACT_VERSION,
+            raw_storage_path=None,
             published_version_path=published_version_path,
             generated_at=generated_at,
         ),
     )
+    contract_v3 = build_mobile_selection_result_contract_v3(published)
+
+    raw_storage_path = None
+    if raw_payload is not None:
+        normalized_raw_payload = dict(raw_payload)
+        normalized_raw_payload["selection_result_v3_contract"] = contract_v3.model_dump(mode="json")
+        raw_storage_path = selection_result_raw_version_rel_path(
+            category=category,
+            rules_version=rules_version,
+            answers_hash=answers_hash,
+            version_id=version_id,
+        )
+        save_json_at(raw_storage_path, normalized_raw_payload)
+        published.meta.raw_storage_path = raw_storage_path
 
     doc = published.model_dump(mode="json")
     save_json_at(published_version_path, doc)
@@ -264,6 +278,17 @@ def load_mobile_selection_result(
                 f"answers_hash='{answers_hash}': {exc}"
             ),
         ) from exc
+    try:
+        build_mobile_selection_result_contract_v3(item)
+    except ValueError as exc:
+        raise MobileSelectionResultLookupError(
+            code="SELECTION_RESULT_FIXED_CONTRACT_INVALID",
+            http_status=500,
+            stage="selection_result_contract",
+            detail=(
+                f"Published selection result cannot adapt to {FIXED_SELECTION_RESULT_CONTRACT_VERSION}: {exc}"
+            ),
+        ) from exc
     return item, rec
 
 
@@ -291,6 +316,176 @@ def to_mobile_selection_result_index_item(rec: MobileSelectionResultIndex) -> Mo
         generated_at=str(rec.generated_at or "").strip() or None,
         updated_at=str(rec.updated_at or "").strip() or None,
     )
+
+
+def build_mobile_selection_result_contract_v3(item: MobileSelectionPublishedResult) -> MobileSelectionResultContractV3:
+    summary = _extract_selection_result_summary(item)
+    reasons = _extract_selection_result_reasons(item)
+    next_step, secondary_loops = _extract_selection_result_ctas(item)
+    return MobileSelectionResultContractV3(
+        schema_version=FIXED_SELECTION_RESULT_CONTRACT_VERSION,
+        scenario_id=item.scenario_id,
+        category=item.category,
+        route=item.route,
+        summary=summary,
+        recommended_product=item.recommended_product,
+        reasons=reasons,
+        next_step=next_step,
+        secondary_loops=secondary_loops,
+        meta=MobileSelectionResultMetaV3(
+            rules_version=item.rules_version,
+            generated_at=item.meta.generated_at,
+            source=item.recommendation_source,
+        ),
+    )
+
+
+def _extract_selection_result_summary(item: MobileSelectionPublishedResult) -> MobileSelectionResultSummaryV3:
+    hero_payload = _find_block_payload(item=item, block_id="hero")
+    headline = _normalize_text(hero_payload.get("title")) or _normalize_text(item.micro_summary)
+    body = _normalize_text(hero_payload.get("subtitle")) or _normalize_text(item.micro_summary)
+    if not headline or not body:
+        raise ValueError("selection_result.v3 summary requires hero.title and hero.subtitle (or micro_summary).")
+    return MobileSelectionResultSummaryV3(headline=headline, body=body)
+
+
+def _extract_selection_result_reasons(item: MobileSelectionPublishedResult) -> list[MobileSelectionResultReasonV3]:
+    reasons: list[MobileSelectionResultReasonV3] = []
+    for block in _ordered_blocks(item):
+        if str(block.id or "").strip() == "hero":
+            continue
+        payload = block.payload if isinstance(block.payload, dict) else {}
+        title = _normalize_text(payload.get("title")) or _normalize_text(payload.get("eyebrow"))
+        body = (
+            _normalize_text(payload.get("subtitle"))
+            or _normalize_text(payload.get("note"))
+            or _first_non_empty_text(payload.get("items"))
+        )
+        if not title or not body:
+            continue
+        reasons.append(MobileSelectionResultReasonV3(title=title, body=body))
+        if len(reasons) >= 3:
+            break
+    if len(reasons) != 3:
+        raise ValueError(
+            f"selection_result.v3 requires exactly 3 reasons, got {len(reasons)} "
+            f"for scenario_id='{item.scenario_id}'."
+        )
+    return reasons
+
+
+def _extract_selection_result_ctas(
+    item: MobileSelectionPublishedResult,
+) -> tuple[MobileSelectionResultNextStepV3, list[MobileSelectionResultSecondaryLoopV3]]:
+    if not item.ctas:
+        raise ValueError("selection_result.v3 requires at least one CTA for next_step.")
+    primary = item.ctas[0]
+    primary_href = _resolve_cta_href(item=item, cta=primary)
+    next_step = MobileSelectionResultNextStepV3(
+        label=_require_text(primary.label, field_name="ctas[0].label"),
+        action=_require_text(primary.action, field_name="ctas[0].action"),
+        href=_require_text(primary_href, field_name="ctas[0].href"),
+    )
+
+    secondary: list[MobileSelectionResultSecondaryLoopV3] = []
+    for cta in item.ctas[1:]:
+        label = _normalize_text(cta.label)
+        href = _resolve_cta_href(item=item, cta=cta)
+        if not label or not href:
+            continue
+        action = _resolve_secondary_loop_action(action=cta.action, href=href)
+        if not action:
+            continue
+        secondary.append(MobileSelectionResultSecondaryLoopV3(action=action, label=label, href=href))
+    return next_step, secondary
+
+
+def _ordered_blocks(item: MobileSelectionPublishedResult) -> list[MobileSelectionResultBlock]:
+    by_id: dict[str, MobileSelectionResultBlock] = {}
+    for block in item.blocks:
+        key = str(block.id or "").strip()
+        if key and key not in by_id:
+            by_id[key] = block
+    ordered: list[MobileSelectionResultBlock] = []
+    seen: set[str] = set()
+    for block_id in item.display_order:
+        key = str(block_id or "").strip()
+        if not key or key == "ctas" or key in seen:
+            continue
+        block = by_id.get(key)
+        if block is None:
+            continue
+        ordered.append(block)
+        seen.add(key)
+    for block in item.blocks:
+        key = str(block.id or "").strip()
+        if not key or key in seen:
+            continue
+        ordered.append(block)
+        seen.add(key)
+    return ordered
+
+
+def _find_block_payload(*, item: MobileSelectionPublishedResult, block_id: str) -> dict[str, Any]:
+    for block in _ordered_blocks(item):
+        if str(block.id or "").strip() != block_id:
+            continue
+        if isinstance(block.payload, dict):
+            return block.payload
+        return {}
+    return {}
+
+
+def _resolve_secondary_loop_action(*, action: str, href: str) -> str | None:
+    action_key = _normalize_text(action).lower()
+    href_key = _normalize_text(href).lower()
+    if action_key in ALLOWED_SELECTION_RESULT_SECONDARY_LOOP_ACTIONS:
+        return action_key
+    if action_key in {"restart", "rerun", "retry"} or "compare" in action_key or "/compare" in href_key:
+        return "compare"
+    if "wiki" in action_key or "/wiki" in href_key:
+        return "wiki"
+    if action_key in {"me", "profile", "history"} or "/m/me" in href_key:
+        return "me"
+    return None
+
+
+def _resolve_cta_href(*, item: MobileSelectionPublishedResult, cta: MobileSelectionResultCTA) -> str:
+    href = _normalize_text(cta.href)
+    if href:
+        return href
+    action_key = _normalize_text(cta.action).lower()
+    if action_key in {"product", "open_product"}:
+        return _normalize_text(item.links.product)
+    if action_key in {"wiki", "open_wiki"}:
+        return _normalize_text(item.links.wiki)
+    if action_key in {"restart", "rerun", "retry"} or "compare" in action_key:
+        category = _normalize_text(item.category)
+        return f"/m/compare?category={category}" if category else "/m/compare"
+    if action_key in {"me", "profile", "history"}:
+        return "/m/me"
+    return ""
+
+
+def _first_non_empty_text(values: Any) -> str:
+    if not isinstance(values, list):
+        return ""
+    for item in values:
+        text = _normalize_text(item)
+        if text:
+            return text
+    return ""
+
+
+def _normalize_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _require_text(value: Any, *, field_name: str) -> str:
+    text = _normalize_text(value)
+    if not text:
+        raise ValueError(f"{field_name} is required for selection_result.v3.")
+    return text
 
 
 def _normalize_display_order(

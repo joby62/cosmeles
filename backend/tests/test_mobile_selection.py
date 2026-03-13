@@ -880,6 +880,7 @@ def test_mobile_selection_result_publish_and_lookup(test_client, monkeypatch: py
     payload = {
         "category": "shampoo",
         "answers": {"q1": "A", "q2": "C", "q3": "B"},
+        "micro_summary": "先稳住油脂分泌",
         "blocks": [
             {
                 "id": "hero",
@@ -889,7 +890,34 @@ def test_mobile_selection_result_publish_and_lookup(test_client, monkeypatch: py
                     "title": "先稳住油脂分泌",
                     "subtitle": "这是第一版发布稿",
                 },
-            }
+            },
+            {
+                "id": "situation",
+                "kind": "explanation",
+                "version": "v1",
+                "payload": {
+                    "title": "你现在更像什么情况",
+                    "subtitle": "当前答案更偏向头皮油脂管理优先，先稳住出油再谈附加诉求。",
+                },
+            },
+            {
+                "id": "attention",
+                "kind": "strategy",
+                "version": "v1",
+                "payload": {
+                    "title": "你当前最该抓住什么",
+                    "subtitle": "优先把高频出油带来的负担拉平，先把稳定性做好。",
+                },
+            },
+            {
+                "id": "pitfalls",
+                "kind": "warning",
+                "version": "v1",
+                "payload": {
+                    "title": "你现在最该少踩的坑",
+                    "subtitle": "不要只追求即时清爽感，避免把刺激性推得过高。",
+                },
+            },
         ],
         "ctas": [
             {
@@ -898,9 +926,23 @@ def test_mobile_selection_result_publish_and_lookup(test_client, monkeypatch: py
                 "action": "product",
                 "href": "/product/mock",
                 "payload": {},
-            }
+            },
+            {
+                "id": "open_wiki",
+                "label": "查看百科",
+                "action": "wiki",
+                "href": "/m/wiki/shampoo",
+                "payload": {},
+            },
+            {
+                "id": "restart_compare",
+                "label": "重新测评",
+                "action": "compare",
+                "href": "/m/compare?category=shampoo",
+                "payload": {},
+            },
         ],
-        "display_order": ["hero", "ctas"],
+        "display_order": ["hero", "situation", "attention", "pitfalls", "ctas"],
         "raw_payload": {
             "headline": "draft hero",
             "notes": ["draft"],
@@ -932,8 +974,12 @@ def test_mobile_selection_result_publish_and_lookup(test_client, monkeypatch: py
     assert result_item["renderer_variant"] == "selection_result_default"
     assert result_item["blocks"][0]["payload"]["title"] == "先稳住油脂分泌"
     assert result_item["ctas"][0]["id"] == "open_product"
+    assert result_item["meta"]["contract_version"] == "selection_result.v3"
     assert result_item["recommended_product"]["category"] == "shampoo"
     assert result_item["recommendation_source"] == "category_fallback"
+    raw_doc = json.loads((storage_dir / item["raw_storage_path"]).read_text(encoding="utf-8"))
+    assert raw_doc["selection_result_v3_contract"]["schema_version"] == "selection_result.v3"
+    assert len(raw_doc["selection_result_v3_contract"]["reasons"]) == 3
 
 
 def test_mobile_selection_result_republish_overwrites_active_payload(test_client, monkeypatch: pytest.MonkeyPatch):
@@ -952,14 +998,66 @@ def test_mobile_selection_result_republish_overwrites_active_payload(test_client
     base_payload = {
         "category": "bodywash",
         "answers": {"q1": "A", "q2": "A", "q3": "A", "q4": "A", "q5": "A"},
+        "micro_summary": "先稳住屏障修护",
         "blocks": [
             {
                 "id": "hero",
                 "kind": "hero",
                 "version": "v1",
-                "payload": {"title": "第一版标题"},
-            }
+                "payload": {"title": "第一版标题", "subtitle": "第一版副标题"},
+            },
+            {
+                "id": "situation",
+                "kind": "explanation",
+                "version": "v1",
+                "payload": {
+                    "title": "你现在更像什么情况",
+                    "subtitle": "皮肤屏障状态更需要优先修护，避免频繁波动。",
+                },
+            },
+            {
+                "id": "attention",
+                "kind": "strategy",
+                "version": "v1",
+                "payload": {
+                    "title": "你当前最该抓住什么",
+                    "subtitle": "先稳住干痒和泛红触发点，再逐步优化肤感细节。",
+                },
+            },
+            {
+                "id": "pitfalls",
+                "kind": "warning",
+                "version": "v1",
+                "payload": {
+                    "title": "你现在最该少踩的坑",
+                    "subtitle": "避免只堆清洁强度，导致短期舒适但长期更敏感。",
+                },
+            },
         ],
+        "ctas": [
+            {
+                "id": "open_product",
+                "label": "查看产品",
+                "action": "product",
+                "href": "/product/mock-bodywash",
+                "payload": {},
+            },
+            {
+                "id": "open_wiki",
+                "label": "查看百科",
+                "action": "wiki",
+                "href": "/m/wiki/bodywash",
+                "payload": {},
+            },
+            {
+                "id": "restart_compare",
+                "label": "重新测评",
+                "action": "compare",
+                "href": "/m/compare?category=bodywash",
+                "payload": {},
+            },
+        ],
+        "display_order": ["hero", "situation", "attention", "pitfalls", "ctas"],
         "prompt_key": "mobile.selection.result",
         "prompt_version": "v1",
         "model": "mock-model",
@@ -975,8 +1073,9 @@ def test_mobile_selection_result_republish_overwrites_active_payload(test_client
             "id": "hero",
             "kind": "hero",
             "version": "v2",
-            "payload": {"title": "第二版标题"},
-        }
+            "payload": {"title": "第二版标题", "subtitle": "第二版副标题"},
+        },
+        *base_payload["blocks"][1:],
     ]
     second_payload["prompt_version"] = "v2"
     second_payload["raw_payload"] = {"revision": 2}
@@ -990,6 +1089,10 @@ def test_mobile_selection_result_republish_overwrites_active_payload(test_client
     active_doc = json.loads((storage_dir / second_item["storage_path"]).read_text(encoding="utf-8"))
     assert active_doc["blocks"][0]["payload"]["title"] == "第二版标题"
     assert active_doc["meta"]["prompt_version"] == "v2"
+    assert active_doc["meta"]["contract_version"] == "selection_result.v3"
+    second_raw_doc = json.loads((storage_dir / second_item["raw_storage_path"]).read_text(encoding="utf-8"))
+    assert second_raw_doc["revision"] == 2
+    assert second_raw_doc["selection_result_v3_contract"]["summary"]["headline"] == "第二版标题"
 
     looked_up = client.post(
         "/api/mobile/selection/result",
