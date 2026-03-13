@@ -1,0 +1,29 @@
+{
+  "schema_version": "selection_result.v3",
+  "description": "Fixed mobile decision result contract for the main flow.",
+  "required_fields": [
+    "scenario_id",
+    "category",
+    "route",
+    "summary",
+    "recommended_product",
+    "reasons",
+    "next_step",
+    "secondary_loops",
+    "meta"
+  ],
+  "constraints": {
+    "reason_count": 3,
+    "primary_next_step_count": 1,
+    "allowed_secondary_loops": ["compare", "wiki", "me"]
+  },
+  "field_specs": {
+    "route": ["key", "title"],
+    "summary": ["headline", "body"],
+    "recommended_product": ["id", "brand", "name", "image_url"],
+    "reasons": ["title", "body"],
+    "next_step": ["label", "action", "href"],
+    "secondary_loops": ["action", "label", "href"],
+    "meta": ["rules_version", "generated_at", "source"]
+  }
+}

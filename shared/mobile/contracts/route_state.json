@@ -1,0 +1,18 @@
+{
+  "schema_version": "mobile_route_state.v1",
+  "allowed_query_keys": [
+    "source",
+    "category",
+    "return_to",
+    "resume_token",
+    "scenario_id",
+    "result_cta"
+  ],
+  "rules": [
+    "return_to must point to a /m path",
+    "category must be one of the shared decision catalog keys",
+    "scenario_id is required on result-to-utility hops",
+    "result_cta is required when a utility page is opened from the result page",
+    "resume_token is only valid for questionnaire resume flows"
+  ]
+}

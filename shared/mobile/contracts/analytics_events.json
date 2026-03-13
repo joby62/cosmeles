@@ -1,0 +1,47 @@
+{
+  "schema_version": "mobile_analytics_events.v1",
+  "events": {
+    "home_view": {
+      "required_props": ["page", "route", "source"]
+    },
+    "home_primary_cta_click": {
+      "required_props": ["page", "route", "source", "target_path"]
+    },
+    "home_resume_click": {
+      "required_props": ["page", "route", "source", "target_path"]
+    },
+    "home_weak_entry_click": {
+      "required_props": ["page", "route", "source", "target_path"]
+    },
+    "choose_view": {
+      "required_props": ["page", "route", "source"]
+    },
+    "choose_category_select": {
+      "required_props": ["page", "route", "source", "category"]
+    },
+    "choose_start_click": {
+      "required_props": ["page", "route", "source", "category", "target_path"]
+    },
+    "choose_resume_click": {
+      "required_props": ["page", "route", "source", "category", "target_path"]
+    },
+    "questionnaire_view": {
+      "required_props": ["page", "route", "source", "category"]
+    },
+    "question_answered": {
+      "required_props": ["page", "route", "source", "category", "step"]
+    },
+    "questionnaire_completed": {
+      "required_props": ["page", "route", "source", "category"]
+    },
+    "result_view": {
+      "required_props": ["page", "route", "source", "category", "scenario_id"]
+    },
+    "result_primary_cta_click": {
+      "required_props": ["page", "route", "source", "category", "scenario_id", "target_path"]
+    },
+    "result_secondary_loop_click": {
+      "required_props": ["page", "route", "source", "category", "scenario_id", "target_path", "action"]
+    }
+  }
+}
