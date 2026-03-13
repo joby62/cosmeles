@@ -1363,6 +1363,7 @@ function MobileComparePageContent() {
           loading={bootstrapLoading}
           hasHistoryProfile={hasHistoryProfile}
           recommendationReady={recommendationReady}
+          categoryKey={category}
           categoryLabel={currentCategoryLabel}
           routeTitle={recommendationRouteTitle}
           headline={recommendationHeadline}
@@ -1371,6 +1372,7 @@ function MobileComparePageContent() {
           lastCompletedLabel={profileLastCompletedLabel}
           summaryItems={bootstrap?.profile?.summary || []}
           detailButtonLabel="查看依据"
+          rewriteHref={`/m/${category}/profile?step=1`}
           emptyTitle={`还没有可沿用的“${currentCategoryLabel}”历史首推`}
           emptyDescription={`先完成一次“${currentCategoryLabel}”问答，这次对比才会更贴合你的情况。`}
         />
@@ -1618,6 +1620,7 @@ function MobileComparePageContent() {
             loading={bootstrapLoading}
             hasHistoryProfile={hasHistoryProfile}
             recommendationReady={recommendationReady}
+            categoryKey={category}
             categoryLabel={currentCategoryLabel}
             routeTitle={recommendationRouteTitle}
             headline={recommendationHeadline}
@@ -1626,6 +1629,7 @@ function MobileComparePageContent() {
             lastCompletedLabel={profileLastCompletedLabel}
             summaryItems={bootstrap?.profile?.summary || []}
             detailButtonLabel="查看带入信息"
+            rewriteHref={`/m/${category}/profile?step=1`}
             emptyTitle={`“${currentCategoryLabel}”还没有可沿用的历史首推`}
             emptyDescription={`先完成一次“${currentCategoryLabel}”问答，再开始专业对比。`}
             compact
@@ -2135,6 +2139,7 @@ function CompareRecommendationSummaryCard({
   loading,
   hasHistoryProfile,
   recommendationReady,
+  categoryKey,
   categoryLabel,
   routeTitle,
   headline,
@@ -2143,6 +2148,7 @@ function CompareRecommendationSummaryCard({
   lastCompletedLabel,
   summaryItems,
   detailButtonLabel,
+  rewriteHref,
   emptyTitle,
   emptyDescription,
   compact = false,
@@ -2150,6 +2156,7 @@ function CompareRecommendationSummaryCard({
   loading: boolean;
   hasHistoryProfile: boolean;
   recommendationReady: boolean;
+  categoryKey: MobileSelectionCategory;
   categoryLabel: string;
   routeTitle: string | null;
   headline: string;
@@ -2158,6 +2165,7 @@ function CompareRecommendationSummaryCard({
   lastCompletedLabel: string | null;
   summaryItems: string[];
   detailButtonLabel: string;
+  rewriteHref: string;
   emptyTitle: string;
   emptyDescription: string;
   compact?: boolean;
@@ -2212,12 +2220,39 @@ function CompareRecommendationSummaryCard({
             </span>
           </button>
           {detailsOpen ? (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {summaryItems.map((item, idx) => (
-                <span key={`${idx}-${item}`} className="m-compare-recommend-detail-chip">
-                  {item}
-                </span>
-              ))}
+            <div className="mt-3 space-y-3">
+              <div className="flex flex-wrap gap-2">
+                {summaryItems.map((item, idx) => (
+                  <span key={`${idx}-${item}`} className="m-compare-recommend-detail-chip">
+                    {item}
+                  </span>
+                ))}
+              </div>
+
+              <div className="rounded-[22px] border border-black/[0.08] bg-[linear-gradient(180deg,rgba(255,255,255,0.9)_0%,rgba(248,250,255,0.78)_100%)] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)]">
+                <div className="text-[12px] font-medium tracking-[0.01em] text-black/42">如果这条依据已经不贴近现在的状态</div>
+                <div className="mt-1 text-[15px] leading-[1.6] font-semibold tracking-[-0.015em] text-black/84">
+                  重新填写个人选项，再让这次对比按新的基线来算。
+                </div>
+                <div className="mt-3">
+                  <Link
+                    href={rewriteHref}
+                    onClick={() => {
+                      void safeTrack("compare_basis_refill_clicked", {
+                        category: categoryKey,
+                        card_mode: compact ? "compact" : "full",
+                        source: "basis_details",
+                      });
+                    }}
+                    className="m-pressable inline-flex h-10 items-center gap-1.5 rounded-full border border-[#0a84ff]/16 bg-[#0a84ff]/8 px-4 text-[13px] font-semibold text-[#0a84ff] shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] active:bg-[#0a84ff]/12"
+                  >
+                    <span>重新填写个人选项</span>
+                    <svg viewBox="0 0 20 20" className="h-3.5 w-3.5 fill-none stroke-current" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                      <path d="M7.5 5.5 12 10l-4.5 4.5" />
+                    </svg>
+                  </Link>
+                </div>
+              </div>
             </div>
           ) : null}
         </div>
