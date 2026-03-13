@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import MobileAnalyticsDashboard from "@/components/analytics/MobileAnalyticsDashboard";
+import { ANALYTICS_SECTIONS } from "@/lib/analyticsNav";
 
 export const metadata: Metadata = {
   title: "数据分析 · 予选",
@@ -326,14 +327,16 @@ export default function AnalyticsPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <AnchorPill href="#live-signals">现有能力</AnchorPill>
-              <AnchorPill href="#v1-panels">第一版结构</AnchorPill>
-              <AnchorPill href="#final-state">最终完全体</AnchorPill>
+              {ANALYTICS_SECTIONS.map((section) => (
+                <AnchorPill key={section.key} href={section.href}>
+                  {section.navLabelZh}
+                </AnchorPill>
+              ))}
               <Link
-                href="/product"
+                href="/auth"
                 className="inline-flex h-10 items-center justify-center rounded-full border border-black/10 bg-white px-4 text-[13px] font-semibold text-black/72 hover:bg-black/[0.03]"
               >
-                返回产品管理
+                返回管理控制台
               </Link>
             </div>
           </div>
@@ -344,9 +347,28 @@ export default function AnalyticsPage() {
             <MetricTile label="当前可回答问题" value={`${ANALYTIC_QUESTIONS.length}`} detail="已经能支撑产品和工程联动" accent="slate" />
             <MetricTile label="第一版核心面板" value={`${FIRST_RELEASE_PANELS.length}`} detail="overview / funnel / errors / feedback / sessions" accent="stone" />
           </div>
+
+          <div className="mt-7 grid gap-3 lg:grid-cols-2">
+            {ANALYTICS_SECTIONS.map((section) => (
+              <article key={section.key} className="rounded-[22px] border border-black/10 bg-[#f7f8fb] px-4 py-4">
+                <div className="text-[11px] font-semibold tracking-[0.12em] text-black/44 uppercase">{section.navLabelEn}</div>
+                <div className="mt-1 text-[18px] font-semibold tracking-[-0.02em] text-black/86">{section.titleZh}</div>
+                <p className="mt-2 text-[13px] leading-[1.62] text-black/62">{section.summaryZh}</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {section.bulletsZh.map((item) => (
+                    <span key={item} className="rounded-full border border-black/10 bg-white px-2.5 py-1 text-[11px] text-black/66">
+                      {item}
+                    </span>
+                  ))}
+                </div>
+              </article>
+            ))}
+          </div>
         </header>
 
-        <MobileAnalyticsDashboard />
+        <section id="analytics-dashboard" className="mt-8 scroll-mt-20">
+          <MobileAnalyticsDashboard />
+        </section>
 
         <section id="live-signals" className="mt-8 grid gap-5 lg:grid-cols-[1.35fr_0.95fr]">
           <div className="rounded-[32px] border border-black/10 bg-white p-7 shadow-[0_18px_44px_rgba(16,24,40,0.06)]">

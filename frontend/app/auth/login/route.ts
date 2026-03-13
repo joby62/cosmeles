@@ -1,0 +1,65 @@
+import { NextRequest, NextResponse } from "next/server";
+import {
+  ADMIN_CONSOLE_COOKIE_MAX_AGE_SECONDS,
+  ADMIN_CONSOLE_COOKIE_NAME,
+  getAdminConsolePassword,
+  getConfiguredAdminConsoleSessionToken,
+  normalizeAdminReturnTo,
+} from "@/lib/adminAuth";
+
+function formValue(formData: FormData, key: string): string {
+  const value = formData.get(key);
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function isSecureRequest(req: NextRequest): boolean {
+  if (req.nextUrl.protocol === "https:") return true;
+  const forwardedProto = (req.headers.get("x-forwarded-proto") || "").toLowerCase();
+  return forwardedProto.includes("https");
+}
+
+function redirectToAuth(req: NextRequest, errorCode: string, returnTo: string): NextResponse {
+  const url = new URL("/auth", req.url);
+  url.searchParams.set("error", errorCode);
+  if (returnTo) {
+    url.searchParams.set("returnTo", returnTo);
+  }
+  return NextResponse.redirect(url, 303);
+}
+
+export async function POST(req: NextRequest) {
+  const formData = await req.formData();
+  const password = formValue(formData, "password");
+  const returnTo = normalizeAdminReturnTo(formValue(formData, "returnTo"));
+
+  if (!password) {
+    return redirectToAuth(req, "missing-password", returnTo);
+  }
+
+  const configuredPassword = getAdminConsolePassword();
+  if (!configuredPassword) {
+    return redirectToAuth(req, "config-missing", returnTo);
+  }
+
+  if (password !== configuredPassword) {
+    return redirectToAuth(req, "invalid-password", returnTo);
+  }
+
+  const token = await getConfiguredAdminConsoleSessionToken();
+  if (!token) {
+    return redirectToAuth(req, "config-missing", returnTo);
+  }
+
+  const nextUrl = new URL(returnTo, req.url);
+  const res = NextResponse.redirect(nextUrl, 303);
+  res.cookies.set({
+    name: ADMIN_CONSOLE_COOKIE_NAME,
+    value: token,
+    maxAge: ADMIN_CONSOLE_COOKIE_MAX_AGE_SECONDS,
+    httpOnly: true,
+    sameSite: "lax",
+    secure: isSecureRequest(req),
+    path: "/",
+  });
+  return res;
+}

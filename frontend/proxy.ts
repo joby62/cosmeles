@@ -1,4 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import {
+  ADMIN_CONSOLE_COOKIE_NAME,
+  isAdminProtectedPath,
+  isValidAdminConsoleSession,
+} from "@/lib/adminAuth";
 
 const MOBILE_DEVICE_COOKIE = "mx_device_id";
 const MOBILE_DEVICE_HEADER = "x-mobile-device-id";
@@ -44,7 +49,16 @@ function passThrough(req: NextRequest): NextResponse {
   return withDeviceIdentity(req, NextResponse.next({ request: { headers } }));
 }
 
-export function proxy(req: NextRequest) {
+function redirectToAdminAuth(req: NextRequest): NextResponse {
+  const url = req.nextUrl.clone();
+  const returnTo = `${req.nextUrl.pathname}${req.nextUrl.search}`;
+  url.pathname = "/auth";
+  url.search = "";
+  url.searchParams.set("returnTo", returnTo);
+  return withDeviceIdentity(req, NextResponse.redirect(url, 302));
+}
+
+export async function proxy(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
   const hasFileExt = /\.[a-zA-Z0-9]+$/.test(pathname);
 
@@ -59,6 +73,17 @@ export function proxy(req: NextRequest) {
     pathname.startsWith("/robots") ||
     pathname.startsWith("/sitemap")
   ) {
+    return passThrough(req);
+  }
+
+  if (isAdminProtectedPath(pathname)) {
+    const session = req.cookies.get(ADMIN_CONSOLE_COOKIE_NAME)?.value;
+    const isAuthed = await isValidAdminConsoleSession(session);
+    if (!isAuthed) return redirectToAdminAuth(req);
+    return passThrough(req);
+  }
+
+  if (pathname === "/auth" || pathname.startsWith("/auth/")) {
     return passThrough(req);
   }
 

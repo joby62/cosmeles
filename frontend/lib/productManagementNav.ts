@@ -39,8 +39,8 @@ export const PRODUCT_MANAGEMENT_SECTIONS: ProductManagementSectionDef[] = [
     navLabelZh: "产品流水线",
     navLabelEn: "Pipeline",
     titleZh: "产品生产流水线",
-    summaryZh: "上传、同品归并、成分分析、类型映射和增强分析都在这里完成。",
-    bulletsZh: ["上传解析", "同品归并", "增强分析"],
+    summaryZh: "上传、同品归并、成分分析、类型映射、增强分析和测评结果场景生成都在这里完成。",
+    bulletsZh: ["上传解析", "同品归并", "增强分析", "测评场景"],
   },
   {
     key: "governance",
@@ -79,6 +79,7 @@ export const PRODUCT_MANAGEMENT_FLYOUT_GROUPS: ProductManagementFlyoutGroupDef[]
       { labelZh: "成分分析台", labelEn: "Ingredient Build", href: "/product/pipeline#ingredient-library-generator" },
       { labelZh: "产品类型映射台", labelEn: "Route Mapping", href: "/product/pipeline#product-route-mapping-generator" },
       { labelZh: "产品增强分析台", labelEn: "Product Analysis", href: "/product/pipeline#product-analysis-generator" },
+      { labelZh: "测评结果场景生成台", labelEn: "Selection Result", href: "/product/pipeline#mobile-selection-result-generator" },
     ],
   },
   {

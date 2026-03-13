@@ -27,6 +27,9 @@ const TOTAL_STEPS = 4;
 const ACTIVE_COMPARE_STORAGE_KEY = "mx_mobile_compare_active";
 const ACTIVE_COMPARE_DRAFT_STORAGE_KEY = "mx_mobile_compare_draft";
 const STALE_ACTIVE_SESSION_HINT = "上次对比记录已失效，已回到起始页。你可以重新开始，或先查看历史记录。";
+const LIBRARY_RETURN_PARAM = "from_library";
+const LIBRARY_PICK_PARAM = "pick";
+const LIBRARY_PRESELECT_PARAM = "picked";
 
 const WAITING_STAGE_ORDER = [
   "prepare",
@@ -101,6 +104,19 @@ function normalizeSelectionCategory(raw: unknown): MobileSelectionCategory | nul
   const normalized = String(raw || "").trim().toLowerCase() as MobileSelectionCategory;
   if (!CATEGORY_ORDER.includes(normalized)) return null;
   return normalized;
+}
+
+function parsePickedProductIds(raw: unknown): string[] {
+  const text = String(raw || "").trim();
+  if (!text) return [];
+  return Array.from(
+    new Set(
+      text
+        .split(",")
+        .map((item) => String(item || "").trim())
+        .filter(Boolean),
+    ),
+  ).slice(0, MAX_TOTAL_SELECTION);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -216,6 +232,7 @@ function MobileComparePageContent() {
   const [activeSession, setActiveSession] = useState<MobileCompareSession | null>(null);
   const [restoringSession, setRestoringSession] = useState(true);
   const [pendingDraft, setPendingDraft] = useState<StoredCompareDraft | null>(null);
+  const [pendingLibrarySelection, setPendingLibrarySelection] = useState<string[] | null>(null);
   const [uploadSectionExpanded, setUploadSectionExpanded] = useState(false);
   const [needsUploadReattach, setNeedsUploadReattach] = useState(false);
   const [chromeVisible, setChromeVisible] = useState(true);
@@ -247,6 +264,10 @@ function MobileComparePageContent() {
     () => new Set(orderedLibraryItems.map((item) => item.productId)),
     [orderedLibraryItems],
   );
+  const quickLibraryItems = useMemo(
+    () => (priorityLibraryItems.length > 0 ? priorityLibraryItems : standardLibraryItems.slice(0, 8)),
+    [priorityLibraryItems, standardLibraryItems],
+  );
   const selectedSet = useMemo(() => new Set(selectedProductIds), [selectedProductIds]);
   const productTitleById = useMemo(() => {
     const out = new Map<string, string>();
@@ -265,6 +286,8 @@ function MobileComparePageContent() {
   const selectionShortfall = Math.max(0, 2 - totalSelectedCount);
   const landingCategory = normalizeSelectionCategory(searchParams?.get("category")) || category;
   const profileRefreshed = searchParams?.get("profile_refreshed") === "1";
+  const fromLibrary = searchParams?.get(LIBRARY_RETURN_PARAM) === "1";
+  const libraryPickedIds = useMemo(() => parsePickedProductIds(searchParams?.get(LIBRARY_PICK_PARAM)), [searchParams]);
   const resultCta = String(searchParams?.get("result_cta") || "").trim();
   const fromCompareId = String(searchParams?.get("from_compare_id") || "").trim();
   const analyticsRoute = searchParams?.toString() ? `${pathname}?${searchParams.toString()}` : pathname || "/m/compare";
@@ -311,6 +334,25 @@ function MobileComparePageContent() {
     const nextQuery = params.toString();
     router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname || "/m/compare", { scroll: false });
   }, [landingCategory, pathname, profileRefreshed, router, searchParams]);
+
+  useEffect(() => {
+    if (!fromLibrary) return;
+
+    setShowGuide(false);
+    setStep(3);
+    setPendingLibrarySelection(libraryPickedIds);
+    setSelectionNotice(
+      libraryPickedIds.length > 0
+        ? `已从产品库带回 ${libraryPickedIds.length} 款产品。`
+        : "已返回对比页，请先从产品库选择 2~3 款产品。",
+    );
+
+    const params = new URLSearchParams(searchParams?.toString() || "");
+    params.delete(LIBRARY_RETURN_PARAM);
+    params.delete(LIBRARY_PICK_PARAM);
+    const nextQuery = params.toString();
+    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname || "/m/compare", { scroll: false });
+  }, [fromLibrary, libraryPickedIds, pathname, router, searchParams]);
   const uploadSectionBodyVisible = uploadSectionExpanded || hasUploadSignal;
 
   const canStart =
@@ -355,6 +397,15 @@ function MobileComparePageContent() {
     if (hasUpload) return ["我在用的产品", ...names];
     return names;
   }, [hasUpload, productTitleById, selectedProductIds]);
+
+  const libraryBrowseHref = useMemo(() => {
+    const params = new URLSearchParams();
+    params.set("category", category);
+    if (selectedProductIds.length > 0) {
+      params.set(LIBRARY_PRESELECT_PARAM, selectedProductIds.join(","));
+    }
+    return `/m/compare/library?${params.toString()}`;
+  }, [category, selectedProductIds]);
 
   const selectionHeroTitle =
     recommendationReady && priorityLibraryItems.length > 0 ? "先从更贴近你的几款开始" : "先从下面挑 2 款开始";
@@ -660,6 +711,29 @@ function MobileComparePageContent() {
     }
     setPendingDraft(null);
   }, [bootstrapLoading, category, pendingDraft]);
+
+  useEffect(() => {
+    if (pendingLibrarySelection == null || bootstrapLoading) return;
+
+    const normalized = pendingLibrarySelection
+      .map((item) => String(item || "").trim())
+      .filter((item) => item && availableProductIdSet.has(item))
+      .slice(0, maxLibrarySelection);
+
+    setSelectedProductIds(normalized);
+    setStep(3);
+    setShowGuide(false);
+
+    if (pendingLibrarySelection.length > 0 && normalized.length === 0) {
+      setSelectionNotice("带回的产品当前不可用，请重新选择。");
+    } else if (normalized.length > 0 && normalized.length < pendingLibrarySelection.length) {
+      setSelectionNotice(`已带回 ${normalized.length} 款产品，其余暂不可用。`);
+    } else if (normalized.length > 0) {
+      setSelectionNotice(`已带回 ${normalized.length} 款产品，可继续下一步。`);
+    }
+
+    setPendingLibrarySelection(null);
+  }, [availableProductIdSet, bootstrapLoading, maxLibrarySelection, pendingLibrarySelection]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1542,16 +1616,18 @@ function MobileComparePageContent() {
           <div className="mt-3 text-[13px] text-black/55">该品类暂时还没有可用产品。</div>
         ) : (
           <div className="mt-5 space-y-4">
-            {priorityLibraryItems.length > 0 ? (
+            {quickLibraryItems.length > 0 ? (
               <CompareProductRail
-                title="先看这几款"
+                title={priorityLibraryItems.length > 0 ? "先看这几款" : "先从这里选"}
                 note={
-                  recommendationReady
-                    ? "更贴近你已有结论的产品，适合先做判断。"
-                    : "更值得优先比较的产品，适合先做第一轮取舍。"
+                  priorityLibraryItems.length > 0
+                    ? recommendationReady
+                      ? "更贴近你已有结论的产品，适合先做判断。"
+                      : "更值得优先比较的产品，适合先做第一轮取舍。"
+                    : "先在这批候选里做第一轮取舍，更多可去产品库筛选。"
                 }
               >
-                {priorityLibraryItems.map((item) => {
+                {quickLibraryItems.map((item) => {
                   const pid = item.productId;
                   const selected = selectedSet.has(pid);
                   const blocked = !selected && selectedCount >= maxLibrarySelection;
@@ -1580,34 +1656,20 @@ function MobileComparePageContent() {
 
             {uploadDisclosure}
 
-            {standardLibraryItems.length > 0 ? (
-              <CompareProductRail title={priorityLibraryItems.length > 0 ? "更多可选" : "可选产品"} note="左右滑动浏览，整卡点按即可选择或取消。">
-                {standardLibraryItems.map((item) => {
-                  const pid = item.productId;
-                  const selected = selectedSet.has(pid);
-                  const blocked = !selected && selectedCount >= maxLibrarySelection;
-                  return (
-                    <ProductLibraryCard
-                      key={pid}
-                      item={item}
-                      selected={selected}
-                      disabled={running}
-                      blocked={blocked}
-                      onPress={() => {
-                        toggleSelected(pid);
-                        void safeTrack("compare_library_pick", {
-                          category,
-                          product_id: pid,
-                          is_recommendation: item.isRecommendation,
-                          is_most_used: item.isMostUsed,
-                          selected: !selected,
-                        });
-                      }}
-                    />
-                  );
-                })}
-              </CompareProductRail>
-            ) : null}
+            <CompareLibraryEntryCard
+              href={libraryBrowseHref}
+              categoryLabel={currentCategoryLabel}
+              selectedCount={selectedCount}
+              hiddenCount={Math.max(0, orderedLibraryItems.length - quickLibraryItems.length)}
+              onOpen={() => {
+                void safeTrack("compare_library_entry_open", {
+                  category,
+                  selected_count: selectedCount,
+                  visible_count: quickLibraryItems.length,
+                  total_count: orderedLibraryItems.length,
+                });
+              }}
+            />
           </div>
         )}
         {bootstrapLoading || bootstrapError || orderedLibraryItems.length === 0 ? <div className="mt-5">{uploadDisclosure}</div> : null}
@@ -2145,6 +2207,45 @@ function CompareProductRail({
         <div className="flex min-w-max gap-3 pr-2">{children}</div>
       </div>
     </section>
+  );
+}
+
+function CompareLibraryEntryCard({
+  href,
+  categoryLabel,
+  selectedCount,
+  hiddenCount,
+  onOpen,
+}: {
+  href: string;
+  categoryLabel: string;
+  selectedCount: number;
+  hiddenCount: number;
+  onOpen: () => void;
+}) {
+  return (
+    <Link href={href} onClick={onOpen} className="m-compare-library-entry m-pressable block rounded-[28px] border p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="m-compare-library-entry-kicker">更多可选</div>
+          <div className="m-compare-library-entry-title">{categoryLabel}产品库</div>
+          <div className="m-compare-library-entry-note">
+            {hiddenCount > 0
+              ? `还有 ${hiddenCount} 款待筛选，可按搜索与集合快速收敛。`
+              : "可按搜索与集合筛选全部候选产品。"}
+          </div>
+        </div>
+        <span className="m-compare-library-entry-chip inline-flex h-8 items-center rounded-full border px-3 text-[11px] font-semibold">
+          已选 {selectedCount}
+        </span>
+      </div>
+      <div className="mt-3 inline-flex h-9 items-center gap-1.5 rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-4 text-[13px] font-semibold text-white shadow-[0_10px_24px_rgba(0,113,227,0.24)]">
+        去产品库筛选
+        <svg viewBox="0 0 20 20" className="h-3.5 w-3.5 fill-none stroke-current" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="M7.5 5.5 12 10l-4.5 4.5" />
+        </svg>
+      </div>
+    </Link>
   );
 }
 

@@ -9,6 +9,7 @@ import {
 } from "@/lib/productManagementData";
 import {
   getProductManagementSection,
+  PRODUCT_MANAGEMENT_FLYOUT_GROUPS,
   PRODUCT_MANAGEMENT_SECTIONS,
   type ProductManagementSectionKey,
 } from "@/lib/productManagementNav";
@@ -35,6 +36,10 @@ export default function ProductManagementShell({
     widthMode === "wide"
       ? "max-w-[1780px] px-6 xl:px-8 2xl:px-10"
       : "max-w-[1180px] px-6 md:px-8";
+  const activeFeatureGroup =
+    activeSection === "overview"
+      ? null
+      : PRODUCT_MANAGEMENT_FLYOUT_GROUPS.find((item) => item.key === activeSection) || null;
 
   return (
     <main className={`mx-auto min-h-screen w-full py-12 ${widthClass}`}>
@@ -84,6 +89,20 @@ export default function ProductManagementShell({
               </span>
             ))}
           </div>
+
+          {activeFeatureGroup ? (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {activeFeatureGroup.items.map((item) => (
+                <Link
+                  key={`${activeFeatureGroup.key}:${item.href}:${item.labelZh}`}
+                  href={item.href}
+                  className="rounded-full border border-black/10 bg-white px-3 py-1.5 text-[12px] text-black/66 hover:bg-black/[0.03]"
+                >
+                  {item.labelZh}
+                </Link>
+              ))}
+            </div>
+          ) : null}
 
           {aiMetrics ? (
             <div className="mt-5 grid grid-cols-2 gap-2.5 sm:grid-cols-4">

@@ -35,6 +35,8 @@ services:
       BACKEND_HOST: backend-dev
       BACKEND_PORT: "8000"
       INTERNAL_API_BASE: http://backend-dev:8000
+      ADMIN_CONSOLE_PASSWORD: ${ADMIN_CONSOLE_PASSWORD:-}
+      ADMIN_CONSOLE_SESSION_SALT: ${ADMIN_CONSOLE_SESSION_SALT:-cosmeles-admin}
       # 让 Next 在容器里热更新更稳定（尤其是云服务器/远程FS）
       CHOKIDAR_USEPOLLING: "true"
       WATCHPACK_POLLING: "true"

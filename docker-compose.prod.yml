@@ -43,6 +43,8 @@ services:
       BACKEND_PORT: "8000"
       INTERNAL_API_BASE: http://backend:8000
       GIT_REPO_DIR: /repo
+      ADMIN_CONSOLE_PASSWORD: ${ADMIN_CONSOLE_PASSWORD:-}
+      ADMIN_CONSOLE_SESSION_SALT: ${ADMIN_CONSOLE_SESSION_SALT:-cosmeles-admin}
     volumes:
       - ./:/repo:ro
     ports:

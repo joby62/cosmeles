@@ -754,10 +754,10 @@ export default function GitDashboardClient({
             {dataset.error || pickLang(lang, "当前运行环境可能没有 .git 仓库信息。", "The runtime may not include a .git directory.")}
           </p>
           <Link
-            href="/"
+            href="/auth"
             className="mt-7 inline-flex items-center rounded-full border border-black/12 bg-black/[0.02] px-5 py-2 text-[13px] font-medium text-black/72"
           >
-            {pickLang(lang, "返回首页", "Back to home")}
+            {pickLang(lang, "返回管理控制台", "Back to admin console")}
           </Link>
         </div>
       </section>

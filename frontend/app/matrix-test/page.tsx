@@ -262,10 +262,10 @@ export default function DesktopMatrixTestPage() {
         </p>
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <Link
-            href="/"
+            href="/auth"
             className="rounded-full border border-black/12 bg-white px-4 py-2 text-[12px] font-medium text-black/74"
           >
-            返回首页
+            返回管理控制台
           </Link>
           <Link
             href="/git"

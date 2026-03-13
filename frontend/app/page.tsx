@@ -94,42 +94,6 @@ export default function HomePage() {
               {CATEGORY_CONFIG[k].zh}
             </Link>
           ))}
-          <Link
-            href="/product"
-            className={cx(
-              "px-4 py-2 rounded-full",
-              "text-[12px] font-medium tracking-[0.02em]",
-              "border border-black/[0.08]",
-              "bg-white/60 hover:bg-white/75",
-              "transition-colors"
-            )}
-          >
-            产品管理
-          </Link>
-          <Link
-            href="/analytics"
-            className={cx(
-              "px-4 py-2 rounded-full",
-              "text-[12px] font-medium tracking-[0.02em]",
-              "border border-black/[0.08]",
-              "bg-[#eff8f2] text-[#164f3d] hover:bg-[#e4f2e9]",
-              "transition-colors"
-            )}
-          >
-            数据分析
-          </Link>
-          <Link
-            href="/matrix-test"
-            className={cx(
-              "px-4 py-2 rounded-full",
-              "text-[12px] font-medium tracking-[0.02em]",
-              "border border-black/[0.08]",
-              "bg-black text-white hover:bg-black/85",
-              "transition-colors"
-            )}
-          >
-            矩阵测试台
-          </Link>
         </div>
 
         <div className="mt-12 text-[12px] text-black/35">{footer}</div>

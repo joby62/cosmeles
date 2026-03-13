@@ -35,6 +35,8 @@ services:
       - BACKEND_HOST=backend
       - BACKEND_PORT=8000
       - INTERNAL_API_BASE=http://backend:8000
+      - ADMIN_CONSOLE_PASSWORD=${ADMIN_CONSOLE_PASSWORD:-}
+      - ADMIN_CONSOLE_SESSION_SALT=${ADMIN_CONSOLE_SESSION_SALT:-cosmeles-admin}
     expose:
       - "3000"
 

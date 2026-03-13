@@ -7,11 +7,10 @@ import type { Lang } from "@/lib/i18n";
 import { getInitialLang, setLang as setStoredLang, subscribeLang } from "@/lib/i18n";
 import { brandByLang } from "@/lib/brand";
 import { TOP_CATEGORIES, CATEGORY_CONFIG, type CategoryKey } from "@/lib/catalog";
-import { PRODUCT_MANAGEMENT_FLYOUT_GROUPS } from "@/lib/productManagementNav";
 
 type FlyoutItem = { label: string; href: string };
 type FlyoutColumn = { title: string; items: FlyoutItem[] };
-type NavFlyoutKey = CategoryKey | "product";
+type NavFlyoutKey = CategoryKey;
 
 function cx(...arr: Array<string | false | null | undefined>) {
   return arr.filter(Boolean).join(" ");
@@ -24,16 +23,6 @@ function flyoutTitles(lang: Lang) {
 
 function getFlyout(category: NavFlyoutKey, lang: Lang): FlyoutColumn[] {
   const t = flyoutTitles(lang);
-
-  if (category === "product") {
-    return PRODUCT_MANAGEMENT_FLYOUT_GROUPS.map((group) => ({
-      title: lang === "zh" ? group.titleZh : group.titleEn,
-      items: group.items.map((item) => ({
-        label: lang === "zh" ? item.labelZh : item.labelEn,
-        href: item.href,
-      })),
-    }));
-  }
 
   const routeDefs = CATEGORY_CONFIG[category].desktopRoutes;
   const splitIndex = Math.ceil(routeDefs.length / 2);
@@ -62,7 +51,7 @@ function getFlyout(category: NavFlyoutKey, lang: Lang): FlyoutColumn[] {
           label: lang === "zh" ? `查看全部${CATEGORY_CONFIG[category].zh}` : `View all ${CATEGORY_CONFIG[category].en}`,
           href: `/c/${category}`,
         },
-        { label: lang === "zh" ? "进入产品管理" : "Product management", href: "/product" },
+        { label: lang === "zh" ? "管理控制台" : "Admin Console", href: "/auth" },
       ],
     },
   ];
@@ -173,21 +162,8 @@ export default function TopNav() {
                 </Link>
               ))}
 
-              <Link
-                href="/product"
-                className={cx("nav-item", openKey === "product" && "nav-item-active")}
-                onPointerEnter={() => requestOpen("product")}
-              >
-                {lang === "zh" ? "产品管理" : "Product Mgmt"}
-              </Link>
-              <Link href="/analytics" className="nav-item" onPointerEnter={() => requestClose()}>
-                {lang === "zh" ? "数据分析" : "Analytics"}
-              </Link>
-              <Link href="/matrix-test" className="nav-item" onPointerEnter={() => requestClose()}>
-                {lang === "zh" ? "矩阵测试" : "Matrix Test"}
-              </Link>
-              <Link href="/git" className="nav-item" onPointerEnter={() => requestClose()}>
-                {lang === "zh" ? "工程脉冲" : "Git Pulse"}
+              <Link href="/auth" className="nav-item" onPointerEnter={() => requestClose()}>
+                {lang === "zh" ? "管理控制台" : "Admin"}
               </Link>
             </nav>
 
