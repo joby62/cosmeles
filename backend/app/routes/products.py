@@ -695,15 +695,32 @@ def _format_location_accuracy_label(value: float | None) -> str | None:
     return f"约{int(round(value))}m"
 
 
+def _event_location_city(props: dict[str, Any]) -> str | None:
+    city = (
+        _normalize_optional_text(props.get("location_city"))
+        or _normalize_optional_text(props.get("location_prefecture_city"))
+        or _normalize_optional_text(props.get("location_city_name"))
+        or _normalize_optional_text(props.get("location_admin_city"))
+    )
+    district = _normalize_optional_text(props.get("location_district")) or _normalize_optional_text(
+        props.get("location_district_name")
+    )
+    if city and district and district not in city:
+        return f"{city} {district}"
+    if city:
+        return city
+    return district or _normalize_optional_text(props.get("location_province"))
+
+
 def _event_location_label(props: dict[str, Any]) -> str | None:
     latitude = _event_prop_float(props, "location_latitude")
     longitude = _event_prop_float(props, "location_longitude")
+    city = _event_location_city(props)
     time_zone = _event_location_time_zone(props)
     accuracy_m = _event_prop_float(props, "location_accuracy_m")
     parts: list[str] = []
-    time_zone_label = _humanize_location_time_zone(time_zone)
-    if time_zone_label:
-        parts.append(time_zone_label)
+    if city:
+        parts.append(city)
     if latitude is not None and longitude is not None:
         parts.append(f"{latitude:.3f}, {longitude:.3f}")
     accuracy_label = _format_location_accuracy_label(accuracy_m)
@@ -714,7 +731,7 @@ def _event_location_label(props: dict[str, Any]) -> str | None:
     label = _normalize_optional_text(props.get("location_label"))
     if label:
         return label
-    return time_zone_label or time_zone
+    return _humanize_location_time_zone(time_zone) or time_zone
 
 
 def _has_event_location(props: dict[str, Any]) -> bool:
@@ -734,11 +751,14 @@ def _event_location_region_key(props: dict[str, Any]) -> str | None:
 def _event_location_region_label(props: dict[str, Any]) -> str | None:
     latitude = _event_prop_float(props, "location_latitude")
     longitude = _event_prop_float(props, "location_longitude")
+    city = _event_location_city(props)
     time_zone_label = _humanize_location_time_zone(_event_location_time_zone(props))
+    if city and latitude is None and longitude is None:
+        return city
     if latitude is None or longitude is None:
         return time_zone_label or _event_location_label(props)
     region = f"{round(latitude, 1):.1f}, {round(longitude, 1):.1f}"
-    return f"{time_zone_label} · {region}" if time_zone_label else region
+    return f"{city} · {region}" if city else region
 
 
 def _event_location_accuracy_bucket(props: dict[str, Any]) -> str:

@@ -1667,27 +1667,29 @@ export default function MobileAnalyticsDashboard() {
 
                   <div className="mt-4 grid gap-3 md:grid-cols-2">
                     <div className="rounded-[18px] border border-[#d9e4f8] bg-[#f4f8ff] px-4 py-3 text-[12px] leading-[1.7] text-[#305a98]">
-                      下方“时区分布 / 近似区域 / 定位精度”的占比，分母都是当前筛选下
+                      下方“补充时区 / 城市 / 经纬度 / 定位精度”的占比，分母都是当前筛选下
                       <span className="font-semibold">已识别位置会话 {formatNumber(experience.data.sessions_with_location)}</span>
                       ，位置缺省不计入分母。
                     </div>
                     <div className="rounded-[18px] border border-[#efe4c8] bg-[#fffaf0] px-4 py-3 text-[12px] leading-[1.7] text-[#8b6a21]">
-                      近似区域按经纬度
-                      <span className="font-semibold">1 位小数聚类</span>
-                      ，量级约 10km，只用于找样本和钻取，不代表精确城市定位。
+                      有地级市解析时优先展示
+                      <span className="font-semibold">城市名</span>
+                      ；没有城市时回退到
+                      <span className="font-semibold">1 位小数经纬度聚类</span>
+                      ，量级约 10km。
                     </div>
                   </div>
 
                   <div className="mt-4 grid gap-4 md:grid-cols-3">
                     <div>
                       <div className="mb-3 flex items-center gap-2 text-[12px] text-black/48">
-                        <span>近似区域</span>
-                        <HoverHint label="点击后只下钻 Session Explorer；不改上面的整体漏斗与概览。" />
+                        <span>城市 / 经纬度</span>
+                        <HoverHint label="优先展示地级市；没有城市时展示经纬度聚类。点击后只下钻 Session Explorer，不改上面的整体漏斗与概览。" />
                       </div>
                       {renderSelectableCountList(experience.data.location_regions, {
                         activeKey: sessionLocationRegionKey,
                         tone: "amber",
-                        emptyLabel: "当前筛选下还没有近似区域样本。",
+                        emptyLabel: "当前筛选下还没有城市 / 经纬度样本。",
                         onSelect: (item) => {
                           const shouldClear = sessionLocationRegionKey === item.key;
                           startTransition(() => {
@@ -1703,8 +1705,8 @@ export default function MobileAnalyticsDashboard() {
                     </div>
                     <div>
                       <div className="mb-3 flex items-center gap-2 text-[12px] text-black/48">
-                        <span>时区分布</span>
-                        <HoverHint label="点击后会联动整个 dashboard，适合先看区域差异，再看整体漏斗和错误分布。" />
+                        <span>补充时区</span>
+                        <HoverHint label="这是补充维度，不是主位置标签。点击后会联动整个 dashboard，适合对比更大范围区域差异。" />
                       </div>
                       {renderSelectableCountList(experience.data.location_time_zones, {
                         activeKey: locationTimeZone,
@@ -1990,7 +1992,7 @@ export default function MobileAnalyticsDashboard() {
         {sessionLocationRegionKey ? (
           <div className="mb-4 flex flex-wrap items-center gap-3 rounded-[20px] border border-[#d9e4f8] bg-[#f4f8ff] px-4 py-3">
             <div className="text-[13px] text-[#305a98]">
-              会话已按近似区域筛选：<span className="font-semibold">{activeLocationRegionLabel}</span>
+              会话已按城市 / 经纬度筛选：<span className="font-semibold">{activeLocationRegionLabel}</span>
             </div>
             <button
               type="button"

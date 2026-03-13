@@ -186,13 +186,11 @@ function formatLocationLabel(context: {
   latitude: number;
   longitude: number;
   accuracyM?: number;
-  timeZone?: string;
 }): string {
   const parts = [`${context.latitude.toFixed(3)}, ${context.longitude.toFixed(3)}`];
   if (typeof context.accuracyM === "number" && Number.isFinite(context.accuracyM) && context.accuracyM > 0) {
     parts.push(`+-${Math.round(context.accuracyM)}m`);
   }
-  if (context.timeZone) parts.push(context.timeZone);
   return parts.join(" · ");
 }
 
@@ -286,7 +284,7 @@ export async function requestMobileLocationContext(): Promise<MobileLocationRequ
           location_longitude: longitude,
           location_accuracy_m: accuracyM,
           location_time_zone: timeZone,
-          location_label: formatLocationLabel({ latitude, longitude, accuracyM, timeZone }),
+          location_label: formatLocationLabel({ latitude, longitude, accuracyM }),
           location_captured_at: new Date().toISOString(),
         };
         writeMobileLocationContext(context);

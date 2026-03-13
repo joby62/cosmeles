@@ -8,7 +8,11 @@ from sqlalchemy.orm import sessionmaker
 
 from app.db.models import Base, MobileClientEvent
 from app.db.session import get_db
-from app.routes.products import router as products_router
+from app.routes.products import (
+    _event_location_label,
+    _event_location_region_label,
+    router as products_router,
+)
 from app.settings import settings
 
 
@@ -816,11 +820,11 @@ def test_mobile_analytics_errors_feedback_and_sessions(mobile_analytics_client: 
     assert sessions_payload["selected_compare_id"] == "cmp-1"
     assert sessions_payload["selected_session_id"] == "sess-1"
     assert sessions_payload["total"] >= 1
-    assert sessions_payload["items"][0]["latest_location_label"] == "上海时区 · 31.230, 121.470 · 约1.2km"
+    assert sessions_payload["items"][0]["latest_location_label"] == "31.230, 121.470 · 约1.2km"
     assert sessions_payload["items"][0]["latest_location_time_zone"] == "Asia/Shanghai"
     assert any(item["name"] == "compare_run_success" for item in sessions_payload["timeline"])
     assert any(item["name"] == "compare_result_view" for item in sessions_payload["timeline"])
-    assert any(item["location_label"] == "上海时区 · 31.230, 121.470 · 约1.2km" for item in sessions_payload["timeline"])
+    assert any(item["location_label"] == "31.230, 121.470 · 约1.2km" for item in sessions_payload["timeline"])
 
 
 def test_mobile_analytics_experience(mobile_analytics_client: TestClient):
@@ -910,8 +914,8 @@ def test_mobile_analytics_experience(mobile_analytics_client: TestClient):
     assert region_counts["31.2, 121.5|Asia/Shanghai"] == 1
     assert region_counts["35.7, 139.8|Asia/Tokyo"] == 1
     region_labels = {item["key"]: item["label"] for item in payload["location_regions"]}
-    assert region_labels["31.2, 121.5|Asia/Shanghai"] == "上海时区 · 31.2, 121.5"
-    assert region_labels["35.7, 139.8|Asia/Tokyo"] == "东京时区 · 35.7, 139.8"
+    assert region_labels["31.2, 121.5|Asia/Shanghai"] == "31.2, 121.5"
+    assert region_labels["35.7, 139.8|Asia/Tokyo"] == "35.7, 139.8"
     timezone_counts = {item["key"]: item["count"] for item in payload["location_time_zones"]}
     assert timezone_counts["Asia/Shanghai"] == 1
     assert timezone_counts["Asia/Tokyo"] == 1
@@ -956,3 +960,17 @@ def test_mobile_analytics_geo_filters(mobile_analytics_client: TestClient):
     region_payload = region_sessions.json()
     assert region_payload["total"] == 1
     assert region_payload["items"][0]["session_id"] == "sess-1"
+
+
+def test_location_label_prefers_city_when_available():
+    props = {
+        "location_city": "上海市",
+        "location_district": "浦东新区",
+        "location_latitude": 31.23,
+        "location_longitude": 121.47,
+        "location_accuracy_m": 1200,
+        "location_time_zone": "Asia/Shanghai",
+    }
+
+    assert _event_location_label(props) == "上海市 浦东新区 · 31.230, 121.470 · 约1.2km"
+    assert _event_location_region_label(props) == "上海市 浦东新区 · 31.2, 121.5"
