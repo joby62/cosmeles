@@ -2740,7 +2740,9 @@ export async function fetchMobileSelectionResult(payload: {
     method: "POST",
     body: JSON.stringify(payload),
     cacheProfile: "dynamic",
-    includeOwnerHeaders: false,
+    // Result pages run as Next server components; owner cookie/device id must be
+    // forwarded so the newly created selection session lands under the same device.
+    includeOwnerHeaders: true,
   });
 }
 
