@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import MobilePageAnalytics from "@/components/mobile/MobilePageAnalytics";
 import MobileTrackedLink from "@/components/mobile/MobileTrackedLink";
@@ -107,7 +107,7 @@ function GuidePointer() {
   );
 }
 
-export default function MobileHome() {
+function MobileHomeContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [revealed, setRevealed] = useState(false);
@@ -408,5 +408,17 @@ export default function MobileHome() {
         )}
       </div>
     </section>
+  );
+}
+
+function MobileHomeFallback() {
+  return <section className="-mx-4 -my-6 min-h-[100dvh] bg-[color:var(--m-bg)]" />;
+}
+
+export default function MobileHome() {
+  return (
+    <Suspense fallback={<MobileHomeFallback />}>
+      <MobileHomeContent />
+    </Suspense>
   );
 }
