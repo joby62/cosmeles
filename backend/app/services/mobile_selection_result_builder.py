@@ -9,8 +9,7 @@ from app.ai.orchestrator import run_capability_now
 from app.ai.prompts import load_prompt
 from app.constants import MOBILE_RULES_VERSION, PRODUCT_PROFILE_SUPPORTED_CATEGORIES, VALID_CATEGORIES
 from app.db.models import MobileSelectionResultIndex
-from app.routes.mobile import (
-    CATEGORY_LABELS_ZH,
+from app.routes.mobile_selection import (
     _build_answers_hash,
     _load_ready_product_analysis_result,
     _resolve_selection,
@@ -18,6 +17,7 @@ from app.routes.mobile import (
     _row_to_product_card,
     _selection_matrix_assets,
 )
+from app.routes.mobile_support import CATEGORY_LABELS_ZH
 from app.schemas import (
     MobileSelectionChoice,
     MobileSelectionLinks,
