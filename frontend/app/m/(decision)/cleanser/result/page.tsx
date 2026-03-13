@@ -52,6 +52,7 @@ export default async function CleanserResultPage({
   if (!answers) {
     redirect(profileHref);
   }
+  const resultHref = `/m/cleanser/result?${new URLSearchParams(answers).toString()}`;
 
   let result: Awaited<ReturnType<typeof fetchMobileSelectionResult>> | null = null;
   let resultError: string | null = null;
@@ -85,18 +86,13 @@ export default async function CleanserResultPage({
       emptyImageLabel="Cleanser"
       startHref={startHref}
       profileHref={profileHref}
+      resultHref={resultHref}
       result={result.item}
-      analyticsContext={
-        attribution
-          ? {
-              page: "selection_result",
-              route: "/m/cleanser/result",
-              source: attribution.source || "m_compare_result",
-              resultCta: attribution.resultCta,
-              fromCompareId: attribution.fromCompareId,
-            }
-          : null
-      }
+      analyticsContext={{
+        page: "selection_result",
+        route: "/m/cleanser/result",
+        source: attribution?.source || "decision_result",
+      }}
     />
   );
 }

@@ -45,6 +45,7 @@ export default async function ShampooResultPage({
   if (!answers) {
     redirect(profileHref);
   }
+  const resultHref = `/m/shampoo/result?${new URLSearchParams(answers).toString()}`;
 
   let result: Awaited<ReturnType<typeof fetchMobileSelectionResult>> | null = null;
   let resultError: string | null = null;
@@ -78,18 +79,13 @@ export default async function ShampooResultPage({
       emptyImageLabel="Shampoo"
       startHref={startHref}
       profileHref={profileHref}
+      resultHref={resultHref}
       result={result.item}
-      analyticsContext={
-        attribution
-          ? {
-              page: "selection_result",
-              route: "/m/shampoo/result",
-              source: attribution.source || "m_compare_result",
-              resultCta: attribution.resultCta,
-              fromCompareId: attribution.fromCompareId,
-            }
-          : null
-      }
+      analyticsContext={{
+        page: "selection_result",
+        route: "/m/shampoo/result",
+        source: attribution?.source || "decision_result",
+      }}
     />
   );
 }

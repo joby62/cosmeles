@@ -1,6 +1,7 @@
 import Image from "next/image";
-import Link from "next/link";
 import MobileEventBeacon from "@/components/mobile/MobileEventBeacon";
+import MobilePageAnalytics from "@/components/mobile/MobilePageAnalytics";
+import MobileTrackedLink from "@/components/mobile/MobileTrackedLink";
 import {
   MobileSelectionPublishedResult,
   MobileSelectionResultBlock,
@@ -9,50 +10,38 @@ import {
 } from "@/lib/api";
 import { describeMobileRouteFocus } from "@/lib/mobile/routeCopy";
 
-const SOURCE_LABELS: Record<string, string> = {
-  featured_slot: "主推槽位",
-  route_mapping: "类型映射",
-  category_fallback: "品类兜底",
-};
-
 type Props = {
   titlePrefix: string;
   emptyImageLabel: string;
   startHref: string;
   profileHref: string;
+  resultHref: string;
   result: MobileSelectionPublishedResult;
-  analyticsContext?: {
+  analyticsContext: {
     page: string;
     route: string;
     source: string;
-    resultCta: string;
-    fromCompareId: string;
-  } | null;
+  };
 };
 
-type BlockContent = {
+type ParsedBlock = {
   id: string;
-  kind: string;
-  eyebrow: string;
   title: string;
   subtitle: string;
   note: string;
   items: string[];
 };
 
-type ResolvedCTA = {
-  id: string;
-  label: string;
-  action: string;
-  href: string;
-};
-
-type DisclosureGroup = {
+type ResultReason = {
   id: string;
   title: string;
-  preview: string;
-  tone: "neutral" | "blue" | "amber";
-  blocks: MobileSelectionResultBlock[];
+  body: string;
+};
+
+type ResultAction = {
+  action: "product" | "compare" | "wiki" | "me";
+  label: string;
+  href: string;
 };
 
 export default function SelectionPublishedResultFlow({
@@ -60,426 +49,331 @@ export default function SelectionPublishedResultFlow({
   emptyImageLabel,
   startHref,
   profileHref,
+  resultHref,
   result,
   analyticsContext,
 }: Props) {
-  const product = result.recommended_product;
   const routeFocus = describeMobileRouteFocus(result.category, result.route.key);
-  const blocksById = new Map(result.blocks.map((item) => [item.id, item]));
-  const orderedBlocks = resolveOrderedBlocks(result.display_order, blocksById, result.blocks);
-  const heroBlock =
-    orderedBlocks.find((item) => item.id === "hero" || normalizeKind(item.kind) === "hero") || null;
-  const heroContent = heroBlock ? parseBlockContent(heroBlock) : null;
-  const heroTitle = heroContent?.title || `你当前更适合先走 ${result.route.title} 这条线`;
-  const heroSupport =
-    previewText(result.micro_summary, 34) ||
-    previewText(heroContent?.subtitle, 34) ||
-    previewText(routeFocus, 34) ||
-    `先按 ${result.route.title} 这条线开始。`;
+  const hero = findBlock(result.blocks, "hero");
+  const attention = findBlock(result.blocks, "attention");
+  const pitfalls = findBlock(result.blocks, "pitfalls");
+  const summaryHeadline =
+    hero?.title ||
+    normalizeText(result.share_copy.subtitle) ||
+    `你当前更适合先走 ${result.route.title} 这条线`;
+  const summaryBody =
+    hero?.subtitle ||
+    normalizeText(result.micro_summary) ||
+    routeFocus ||
+    `先按 ${result.route.title} 这条线判断当前更适合你的护理方向。`;
 
-  const explanationBlocks: MobileSelectionResultBlock[] = [];
-  const actionBlocks: MobileSelectionResultBlock[] = [];
-  const warningBlocks: MobileSelectionResultBlock[] = [];
-  const overflowBlocks: MobileSelectionResultBlock[] = [];
-
-  for (const block of orderedBlocks) {
-    if (heroBlock && block.id === heroBlock.id) continue;
-    const normalizedKind = normalizeKind(block.kind);
-    if (block.id === "pitfalls" || normalizedKind === "warning") {
-      warningBlocks.push(block);
-      continue;
-    }
-    if (block.id === "attention" || block.id === "product_bridge" || normalizedKind === "strategy") {
-      actionBlocks.push(block);
-      continue;
-    }
-    if (block.id === "situation" || block.id === "evidence" || normalizedKind === "explanation") {
-      explanationBlocks.push(block);
-      continue;
-    }
-    overflowBlocks.push(block);
-  }
-
-  const validCtas = resolveValidCtas(result.ctas, result, startHref, profileHref);
-  const primaryCta =
-    validCtas.find((item) => item.action === "product") ||
-    validCtas[0] || {
-      id: "fallback-product",
-      label: "查看推荐产品",
-      action: "product",
-      href: result.links.product,
-    };
-  const secondaryCta =
-    validCtas.find((item) => item.action === "wiki" && item.href !== primaryCta.href) ||
-    validCtas.find((item) => item.href !== primaryCta.href) || {
-      id: "fallback-wiki",
-      label: "查看成分百科",
-      action: "wiki",
-      href: result.links.wiki,
-    };
-  const extraActions = dedupeActions(
-    [
-      ...validCtas.filter((item) => item.href !== primaryCta.href && item.href !== secondaryCta.href),
-      { id: "restart", label: "重新判断一次", action: "restart", href: startHref },
-      { id: "profile", label: "修改个人选项", action: "profile", href: profileHref },
-      {
-        id: "compare",
-        label: "和我在用的对比",
-        action: "compare",
-        href: `/m/compare?category=${encodeURIComponent(result.category)}`,
-      },
-    ],
-    [primaryCta.href, secondaryCta.href],
-  );
+  const primaryAction = resolvePrimaryAction(result.ctas, result, startHref, profileHref);
+  const reasons = buildReasons(result.blocks, result);
+  const nextStepBody =
+    summarizeBlock(attention) ||
+    summarizeBlock(findBlock(result.blocks, "product_bridge")) ||
+    routeFocus ||
+    "先沿着当前结果给出的主线执行，再决定是否继续深挖。";
+  const cautionText = summarizeBlock(pitfalls);
+  const secondaryLoops = buildSecondaryLoops(result, resultHref, primaryAction);
   const generatedAt = formatGeneratedAt(result.meta?.generated_at);
-  const disclosureGroups = [
-    buildDisclosureGroup("why", "为什么会是这个结果", explanationBlocks, "neutral"),
-    buildDisclosureGroup("how", "先怎么做更稳", actionBlocks, "blue"),
-    buildDisclosureGroup("warning", "先避开什么", warningBlocks, "amber"),
-  ].filter((group): group is DisclosureGroup => Boolean(group));
+  const product = result.recommended_product;
 
   return (
     <section className="pb-14">
-      {analyticsContext ? (
-        <MobileEventBeacon
-          name="profile_result_view"
-          props={{
-            page: analyticsContext.page,
-            route: analyticsContext.route,
-            source: analyticsContext.source,
-            category: result.category,
-            compare_id: analyticsContext.fromCompareId,
-            cta: analyticsContext.resultCta,
-          }}
-        />
-      ) : null}
+      <MobilePageAnalytics
+        page={analyticsContext.page}
+        route={analyticsContext.route}
+        source={analyticsContext.source}
+        category={result.category}
+      />
+      <MobileEventBeacon
+        name="result_view"
+        props={{
+          page: analyticsContext.page,
+          route: analyticsContext.route,
+          source: analyticsContext.source,
+          category: result.category,
+          scenario_id: result.scenario_id,
+        }}
+      />
 
-      <section className="rounded-[36px] border border-[#e4ecf8] bg-[linear-gradient(180deg,#ffffff_0%,#f5f8fe_100%)] px-6 pb-6 pt-6 shadow-[0_22px_52px_rgba(30,59,114,0.08)]">
-        <span className="inline-flex rounded-full border border-[#dde7f7] bg-white/88 px-3.5 py-1.5 text-[11px] font-semibold tracking-[0.03em] text-[#3f5f94]">
-          {heroContent?.eyebrow || `${titlePrefix}结果`}
-        </span>
-
-        <h1 className="mt-5 text-[34px] leading-[1.08] font-semibold tracking-[-0.04em] text-[#142036]">
-          {heroTitle}
+      <section className="rounded-[34px] border border-[#e4ecf8] bg-[linear-gradient(180deg,#ffffff_0%,#f5f8fe_100%)] px-6 pb-6 pt-6 shadow-[0_22px_52px_rgba(30,59,114,0.08)]">
+        <div className="inline-flex rounded-full border border-[#dde7f7] bg-white/88 px-3.5 py-1.5 text-[11px] font-semibold tracking-[0.03em] text-[#3f5f94]">
+          {titlePrefix}结果
+        </div>
+        <h1 className="mt-5 text-[33px] leading-[1.08] font-semibold tracking-[-0.04em] text-[#142036]">
+          {summaryHeadline}
         </h1>
-        <p className="mt-4 max-w-[26rem] text-[15px] leading-[1.75] text-[#53647d]">{heroSupport}</p>
+        <p className="mt-4 max-w-[29rem] text-[15px] leading-[1.75] text-[#53647d]">{summaryBody}</p>
 
-        <div className="mt-8 rounded-[30px] border border-white/90 bg-white/90 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)]">
-          <div className="relative mx-auto h-44 w-full max-w-[248px] overflow-hidden rounded-[26px] border border-black/6 bg-[#f4f7fc]">
-            {product.image_url ? (
-              <Image
-                src={resolveImageUrl(product)}
-                alt={product.name ?? product.brand ?? "产品图片"}
-                fill
-                className="object-contain p-4"
-              />
-            ) : (
-              <div className="flex h-full items-center justify-center text-[12px] text-black/40">
-                {emptyImageLabel}
-              </div>
-            )}
-          </div>
-
-          <div className="mt-6">
-            <div className="text-[12px] font-medium text-[#607089]">先从这款开始</div>
-            {product.brand ? <div className="mt-2 text-[13px] font-medium text-[#6b7d97]">{product.brand}</div> : null}
-            <div className="mt-1 text-[23px] leading-[1.32] font-semibold tracking-[-0.03em] text-[#162339]">
-              {product.name || "未命名产品"}
+        <div className="mt-8 rounded-[30px] border border-white/90 bg-white/92 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)]">
+          <div className="text-[12px] font-medium text-[#607089]">一个结果</div>
+          <div className="mt-4 grid gap-5 sm:grid-cols-[248px,1fr] sm:items-center">
+            <div className="relative mx-auto h-44 w-full max-w-[248px] overflow-hidden rounded-[26px] border border-black/6 bg-[#f4f7fc]">
+              {product.image_url ? (
+                <Image
+                  src={resolveImageUrl(product)}
+                  alt={product.name ?? product.brand ?? "产品图片"}
+                  fill
+                  className="object-contain p-4"
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center text-[12px] text-black/40">
+                  {emptyImageLabel}
+                </div>
+              )}
             </div>
-          </div>
 
-          <div className="mt-6">
-            <Link
-              href={primaryCta.href}
-              className="inline-flex h-12 w-full items-center justify-center rounded-full bg-[#0a84ff] px-5 text-[16px] font-semibold tracking-[-0.02em] text-white shadow-[0_14px_28px_rgba(10,132,255,0.24)] active:opacity-90"
-            >
-              {primaryCta.label}
-            </Link>
-            {secondaryCta ? (
-              <div className="mt-4 text-center">
-                <Link
-                  href={secondaryCta.href}
-                  className="text-[14px] font-semibold text-[#355f9d] active:opacity-75"
-                >
-                  {secondaryCta.label}
-                </Link>
+            <div>
+              <div className="text-[12px] font-medium text-[#607089]">当前更适合先从这款或这类承接</div>
+              {product.brand ? <div className="mt-2 text-[13px] font-medium text-[#6b7d97]">{product.brand}</div> : null}
+              <div className="mt-1 text-[23px] leading-[1.32] font-semibold tracking-[-0.03em] text-[#162339]">
+                {product.name || "未命名产品"}
               </div>
-            ) : null}
+              <p className="mt-3 text-[14px] leading-[1.7] text-[#55677f]">
+                这一步先让产品服务于当前路线，而不是反过来拿产品定义你。
+              </p>
+            </div>
           </div>
         </div>
       </section>
 
-      {disclosureGroups.map((group) => (
-        <DisclosureCard key={group.id} group={group} />
-      ))}
-
-      <details className="mt-5 rounded-[28px] border border-black/8 bg-white/84 px-5 py-4 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
-        <summary className="list-none cursor-pointer [&::-webkit-details-marker]:hidden">
-          <div className="flex items-center justify-between gap-4">
-            <div className="min-w-0">
-              <p className="text-[19px] leading-[1.25] font-semibold tracking-[-0.02em] text-[#18253b]">
-                需要时再看更多
-              </p>
-              <p className="mt-2 text-[14px] leading-[1.65] text-black/52">
-                补充操作和结果说明都收在这里，不抢首屏注意力。
-              </p>
-            </div>
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#f4f6fa] text-[18px] text-[#667993]">
-              +
-            </span>
-          </div>
-        </summary>
-        <div className="mt-5 space-y-4">
-          {extraActions.length > 0 ? (
-            <div className="flex flex-wrap gap-2.5">
-              {extraActions.map((action) => (
-                <Link
-                  key={`${action.action}-${action.href}`}
-                  href={action.href}
-                  className="inline-flex h-10 items-center justify-center rounded-full border border-black/10 bg-white/90 px-4 text-[14px] font-semibold text-black/74 active:bg-black/[0.03]"
-                >
-                  {action.label}
-                </Link>
-              ))}
-            </div>
-          ) : null}
-
-          <details className="rounded-[22px] border border-black/8 bg-[#fafbfd] px-4 py-3">
-            <summary className="list-none cursor-pointer text-[14px] font-semibold text-black/76 [&::-webkit-details-marker]:hidden">
-              这次结果说明
-            </summary>
-            <ul className="mt-3 space-y-2 text-[13px] leading-[1.65] text-black/56">
-              <li>这次先按 {result.route.title} 这条主线给出建议。</li>
-              <li>推荐来源：{SOURCE_LABELS[result.recommendation_source] || "未知"}。</li>
-              <li>
-                规则版本：{result.rules_version}
-                {generatedAt ? ` · 生成于 ${generatedAt}` : ""}。
-              </li>
-              <li>{routeFocus}</li>
-              {normalizeText(result.share_copy.caption) ? <li>{normalizeText(result.share_copy.caption)}</li> : null}
-            </ul>
-          </details>
-
-          {overflowBlocks.length > 0 ? (
-            <div className="space-y-3">
-              {overflowBlocks.map((block) => (
-                <SelectionResultBlockCard key={block.id} block={block} tone="neutral" compact />
-              ))}
-            </div>
-          ) : null}
-        </div>
-      </details>
-    </section>
-  );
-}
-
-function DisclosureCard({ group }: { group: DisclosureGroup }) {
-  return (
-    <details className="mt-5 rounded-[28px] border border-black/8 bg-white/90 px-5 py-4 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
-      <summary className="list-none cursor-pointer [&::-webkit-details-marker]:hidden">
-        <div className="flex items-center justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-[20px] leading-[1.24] font-semibold tracking-[-0.02em] text-[#18253b]">
-              {group.title}
-            </p>
-            <p className="mt-2 text-[14px] leading-[1.65] text-black/52">{group.preview}</p>
-          </div>
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#f4f6fa] text-[18px] text-[#667993]">
-            +
-          </span>
-        </div>
-      </summary>
-      <div className="mt-5 space-y-3">
-        {group.blocks.map((block) => (
-          <SelectionResultBlockCard key={block.id} block={block} tone={group.tone} compact />
-        ))}
-      </div>
-    </details>
-  );
-}
-
-function SelectionResultBlockCard({
-  block,
-  tone,
-  compact = false,
-}: {
-  block: MobileSelectionResultBlock;
-  tone: "neutral" | "blue" | "amber";
-  compact?: boolean;
-}) {
-  const content = parseBlockContent(block);
-  const rawLead = normalizeText(content.subtitle) || normalizeText(content.items[0] || "") || normalizeText(content.note);
-  const lead = previewText(rawLead);
-  const extraItems = content.items.filter((item) => item !== rawLead).slice(0, compact ? 2 : 4);
-  const cardTone =
-    tone === "blue"
-      ? "border-[#d8e6ff] bg-[linear-gradient(180deg,#fbfdff_0%,#f4f8ff_100%)]"
-      : tone === "amber"
-        ? "border-[#f4dfb1] bg-[#fffaf1]"
-        : "border-black/8 bg-white";
-
-  return (
-    <section className={`rounded-[26px] border px-4 py-4 ${cardTone}`}>
-      {content.eyebrow ? (
-        <div className="text-[11px] font-semibold tracking-[0.04em] text-[#5f7597]">{content.eyebrow}</div>
-      ) : null}
-      <h3
-        className={`text-[#18253b] ${content.eyebrow ? "mt-1" : ""} ${
-          compact ? "text-[18px] leading-[1.34]" : "text-[21px] leading-[1.3] tracking-[-0.02em]"
-        }`}
-      >
-        {content.title}
-      </h3>
-      {lead ? <p className="mt-2 text-[14px] leading-[1.7] text-[#55677f]">{lead}</p> : null}
-      {extraItems.length > 0 ? (
-        <ul className="mt-3 space-y-2 text-[13px] leading-[1.6] text-[#344660]">
-          {extraItems.map((item) => (
-            <li key={item} className="flex gap-2">
-              <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-[#6c86ac]" />
-              <span>{item}</span>
-            </li>
+      <section className="mt-5 rounded-[28px] border border-black/8 bg-white/90 px-5 py-5 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
+        <div className="text-[12px] font-semibold tracking-[0.06em] text-black/42">三个理由</div>
+        <div className="mt-4 space-y-3">
+          {reasons.map((reason, index) => (
+            <article
+              key={reason.id}
+              className="rounded-[24px] border border-black/8 bg-[#fafbfd] px-4 py-4"
+            >
+              <div className="text-[11px] font-semibold tracking-[0.06em] text-[#5f7597]">理由 {index + 1}</div>
+              <h2 className="mt-2 text-[18px] leading-[1.34] font-semibold tracking-[-0.02em] text-[#18253b]">
+                {reason.title}
+              </h2>
+              <p className="mt-2 text-[14px] leading-[1.72] text-[#55677f]">{reason.body}</p>
+            </article>
           ))}
-        </ul>
-      ) : null}
-      {content.note && content.note !== lead ? (
-        <p className="mt-3 text-[12px] leading-[1.55] text-[#6a7d98]">{content.note}</p>
-      ) : null}
-      {!lead && extraItems.length === 0 && !content.note ? (
-        <p className="mt-2 text-[13px] leading-[1.55] text-[#6a7d98]">这部分说明正在整理，先按当前主线执行即可。</p>
-      ) : null}
+        </div>
+      </section>
+
+      <section className="mt-5 rounded-[28px] border border-[#d8e6ff] bg-[linear-gradient(180deg,#fbfdff_0%,#f4f8ff_100%)] px-5 py-5 shadow-[0_14px_30px_rgba(10,132,255,0.08)]">
+        <div className="text-[12px] font-semibold tracking-[0.06em] text-[#4d6b95]">一个下一步</div>
+        <h2 className="mt-3 text-[24px] leading-[1.24] font-semibold tracking-[-0.03em] text-[#18253b]">
+          {primaryAction.label}
+        </h2>
+        <p className="mt-3 text-[14px] leading-[1.72] text-[#55677f]">{nextStepBody}</p>
+        {cautionText ? (
+          <p className="mt-3 text-[13px] leading-[1.65] text-[#8a6435]">
+            先注意：{cautionText}
+          </p>
+        ) : null}
+
+        <div className="mt-5 grid gap-3">
+          <MobileTrackedLink
+            href={primaryAction.href}
+            eventName="result_primary_cta_click"
+            eventProps={{
+              page: analyticsContext.page,
+              route: analyticsContext.route,
+              source: analyticsContext.source,
+              category: result.category,
+              scenario_id: result.scenario_id,
+              target_path: primaryAction.href,
+            }}
+            className="m-pressable inline-flex h-12 items-center justify-center rounded-full bg-[#0a84ff] px-5 text-[16px] font-semibold tracking-[-0.02em] text-white shadow-[0_14px_28px_rgba(10,132,255,0.24)] active:opacity-90"
+          >
+            {primaryAction.label}
+          </MobileTrackedLink>
+
+          {secondaryLoops.length > 0 ? (
+            <div className="flex flex-wrap gap-2.5">
+              {secondaryLoops.map((loop) => (
+                <MobileTrackedLink
+                  key={loop.action}
+                  href={loop.href}
+                  eventName="result_secondary_loop_click"
+                  eventProps={{
+                    page: analyticsContext.page,
+                    route: analyticsContext.route,
+                    source: analyticsContext.source,
+                    category: result.category,
+                    scenario_id: result.scenario_id,
+                    target_path: loop.href,
+                    action: loop.action,
+                  }}
+                  className="m-pressable inline-flex h-10 items-center justify-center rounded-full border border-black/10 bg-white/92 px-4 text-[14px] font-semibold text-black/74 active:bg-black/[0.03]"
+                >
+                  {loop.label}
+                </MobileTrackedLink>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </section>
+
+      <div className="mt-4 text-[12px] leading-[1.6] text-black/44">
+        规则版本 {result.rules_version}
+        {generatedAt ? ` · 更新于 ${generatedAt}` : ""}
+        {result.recommendation_source ? ` · 来源 ${humanizeRecommendationSource(result.recommendation_source)}` : ""}
+      </div>
     </section>
   );
 }
 
-function resolveOrderedBlocks(
-  displayOrder: string[],
-  blocksById: Map<string, MobileSelectionResultBlock>,
-  blocks: MobileSelectionResultBlock[],
-): MobileSelectionResultBlock[] {
-  const orderedTokens = displayOrder.length > 0 ? displayOrder.filter((entry) => entry !== "ctas") : blocks.map((item) => item.id);
-  const seen = new Set<string>();
-  const resolved: MobileSelectionResultBlock[] = [];
+function buildReasons(blocks: MobileSelectionResultBlock[], result: MobileSelectionPublishedResult): ResultReason[] {
+  const preferredIds = ["situation", "evidence", "product_bridge", "attention", "pitfalls"];
+  const picked: ResultReason[] = [];
 
-  for (const token of orderedTokens) {
-    const block = blocksById.get(token);
-    if (!block || seen.has(block.id)) continue;
-    resolved.push(block);
-    seen.add(block.id);
+  for (const id of preferredIds) {
+    const block = findBlock(blocks, id);
+    if (!block) continue;
+    const body = summarizeBlock(block);
+    if (!block.title || !body) continue;
+    picked.push({
+      id: block.id,
+      title: block.title,
+      body,
+    });
+    if (picked.length === 3) return picked;
   }
 
-  for (const block of blocks) {
-    if (seen.has(block.id)) continue;
-    resolved.push(block);
-    seen.add(block.id);
+  const fallbackBodies = [
+    describeMobileRouteFocus(result.category, result.route.key),
+    normalizeText(result.micro_summary),
+    normalizeText(result.share_copy.caption),
+  ].filter(Boolean);
+
+  while (picked.length < 3) {
+    const fallbackIndex = picked.length;
+    picked.push({
+      id: `fallback-${fallbackIndex + 1}`,
+      title:
+        fallbackIndex === 0
+          ? "当前路线更站得住"
+          : fallbackIndex === 1
+            ? "这一步先收敛方向"
+            : "产品是用来承接路线的",
+      body:
+        fallbackBodies[fallbackIndex] ||
+        (fallbackIndex === 2
+          ? "先用当前主推承接这条路线，再决定是否继续扩展更多候选。"
+          : "系统会优先收敛到更适合你的护理方向，而不是先把商品堆给你。"),
+    });
   }
 
-  return resolved;
+  return picked.slice(0, 3);
 }
 
-function resolveValidCtas(
+function resolvePrimaryAction(
   ctas: MobileSelectionResultCTA[],
   result: MobileSelectionPublishedResult,
   startHref: string,
   profileHref: string,
-): ResolvedCTA[] {
-  const seen = new Set<string>();
-  const resolved: ResolvedCTA[] = [];
-
-  for (const cta of ctas) {
-    const href = resolveCtaHref(cta, result, startHref, profileHref);
-    if (!href) continue;
-    const label = normalizeText(cta.label);
-    if (!label) continue;
-    const key = `${cta.action}:${href}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    resolved.push({
-      id: cta.id,
-      label,
-      action: cta.action,
-      href,
-    });
-  }
-
-  return resolved;
+): ResultAction {
+  const preferred = ctas.find((item) => item.action === "product") || ctas[0] || null;
+  const href = preferred ? resolveActionHref(preferred.action, preferred.href, result, startHref, profileHref) : result.links.product;
+  const label = normalizeText(preferred?.label) || "查看推荐产品";
+  return {
+    action: "product",
+    label,
+    href,
+  };
 }
 
-function dedupeActions(actions: ResolvedCTA[], ignoredHrefs: string[]): ResolvedCTA[] {
-  const ignored = new Set(ignoredHrefs.filter(Boolean));
-  const seen = new Set<string>();
-  const resolved: ResolvedCTA[] = [];
+function buildSecondaryLoops(
+  result: MobileSelectionPublishedResult,
+  resultHref: string,
+  primaryAction: ResultAction,
+): ResultAction[] {
+  const sharedParams = {
+    scenario_id: result.scenario_id,
+    return_to: resultHref,
+  };
+  const actions: ResultAction[] = [
+    {
+      action: "compare",
+      label: "和其他候选再对比",
+      href: appendQueryParams(`/m/compare?category=${encodeURIComponent(result.category)}`, {
+        ...sharedParams,
+        source: "result_compare",
+        result_cta: "compare",
+      }),
+    },
+    {
+      action: "wiki",
+      label: "查看产品或成分百科",
+      href: appendQueryParams(result.links.wiki || `/m/wiki?category=${encodeURIComponent(result.category)}`, {
+        ...sharedParams,
+        source: "result_wiki",
+        result_cta: "wiki",
+      }),
+    },
+    {
+      action: "me",
+      label: "回到我的记录",
+      href: appendQueryParams("/m/me/history", {
+        ...sharedParams,
+        source: "result_me",
+        result_cta: "me",
+      }),
+    },
+  ];
 
-  for (const action of actions) {
-    if (!action.href || ignored.has(action.href)) continue;
-    const key = `${action.action}:${action.href}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    resolved.push(action);
-  }
-
-  return resolved;
+  return actions.filter((item) => item.href !== primaryAction.href);
 }
 
-function parseBlockContent(block: MobileSelectionResultBlock): BlockContent {
+function findBlock(blocks: MobileSelectionResultBlock[], id: string): ParsedBlock | null {
+  const target = blocks.find((item) => item.id === id);
+  return target ? parseBlock(target) : null;
+}
+
+function parseBlock(block: MobileSelectionResultBlock): ParsedBlock {
   const payload = block.payload || {};
   return {
     id: block.id,
-    kind: block.kind,
-    eyebrow: readString(payload, ["eyebrow"]),
-    title: readString(payload, ["title", "headline", "label"]) || humanizeKind(block.kind),
+    title: readString(payload, ["title", "headline", "label"]) || humanizeBlockId(block.id),
     subtitle: readString(payload, ["subtitle", "description", "body", "text"]),
     note: readString(payload, ["note", "hint"]),
     items: readStringArray(payload, ["items", "bullets", "points", "list"]),
   };
 }
 
-function buildDisclosureGroup(
-  id: string,
-  title: string,
-  blocks: MobileSelectionResultBlock[],
-  tone: "neutral" | "blue" | "amber",
-): DisclosureGroup | null {
-  if (blocks.length === 0) return null;
-  const preview = summarizeBlock(blocks[0]) || "展开后再看这一部分。";
-  return {
-    id,
-    title,
-    preview,
-    tone,
-    blocks,
-  };
-}
-
-function summarizeBlock(block: MobileSelectionResultBlock): string {
-  const content = parseBlockContent(block);
+function summarizeBlock(block: ParsedBlock | null): string {
+  if (!block) return "";
   return (
-    previewText(content.subtitle) ||
-    previewText(content.items[0] || "") ||
-    previewText(content.note) ||
-    previewText(content.title)
+    normalizeText(block.subtitle) ||
+    normalizeText(block.items[0] || "") ||
+    normalizeText(block.note) ||
+    ""
   );
 }
 
-function previewText(value: string | null | undefined, limit = 30): string {
-  const text = normalizeText(value);
-  if (!text) return "";
-  if (text.length <= limit) return text;
-  return `${text.slice(0, limit).trimEnd()}…`;
-}
-
-function resolveCtaHref(
-  cta: MobileSelectionResultCTA,
+function resolveActionHref(
+  action: string,
+  explicitHref: string,
   result: MobileSelectionPublishedResult,
   startHref: string,
   profileHref: string,
-): string | null {
-  const explicit = String(cta.href || "").trim();
-  if (explicit) return explicit;
-  if (cta.action === "product") return result.links.product;
-  if (cta.action === "wiki") return result.links.wiki;
-  if (cta.action === "restart") return startHref;
-  if (cta.action === "profile") return profileHref;
-  return null;
+): string {
+  const cleanHref = normalizeText(explicitHref);
+  if (cleanHref) return cleanHref;
+  if (action === "wiki") return result.links.wiki;
+  if (action === "restart") return startHref;
+  if (action === "profile") return profileHref;
+  return result.links.product;
+}
+
+function appendQueryParams(path: string, params: Record<string, string>): string {
+  const [pathname, hash = ""] = path.split("#", 2);
+  const [basePath, query = ""] = pathname.split("?", 2);
+  const searchParams = new URLSearchParams(query);
+  for (const [key, value] of Object.entries(params)) {
+    if (!normalizeText(value)) continue;
+    searchParams.set(key, value);
+  }
+  const nextQuery = searchParams.toString();
+  return `${basePath}${nextQuery ? `?${nextQuery}` : ""}${hash ? `#${hash}` : ""}`;
 }
 
 function readString(payload: Record<string, unknown>, keys: string[]): string {
@@ -502,17 +396,20 @@ function readStringArray(payload: Record<string, unknown>, keys: string[]): stri
   return [];
 }
 
-function normalizeKind(kind: string): string {
-  return String(kind || "").trim().toLowerCase();
+function humanizeBlockId(id: string): string {
+  if (id === "situation") return "你现在更像什么情况";
+  if (id === "evidence") return "为什么系统这样判断";
+  if (id === "product_bridge") return "为什么先给你这类或这款";
+  if (id === "attention") return "你当前最该抓住什么";
+  if (id === "pitfalls") return "你现在最该少踩的坑";
+  return "结果说明";
 }
 
-function humanizeKind(kind: string): string {
-  const normalized = normalizeKind(kind);
-  if (normalized === "explanation") return "结果说明";
-  if (normalized === "strategy") return "使用建议";
-  if (normalized === "warning") return "使用边界";
-  if (normalized === "hero") return "核心结论";
-  return normalized || "结果模块";
+function humanizeRecommendationSource(source: string): string {
+  if (source === "featured_slot") return "主推槽位";
+  if (source === "route_mapping") return "类型映射";
+  if (source === "category_fallback") return "品类兜底";
+  return source;
 }
 
 function normalizeText(value: string | null | undefined): string {
