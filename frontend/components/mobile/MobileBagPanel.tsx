@@ -4,6 +4,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { deleteMobileBagItem, fetchMobileBagItems, resolveImageUrl, type MobileBagItem } from "@/lib/api";
+import {
+  appendMobileUtilityRouteState,
+  type MobileUtilityRouteState,
+} from "@/features/mobile-utility/routeState";
 
 function formatTime(iso: string): string {
   const date = new Date(iso);
@@ -22,7 +26,11 @@ function categoryTag(level: string): string {
   return "待映射";
 }
 
-export default function MobileBagPanel() {
+type Props = {
+  routeState?: MobileUtilityRouteState | null;
+};
+
+export default function MobileBagPanel({ routeState = null }: Props) {
   const [items, setItems] = useState<MobileBagItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -82,7 +90,7 @@ export default function MobileBagPanel() {
                 <article key={item.item_id} className="overflow-hidden rounded-[24px] border border-black/10 bg-white">
                   <div className="flex gap-3 p-3">
                     <Link
-                      href={`/m/wiki/product/${encodeURIComponent(p.id)}`}
+                      href={appendMobileUtilityRouteState(`/m/wiki/product/${encodeURIComponent(p.id)}`, routeState)}
                       className="relative h-[84px] w-[84px] shrink-0 overflow-hidden rounded-xl bg-[#f4f5f9]"
                     >
                       <Image src={p.image_url ? resolveImageUrl(p) : `/images/${p.id}.png`} alt={p.name || p.id} fill sizes="84px" className="object-cover" />
@@ -117,7 +125,7 @@ export default function MobileBagPanel() {
 
                   <div className="flex border-t border-black/8 px-3 py-2">
                     <Link
-                      href={`/m/wiki/product/${encodeURIComponent(p.id)}`}
+                      href={appendMobileUtilityRouteState(`/m/wiki/product/${encodeURIComponent(p.id)}`, routeState)}
                       className="inline-flex h-8 items-center rounded-full border border-black/12 px-3 text-[12px] font-medium text-black/74 active:bg-black/[0.03]"
                     >
                       查看详情

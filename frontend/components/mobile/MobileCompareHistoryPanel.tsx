@@ -11,6 +11,10 @@ import {
   type MobileCompareSession,
 } from "@/lib/api";
 import MobileHistoryCleanupSheet from "@/components/mobile/MobileHistoryCleanupSheet";
+import {
+  appendMobileUtilityRouteState,
+  type MobileUtilityRouteState,
+} from "@/features/mobile-utility/routeState";
 
 const SWIPE_ACTION_WIDTH = 84;
 const SWIPE_ACTION_TOTAL = SWIPE_ACTION_WIDTH;
@@ -101,7 +105,11 @@ function TrashIcon() {
   );
 }
 
-export default function MobileCompareHistoryPanel() {
+type Props = {
+  routeState?: MobileUtilityRouteState | null;
+};
+
+export default function MobileCompareHistoryPanel({ routeState = null }: Props) {
   const [entries, setEntries] = useState<MobileCompareSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
@@ -560,13 +568,13 @@ export default function MobileCompareHistoryPanel() {
                     {!selectionMode ? (
                       <div className="mt-4 flex flex-wrap gap-2">
                         <Link
-                          href={`/m/compare/result/${encodeURIComponent(entry.compare_id)}`}
+                          href={appendMobileUtilityRouteState(`/m/compare/result/${encodeURIComponent(entry.compare_id)}`, routeState)}
                           className="inline-flex h-9 items-center rounded-full border border-black/15 px-4 text-[13px] font-medium text-black/78 active:bg-black/[0.03]"
                         >
                           查看结果
                         </Link>
                         <Link
-                          href={`/m/compare?category=${encodeURIComponent(String(entry.category || ""))}`}
+                          href={appendMobileUtilityRouteState(`/m/compare?category=${encodeURIComponent(String(entry.category || ""))}`, routeState)}
                           className="inline-flex h-9 items-center rounded-full border border-black/15 px-4 text-[13px] font-medium text-black/78 active:bg-black/[0.03]"
                         >
                           再做一次

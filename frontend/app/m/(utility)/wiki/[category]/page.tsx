@@ -5,6 +5,15 @@ import MobileEventBeacon from "@/components/mobile/MobileEventBeacon";
 import MobileTrackedLink from "@/components/mobile/MobileTrackedLink";
 import { fetchIngredientLibrary } from "@/lib/api";
 import { isWikiCategoryKey, WIKI_MAP, WIKI_ORDER, type WikiCategoryKey } from "@/lib/mobile/ingredientWiki";
+import {
+  appendMobileUtilityRouteState,
+  describeMobileUtilityReturnLabel,
+  hasMobileUtilityResultContext,
+  hasMobileUtilityRouteContext,
+  parseMobileUtilityRouteState,
+  resolveMobileUtilityReturnHref,
+  resolveMobileUtilitySource,
+} from "@/features/mobile-utility/routeState";
 
 type Params = { category: string };
 type Search = Record<string, string | string[] | undefined>;
@@ -129,6 +138,12 @@ export default async function WikiCategoryPage({
     notFound();
   }
 
+  const utilityRouteState = parseMobileUtilityRouteState(search);
+  const analyticsSource = resolveMobileUtilitySource(utilityRouteState, "wiki_category");
+  const showReturnAction = hasMobileUtilityRouteContext(utilityRouteState);
+  const hasResultContext = hasMobileUtilityResultContext(utilityRouteState);
+  const returnActionHref = resolveMobileUtilityReturnHref(utilityRouteState);
+  const returnActionLabel = describeMobileUtilityReturnLabel(utilityRouteState);
   const current = WIKI_MAP[category];
   const theme = CATEGORY_THEME[category];
   const focusKey = queryValue(search.focus);
@@ -139,7 +154,9 @@ export default async function WikiCategoryPage({
   const returnQuery = new URLSearchParams();
   if (focusKey) returnQuery.set("focus", focusKey);
   if (query) returnQuery.set("q", query);
-  const returnTo = returnQuery.toString() ? `/m/wiki/${category}?${returnQuery.toString()}` : `/m/wiki/${category}`;
+  const returnToBase = returnQuery.toString() ? `/m/wiki/${category}?${returnQuery.toString()}` : `/m/wiki/${category}`;
+  const returnTo = appendMobileUtilityRouteState(returnToBase, utilityRouteState, { includeReturnTo: false });
+  const chooseHref = appendMobileUtilityRouteState(`/m/${current.key}/profile?step=1`, utilityRouteState);
   const library = await fetchIngredientLibrary({
     category,
     q: query,
@@ -148,6 +165,30 @@ export default async function WikiCategoryPage({
 
   return (
     <section className="m-wiki-page -mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[color:var(--m-wiki-canvas)] px-4 pb-36 pt-4 text-white">
+      {showReturnAction ? (
+        <div className="mb-3 flex justify-end">
+          <MobileTrackedLink
+            href={returnActionHref}
+            eventName={hasResultContext ? "result_secondary_loop_click" : undefined}
+            eventProps={
+              hasResultContext && utilityRouteState.scenarioId
+                ? {
+                    page: "wiki_category",
+                    route: `/m/wiki/${category}`,
+                    source: analyticsSource,
+                    category,
+                    scenario_id: utilityRouteState.scenarioId,
+                    target_path: returnActionHref,
+                    action: "wiki_return",
+                  }
+                : undefined
+            }
+            className="m-pressable inline-flex h-9 items-center rounded-full border border-[#8fb9f5]/45 bg-[rgba(255,255,255,0.14)] px-4 text-[12px] font-semibold text-white/92 active:bg-white/[0.22]"
+          >
+            {returnActionLabel}
+          </MobileTrackedLink>
+        </div>
+      ) : null}
       {resultCta && fromCompareId ? (
         <MobileEventBeacon
           name="compare_result_cta_land"
@@ -207,7 +248,11 @@ export default async function WikiCategoryPage({
       <div className="space-y-4">
         {library.items.map((item) => {
           const name = splitIngredientName(item.ingredient_name);
-          const ingredientHref = `/m/wiki/${category}/${item.ingredient_id}?return_to=${encodeURIComponent(returnTo)}`;
+          const ingredientHref = appendMobileUtilityRouteState(
+            `/m/wiki/${category}/${item.ingredient_id}?return_to=${encodeURIComponent(returnTo)}`,
+            utilityRouteState,
+            { includeReturnTo: false },
+          );
           return (
             <MobileTrackedLink
               key={item.ingredient_id}
@@ -216,7 +261,7 @@ export default async function WikiCategoryPage({
               eventProps={{
                 page: "wiki_category",
                 route: `/m/wiki/${category}`,
-                source: "wiki_category",
+                source: analyticsSource,
                 category,
                 target_path: ingredientHref,
                 ingredient_id: item.ingredient_id,
@@ -266,14 +311,14 @@ export default async function WikiCategoryPage({
 
       <div className="mt-8">
         <MobileTrackedLink
-          href={`/m/${current.key}/profile?step=1`}
+          href={chooseHref}
           eventName="wiki_category_choose_click"
           eventProps={{
             page: "wiki_category",
             route: `/m/wiki/${category}`,
-            source: "wiki_category",
+            source: analyticsSource,
             category,
-            target_path: `/m/${current.key}/profile?step=1`,
+            target_path: chooseHref,
             result_cta: resultCta || undefined,
             from_compare_id: fromCompareId || undefined,
           }}
