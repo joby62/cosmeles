@@ -3,11 +3,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import {
-  appendMobileUtilityRouteState,
-  parseMobileUtilityRouteState,
-  type MobileUtilityRouteState,
-} from "@/features/mobile-utility/routeState";
 
 type DefaultNavKey = "wiki" | "choose" | "compare";
 
@@ -57,12 +52,6 @@ export default function MobileBottomNav() {
   const pathname = usePathname() || "/m/choose";
   const introPath = pathname === "/m";
   const chooseItem = getChooseItem(pathname);
-  const shouldCarryUtilityState =
-    pathname.startsWith("/m/wiki") ||
-    pathname.startsWith("/m/compare") ||
-    pathname.startsWith("/m/me") ||
-    pathname.startsWith("/m/bag");
-  const [navRouteState, setNavRouteState] = useState<MobileUtilityRouteState | null>(null);
   const [chromeBottomInset, setChromeBottomInset] = useState(0);
   const [navVisible, setNavVisible] = useState(true);
   const [isScrollable, setIsScrollable] = useState(false);
@@ -76,8 +65,8 @@ export default function MobileBottomNav() {
 
   const defaultItems = [
     chooseItem,
-    { key: "compare" as const, label: "横向对比", href: appendMobileUtilityRouteState("/m/compare", navRouteState) },
-    { key: "wiki" as const, label: "百科", href: appendMobileUtilityRouteState("/m/wiki", navRouteState) },
+    { key: "compare" as const, label: "横向对比", href: "/m/compare" },
+    { key: "wiki" as const, label: "百科", href: "/m/wiki" },
   ];
   const profileMode = pathname.startsWith("/m/me") || pathname.startsWith("/m/bag");
   const meActive = pathname.startsWith("/m/me");
@@ -85,15 +74,6 @@ export default function MobileBottomNav() {
   const historyActive = pathname.startsWith("/m/me/history");
   const bagActive = pathname.startsWith("/m/me/bag") || pathname.startsWith("/m/bag");
   const chromeVisible = !isScrollable || navVisible;
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!shouldCarryUtilityState) {
-      setNavRouteState(null);
-      return;
-    }
-    setNavRouteState(parseMobileUtilityRouteState(new URLSearchParams(window.location.search)));
-  }, [pathname, shouldCarryUtilityState]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -340,7 +320,7 @@ export default function MobileBottomNav() {
             </div>
 
             <Link
-              href={appendMobileUtilityRouteState("/m/me/use", navRouteState)}
+              href="/m/me/use"
               aria-label="我的"
               className={`m-pressable m-nav-item m-nav-me-trigger m-bottom-dock flex h-[60px] w-[60px] shrink-0 items-center justify-center rounded-full border border-[color:var(--m-nav-border)] shadow-[0_14px_34px_rgba(0,0,0,0.26)] ${
                 meActive
@@ -366,7 +346,7 @@ export default function MobileBottomNav() {
 
             <div className="m-bottom-dock flex h-[60px] min-w-0 flex-1 items-center rounded-[30px] border border-[color:var(--m-nav-border)] bg-[color:var(--m-nav-bg)] px-1.5 shadow-[0_14px_34px_rgba(0,0,0,0.26)]">
               <Link
-                href={appendMobileUtilityRouteState("/m/me/use", navRouteState)}
+                href="/m/me/use"
                 className={`m-pressable m-nav-item flex h-[52px] min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[24px] transition-colors ${
                   useActive
                     ? "m-nav-item-active bg-[color:var(--m-nav-active-bg)] text-[color:var(--m-nav-active-text)]"
@@ -381,7 +361,7 @@ export default function MobileBottomNav() {
               </Link>
 
               <Link
-                href={appendMobileUtilityRouteState("/m/me/history", navRouteState)}
+                href="/m/me/history"
                 className={`m-pressable m-nav-item flex h-[52px] min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[24px] transition-colors ${
                   historyActive
                     ? "m-nav-item-active bg-[color:var(--m-nav-active-bg)] text-[color:var(--m-nav-active-text)]"
@@ -393,7 +373,7 @@ export default function MobileBottomNav() {
               </Link>
 
               <Link
-                href={appendMobileUtilityRouteState("/m/me/bag", navRouteState)}
+                href="/m/me/bag"
                 className={`m-pressable m-nav-item flex h-[52px] min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[24px] transition-colors ${
                   bagActive
                     ? "m-nav-item-active bg-[color:var(--m-nav-active-bg)] text-[color:var(--m-nav-active-text)]"

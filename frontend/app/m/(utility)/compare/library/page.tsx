@@ -12,14 +12,6 @@ import {
 } from "@/lib/api";
 import { trackMobileEvent } from "@/lib/mobileAnalytics";
 import { getMobileCategoryLabel } from "@/lib/mobile/routeCopy";
-import {
-  applyMobileUtilityRouteState,
-  describeMobileUtilityReturnLabel,
-  hasMobileUtilityRouteContext,
-  parseMobileUtilityRouteState,
-  resolveMobileUtilityReturnHref,
-  resolveMobileUtilitySource,
-} from "@/features/mobile-utility/routeState";
 
 const CATEGORY_ORDER: MobileSelectionCategory[] = ["shampoo", "bodywash", "conditioner", "lotion", "cleanser"];
 const MAX_TOTAL_SELECTION = 3;
@@ -133,11 +125,6 @@ function MobileCompareLibraryPageContent() {
   const [collection, setCollection] = useState<CollectionFilter>("all");
   const [notice, setNotice] = useState<string | null>(null);
 
-  const utilityRouteState = useMemo(() => parseMobileUtilityRouteState(searchParams), [searchParams]);
-  const analyticsSource = resolveMobileUtilitySource(utilityRouteState, "m_compare_library");
-  const showReturnAction = hasMobileUtilityRouteContext(utilityRouteState);
-  const returnActionHref = resolveMobileUtilityReturnHref(utilityRouteState);
-  const returnActionLabel = describeMobileUtilityReturnLabel(utilityRouteState);
   const analyticsRoute = searchParams?.toString() ? `${pathname}?${searchParams.toString()}` : pathname || "/m/compare/library";
   const categoryLabel = getMobileCategoryLabel(category);
 
@@ -214,7 +201,6 @@ function MobileCompareLibraryPageContent() {
     if (withSelection && selectedIds.length > 0) {
       params.set(LIBRARY_PICK_PARAM, selectedIds.join(","));
     }
-    applyMobileUtilityRouteState(params, utilityRouteState);
     void safeTrack(withSelection ? "compare_library_apply" : "compare_library_back", {
       category,
       selected_count: selectedIds.length,
@@ -227,29 +213,18 @@ function MobileCompareLibraryPageContent() {
 
   return (
     <section className="m-compare-page m-compare-page-selection pb-10">
-      <MobilePageAnalytics page="mobile_compare_library" route={analyticsRoute} source={analyticsSource} category={category} />
-      <MobileFrictionSignals page="mobile_compare_library" route={analyticsRoute} source={analyticsSource} category={category} />
+      <MobilePageAnalytics page="mobile_compare_library" route={analyticsRoute} source="m_compare_library" category={category} />
+      <MobileFrictionSignals page="mobile_compare_library" route={analyticsRoute} source="m_compare_library" category={category} />
 
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-[28px] leading-[1.14] font-semibold tracking-[-0.02em] text-black/90">产品库筛选</h1>
-        <div className="flex items-center gap-2">
-          {showReturnAction ? (
-            <button
-              type="button"
-              onClick={() => router.push(returnActionHref)}
-              className="inline-flex h-9 items-center rounded-full border border-[#0a84ff]/26 bg-[#eef5ff] px-4 text-[12px] font-semibold text-[#1858b0] active:bg-[#e2efff]"
-            >
-              {returnActionLabel}
-            </button>
-          ) : null}
-          <button
-            type="button"
-            onClick={() => goBackToCompare(false)}
-            className="inline-flex h-9 items-center rounded-full border border-black/12 bg-white/72 px-4 text-[13px] font-medium text-black/72 active:bg-black/[0.03]"
-          >
-            返回对比
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => goBackToCompare(false)}
+          className="inline-flex h-9 items-center rounded-full border border-black/12 bg-white/72 px-4 text-[13px] font-medium text-black/72 active:bg-black/[0.03]"
+        >
+          返回对比
+        </button>
       </div>
       <p className="mt-2 text-[14px] leading-[1.55] text-black/62">在这里做搜索和集合筛选，选好后一键带回横向对比。</p>
 

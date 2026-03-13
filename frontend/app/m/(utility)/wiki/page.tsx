@@ -17,17 +17,6 @@ import {
 } from "@/lib/api";
 import { trackMobileEvent, trackMobileEventWithBeacon } from "@/lib/mobileAnalytics";
 import { isWikiCategoryKey, WIKI_MAP, WIKI_ORDER, type WikiCategoryKey } from "@/lib/mobile/ingredientWiki";
-import {
-  appendMobileUtilityRouteState,
-  applyMobileUtilityRouteState,
-  describeMobileUtilityReturnLabel,
-  hasMobileUtilityResultContext,
-  hasMobileUtilityRouteContext,
-  parseMobileUtilityRouteState,
-  resolveMobileUtilityReturnHref,
-  resolveMobileUtilitySource,
-  type MobileUtilityRouteState,
-} from "@/features/mobile-utility/routeState";
 
 type CategoryTheme = {
   heroClass: string;
@@ -319,25 +308,18 @@ function buildWikiQueryString(state: {
   query: string;
   productSubtypeKey: string;
   ingredientFilterKey: string;
-}, routeState: MobileUtilityRouteState): string {
+}): string {
   const params = new URLSearchParams();
   if (state.entryTab !== "product") params.set("tab", state.entryTab);
   if (state.active !== "shampoo") params.set("category", state.active);
   if (state.query.trim()) params.set("q", state.query.trim());
   if (state.productSubtypeKey !== ALL_SECONDARY_KEY) params.set("p_sub", state.productSubtypeKey);
   if (state.ingredientFilterKey !== ALL_SECONDARY_KEY) params.set("i_sub", state.ingredientFilterKey);
-  applyMobileUtilityRouteState(params, routeState);
   return params.toString();
 }
 
-function buildReturnHref(baseHref: string, returnTo: string, routeState: MobileUtilityRouteState): string {
-  const withState = appendMobileUtilityRouteState(baseHref, routeState);
-  const [pathWithQuery, hash = ""] = withState.split("#", 2);
-  const [pathname, query = ""] = pathWithQuery.split("?", 2);
-  const params = new URLSearchParams(query);
-  params.set("return_to", returnTo);
-  const nextQuery = params.toString();
-  return `${pathname}${nextQuery ? `?${nextQuery}` : ""}${hash ? `#${hash}` : ""}`;
+function buildReturnHref(baseHref: string, returnTo: string): string {
+  return `${baseHref}?return_to=${encodeURIComponent(returnTo)}`;
 }
 
 function readStoredScroll(key: string): number | null {
@@ -485,12 +467,6 @@ function MobileWikiPageContent() {
   const latestProductQueryRef = useRef("");
   const latestIngredientQueryRef = useRef("");
   const lastTrackedListViewRef = useRef("");
-  const utilityRouteState = useMemo(() => parseMobileUtilityRouteState(searchParams), [searchParams]);
-  const analyticsSource = resolveMobileUtilitySource(utilityRouteState, "m_wiki");
-  const showReturnAction = hasMobileUtilityRouteContext(utilityRouteState);
-  const hasResultContext = hasMobileUtilityResultContext(utilityRouteState);
-  const returnActionHref = resolveMobileUtilityReturnHref(utilityRouteState);
-  const returnActionLabel = describeMobileUtilityReturnLabel(utilityRouteState);
 
   const stateQueryString = useMemo(
     () =>
@@ -500,8 +476,8 @@ function MobileWikiPageContent() {
         query: normalizedQuery,
         productSubtypeKey,
         ingredientFilterKey,
-      }, utilityRouteState),
-    [active, entryTab, ingredientFilterKey, normalizedQuery, productSubtypeKey, utilityRouteState],
+      }),
+    [active, entryTab, ingredientFilterKey, normalizedQuery, productSubtypeKey],
   );
   const currentQueryString = searchParams.toString();
   const returnTo = stateQueryString ? `${pathname}?${stateQueryString}` : pathname;
@@ -753,7 +729,7 @@ function MobileWikiPageContent() {
     void trackMobileEvent("wiki_list_view", {
       page: "wiki_list",
       route: currentRoute,
-      source: analyticsSource,
+      source: "m_wiki",
       category: active,
       entry_tab: entryTab,
       query: normalizedQuery || undefined,
@@ -764,7 +740,6 @@ function MobileWikiPageContent() {
     });
   }, [
     active,
-    analyticsSource,
     currentRoute,
     entryTab,
     filteredIngredientItems.length,
@@ -908,11 +883,11 @@ function MobileWikiPageContent() {
 
   return (
     <section className="m-wiki-page -mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[color:var(--m-wiki-canvas)] px-4 pb-36 pt-4 text-white">
-      <MobilePageAnalytics page="wiki_list" route={currentRoute} source={analyticsSource} category={active} />
+      <MobilePageAnalytics page="wiki_list" route={currentRoute} source="m_wiki" category={active} />
       <MobileScrollDepthAnalytics
         page="wiki_list"
         route={currentRoute}
-        source={analyticsSource}
+        source="m_wiki"
         category={active}
         extra={{
           entry_tab: entryTab,
@@ -922,7 +897,7 @@ function MobileWikiPageContent() {
       <MobileFrictionSignals
         page="wiki_list"
         route={currentRoute}
-        source={analyticsSource}
+        source="m_wiki"
         category={active}
         stallAfterMs={20000}
         extra={{
@@ -932,29 +907,6 @@ function MobileWikiPageContent() {
       />
       <div className="space-y-7">
         <div className="space-y-4">
-          {showReturnAction ? (
-            <div className="flex justify-end">
-              <Link
-                href={returnActionHref}
-                onClick={() => {
-                  if (hasResultContext && utilityRouteState.scenarioId) {
-                    void trackMobileEvent("result_secondary_loop_click", {
-                      page: "wiki_list",
-                      route: currentRoute,
-                      source: analyticsSource,
-                      category: active,
-                      scenario_id: utilityRouteState.scenarioId,
-                      target_path: returnActionHref,
-                      action: "wiki_return",
-                    });
-                  }
-                }}
-                className="m-pressable inline-flex h-9 items-center rounded-full border border-[#8fb9f5]/45 bg-[rgba(255,255,255,0.14)] px-4 text-[12px] font-semibold text-white/92 active:bg-white/[0.22]"
-              >
-                {returnActionLabel}
-              </Link>
-            </div>
-          ) : null}
           {searchOpen ? (
             <form
               className="m-wiki-input-shell flex h-[54px] w-full items-center rounded-[28px] shadow-[inset_0_1px_0_rgba(255,255,255,0.1),0_12px_30px_rgba(12,22,38,0.12)]"
@@ -1095,14 +1047,14 @@ function MobileWikiPageContent() {
             <section className="space-y-4">
               {featuredProductItem ? (
                 <Link
-                  href={buildReturnHref(`/m/wiki/product/${encodeURIComponent(featuredProductItem.product.id)}`, returnTo, utilityRouteState)}
+                  href={buildReturnHref(`/m/wiki/product/${encodeURIComponent(featuredProductItem.product.id)}`, returnTo)}
                   prefetch={false}
                   data-analytics-id={`wiki:product:featured:${featuredProductItem.product.id}`}
                   onClick={() => {
                     trackMobileEventWithBeacon("wiki_product_click", {
                       page: "wiki_list",
                       route: currentRoute,
-                      source: analyticsSource,
+                      source: "m_wiki",
                       category: active,
                       product_id: featuredProductItem.product.id,
                       target_type_key: featuredProductItem.target_type_key,
@@ -1212,14 +1164,14 @@ function MobileWikiPageContent() {
                 return (
                   <Link
                     key={product.id}
-                    href={buildReturnHref(`/m/wiki/product/${encodeURIComponent(product.id)}`, returnTo, utilityRouteState)}
+                    href={buildReturnHref(`/m/wiki/product/${encodeURIComponent(product.id)}`, returnTo)}
                     prefetch={false}
                     data-analytics-id={`wiki:product:list:${product.id}`}
                     onClick={() => {
                       trackMobileEventWithBeacon("wiki_product_click", {
                         page: "wiki_list",
                         route: currentRoute,
-                        source: analyticsSource,
+                        source: "m_wiki",
                         category: active,
                         product_id: product.id,
                         target_type_key: item.target_type_key,
@@ -1299,14 +1251,14 @@ function MobileWikiPageContent() {
             <section className="space-y-4">
               {featuredIngredientItem && featuredIngredientName ? (
                 <Link
-                  href={buildReturnHref(`/m/wiki/${active}/${featuredIngredientItem.ingredient_id}`, returnTo, utilityRouteState)}
+                  href={buildReturnHref(`/m/wiki/${active}/${featuredIngredientItem.ingredient_id}`, returnTo)}
                   prefetch={false}
                   data-analytics-id={`wiki:ingredient:featured:${featuredIngredientItem.ingredient_id}`}
                   onClick={() => {
                     trackMobileEventWithBeacon("wiki_ingredient_click", {
                       page: "wiki_list",
                       route: currentRoute,
-                      source: analyticsSource,
+                      source: "m_wiki",
                       category: active,
                       ingredient_id: featuredIngredientItem.ingredient_id,
                       position: 1,
@@ -1409,14 +1361,14 @@ function MobileWikiPageContent() {
                 return (
                   <Link
                     key={item.ingredient_id}
-                    href={buildReturnHref(`/m/wiki/${active}/${item.ingredient_id}`, returnTo, utilityRouteState)}
+                    href={buildReturnHref(`/m/wiki/${active}/${item.ingredient_id}`, returnTo)}
                     prefetch={false}
                     data-analytics-id={`wiki:ingredient:list:${item.ingredient_id}`}
                     onClick={() => {
                       trackMobileEventWithBeacon("wiki_ingredient_click", {
                         page: "wiki_list",
                         route: currentRoute,
-                        source: analyticsSource,
+                        source: "m_wiki",
                         category: active,
                         ingredient_id: item.ingredient_id,
                         position: featuredIngredientItem

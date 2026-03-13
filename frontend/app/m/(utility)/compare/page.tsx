@@ -20,16 +20,6 @@ import MobilePageAnalytics from "@/components/mobile/MobilePageAnalytics";
 import { markMobileTargetHandled, trackMobileEvent } from "@/lib/mobileAnalytics";
 import { buildCompareBasisReturnTo } from "@/lib/mobile/flowReturn";
 import { describeMobileRouteFocus, getMobileCategoryLabel } from "@/lib/mobile/routeCopy";
-import {
-  appendMobileUtilityRouteState,
-  applyMobileUtilityRouteState,
-  describeMobileUtilityReturnLabel,
-  hasMobileUtilityResultContext,
-  hasMobileUtilityRouteContext,
-  parseMobileUtilityRouteState,
-  resolveMobileUtilityReturnHref,
-  resolveMobileUtilitySource,
-} from "@/features/mobile-utility/routeState";
 
 const CATEGORY_ORDER: MobileSelectionCategory[] = ["shampoo", "bodywash", "conditioner", "lotion", "cleanser"];
 const MAX_TOTAL_SELECTION = 3;
@@ -294,11 +284,6 @@ function MobileComparePageContent() {
   const maxLibrarySelection = hasUpload ? MAX_TOTAL_SELECTION - 1 : MAX_TOTAL_SELECTION;
   const minLibrarySelection = hasUpload ? 1 : 2;
   const selectionShortfall = Math.max(0, 2 - totalSelectedCount);
-  const utilityRouteState = useMemo(() => parseMobileUtilityRouteState(searchParams), [searchParams]);
-  const analyticsSource = resolveMobileUtilitySource(utilityRouteState, "m_compare");
-  const showReturnAction = hasMobileUtilityRouteContext(utilityRouteState);
-  const returnActionHref = resolveMobileUtilityReturnHref(utilityRouteState);
-  const returnActionLabel = describeMobileUtilityReturnLabel(utilityRouteState);
   const landingCategory = normalizeSelectionCategory(searchParams?.get("category")) || category;
   const profileRefreshed = searchParams?.get("profile_refreshed") === "1";
   const fromLibrary = searchParams?.get(LIBRARY_RETURN_PARAM) === "1";
@@ -306,10 +291,6 @@ function MobileComparePageContent() {
   const resultCta = String(searchParams?.get("result_cta") || "").trim();
   const fromCompareId = String(searchParams?.get("from_compare_id") || "").trim();
   const analyticsRoute = searchParams?.toString() ? `${pathname}?${searchParams.toString()}` : pathname || "/m/compare";
-  const compareBasisReturnTo = useMemo(
-    () => appendMobileUtilityRouteState(buildCompareBasisReturnTo(category), utilityRouteState),
-    [category, utilityRouteState],
-  );
   const resultActionContext = useMemo(
     () =>
       resultCta && fromCompareId
@@ -423,9 +404,8 @@ function MobileComparePageContent() {
     if (selectedProductIds.length > 0) {
       params.set(LIBRARY_PRESELECT_PARAM, selectedProductIds.join(","));
     }
-    applyMobileUtilityRouteState(params, utilityRouteState);
     return `/m/compare/library?${params.toString()}`;
-  }, [category, selectedProductIds, utilityRouteState]);
+  }, [category, selectedProductIds]);
 
   const selectionHeroTitle =
     recommendationReady && priorityLibraryItems.length > 0 ? "先从更贴近你的几款开始" : "先从下面挑 2 款开始";
@@ -973,10 +953,8 @@ function MobileComparePageContent() {
   ]);
 
   const goCompareHistory = useCallback(() => {
-    const params = new URLSearchParams({ tab: "compare" });
-    applyMobileUtilityRouteState(params, utilityRouteState);
-    router.push(`/m/me/history?${params.toString()}`);
-  }, [router, utilityRouteState]);
+    router.push("/m/me/history?tab=compare");
+  }, [router]);
 
   const resetCompareFlow = useCallback(() => {
     setActiveCompareId(null);
@@ -1274,7 +1252,7 @@ function MobileComparePageContent() {
         total_count: trackedTargets.length,
         pair_count: (result.pair_results || []).length,
       });
-      router.push(appendMobileUtilityRouteState(`/m/compare/result/${encodeURIComponent(result.compare_id)}`, utilityRouteState));
+      router.push(`/m/compare/result/${encodeURIComponent(result.compare_id)}`);
     } catch (err) {
       const text = err instanceof Error ? err.message : String(err);
       if (isMissingProductError(text) && !isRetryRun) {
@@ -1404,7 +1382,7 @@ function MobileComparePageContent() {
     }
     if (step === 2) {
       if (!hasHistoryProfile) {
-        router.push(`/m/${category}/profile?step=1&return_to=${encodeURIComponent(compareBasisReturnTo)}`);
+        router.push(`/m/${category}/profile?step=1`);
         return;
       }
       goNextStep();
@@ -1481,7 +1459,7 @@ function MobileComparePageContent() {
           lastCompletedLabel={profileLastCompletedLabel}
           summaryItems={bootstrap?.profile?.summary || []}
           detailButtonLabel="查看依据"
-          rewriteHref={`/m/${category}/profile?step=1&return_to=${encodeURIComponent(compareBasisReturnTo)}`}
+          rewriteHref={`/m/${category}/profile?step=1&return_to=${encodeURIComponent(buildCompareBasisReturnTo(category))}`}
           emptyTitle={`还没有可沿用的“${currentCategoryLabel}”历史首推`}
           emptyDescription={`先完成一次“${currentCategoryLabel}”问答，这次对比才会更贴合你的情况。`}
         />
@@ -1726,7 +1704,7 @@ function MobileComparePageContent() {
             lastCompletedLabel={profileLastCompletedLabel}
             summaryItems={bootstrap?.profile?.summary || []}
             detailButtonLabel="查看带入信息"
-            rewriteHref={`/m/${category}/profile?step=1&return_to=${encodeURIComponent(compareBasisReturnTo)}`}
+            rewriteHref={`/m/${category}/profile?step=1&return_to=${encodeURIComponent(buildCompareBasisReturnTo(category))}`}
             emptyTitle={`“${currentCategoryLabel}”还没有可沿用的历史首推`}
             emptyDescription={`先完成一次“${currentCategoryLabel}”问答，再开始专业对比。`}
             compact
@@ -1786,41 +1764,14 @@ function MobileComparePageContent() {
       历史记录
     </button>
   );
-  const returnActionButton = showReturnAction ? (
-    <Link
-      href={returnActionHref}
-      onClick={() => {
-        if (hasMobileUtilityResultContext(utilityRouteState) && utilityRouteState.scenarioId) {
-          void safeTrack("result_secondary_loop_click", {
-            page: "mobile_compare",
-            route: analyticsRoute,
-            source: analyticsSource,
-            category,
-            scenario_id: utilityRouteState.scenarioId,
-            target_path: returnActionHref,
-            action: "compare_return",
-          });
-        }
-      }}
-      className="inline-flex h-9 items-center rounded-full border border-[#0a84ff]/26 bg-[#eef5ff] px-4 text-[12px] font-semibold text-[#1858b0] active:bg-[#e2efff] dark:border-[#69adff]/35 dark:bg-[#1e3558]/72 dark:text-[#b9daff]"
-    >
-      {returnActionLabel}
-    </Link>
-  ) : null;
-  const headerActions = (
-    <div className="flex items-center gap-2">
-      {returnActionButton}
-      {historyButton}
-    </div>
-  );
 
   if (isRestoring) {
     return (
       <section className="m-compare-page pb-10">
-        <MobileFrictionSignals page="mobile_compare" route={analyticsRoute} source={analyticsSource} category={category} />
+        <MobileFrictionSignals page="mobile_compare" route={analyticsRoute} source="m_compare" category={category} />
         <div className="flex items-center justify-between gap-3">
           <h1 className="text-[26px] leading-[1.14] font-semibold tracking-[-0.02em] text-black/90">专业对比</h1>
-          {headerActions}
+          {historyButton}
         </div>
         <div className="rounded-[24px] border border-black/10 bg-white/88 px-4 py-4 text-[14px] text-black/65 backdrop-blur">
           正在恢复上次分析进度...
@@ -1836,7 +1787,7 @@ function MobileComparePageContent() {
       triggerReason={feedbackPrompt.triggerReason}
       page="mobile_compare"
       route="/m/compare"
-      source={analyticsSource}
+      source="m_compare"
       category={feedbackPrompt.category}
       compareId={feedbackPrompt.compareId}
       stage={feedbackPrompt.stage}
@@ -1850,10 +1801,10 @@ function MobileComparePageContent() {
   if (shouldShowTaskPanel) {
     return (
       <section className="m-compare-page pb-10">
-        <MobileFrictionSignals page="mobile_compare" route={analyticsRoute} source={analyticsSource} category={category} />
+        <MobileFrictionSignals page="mobile_compare" route={analyticsRoute} source="m_compare" category={category} />
         <div className="flex items-center justify-between gap-3">
           <h1 className="text-[28px] leading-[1.14] font-semibold tracking-[-0.02em] text-black/90">专业对比</h1>
-          {headerActions}
+          {historyButton}
         </div>
         <p className="mt-2 text-[14px] leading-[1.55] text-black/60">
           {isDoneTask
@@ -1884,7 +1835,7 @@ function MobileComparePageContent() {
             </div>
             <div className="mt-5">
               <Link
-                href={appendMobileUtilityRouteState(`/m/compare/result/${encodeURIComponent(activeResultId)}`, utilityRouteState)}
+                href={`/m/compare/result/${encodeURIComponent(activeResultId)}`}
                 data-analytics-id="compare:task:view-result"
                 data-analytics-dead-click-watch="true"
                 onClick={() => {
@@ -1917,7 +1868,7 @@ function MobileComparePageContent() {
         <div className="mt-4 grid gap-2">
           {isRunningTask ? (
             <Link
-              href={appendMobileUtilityRouteState("/m/wiki", utilityRouteState)}
+              href="/m/wiki"
               className="inline-flex h-10 items-center justify-center rounded-xl border border-black/12 bg-white px-4 text-[13px] font-medium text-black/78 active:bg-black/[0.03]"
             >
               先去逛成分百科
@@ -1958,10 +1909,10 @@ function MobileComparePageContent() {
   if (showGuide) {
     return (
       <section className="m-compare-page pb-10">
-        <MobileFrictionSignals page="mobile_compare" route={analyticsRoute} source={analyticsSource} category={category} />
+        <MobileFrictionSignals page="mobile_compare" route={analyticsRoute} source="m_compare" category={category} />
         <div className="flex items-center justify-between gap-3">
           <h1 className="text-[26px] leading-[1.14] font-semibold tracking-[-0.02em] text-black/90">专业对比</h1>
-          {headerActions}
+          {historyButton}
         </div>
         {runError ? (
           <div className="mb-3 rounded-2xl border border-[#ff8f8f]/45 bg-[#ff5f5f]/10 px-4 py-3 text-[13px] text-[#b53a3a] dark:border-[#ff8f8f]/35 dark:bg-[#5a1f26]/45 dark:text-[#ffd1d1]">
@@ -2009,11 +1960,17 @@ function MobileComparePageContent() {
 
   return (
     <section className={`m-compare-page pb-10 ${step === 3 ? "m-compare-page-selection" : ""}`}>
-      <MobilePageAnalytics page="mobile_compare" route={analyticsRoute} source={analyticsSource} category={category} />
-      <MobileFrictionSignals page="mobile_compare" route={analyticsRoute} source={analyticsSource} category={category} />
+      <MobilePageAnalytics page="mobile_compare" route={analyticsRoute} source="m_compare" category={category} />
+      <MobileFrictionSignals page="mobile_compare" route={analyticsRoute} source="m_compare" category={category} />
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-[26px] leading-[1.15] font-semibold tracking-[-0.02em] text-black/90">开始对比</h1>
-        {headerActions}
+        <button
+          type="button"
+          onClick={goCompareHistory}
+          className="inline-flex h-9 items-center rounded-full border border-black/12 bg-white/70 px-4 text-[13px] font-medium text-black/70 active:bg-black/[0.03]"
+        >
+          历史记录
+        </button>
       </div>
 
       <div className="mt-4 rounded-[22px] border border-black/10 bg-white px-4 py-3">

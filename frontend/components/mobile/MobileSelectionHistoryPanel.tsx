@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
   deleteMobileSelectionHistoryCleanup,
   deleteMobileSelectionSessionsBatch,
@@ -13,10 +12,6 @@ import {
   type MobileSelectionResolveResponse,
 } from "@/lib/api";
 import MobileHistoryCleanupSheet from "@/components/mobile/MobileHistoryCleanupSheet";
-import {
-  appendMobileUtilityRouteState,
-  type MobileUtilityRouteState,
-} from "@/features/mobile-utility/routeState";
 import { describeMobileRouteFocus, getMobileCategoryLabel } from "@/lib/mobile/routeCopy";
 
 const SWIPE_ACTION_WIDTH = 84;
@@ -98,11 +93,7 @@ function TrashIcon() {
   );
 }
 
-type Props = {
-  routeState?: MobileUtilityRouteState | null;
-};
-
-export default function MobileSelectionHistoryPanel({ routeState = null }: Props) {
+export default function MobileSelectionHistoryPanel() {
   const [entries, setEntries] = useState<MobileSelectionResolveResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
@@ -617,13 +608,13 @@ export default function MobileSelectionHistoryPanel({ routeState = null }: Props
                   {!selectionMode && (
                     <div className="mt-4 flex flex-wrap gap-2">
                       <Link
-                        href={appendMobileUtilityRouteState(entry.links.product, routeState)}
+                        href={entry.links.product}
                         className="inline-flex h-9 items-center rounded-full border border-black/15 px-4 text-[13px] font-medium text-black/78 active:bg-black/[0.03]"
                       >
                         查看产品
                       </Link>
                       <Link
-                        href={appendMobileUtilityRouteState(entry.links.wiki, routeState)}
+                        href={entry.links.wiki}
                         className="inline-flex h-9 items-center rounded-full border border-black/15 px-4 text-[13px] font-medium text-black/78 active:bg-black/[0.03]"
                       >
                         查看成份

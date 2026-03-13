@@ -1,17 +1,7 @@
 import Image from "next/image";
-import Link from "next/link";
 import MobileFrictionSignals from "@/components/mobile/MobileFrictionSignals";
 import MobilePageAnalytics from "@/components/mobile/MobilePageAnalytics";
 import MobileTrackedLink from "@/components/mobile/MobileTrackedLink";
-import MeDecisionResumeCard from "@/features/mobile-utility/MeDecisionResumeCard";
-import {
-  applyMobileUtilityRouteState,
-  describeMobileUtilityReturnLabel,
-  hasMobileUtilityRouteContext,
-  parseMobileUtilityRouteState,
-  resolveMobileUtilityReturnHref,
-  resolveMobileUtilitySource,
-} from "@/features/mobile-utility/routeState";
 
 type UseCategory = {
   key: "shampoo" | "bodywash" | "conditioner" | "lotion" | "cleanser";
@@ -48,13 +38,8 @@ export default async function MobileMeUsePage({
   searchParams?: Promise<UseSearchParams> | UseSearchParams;
 }) {
   const resolvedSearchParams = await Promise.resolve(searchParams ?? {});
-  const routeState = parseMobileUtilityRouteState(resolvedSearchParams);
   const requestedCategory = normalizeRequestedCategory(firstSearchParam(resolvedSearchParams.category));
-  const source = routeState.source || "";
-  const analyticsSource = resolveMobileUtilitySource(routeState, "m_me_use");
-  const showReturnAction = hasMobileUtilityRouteContext(routeState);
-  const returnHref = resolveMobileUtilityReturnHref(routeState);
-  const returnLabel = describeMobileUtilityReturnLabel(routeState);
+  const source = firstSearchParam(resolvedSearchParams.source);
   const orderedCategories = requestedCategory
     ? [
         ...USE_CATEGORIES.filter((item) => item.key === requestedCategory),
@@ -67,16 +52,8 @@ export default async function MobileMeUsePage({
 
   return (
     <section className="space-y-4 pb-8">
-      <MobilePageAnalytics page="my_use" route="/m/me/use" source={analyticsSource} category={requestedCategory} />
-      <MobileFrictionSignals page="my_use" route="/m/me/use" source={analyticsSource} category={requestedCategory} />
-      {showReturnAction ? (
-        <Link
-          href={returnHref}
-          className="m-pressable inline-flex h-9 items-center rounded-full border border-black/12 bg-white/82 px-4 text-[12px] font-semibold text-black/72 active:bg-black/[0.03] dark:border-white/14 dark:bg-white/[0.05] dark:text-white/78"
-        >
-          {returnLabel}
-        </Link>
-      ) : null}
+      <MobilePageAnalytics page="my_use" route="/m/me/use" source={source || "m_me_use"} category={requestedCategory} />
+      <MobileFrictionSignals page="my_use" route="/m/me/use" source={source || "m_me_use"} category={requestedCategory} />
       <header className="overflow-hidden rounded-[30px] border border-black/10 bg-white/88 p-5 shadow-[0_10px_28px_rgba(20,34,58,0.08)] dark:border-white/15 dark:bg-[#0f1724]/84">
         <div className="inline-flex rounded-full border border-[#0071e3]/24 bg-[#0071e3]/8 px-3 py-1 text-[11px] font-semibold tracking-[0.01em] text-[#0071e3]">
           在用管理
@@ -96,16 +73,11 @@ export default async function MobileMeUsePage({
           </div>
         ) : null}
       </header>
-      <MeDecisionResumeCard routeState={routeState} />
 
       <div className="grid gap-3 min-[560px]:grid-cols-2">
         {orderedCategories.map((item) => {
           const isRequested = item.key === requestedCategory;
-          const hrefParams = new URLSearchParams({
-            category: item.key,
-          });
-          applyMobileUtilityRouteState(hrefParams, routeState);
-          const href = `/m/compare?${hrefParams.toString()}`;
+          const href = `/m/compare?category=${item.key}`;
           return (
           <article
             key={item.key}
@@ -142,7 +114,7 @@ export default async function MobileMeUsePage({
                 eventProps={{
                   page: "my_use",
                   route: "/m/me/use",
-                  source: analyticsSource,
+                  source: source || "m_me_use",
                   category: item.key,
                   is_prefilled: isRequested,
                   target_path: "/m/compare",

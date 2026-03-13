@@ -1,8 +1,4 @@
 import { redirect } from "next/navigation";
-import {
-  appendMobileUtilityRouteState,
-  parseMobileUtilityRouteState,
-} from "@/features/mobile-utility/routeState";
 
 type Search = Record<string, string | string[] | undefined>;
 
@@ -18,15 +14,14 @@ export default async function MobileMeEntryPage({
 }) {
   const raw = (await Promise.resolve(searchParams)) || {};
   const tab = pickTab(raw.tab);
-  const routeState = parseMobileUtilityRouteState(raw);
 
   if (tab === "selection" || tab === "compare") {
-    redirect(appendMobileUtilityRouteState(`/m/me/history?tab=${tab}`, routeState));
+    redirect(`/m/me/history?tab=${tab}`);
   }
 
   if (tab === "bag") {
-    redirect(appendMobileUtilityRouteState("/m/me/bag", routeState));
+    redirect("/m/me/bag");
   }
 
-  redirect(appendMobileUtilityRouteState("/m/me/use", routeState));
+  redirect("/m/me/use");
 }

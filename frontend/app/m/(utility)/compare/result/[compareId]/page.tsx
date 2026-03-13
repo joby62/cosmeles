@@ -6,35 +6,14 @@ import MobilePageAnalytics from "@/components/mobile/MobilePageAnalytics";
 import MobileScrollDepthAnalytics from "@/components/mobile/MobileScrollDepthAnalytics";
 import { fetchMobileCompareResult } from "@/lib/api";
 import { formatRuntimeError } from "@/lib/error";
-import {
-  appendMobileUtilityRouteState,
-  parseMobileUtilityRouteState,
-  resolveMobileUtilitySource,
-} from "@/features/mobile-utility/routeState";
 import MobileCompareResultFlow from "./result-flow";
-
-type Search = Record<string, string | string[] | undefined>;
 
 export default async function MobileCompareResultPage({
   params,
-  searchParams,
 }: {
   params: { compareId: string } | Promise<{ compareId: string }>;
-  searchParams?: Promise<Search> | Search;
 }) {
   const { compareId } = await Promise.resolve(params);
-  const search = (await Promise.resolve(searchParams)) || {};
-  const routeState = parseMobileUtilityRouteState(search);
-  const analyticsSource = resolveMobileUtilitySource(routeState, "m_compare_result");
-  const routeParams = new URLSearchParams();
-  for (const [key, value] of Object.entries(search)) {
-    const picked = Array.isArray(value) ? value[0] : value;
-    const text = String(picked || "").trim();
-    if (!text) continue;
-    routeParams.set(key, text);
-  }
-  const routeQuery = routeParams.toString();
-  const currentRoute = routeQuery ? `/m/compare/result/${compareId}?${routeQuery}` : `/m/compare/result/${compareId}`;
   let result: Awaited<ReturnType<typeof fetchMobileCompareResult>> | null = null;
   let loadError: string | null = null;
 
@@ -47,7 +26,7 @@ export default async function MobileCompareResultPage({
   if (!result) {
     return (
       <section className="m-compare-result-page pb-12">
-        <MobilePageAnalytics page="compare_result_error" route={currentRoute} source={analyticsSource} compareId={compareId} />
+        <MobilePageAnalytics page="compare_result_error" route={`/m/compare/result/${compareId}`} source="m_compare_result" compareId={compareId} />
         <article className="rounded-[24px] border border-[#ffb39e]/55 bg-[linear-gradient(180deg,#fff8f4_0%,#fff2ed_100%)] px-5 py-5 dark:border-[#b16b58]/45 dark:bg-[linear-gradient(180deg,#35221f_0%,#2a1a18_100%)]">
           <div className="text-[12px] font-semibold tracking-[0.04em] text-[#b6543f] dark:text-[#ffb39d]">对比结果加载失败</div>
           <h1 className="mt-2 text-[26px] leading-[1.18] font-semibold tracking-[-0.02em] text-[#452016] dark:text-[#ffd5cb]">本次对比未能完成展示</h1>
@@ -57,13 +36,13 @@ export default async function MobileCompareResultPage({
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
             <Link
-              href={appendMobileUtilityRouteState("/m/compare", routeState)}
+              href="/m/compare"
               className="inline-flex h-10 items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-5 text-[14px] font-semibold text-white shadow-[0_10px_24px_rgba(0,113,227,0.28)]"
             >
               返回横向对比
             </Link>
             <Link
-              href={appendMobileUtilityRouteState("/m", routeState)}
+              href="/m"
               className="inline-flex h-10 items-center justify-center rounded-full border border-[#202737]/18 px-5 text-[14px] font-semibold text-[#232e45] dark:border-[#6e85ad]/38 dark:text-[#d6e5ff]"
             >
               回到移动首页
@@ -78,15 +57,15 @@ export default async function MobileCompareResultPage({
     <>
       <MobilePageAnalytics
         page="compare_result"
-        route={currentRoute}
-        source={analyticsSource}
+        route={`/m/compare/result/${compareId}`}
+        source="m_compare_result"
         category={result.category}
         compareId={result.compare_id}
       />
       <MobileScrollDepthAnalytics
         page="compare_result"
-        route={currentRoute}
-        source={analyticsSource}
+        route={`/m/compare/result/${compareId}`}
+        source="m_compare_result"
         category={result.category}
         compareId={result.compare_id}
         extra={{
@@ -97,8 +76,8 @@ export default async function MobileCompareResultPage({
       <MobileLeaveEventAnalytics
         eventName="compare_result_leave"
         page="compare_result"
-        route={currentRoute}
-        source={analyticsSource}
+        route={`/m/compare/result/${compareId}`}
+        source="m_compare_result"
         category={result.category}
         compareId={result.compare_id}
         extra={{
@@ -108,8 +87,8 @@ export default async function MobileCompareResultPage({
       />
       <MobileFrictionSignals
         page="compare_result"
-        route={currentRoute}
-        source={analyticsSource}
+        route={`/m/compare/result/${compareId}`}
+        source="m_compare_result"
         category={result.category}
         compareId={result.compare_id}
         stallAfterMs={18000}
@@ -121,15 +100,15 @@ export default async function MobileCompareResultPage({
         name="compare_result_view"
         props={{
           page: "compare_result",
-          route: currentRoute,
-          source: analyticsSource,
+          route: `/m/compare/result/${compareId}`,
+          source: "m_compare_result",
           category: result.category,
           compare_id: result.compare_id,
           decision: result.verdict.decision,
           confidence: result.verdict.confidence,
         }}
       />
-      <MobileCompareResultFlow result={result} routeState={routeState} />
+      <MobileCompareResultFlow result={result} />
     </>
   );
 }

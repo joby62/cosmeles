@@ -10,8 +10,6 @@
   ],
   "rules": [
     "return_to must point to a /m path",
-    "utility pages must preserve source, scenario_id, result_cta, and return_to across in-utility hops",
-    "if a utility surface cannot honor return_to, it must degrade to /m/choose",
     "category must be one of the shared decision catalog keys",
     "scenario_id is required on result-to-utility hops",
     "result_cta is required when a utility page is opened from the result page",
