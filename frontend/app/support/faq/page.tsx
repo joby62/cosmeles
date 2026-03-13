@@ -4,13 +4,13 @@ import { POLICY_SCOPE_NOTE, SUPPORT_FAQ_ITEMS } from "@/lib/storefrontPolicies";
 export default function FaqPage() {
   return (
     <FeatureShell
-      eyebrow="FAQ"
-      title="Put the common storefront-scope questions where customers can find them early."
-      summary="Jeslect FAQ is structured around pre-purchase clarity for the US launch: bag continuity, fit-tool logic, current commerce limits, and where support and policy answers live while checkout is still out of scope."
+      eyebrow="常见问题"
+      title="把用户最常问的站点边界问题，放到足够早就能看见的位置。"
+      summary="婕选 FAQ 主要围绕售前清晰度展开：袋中连续性、测配与对比的关系、当前 commerce 能力边界，以及支持与政策入口在哪里。"
       metaNote={POLICY_SCOPE_NOTE}
-      highlights={["Launch-scope honesty", "Fit-tool clarity", "Visible support paths"]}
-      primaryCta={{ href: "/support", label: "Support hub" }}
-      secondaryCta={{ href: "/support/contact", label: "Contact support" }}
+      highlights={["能力边界坦诚", "适配工具说清楚", "支持路径可见"]}
+      primaryCta={{ href: "/support", label: "返回支持中心" }}
+      secondaryCta={{ href: "/support/contact", label: "联系支持" }}
     >
       <div className="space-y-3">
         {SUPPORT_FAQ_ITEMS.map((item) => (

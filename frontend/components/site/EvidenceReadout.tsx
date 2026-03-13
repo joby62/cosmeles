@@ -80,7 +80,7 @@ export default function EvidenceReadout({
 
       {note ? (
         <div className="mt-5 rounded-[24px] border border-black/8 bg-slate-50 px-4 py-4">
-          <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-slate-500">Read before you act</p>
+          <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-slate-500">决定前先看</p>
           <p className="mt-3 text-[14px] leading-6 text-slate-700">{note}</p>
         </div>
       ) : null}

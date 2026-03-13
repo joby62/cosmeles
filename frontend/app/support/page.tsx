@@ -5,20 +5,20 @@ import { POLICY_SCOPE_NOTE, SUPPORT_HUB_LINKS, SUPPORT_LEGAL_LINKS } from "@/lib
 export default function SupportHubPage() {
   return (
     <FeatureShell
-      eyebrow="Support"
-      title="Keep policy, support, and launch-scope answers in one place."
-      summary="Jeslect support is currently focused on pre-purchase clarity for the US storefront: fit questions, Bag behavior, shipping and returns expectations, and the legal scope of this pre-checkout build."
+      eyebrow="支持"
+      title="把配送、退货、联系和政策边界收在一个足够清楚的入口里。"
+      summary="当前婕选支持层主要服务于售前决策：商品适配、袋中行为、配送与退货预期，以及当前独立站的真实能力边界。"
       metaNote={POLICY_SCOPE_NOTE}
-      highlights={["US pre-checkout scope", "Visible policy layer", "Pre-purchase support only"]}
-      primaryCta={{ href: "/support/faq", label: "Read FAQ" }}
-      secondaryCta={{ href: "/bag", label: "Open bag" }}
+      highlights={["售前支持优先", "政策层持续可见", "站点边界明确表达"]}
+      primaryCta={{ href: "/support/faq", label: "查看常见问题" }}
+      secondaryCta={{ href: "/bag", label: "打开袋中" }}
     >
       <div className="space-y-8">
         <section>
           <div className="flex items-end justify-between gap-4">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Core support</p>
-              <h2 className="mt-3 text-[24px] font-semibold tracking-[-0.03em] text-slate-950">Keep the shopping basics visible before checkout exists.</h2>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">核心支持</p>
+              <h2 className="mt-3 text-[24px] font-semibold tracking-[-0.03em] text-slate-950">在支付开放前，先把购物基础信息前置出来。</h2>
             </div>
           </div>
           <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -37,8 +37,8 @@ export default function SupportHubPage() {
 
         <section>
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Legal scope</p>
-            <h2 className="mt-3 text-[24px] font-semibold tracking-[-0.03em] text-slate-950">Keep policy language aligned with the real storefront scope.</h2>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">法律与政策</p>
+              <h2 className="mt-3 text-[24px] font-semibold tracking-[-0.03em] text-slate-950">政策语言应该和站点真实能力一致，而不是假装商城已经完整。</h2>
           </div>
           <div className="mt-4 grid gap-4 md:grid-cols-3">
             {SUPPORT_LEGAL_LINKS.map((item) => (

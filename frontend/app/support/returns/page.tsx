@@ -4,13 +4,13 @@ import { POLICY_SCOPE_NOTE, RETURNS_POLICY_SECTIONS } from "@/lib/storefrontPoli
 export default function ReturnsPage() {
   return (
     <FeatureShell
-      eyebrow="Returns"
-      title="Returns language should reduce hesitation before ordering opens."
-      summary="This page sets the current Jeslect return baseline for the US storefront: what should already be understandable today, how return trust fits into product and bag decisions, and which pieces still depend on live commerce operations."
+      eyebrow="退货"
+      title="退货规则应该降低犹豫，而不是制造新的担心。"
+      summary="这里定义婕选当前独立站的退货基线：哪些内容今天就该能读懂，退货信任如何嵌进商品和袋中的决策链路，以及哪些部分仍依赖后续运营落地。"
       metaNote={POLICY_SCOPE_NOTE}
-      highlights={["Visible timing", "Readable conditions", "No hidden exceptions"]}
-      primaryCta={{ href: "/support", label: "Support hub" }}
-      secondaryCta={{ href: "/support/contact", label: "Contact support" }}
+      highlights={["时限前置", "条件直白", "例外不隐藏"]}
+      primaryCta={{ href: "/support", label: "返回支持中心" }}
+      secondaryCta={{ href: "/support/contact", label: "联系支持" }}
     >
       <div className="space-y-4">
         {RETURNS_POLICY_SECTIONS.map((section) => (

@@ -22,12 +22,12 @@ export default async function ComparePage({
 
   return (
     <FeatureShell
-      eyebrow="Compare"
-      title="Compare products against your saved routine basis."
-      summary="Jeslect Compare now uses the live mobile compare engine inside the new storefront shell. Pick a category, choose 2 to 3 products, and read the decision in a calmer English layout."
-      highlights={["Live compare engine", "Saved compare history", "English result layout"]}
-      primaryCta={{ href: "/shop", label: "Browse products" }}
-      secondaryCta={{ href: "/search", label: "Search products" }}
+      eyebrow="对比"
+      title="把商品放回你的已存路线基础里，再判断谁更适合。"
+      summary="婕选对比页会复用当前已接通的 compare engine。选择一个品类，挑 2 到 3 个商品，把决定放到同一屏里读清楚。"
+      highlights={["真实对比引擎", "历史结果可恢复", "以中文壳层承接结果"]}
+      primaryCta={{ href: "/shop", label: "进入选购" }}
+      secondaryCta={{ href: "/search", label: "搜索商品" }}
     >
       <CompareExperience initialCategory={initialCategory} initialPick={initialPick} />
     </FeatureShell>

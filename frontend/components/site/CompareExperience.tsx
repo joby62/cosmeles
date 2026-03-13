@@ -24,11 +24,11 @@ type CompareExperienceProps = {
 
 function formatUpdatedAt(value: string | null | undefined): string {
   const raw = String(value || "").trim();
-  if (!raw) return "No recent activity";
+  if (!raw) return "暂无最近活动";
   const date = new Date(raw);
   if (Number.isNaN(date.getTime())) return raw;
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "numeric",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
@@ -36,7 +36,7 @@ function formatUpdatedAt(value: string | null | undefined): string {
 }
 
 function formatProductName(item: MobileCompareProductLibraryItem): string {
-  return item.product.name || item.product.brand || "Untitled product";
+  return item.product.name || item.product.brand || "未命名商品";
 }
 
 function compareItems(a: MobileCompareProductLibraryItem, b: MobileCompareProductLibraryItem): number {
@@ -47,9 +47,9 @@ function compareItems(a: MobileCompareProductLibraryItem, b: MobileCompareProduc
 }
 
 function statusLabel(session: MobileCompareSession): string {
-  if (session.status === "done") return "Ready";
-  if (session.status === "failed") return "Needs retry";
-  return session.stage_label || "Running";
+  if (session.status === "done") return "可查看";
+  if (session.status === "failed") return "需要重试";
+  return session.stage_label || "处理中";
 }
 
 function statusTone(session: MobileCompareSession): string {
@@ -71,7 +71,7 @@ export default function CompareExperience({ initialCategory, initialPick = "" }:
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
-  const [progressLabel, setProgressLabel] = useState("Select 2 to 3 products to compare.");
+  const [progressLabel, setProgressLabel] = useState("请选择 2 到 3 个商品进行对比。");
   const [progressPercent, setProgressPercent] = useState(0);
   const deferredSearch = useDeferredValue(search);
 
@@ -89,7 +89,7 @@ export default function CompareExperience({ initialCategory, initialPick = "" }:
       setHistoryError(null);
       setRunError(null);
       setProgressPercent(0);
-      setProgressLabel("Select 2 to 3 products to compare.");
+      setProgressLabel("请选择 2 到 3 个商品进行对比。");
 
       try {
         const nextBootstrap = await fetchMobileCompareBootstrap(category);
@@ -191,7 +191,7 @@ export default function CompareExperience({ initialCategory, initialPick = "" }:
     setRunning(true);
     setRunError(null);
     setProgressPercent(6);
-    setProgressLabel("Preparing your side-by-side compare.");
+    setProgressLabel("正在准备并排对比。");
 
     try {
       const result = await runMobileCompareJobStream(
@@ -203,7 +203,7 @@ export default function CompareExperience({ initialCategory, initialPick = "" }:
             product_id: productId,
           })),
           options: {
-            language: "en",
+            language: "zh",
             include_inci_order_diff: true,
             include_function_rank_diff: true,
           },
@@ -218,7 +218,7 @@ export default function CompareExperience({ initialCategory, initialPick = "" }:
             setProgressPercent(Math.max(0, Math.min(100, Math.round(percentValue))));
           }
           if (message || stageLabel) {
-            setProgressLabel(message || stageLabel || "Working through your compare.");
+            setProgressLabel(message || stageLabel || "正在生成你的对比结果。");
           }
         },
       );
@@ -230,7 +230,7 @@ export default function CompareExperience({ initialCategory, initialPick = "" }:
       setRunError(error instanceof Error ? error.message : String(error));
       setRunning(false);
       setProgressPercent(0);
-      setProgressLabel("Select 2 to 3 products to compare.");
+      setProgressLabel("请选择 2 到 3 个商品进行对比。");
     }
   }
 
@@ -258,29 +258,29 @@ export default function CompareExperience({ initialCategory, initialPick = "" }:
 
       <section className="grid gap-4 xl:grid-cols-[0.92fr_1.08fr]">
         <article className="rounded-[28px] border border-black/8 bg-white/92 p-5 shadow-[0_20px_46px_rgba(15,23,42,0.06)]">
-          <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-500">Compare basis</p>
+          <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-500">对比基础</p>
           {loadingBootstrap ? (
-            <p className="mt-4 text-[15px] leading-7 text-slate-600">Loading your available compare basis...</p>
+            <p className="mt-4 text-[15px] leading-7 text-slate-600">正在加载可用的对比基础...</p>
           ) : bootstrapError ? (
             <p className="mt-4 rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-4 text-[14px] leading-6 text-rose-700">
-              Compare bootstrap failed: {bootstrapError}
+              对比基础加载失败：{bootstrapError}
             </p>
           ) : bootstrap ? (
             <>
               <h2 className="mt-3 text-[28px] font-semibold tracking-[-0.04em] text-slate-950">
                 {bootstrap.profile.has_history_profile
-                  ? "Your latest profile is ready for compare."
-                  : "Compare still needs a saved profile basis."}
+                  ? "最新适配基础已经可以直接用于对比。"
+                  : "对比仍然需要一份已保存的适配基础。"}
               </h2>
               <p className="mt-3 text-[15px] leading-7 text-slate-600">
                 {bootstrap.profile.has_history_profile
-                  ? "Pick 2 to 3 products from this routine layer. Jeslect will compare them against your latest saved fit profile."
-                  : "The compare engine reuses your latest saved match profile. Once that basis exists, this page can run full side-by-side decisions."}
+                  ? "从这个护理层里挑 2 到 3 个商品，婕选会把它们放回你最近一次保存的适配基础里进行判断。"
+                  : "对比引擎会复用最近一次保存的测配结果。等这份基础存在后，这一页才能运行完整的并排判断。"}
               </p>
 
               <div className="mt-5 flex flex-wrap gap-2">
                 <span className="rounded-full border border-black/8 bg-slate-50 px-3 py-1 text-[12px] font-medium text-slate-700">
-                  Basis: {bootstrap.profile.basis}
+                  基础：{bootstrap.profile.basis}
                 </span>
                 {bootstrap.recommendation.route_title ? (
                   <span className="rounded-full border border-sky-100 bg-sky-50 px-3 py-1 text-[12px] font-medium text-sky-700">
@@ -289,7 +289,7 @@ export default function CompareExperience({ initialCategory, initialPick = "" }:
                 ) : null}
                 {bootstrap.profile.last_completed_at ? (
                   <span className="rounded-full border border-black/8 bg-slate-50 px-3 py-1 text-[12px] font-medium text-slate-700">
-                    Saved {formatUpdatedAt(bootstrap.profile.last_completed_at)}
+                    保存于 {formatUpdatedAt(bootstrap.profile.last_completed_at)}
                   </span>
                 ) : null}
               </div>
@@ -326,13 +326,13 @@ export default function CompareExperience({ initialCategory, initialPick = "" }:
                     href={category === "shampoo" ? "/match" : `/match?category=${encodeURIComponent(category)}`}
                     className="inline-flex h-11 items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-5 text-[14px] font-semibold text-white"
                   >
-                    Build compare basis
+                    先建立对比基础
                   </Link>
                   <Link
                     href={`/shop/${category}`}
                     className="inline-flex h-11 items-center justify-center rounded-full border border-black/10 bg-white px-5 text-[14px] font-semibold text-slate-700"
                   >
-                    Browse this category
+                    浏览这个品类
                   </Link>
                 </div>
               ) : null}
@@ -343,13 +343,13 @@ export default function CompareExperience({ initialCategory, initialPick = "" }:
         <article className="rounded-[28px] border border-black/8 bg-white/92 p-5 shadow-[0_20px_46px_rgba(15,23,42,0.06)]">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-500">Product selection</p>
+              <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-500">商品选择</p>
               <h2 className="mt-3 text-[28px] font-semibold tracking-[-0.04em] text-slate-950">
-                Select up to 3 products in {CATEGORIES.find((entry) => entry.key === category)?.label}.
+                在{CATEGORIES.find((entry) => entry.key === category)?.label}里最多选择 3 个商品。
               </h2>
             </div>
             <div className="rounded-full border border-black/8 bg-slate-50 px-4 py-2 text-[13px] font-medium text-slate-700">
-              {selectedIds.length} selected
+              已选 {selectedIds.length} 个
             </div>
           </div>
 
@@ -358,7 +358,7 @@ export default function CompareExperience({ initialCategory, initialPick = "" }:
               type="search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Filter by brand or product name"
+              placeholder="按品牌或商品名筛选"
               className="h-12 flex-1 rounded-full border border-black/10 bg-white px-5 text-[15px] text-slate-900 outline-none transition focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
             />
             <button
@@ -369,13 +369,13 @@ export default function CompareExperience({ initialCategory, initialPick = "" }:
               }}
               className="inline-flex h-12 items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-6 text-[14px] font-semibold text-white shadow-[0_14px_36px_rgba(0,113,227,0.28)] disabled:opacity-45"
             >
-              {running ? "Running compare..." : "Start compare"}
+              {running ? "对比中..." : "开始对比"}
             </button>
           </div>
 
           {runError ? (
             <div className="mt-4 rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-4 text-[14px] leading-6 text-rose-700">
-              Compare failed: {runError}
+              对比失败：{runError}
             </div>
           ) : null}
 
@@ -404,7 +404,7 @@ export default function CompareExperience({ initialCategory, initialPick = "" }:
                   className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-2 text-[12px] font-medium text-sky-700"
                 >
                   <span>{formatProductName(item)}</span>
-                  <span>Remove</span>
+                  <span>移除</span>
                 </button>
               ))}
             </div>
@@ -413,7 +413,7 @@ export default function CompareExperience({ initialCategory, initialPick = "" }:
           <div className="mt-6 grid gap-4 md:grid-cols-2">
             {loadingBootstrap ? (
               <div className="rounded-[24px] border border-black/8 bg-slate-50 px-4 py-5 text-[14px] text-slate-600">
-                Loading compare product library...
+                正在加载可对比商品库...
               </div>
             ) : filteredItems.length > 0 ? (
               filteredItems.map((item) => {
@@ -445,12 +445,12 @@ export default function CompareExperience({ initialCategory, initialPick = "" }:
                       <div className="flex flex-wrap gap-2">
                         {item.is_recommendation ? (
                           <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[11px] font-medium text-sky-700">
-                            Recommended by your saved profile
+                            已存适配基础推荐
                           </span>
                         ) : null}
                         {item.is_most_used ? (
                           <span className="rounded-full border border-black/8 bg-slate-50 px-3 py-1 text-[11px] font-medium text-slate-700">
-                            Most used
+                            最常使用
                           </span>
                         ) : null}
                       </div>
@@ -461,16 +461,16 @@ export default function CompareExperience({ initialCategory, initialPick = "" }:
                         {productName}
                       </h3>
                       <p className="mt-3 line-clamp-3 text-[14px] leading-6 text-slate-600">
-                        {item.product.one_sentence || "Use this profile as one side of the compare."}
+                        {item.product.one_sentence || "把这个商品作为对比中的一个候选。"}
                       </p>
                       <div className="mt-4 flex items-center justify-between gap-3">
-                        <span className="text-[12px] font-medium text-slate-500">Used {item.usage_count} times</span>
+                        <span className="text-[12px] font-medium text-slate-500">已使用 {item.usage_count} 次</span>
                         <span
                           className={`rounded-full px-3 py-1 text-[12px] font-semibold ${
                             selected ? "bg-sky-600 text-white" : "border border-black/8 bg-white text-slate-700"
                           }`}
                         >
-                          {selected ? "Selected" : "Select"}
+                          {selected ? "已选择" : "选择"}
                         </span>
                       </div>
                     </div>
@@ -479,7 +479,7 @@ export default function CompareExperience({ initialCategory, initialPick = "" }:
               })
             ) : (
               <div className="rounded-[24px] border border-black/8 bg-slate-50 px-4 py-5 text-[14px] leading-6 text-slate-600">
-                No products matched that filter in this category yet.
+                当前这个筛选条件下还没有匹配到商品。
               </div>
             )}
           </div>
@@ -489,18 +489,18 @@ export default function CompareExperience({ initialCategory, initialPick = "" }:
       <section className="rounded-[28px] border border-black/8 bg-white/92 p-5 shadow-[0_20px_46px_rgba(15,23,42,0.06)]">
         <div className="flex items-end justify-between gap-3">
           <div>
-            <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-500">Recent compare history</p>
-            <h2 className="mt-3 text-[28px] font-semibold tracking-[-0.04em] text-slate-950">Return to previous decisions without starting over.</h2>
+            <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-500">最近对比历史</p>
+            <h2 className="mt-3 text-[28px] font-semibold tracking-[-0.04em] text-slate-950">不用重来，也能回到之前的判断结果。</h2>
           </div>
         </div>
 
         {loadingSessions ? (
           <div className="mt-6 rounded-[24px] border border-black/8 bg-slate-50 px-4 py-5 text-[14px] text-slate-600">
-            Loading compare history...
+            正在加载对比历史...
           </div>
         ) : historyError ? (
           <div className="mt-6 rounded-[24px] border border-rose-200 bg-rose-50 px-4 py-5 text-[14px] leading-6 text-rose-700">
-            Compare history failed: {historyError}
+            对比历史加载失败：{historyError}
           </div>
         ) : sessions.length > 0 ? (
           <div className="mt-6 grid gap-4 md:grid-cols-2">
@@ -518,14 +518,14 @@ export default function CompareExperience({ initialCategory, initialPick = "" }:
                   </span>
                 </div>
                 <h3 className="mt-4 text-[20px] font-semibold tracking-[-0.03em] text-slate-950">
-                  {session.result?.headline || session.message || "Compare session"}
+                  {session.result?.headline || session.message || "对比任务"}
                 </h3>
                 <p className="mt-3 text-[14px] leading-6 text-slate-600">
                   {session.status === "done"
-                    ? "Open the saved result and continue from the same compare output."
+                    ? "打开已保存的结果，从同一份对比输出继续往下判断。"
                     : session.status === "failed"
-                      ? session.error?.detail || "The previous compare did not finish cleanly."
-                      : session.stage_label || "This compare is still processing."}
+                      ? session.error?.detail || "上一次对比没有顺利完成。"
+                      : session.stage_label || "这个对比任务仍在处理中。"}
                 </p>
                 <div className="mt-5 flex flex-wrap gap-3">
                   {session.status === "done" ? (
@@ -533,14 +533,14 @@ export default function CompareExperience({ initialCategory, initialPick = "" }:
                       href={`/compare/${encodeURIComponent(session.compare_id)}`}
                       className="inline-flex h-10 items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-4 text-[13px] font-semibold text-white"
                     >
-                      Open result
+                      打开结果
                     </Link>
                   ) : null}
                   <Link
                     href={`/shop/${encodeURIComponent(category)}`}
                     className="inline-flex h-10 items-center justify-center rounded-full border border-black/10 bg-white px-4 text-[13px] font-semibold text-slate-700"
                   >
-                    Browse category
+                    浏览品类
                   </Link>
                 </div>
               </article>
@@ -548,7 +548,7 @@ export default function CompareExperience({ initialCategory, initialPick = "" }:
           </div>
         ) : (
           <div className="mt-6 rounded-[24px] border border-black/8 bg-slate-50 px-4 py-5 text-[14px] leading-6 text-slate-600">
-            No compare history is stored for this category yet.
+            这个品类当前还没有已保存的对比历史。
           </div>
         )}
       </section>

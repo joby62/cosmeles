@@ -59,14 +59,14 @@ export default async function SearchPage({
     <div className="mx-auto max-w-7xl px-4 pb-16 pt-8">
       <section className="rounded-[40px] border border-black/8 bg-white/92 px-5 py-8 shadow-[0_28px_72px_rgba(15,23,42,0.08)] md:px-8 md:py-10">
         <div className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
-          Search
+          搜索
         </div>
         <h1 className="site-display mt-5 text-[42px] leading-[0.98] tracking-[-0.05em] text-slate-950 sm:text-[56px]">
-          Search products, brands, or ingredient language.
+          按商品、品牌或问题线索，把范围先收窄。
         </h1>
         <form className="mt-6">
           <label className="sr-only" htmlFor="search-input">
-            Search products
+            搜索商品
           </label>
           <div className="flex flex-col gap-3 md:flex-row">
             <input
@@ -74,21 +74,21 @@ export default async function SearchPage({
               type="search"
               name="q"
               defaultValue={query}
-              placeholder="Search products, brands, or concerns"
+              placeholder="搜索商品、品牌或护理问题"
               className="h-12 flex-1 rounded-full border border-black/10 bg-white px-5 text-[15px] text-slate-900 outline-none transition focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
             />
             <button
               type="submit"
               className="inline-flex h-12 items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-6 text-[14px] font-semibold text-white shadow-[0_14px_36px_rgba(0,113,227,0.28)]"
             >
-              Search
+              搜索
             </button>
           </div>
         </form>
         {!query ? (
           <div className="mt-6 space-y-5">
             <div>
-              <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-slate-500">Suggested searches</p>
+              <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-slate-500">推荐搜索</p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {SEARCH_SUGGESTIONS.map((item) => (
                   <Link
@@ -103,7 +103,7 @@ export default async function SearchPage({
             </div>
 
             <div>
-              <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-slate-500">Category shortcuts</p>
+              <p className="text-[12px] font-semibold uppercase tracking-[0.16em] text-slate-500">品类捷径</p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {CATEGORIES.map((category) => (
                   <Link
@@ -122,22 +122,22 @@ export default async function SearchPage({
 
       {loadError ? (
         <article className="mt-8 rounded-[28px] border border-rose-200 bg-rose-50 px-5 py-5 text-[14px] leading-6 text-rose-700">
-          Search failed: {loadError}
+          搜索加载失败：{loadError}
         </article>
       ) : null}
 
       {!loadError && query ? (
         <section className="mt-10 space-y-10">
-          <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-500">Results</p>
+          <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-500">结果</p>
           <h2 className="mt-3 text-[32px] font-semibold tracking-[-0.04em] text-slate-950">
-            {results.length} matches for &quot;{query}&quot;
+            “{query}” 找到 {results.length} 个结果
           </h2>
 
           <div className="grid gap-6 xl:grid-cols-[1.02fr_0.98fr]">
             <article className="rounded-[32px] border border-black/8 bg-white/92 p-6 shadow-[0_20px_46px_rgba(15,23,42,0.06)]">
-              <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-500">Search guidance</p>
+              <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-500">搜索建议</p>
               <h3 className="mt-3 text-[30px] font-semibold tracking-[-0.04em] text-slate-950">
-                Search should narrow the field, then push you toward the right next step.
+                搜索不是终点，而是帮你找到下一步该去哪里。
               </h3>
               <div className="mt-5 space-y-3">
                 {SEARCH_TRUST_POINTS.map((item) => (
@@ -151,21 +151,21 @@ export default async function SearchPage({
                   href="/match"
                   className="inline-flex h-11 items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-5 text-[14px] font-semibold text-white"
                 >
-                  Open match
+                  去测配
                 </Link>
                 <Link
                   href="/compare"
                   className="inline-flex h-11 items-center justify-center rounded-full border border-black/10 bg-white px-5 text-[14px] font-semibold text-slate-700"
                 >
-                  Open compare
+                  去对比
                 </Link>
               </div>
             </article>
 
             <article className="rounded-[32px] border border-black/8 bg-[linear-gradient(180deg,#eef6ff_0%,#ffffff_100%)] p-6 shadow-[0_20px_46px_rgba(15,23,42,0.06)]">
-              <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-sky-700">Trust layer</p>
+              <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-sky-700">支持层</p>
               <h3 className="mt-3 text-[30px] font-semibold tracking-[-0.04em] text-slate-950">
-                Keep support visible while you search.
+                搜索时也别把配送、退货和支持入口藏起来。
               </h3>
               <div className="mt-5 space-y-3">
                 {SHOP_SUPPORT_LINKS.map((item) => (
@@ -193,7 +193,7 @@ export default async function SearchPage({
                     href={`/shop/${category.key}`}
                     className="rounded-full border border-black/8 bg-slate-50 px-4 py-2 text-[13px] font-medium text-slate-700"
                   >
-                    Browse {category.label}
+                    查看{category.label}
                   </Link>
                 );
               })}
@@ -224,7 +224,7 @@ export default async function SearchPage({
             </div>
           ) : (
             <article className="mt-6 rounded-[28px] border border-black/8 bg-white/92 px-5 py-5 text-[15px] leading-6 text-slate-600">
-              No live products matched that search yet. Try a brand, a category name, or a routine concern.
+              当前还没有与这个关键词匹配的在线商品。你可以换一个品牌名、品类名，或从护理问题继续搜索。
             </article>
           )}
         </section>

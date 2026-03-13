@@ -41,27 +41,27 @@ export default function BagPanel() {
     <div className="space-y-4">
       {loading ? (
         <article className="rounded-[28px] border border-black/8 bg-white/92 px-5 py-5 text-[15px] text-slate-600">
-          Loading your bag...
+          正在加载袋中内容...
         </article>
       ) : null}
 
       {error ? (
         <article className="rounded-[28px] border border-rose-200 bg-rose-50 px-5 py-5 text-[14px] leading-6 text-rose-700">
-          Bag loading failed: {error}
+          袋中加载失败：{error}
         </article>
       ) : null}
 
       {!loading && !error && items.length === 0 ? (
         <article className="rounded-[28px] border border-black/8 bg-white/92 px-5 py-5 text-[15px] leading-6 text-slate-600">
-          Your bag is empty. Start with a product profile and save what you want to revisit.
+          你的袋中还是空的。可以先从商品画像页开始，把想回看的商品先存起来。
         </article>
       ) : null}
 
       {!loading && !error
         ? items.map((item) => {
-            const product = item.product;
-            const productName = product.name || "Untitled product";
-            const productBrand = product.brand || "Jeslect";
+          const product = item.product;
+          const productName = product.name || "未命名商品";
+          const productBrand = product.brand || "Jeslect";
             const packSizeLabel = commercePackSizeLabel(product.commerce);
             const statusLabel = commerceBadgeLabel(product.commerce);
             const priceLabel = commercePriceLabel(product.commerce);
@@ -89,7 +89,7 @@ export default function BagPanel() {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="rounded-full border border-black/8 bg-slate-50 px-3 py-1 text-[11px] font-medium text-slate-600">
-                        Quantity {item.quantity}
+                        数量 {item.quantity}
                       </span>
                       <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-medium text-amber-700">
                         {statusLabel}
@@ -110,7 +110,7 @@ export default function BagPanel() {
                       {productName}
                     </h2>
                     <p className="mt-3 text-[14px] leading-6 text-slate-600">
-                      {product.one_sentence || "Open the full product profile for ingredient and routine details."}
+                      {product.one_sentence || "打开完整商品画像页，查看成分和使用情境。"}
                     </p>
                     {priceLabel || inventoryLabel || shippingEtaLabel ? (
                       <div className="mt-3 rounded-[20px] border border-black/8 bg-slate-50 px-4 py-3">
@@ -132,7 +132,7 @@ export default function BagPanel() {
                         href={`/product/${encodeURIComponent(product.id)}`}
                         className="inline-flex h-10 items-center justify-center rounded-full border border-black/10 bg-white px-4 text-[13px] font-medium text-slate-700"
                       >
-                        View details
+                        查看详情
                       </Link>
                       <button
                         type="button"
@@ -151,7 +151,7 @@ export default function BagPanel() {
                         }}
                         className="inline-flex h-10 items-center justify-center rounded-full border border-rose-200 bg-rose-50 px-4 text-[13px] font-medium text-rose-700 disabled:opacity-60"
                       >
-                        {busyId === item.item_id ? "Removing..." : "Remove"}
+                        {busyId === item.item_id ? "移除中..." : "移除"}
                       </button>
                     </div>
                   </div>

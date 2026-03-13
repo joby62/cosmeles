@@ -37,11 +37,11 @@ const EMPTY_ERRORS: SavedHubErrors = {
 
 function formatDateTime(value: string | null | undefined): string {
   const raw = String(value || "").trim();
-  if (!raw) return "No recent activity";
+  if (!raw) return "暂无最近活动";
   const date = new Date(raw);
   if (Number.isNaN(date.getTime())) return raw;
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "numeric",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
@@ -183,24 +183,24 @@ export default function SavedHub() {
   const summaryCards = useMemo(
     () => [
       {
-        label: "Bag items",
+        label: "袋中商品",
         value: state.bagItems.length,
-        summary: "Keep saved products visible while you compare or step away.",
+        summary: "在你离开、比较或回看时，shortlist 都应继续可见。",
       },
       {
-        label: "Saved matches",
+        label: "已存测配",
         value: state.matchSessions.length,
-        summary: "Reuse the route basis Jeslect already stored for this device.",
+        summary: "复用当前设备上已经生成好的路线基础。",
       },
       {
-        label: "Compare runs",
+        label: "对比记录",
         value: state.compareSessions.length,
-        summary: "Pick up the compare path without rebuilding the same shortlist.",
+        summary: "不用重建 shortlist，也能继续之前的对比判断。",
       },
       {
-        label: "Recently viewed",
+        label: "最近浏览",
         value: state.recentProducts.length,
-        summary: "Return to products you opened most recently across the storefront.",
+        summary: "回到你刚刚打开过的商品和决策路径。",
       },
     ],
     [state],
@@ -220,7 +220,7 @@ export default function SavedHub() {
 
       {loading ? (
         <article className="rounded-[28px] border border-black/8 bg-white/92 px-5 py-5 text-[15px] leading-7 text-slate-600 shadow-[0_18px_44px_rgba(15,23,42,0.05)]">
-          Loading saved bag, match, compare, and recent product activity...
+          正在加载已存的袋中、测配、对比和最近浏览内容...
         </article>
       ) : null}
 
@@ -228,32 +228,32 @@ export default function SavedHub() {
         <article className="rounded-[32px] border border-black/8 bg-white/94 p-6 shadow-[0_20px_46px_rgba(15,23,42,0.06)]">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-500">Bag continuity</p>
-              <h2 className="mt-3 text-[30px] font-semibold tracking-[-0.04em] text-slate-950">Keep the shortlist alive.</h2>
+              <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-500">袋中连续性</p>
+              <h2 className="mt-3 text-[30px] font-semibold tracking-[-0.04em] text-slate-950">让 shortlist 持续活着。</h2>
             </div>
             <Link
               href="/bag"
               className="inline-flex h-10 items-center justify-center rounded-full border border-black/10 bg-white px-4 text-[13px] font-medium text-slate-700"
             >
-              Open bag
+              打开袋中
             </Link>
           </div>
 
           {errors.bag ? (
             <div className="mt-5 rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-4 text-[14px] leading-6 text-rose-700">
-              Bag loading failed: {errors.bag}
+              袋中加载失败：{errors.bag}
             </div>
           ) : null}
 
           {!errors.bag && state.bagItems.length === 0 ? (
             <div className="mt-5">
               <EmptyState
-                title="No saved bag items yet"
-                summary="Start from Shop, Match, or Compare and the surviving products will stay visible here."
+                title="还没有已存的袋中商品"
+                summary="从选购、测配或对比开始后，留下来的商品都会继续显示在这里。"
                 primaryHref="/shop"
-                primaryLabel="Browse shop"
+                primaryLabel="进入选购"
                 secondaryHref="/match"
-                secondaryLabel="Find my match"
+                secondaryLabel="开始测配"
               />
             </div>
           ) : null}

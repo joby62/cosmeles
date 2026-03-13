@@ -22,13 +22,6 @@ html {
     linear-gradient(180deg, #fbfdff 0%, var(--site-bg) 42%, #eef4fb 100%);
 }
 
-html[data-demo-locale="zh"] {
-  background:
-    radial-gradient(circle at top, rgba(41, 151, 255, 0.14), transparent 28%),
-    radial-gradient(circle at 14% 16%, rgba(184, 211, 242, 0.18), transparent 24%),
-    linear-gradient(180deg, #fbfdff 0%, #f5f7fb 42%, #edf3f8 100%);
-}
-
 body {
   min-height: 100dvh;
   color: var(--site-text);

@@ -1,248 +1,248 @@
-export const POLICY_LAST_UPDATED = "March 11, 2026";
+export const POLICY_LAST_UPDATED = "2026年3月11日";
 
 export const POLICY_SCOPE_NOTE =
-  "Last updated March 11, 2026. Applies to the current US pre-checkout Jeslect storefront. Checkout, payment, and post-purchase order handling are not live in this build.";
+  "最后更新于 2026年3月11日。适用于当前婕选中文独立站。支付、下单与售后订单处理尚未开放。";
 
 export const SUPPORT_HUB_LINKS = [
   {
-    title: "Shipping",
-    summary: "Processing windows, delivery framing, and what Jeslect plans to surface before ordering opens.",
+    title: "配送说明",
+    summary: "看清处理时效、配送节奏，以及哪些信息应该在下单前就被看见。",
     href: "/support/shipping",
   },
   {
-    title: "Returns",
-    summary: "Return-window language, refund timing expectations, and which rules belong near the bag.",
+    title: "退货规则",
+    summary: "先理解退货窗口、退款节奏和条件要求，再决定是否继续加入袋中。",
     href: "/support/returns",
   },
   {
-    title: "FAQ",
-    summary: "The quickest read on bag behavior, current storefront scope, and how Match/Compare connect.",
+    title: "常见问题",
+    summary: "快速了解袋中、测配、对比、支持范围和当前商业能力边界。",
     href: "/support/faq",
   },
   {
-    title: "Contact",
-    summary: "Pre-purchase support routing for fit, policy, and legal questions while checkout remains out of scope.",
+    title: "联系支持",
+    summary: "用于商品适配、政策理解和支持路径判断，当前仍以售前问题为主。",
     href: "/support/contact",
   },
 ] as const;
 
 export const SUPPORT_LEGAL_LINKS = [
   {
-    title: "Privacy",
-    summary: "See what the current US storefront collects for saved state, fit tools, and public support visibility.",
+    title: "隐私说明",
+    summary: "说明当前独立站为了保存状态、测配与支持可见性会处理哪些数据。",
     href: "/privacy",
   },
   {
-    title: "Terms",
-    summary: "Read the current scope for discovery, bag behavior, fit guidance, and pre-checkout storefront use.",
+    title: "使用条款",
+    summary: "解释当前站点的真实范围，包括发现、测配、对比、探索和袋中行为。",
     href: "/terms",
   },
   {
-    title: "Cookies",
-    summary: "Understand which state is necessary for Bag, Match, Compare, and Saved continuity on this build.",
+    title: "Cookie 说明",
+    summary: "说明袋中、测配、对比与已存恢复依赖哪些必要状态，以及后续可选工具如何区分。",
     href: "/cookies",
   },
 ] as const;
 
 export const SHIPPING_POLICY_SECTIONS = [
   {
-    title: "What Jeslect shows before ordering opens",
+    title: "下单开放前就应该看见的配送信息",
     items: [
-      "Processing time should be shown separately from delivery timing so customers do not have to guess the full wait.",
-      "Product, bag, and support paths should surface the same shipping framing before checkout goes live.",
-      "If a product follows a different fulfillment path later, that exception should appear before order creation, not after.",
+      "处理时间应与运输时间分开展示，让整体等待预期更容易理解。",
+      "商品页、袋中页和支持页应使用一致的配送表达，不让用户在不同入口看到不同口径。",
+      "如果后续某些商品会走不同履约路径，这些例外也应该在下单前就被说明。",
     ],
   },
   {
-    title: "How the US launch should frame delivery",
+    title: "当前站点的配送表达原则",
     items: [
-      "Jeslect is currently written for a US-first storefront before UK-specific shipping rules are layered in.",
-      "Shipping origin, service region, and delivery-window language should stay readable to a first-time visitor.",
-      "Tracking expectations should be treated as part of shopping confidence, not buried in post-order messaging.",
+      "当前站点以美国市场优先的配送表达为主，英国规则后续单独补齐。",
+      "发货地、服务区域和大致配送窗口应该对第一次访问的用户同样可读。",
+      "追踪预期属于购物信心的一部分，不应只放在下单后的通知里。",
     ],
   },
   {
-    title: "What still needs a real commerce feed",
+    title: "仍依赖真实 commerce feed 的字段",
     items: [
-      "Per-product shipping ETA",
-      "Shipping-rate thresholds or service tiers",
-      "Live carrier and fulfillment exceptions once checkout is introduced",
+      "逐商品的最终配送 ETA",
+      "运费门槛或不同服务档位",
+      "支付接入后才会出现的实时承运与履约例外",
     ],
   },
 ] as const;
 
 export const RETURNS_POLICY_SECTIONS = [
   {
-    title: "What customers should know before they commit",
+    title: "用户决定前需要先理解的退货信息",
     items: [
-      "The return window should be visible from product, bag, and support paths before payment exists.",
-      "Refund timing should read like a customer promise, not a block of defensive policy jargon.",
-      "Any exclusions or condition rules should be named directly so they do not feel hidden later.",
+      "退货窗口应该从商品页、袋中页和支持页提前可见，而不是进入支付后才看到。",
+      "退款节奏应用用户能一遍读懂的语言说明，而不是防御性的政策术语。",
+      "如果存在排除条件或品类例外，应直接说清楚，不让用户事后才发现。",
     ],
   },
   {
-    title: "How Jeslect should frame return trust",
+    title: "退货页应该建立什么样的信任",
     items: [
-      "Returns language should reduce hesitation at the decision stage, especially while the storefront is still pre-checkout.",
-      "Condition expectations should stay specific enough to understand in one pass on mobile.",
-      "If a visitor is unsure whether a product fits, the storefront should route them back to Match, Compare, or support before that becomes a return issue.",
+      "退货页应该降低犹豫，而不是制造新的不确定性。",
+      "条件表达要足够具体，尤其在移动端也应能快速读懂。",
+      "如果用户不确定是否适合，站点应把他引回测配、对比或支持，而不是把问题留到退货环节。",
     ],
   },
   {
-    title: "What still depends on launch operations",
+    title: "仍依赖运营落定的部分",
     items: [
-      "A finalized US return window",
-      "A live refund-processing workflow once payment and orders exist",
-      "Named category exceptions after the full commerce stack is connected",
+      "最终确认的美国退货窗口",
+      "支付与订单开放后的退款处理流程",
+      "完整 commerce 栈接通后的品类例外规则",
     ],
   },
 ] as const;
 
 export const SUPPORT_FAQ_ITEMS = [
   {
-    question: "Does my Jeslect bag stay saved if I leave the site?",
-    answer: "Yes. Jeslect stores the current shortlist on this device so you can return without rebuilding Bag, Match context, and recent decision paths from scratch.",
+    question: "离开站点后，袋中内容还会保留吗？",
+    answer: "会。婕选会把当前 shortlist 保存在这台设备上，方便你回来后继续查看袋中、测配和最近决策路径。",
   },
   {
-    question: "Can I check out on Jeslect right now?",
+    question: "现在可以直接在婕选下单吗？",
     answer:
-      "Not yet. The current US storefront is live for discovery, fit, Compare, Learn, Saved recovery, and pre-purchase support. Checkout, payment, and post-order flow are not published in this build.",
+      "还不可以。当前站点已经开放发现、测配、对比、探索、已存恢复和售前支持，但支付、下单与订单流程尚未发布。",
   },
   {
-    question: "Why do some products still not show price, stock, or final delivery dates?",
+    question: "为什么有些商品还没有价格、库存或最终配送日期？",
     answer:
-      "Because Jeslect only shows commerce fields once a real product feed provides them. The storefront does not invent pricing, availability, or ETA details to make the shop look more complete than it really is.",
+      "因为婕选只会在真实数据源提供这些字段后才展示。我们不会为了让页面看起来更像完整商城，而虚构价格、库存或 ETA。",
   },
   {
-    question: "How do Match and Compare work together?",
+    question: "测配和对比之间是什么关系？",
     answer:
-      "Match builds a route recommendation for the category you answer. Compare can then reuse that saved route context to judge which product aligns better with your current needs.",
+      "测配会先生成你当前品类的适配路线；对比页再复用这份基础，帮助你判断候选商品是否更贴近你的实际需求。",
   },
   {
-    question: "Where should I look for shipping, returns, and policy basics?",
+    question: "配送、退货和政策信息去哪里看最方便？",
     answer:
-      "The support hub keeps Shipping, Returns, FAQ, Contact, Privacy, Terms, and Cookies visible before checkout exists. Those links also stay close to product and bag paths.",
+      "支持中心会把配送、退货、常见问题、联系、隐私、条款和 Cookie 说明集中放在一起，并持续贴近商品和袋中路径出现。",
   },
   {
-    question: "What kind of help does Jeslect support cover today?",
+    question: "当前联系支持能解决哪些问题？",
     answer:
-      "Current support scope is pre-purchase only: product-fit questions, public policy questions, Bag behavior, and how Match or Compare decisions connect across the storefront.",
+      "目前支持范围以售前为主，包括商品适配、公开政策理解、袋中行为，以及测配和对比结果之间的衔接问题。",
   },
 ] as const;
 
 export const PRIVACY_SECTIONS = [
   {
-    title: "What Jeslect currently collects",
+    title: "当前站点会处理哪些信息",
     items: [
-      "Basic browsing requests needed to load the storefront and route API calls.",
-      "Device-linked saved state used for Bag, Saved activity, Match history, and Compare history.",
-      "Product and route interactions such as search, category browsing, compare runs, and saved shortlist activity.",
-      "Support messages or privacy questions only if Jeslect later publishes a direct submission path.",
+      "用于加载页面和路由 API 请求的基础浏览请求数据。",
+      "与设备关联的已存状态，用于袋中、已存、测配历史和对比历史的恢复。",
+      "搜索、品类浏览、对比运行和 shortlist 保存等商品与路线交互行为。",
+      "如果后续开放直接提交入口，才会处理用户主动发送的支持或隐私问题。",
     ],
   },
   {
-    title: "What Jeslect does not collect in this build",
+    title: "当前版本不会处理哪些信息",
     items: [
-      "Payment card data, because checkout is not live.",
-      "Order history or shipping addresses tied to a customer account, because ordering is not published yet.",
-      "More personal data than is necessary to run current storefront features.",
+      "支付卡数据，因为支付尚未开放。",
+      "与用户账户绑定的订单历史或收货地址，因为订单系统尚未发布。",
+      "超出当前独立站功能所必需的更多个人数据。",
     ],
   },
   {
-    title: "How storefront data is used",
+    title: "这些站点数据会被怎么使用",
     items: [
-      "To keep Bag, Match, Compare, and Saved recovery working across a device session.",
-      "To improve product fit, route explanations, and product discovery quality.",
-      "To keep shipping, returns, and support content visible in the decision flow.",
+      "维持袋中、测配、对比和已存恢复在同一设备上的连续性。",
+      "提升商品适配解释、路线说明和发现质量。",
+      "让配送、退货和支持信息在决策过程中持续可见。",
     ],
   },
   {
-    title: "Privacy expectations for US launch",
+    title: "隐私表达应该遵守的原则",
     items: [
-      "Necessary storefront state should stay distinct from optional analytics or advertising tools.",
-      "If optional analytics is added later, Jeslect should present it separately from required commerce state.",
-      "Privacy questions should route through the support path with clear scope and readable language.",
+      "站点必要状态要与可选分析或广告工具明确分开。",
+      "如果未来增加可选分析工具，也应与必要状态分别说明。",
+      "隐私问题应通过清楚、可读的支持路径来承接。",
     ],
   },
 ] as const;
 
 export const TERMS_SECTIONS = [
   {
-    title: "Current storefront scope",
+    title: "当前站点的真实范围",
     items: [
-      "Jeslect currently operates as a pre-checkout storefront for discovery, fit, compare, learn, and saved shortlist activity.",
-      "Adding a product to Bag does not reserve inventory, create an order, or guarantee availability.",
-      "Published commerce fields are informational until a real checkout flow is introduced.",
+      "婕选当前是一个围绕发现、测配、对比、探索和已存恢复构建的独立站。",
+      "把商品加入袋中并不会锁定库存、创建订单或承诺可售。",
+      "已发布的 commerce 字段在真实支付链路上线前仍以信息展示为主。",
     ],
   },
   {
-    title: "Product information and fit guidance",
+    title: "商品信息与适配建议",
     items: [
-      "Jeslect product pages, Match, Compare, and Learn are decision-support tools for shopping clarity.",
-      "Nothing on this storefront should be read as medical advice or treatment guidance.",
-      "Users should review ingredient information and watchouts before deciding whether a product fits their routine.",
+      "商品页、测配、对比和探索页都属于帮助理解与判断的决策支持工具。",
+      "站点内容不构成医疗建议或治疗方案。",
+      "用户在决定是否适合自己的护理节奏前，应先阅读成分信息与注意事项。",
     ],
   },
   {
-    title: "Use of the storefront",
+    title: "站点使用约束",
     items: [
-      "The storefront may change product details, route logic, and support content as Jeslect continues the US launch.",
-      "Users should not misuse the site, interfere with service availability, or scrape data in ways that harm the storefront.",
-      "Jeslect may limit or change features while the independent store is still being built.",
+      "随着独立站继续建设，商品细节、路线逻辑和支持内容都可能更新。",
+      "用户不应以影响站点可用性或伤害站点的方式滥用、干扰或抓取数据。",
+      "在完整 commerce 能力接通前，婕选可能继续调整部分功能和页面表达。",
     ],
   },
 ] as const;
 
 export const COOKIE_SECTIONS = [
   {
-    title: "Necessary storefront state",
+    title: "维持站点运行所需的必要状态",
     items: [
-      "Jeslect uses necessary device-linked state to keep Bag, Saved activity, Match, and Compare recoverable.",
-      "These state paths support core storefront behavior and are not the same as optional analytics or ad tracking.",
-      "Without necessary state, users would lose shortlist continuity and saved decision context.",
+      "婕选使用与设备关联的必要状态来保持袋中、已存、测配和对比可恢复。",
+      "这些状态用于核心站点行为，不等同于可选分析或广告跟踪。",
+      "如果没有这些必要状态，用户会失去 shortlist 连续性和已存决策上下文。",
     ],
   },
   {
-    title: "Optional tools and future consent",
+    title: "未来可选工具应如何说明",
     items: [
-      "If Jeslect adds optional analytics, campaign attribution, or advertising tools later, they should be presented separately.",
-      "Optional tools should not be bundled into the same explanation as required storefront state.",
-      "Consent choices should stay mobile-readable and revisitable from the footer and support layer.",
+      "如果未来新增可选分析、活动归因或广告工具，应与必要状态分开呈现。",
+      "可选工具不应混在同一段说明里，让用户误以为都是必须开启的。",
+      "相关选择应保持移动端可读，并能从页脚或支持层再次找到。",
     ],
   },
   {
-    title: "What users should be able to understand quickly",
+    title: "用户应该快速看懂的三件事",
     items: [
-      "Which cookies are necessary for the storefront to work.",
-      "Which tools are optional and why they exist.",
-      "How to revisit those choices later without hunting through unrelated pages.",
+      "哪些 Cookie 或状态是站点正常运行所必需的。",
+      "哪些工具是可选的，以及它们为什么存在。",
+      "之后怎样再次修改这些选择，而不用四处寻找入口。",
     ],
   },
 ] as const;
 
 export const CONTACT_ROUTE_SECTIONS = [
   {
-    title: "What support covers right now",
+    title: "当前支持覆盖什么",
     items: [
-      "Pre-purchase questions about product fit, route logic, Compare results, and storefront policy clarity.",
-      "Questions about how Bag, Saved, Match, and Compare currently behave on the US storefront.",
-      "Questions about public shipping, returns, privacy, or terms content.",
+      "售前的商品适配、路线判断、对比结果和公开政策理解问题。",
+      "关于袋中、已存、测配和对比在当前站点如何工作的说明。",
+      "关于公开配送、退货、隐私和条款内容的咨询。",
     ],
   },
   {
-    title: "What support does not cover yet",
+    title: "当前支持还不覆盖什么",
     items: [
-      "Payment troubleshooting, because checkout is not live.",
-      "Order modifications, shipment tracking, or refunds tied to a placed order, because transactional order flow is not published yet.",
-      "Medical or treatment advice beyond what the storefront explicitly states.",
+      "支付相关问题，因为支付尚未开放。",
+      "下单后的改单、物流追踪或退款问题，因为交易型订单流程尚未发布。",
+      "超出站点明确表达范围之外的医疗或治疗建议。",
     ],
   },
   {
-    title: "How routing should stay clear",
+    title: "联系路径应该怎么保持清楚",
     items: [
-      "Product fit questions should stay separate from privacy or legal questions.",
-      "Shipping and returns policy questions should be answerable from public pages before a direct support exchange is needed.",
-      "Jeslect should publish a clear contact channel before any live order flow opens.",
+      "商品适配问题应与隐私或法律问题分开承接。",
+      "配送和退货问题应尽量先在公开页面就能回答，减少不必要的反复沟通。",
+      "在任何真实订单流程开放前，婕选都应先把对外联系通道和响应预期讲明白。",
     ],
   },
 ] as const;

@@ -23,12 +23,12 @@ export type ConcernCollectionMeta = {
 export const CONCERN_COLLECTIONS: Record<ConcernCollectionKey, ConcernCollectionMeta> = {
   dryness: {
     key: "dryness",
-    label: "Dryness",
-    heroTitle: "Build a lower-friction routine for dryness before you overcomplicate the shelf.",
+    label: "干燥",
+    heroTitle: "先把干燥感降下来，再决定需要多重的修护路线。",
     heroSummary:
-      "This collection keeps the focus on comfort, replenishment, and products that help skin or hair feel less stripped through the week.",
+      "这个专题页会把注意力放在舒适感、补充感和一周内更稳定的使用体验上，而不是把护理架子越堆越复杂。",
     shopperSummary:
-      "Start here when the main job is restoring comfort, easing tightness, and keeping the routine from feeling harsher than it needs to.",
+      "当你更在意紧绷、缺水、干涩和长期舒适度时，可以先从这里缩小候选范围。",
     routeKeys: [
       { category: "lotion", routeKey: "heavy_repair" },
       { category: "lotion", routeKey: "light_hydrate" },
@@ -42,12 +42,12 @@ export const CONCERN_COLLECTIONS: Record<ConcernCollectionKey, ConcernCollection
   },
   frizz: {
     key: "frizz",
-    label: "Frizz",
-    heroTitle: "Use the frizz collection when smoother hair matters more than adding weight for weight’s sake.",
+    label: "毛躁",
+    heroTitle: "当你想要的是更顺、更服帖，而不是盲目增加厚重感。",
     heroSummary:
-      "These routes center on slip, surface smoothness, and how much finish your hair can actually carry without collapsing.",
+      "这里会优先展示与顺滑、柔顺、表面平整度有关的路线，帮助你判断发丝到底能承受多少重量。",
     shopperSummary:
-      "Start here when roughness, puffiness, or hard-to-manage ends matter more than a general hydration pitch.",
+      "如果你主要在意炸毛、蓬散、发尾难打理或洗后不够服帖，可以先从这个专题进入。",
     routeKeys: [
       { category: "conditioner", routeKey: "c-smooth-frizz" },
       { category: "conditioner", routeKey: "c-structure-rebuild" },
@@ -60,12 +60,12 @@ export const CONCERN_COLLECTIONS: Record<ConcernCollectionKey, ConcernCollection
   },
   sensitivity: {
     key: "sensitivity",
-    label: "Sensitivity",
-    heroTitle: "Sensitivity collections should tighten the field fast and keep irritation load lower.",
+    label: "敏感",
+    heroTitle: "先把刺激负担降下来，再谈更激进的功能诉求。",
     heroSummary:
-      "This collection filters toward lower-friction cleansing and comfort-first routes across skin, scalp, and body.",
+      "这个专题会优先收敛到更低摩擦的清洁与舒缓路线，覆盖头皮、面部和身体护理中的敏感场景。",
     shopperSummary:
-      "Start here when stinging, redness, reactivity, or barrier fragility matter more than chasing a stronger active path.",
+      "当刺痛、泛红、反应性或屏障脆弱比强功效更重要时，这里会是更好的起点。",
     routeKeys: [
       { category: "cleanser", routeKey: "apg_soothing" },
       { category: "cleanser", routeKey: "pure_amino" },
@@ -79,12 +79,12 @@ export const CONCERN_COLLECTIONS: Record<ConcernCollectionKey, ConcernCollection
   },
   "oil-control": {
     key: "oil-control",
-    label: "Oil control",
-    heroTitle: "Oil-control should feel targeted, not automatically harsh.",
+    label: "控油",
+    heroTitle: "控油应该更有针对性，而不是默认更刺激、更拔干。",
     heroSummary:
-      "This collection narrows toward cleaner reset routes for scalp, face, and body while keeping over-stripping in check.",
+      "这个专题会收敛到更干净的重置型路线，同时保留对头皮、皮肤和身体耐受度的判断。",
     shopperSummary:
-      "Start here when faster oil buildup, congestion, or a heavier rinse feel is getting in the way of your routine.",
+      "如果你更在意出油速度、闷感、堵塞感或洗后发沉，这里会比泛泛的清洁页更高效。",
     routeKeys: [
       { category: "shampoo", routeKey: "deep-oil-control" },
       { category: "cleanser", routeKey: "bha_clearing" },
@@ -98,12 +98,12 @@ export const CONCERN_COLLECTIONS: Record<ConcernCollectionKey, ConcernCollection
   },
   "barrier-support": {
     key: "barrier-support",
-    label: "Barrier support",
-    heroTitle: "Barrier-support collections should keep comfort visible before actives or hype take over.",
+    label: "屏障支持",
+    heroTitle: "在活性和营销词之前，先把舒适感和恢复感放到前面。",
     heroSummary:
-      "These routes center on replenishment, calmer cleansing, and products that help routines feel steadier and less reactive.",
+      "这个专题围绕补充、舒缓清洁和更稳定的日常使用感展开，帮助你建立一条更低摩擦的修护路线。",
     shopperSummary:
-      "Start here when comfort, recovery, and a more protected feel matter more than a stronger exfoliating or clarifying route.",
+      "如果你现在更关注恢复、保护感和减少反复折腾，而不是更强的清洁或去角质，这里更适合作为起点。",
     routeKeys: [
       { category: "lotion", routeKey: "heavy_repair" },
       { category: "lotion", routeKey: "light_hydrate" },

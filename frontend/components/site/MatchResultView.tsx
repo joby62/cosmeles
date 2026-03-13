@@ -21,11 +21,11 @@ type MatchResultViewProps = {
 
 function formatTimestamp(value: string | null | undefined): string {
   const raw = String(value || "").trim();
-  if (!raw) return "No timestamp";
+  if (!raw) return "暂无时间";
   const date = new Date(raw);
   if (Number.isNaN(date.getTime())) return raw;
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "numeric",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
@@ -37,13 +37,13 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function productName(entry: MobileSelectionResolveResponse): string {
-  return entry.recommended_product.name || entry.recommended_product.brand || "Untitled product";
+  return entry.recommended_product.name || entry.recommended_product.brand || "未命名商品";
 }
 
 function signalReason(routeTitle: string, delta: number): string {
-  if (delta > 0) return `This answer pushed the result toward ${routeTitle}.`;
-  if (delta < 0) return `This answer pulled against ${routeTitle}, but not enough to overturn the final result.`;
-  return `This answer kept the result stable without changing the main route.`;
+  if (delta > 0) return `这个答案把结果进一步推向了“${routeTitle}”。`;
+  if (delta < 0) return `这个答案和“${routeTitle}”方向相反，但不足以改写最终结果。`;
+  return "这个答案没有改变主要路线，只是让结果保持稳定。";
 }
 
 function buildMatchHref(category: CategoryKey): string {
@@ -112,7 +112,7 @@ export default function MatchResultView({ sessionId }: MatchResultViewProps) {
     const category = result.category as CategoryKey;
     const config = getMatchConfig(category);
     const routeMeta = getMatchRouteMeta(category, result.route.key);
-    const routeTitle = routeMeta?.title || getCategoryMeta(category)?.label || "Recommended route";
+    const routeTitle = routeMeta?.title || getCategoryMeta(category)?.label || "推荐路线";
 
     const answers = config.steps
       .map((step) => {
@@ -165,7 +165,7 @@ export default function MatchResultView({ sessionId }: MatchResultViewProps) {
       if (excluded.length === 0) {
         return "Jeslect applied one or more safety filters before finalizing this route.";
       }
-      return `Jeslect ruled out ${excluded.join(", ")} after applying safety filters for this category.`;
+      return `在这个品类里，婕选先用安全筛选排除了 ${excluded.join("、")}。`;
     });
 
     return {
@@ -203,7 +203,7 @@ export default function MatchResultView({ sessionId }: MatchResultViewProps) {
     return (
       <div className="mx-auto max-w-6xl px-4 py-10">
         <article className="rounded-[32px] border border-black/8 bg-white/94 px-6 py-8 text-[15px] leading-7 text-slate-600 shadow-[0_20px_46px_rgba(15,23,42,0.06)]">
-          Loading your saved Jeslect match...
+          正在加载已保存的测配结果...
         </article>
       </div>
     );
@@ -262,13 +262,13 @@ export default function MatchResultView({ sessionId }: MatchResultViewProps) {
               ) : null}
               {result.is_pinned ? (
                 <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-medium text-amber-700">
-                  Pinned match
+                  已固定测配
                 </span>
               ) : null}
             </div>
 
             <h1 className="site-display mt-5 text-[42px] leading-[0.98] tracking-[-0.05em] text-slate-950 sm:text-[56px]">
-              {derived.routeMeta?.title || "Recommended route"}
+              {derived.routeMeta?.title || "推荐路线"}
             </h1>
             <p className="mt-5 max-w-2xl text-[17px] leading-8 text-slate-600">
               {derived.routeMeta?.summary ||
@@ -281,13 +281,13 @@ export default function MatchResultView({ sessionId }: MatchResultViewProps) {
                 href={`/product/${encodeURIComponent(productId)}`}
                 className="inline-flex h-11 items-center justify-center rounded-full border border-black/10 bg-white px-5 text-[13px] font-semibold text-slate-700"
               >
-                View product details
+                查看商品详情
               </Link>
               <Link
                 href="/saved"
                 className="inline-flex h-11 items-center justify-center rounded-full border border-black/10 bg-white px-5 text-[13px] font-semibold text-slate-700"
               >
-                Open saved
+                打开已存
               </Link>
               <button
                 type="button"
@@ -295,7 +295,7 @@ export default function MatchResultView({ sessionId }: MatchResultViewProps) {
                 disabled={pinning}
                 className="inline-flex h-11 items-center justify-center rounded-full border border-black/10 bg-white px-5 text-[13px] font-semibold text-slate-700 disabled:cursor-wait disabled:opacity-70"
               >
-                {pinning ? "Updating..." : result.is_pinned ? "Unpin match" : "Pin this match"}
+                {pinning ? "更新中..." : result.is_pinned ? "取消固定" : "固定这份测配"}
               </button>
             </div>
 
@@ -310,7 +310,7 @@ export default function MatchResultView({ sessionId }: MatchResultViewProps) {
                 Saved {formatTimestamp(result.created_at)}
               </span>
               <span className="rounded-full border border-black/8 bg-slate-50 px-3 py-1 text-[12px] font-medium text-slate-600">
-                Rule set {result.rules_version}
+                规则版本 {result.rules_version}
               </span>
             </div>
           </div>

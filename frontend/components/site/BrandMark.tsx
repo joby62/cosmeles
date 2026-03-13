@@ -6,7 +6,7 @@ type BrandMarkProps = {
 };
 
 export default function BrandMark({ size = 52, tone = "header" }: BrandMarkProps) {
-  const inset = tone === "header" ? 14 : 12;
+  const markSize = tone === "header" ? Math.round(size * 0.52) : Math.round(size * 0.54);
 
   return (
     <div
@@ -14,14 +14,16 @@ export default function BrandMark({ size = 52, tone = "header" }: BrandMarkProps
       style={{ width: size, height: size }}
     >
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(41,151,255,0.12),transparent_54%)]" />
-      <div className="absolute inset-0 relative text-slate-950" style={{ padding: inset }}>
-        <Image
-          src="/jeslect-brand-mark.svg"
-          alt="Jeslect brand mark"
-          fill
-          className="object-contain"
-          sizes={`${size}px`}
-        />
+      <div className="relative z-10 flex h-full items-center justify-center text-slate-950">
+        <div className="relative" style={{ width: markSize, height: markSize }}>
+          <Image
+            src="/jeslect-brand-mark.svg"
+            alt="婕选品牌图形标"
+            fill
+            sizes={`${markSize}px`}
+            className="translate-y-px object-contain object-center"
+          />
+        </div>
       </div>
     </div>
   );

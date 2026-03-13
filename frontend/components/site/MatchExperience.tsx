@@ -34,16 +34,16 @@ function buildMatchHref(category: CategoryKey): string {
 }
 
 function formatProductName(entry: MobileSelectionResolveResponse): string {
-  return entry.recommended_product.name || entry.recommended_product.brand || "Untitled product";
+  return entry.recommended_product.name || entry.recommended_product.brand || "未命名商品";
 }
 
 function formatTimestamp(value: string | null | undefined): string {
   const raw = String(value || "").trim();
-  if (!raw) return "No timestamp";
+  if (!raw) return "暂无时间";
   const date = new Date(raw);
   if (Number.isNaN(date.getTime())) return raw;
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "numeric",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
@@ -240,20 +240,20 @@ export default function MatchExperience({ initialCategory, hasExplicitCategory }
         <article className="rounded-[32px] border border-black/8 bg-white/94 p-6 shadow-[0_20px_46px_rgba(15,23,42,0.06)] md:p-7">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-sky-700">Jeslect Match</p>
+              <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-sky-700">婕选测配</p>
               <h2 className="mt-3 text-[30px] font-semibold tracking-[-0.04em] text-slate-950">{config.title}</h2>
               <p className="mt-3 max-w-2xl text-[15px] leading-7 text-slate-600">{config.summary}</p>
             </div>
             <div className="rounded-[24px] border border-black/8 bg-slate-50 px-4 py-3 text-right">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Estimate</div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">预计耗时</div>
               <div className="mt-2 text-[14px] font-medium text-slate-700">{config.estimatedTime}</div>
             </div>
           </div>
 
           <div className="mt-6">
             <div className="flex items-center justify-between gap-3 text-[13px] font-medium text-slate-600">
-              <span>{completed ? "Answers ready" : `Step ${visibleStepIndex + 1} of ${config.steps.length}`}</span>
-              <span>{answeredCount}/{config.steps.length} answered</span>
+              <span>{completed ? "答案已准备好" : `第 ${visibleStepIndex + 1} 步，共 ${config.steps.length} 步`}</span>
+              <span>已回答 {answeredCount}/{config.steps.length}</span>
             </div>
             <div className="mt-3 h-2 rounded-full bg-slate-100">
               <div
@@ -265,7 +265,7 @@ export default function MatchExperience({ initialCategory, hasExplicitCategory }
 
           {restoredDraft ? (
             <div className="mt-6 rounded-[24px] border border-sky-100 bg-sky-50 px-4 py-4 text-[14px] leading-6 text-sky-800">
-              Saved progress was restored for {CATEGORIES.find((entry) => entry.key === category)?.label || category}.
+              已为 {CATEGORIES.find((entry) => entry.key === category)?.label || category} 恢复上次未完成的测配进度。
             </div>
           ) : null}
 
@@ -307,7 +307,7 @@ export default function MatchExperience({ initialCategory, hasExplicitCategory }
                   disabled={visibleStepIndex === 0}
                   className="inline-flex h-11 items-center justify-center rounded-full border border-black/10 bg-white px-5 text-[14px] font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-45"
                 >
-                  Back
+                  上一步
                 </button>
                 <button
                   type="button"
@@ -315,18 +315,18 @@ export default function MatchExperience({ initialCategory, hasExplicitCategory }
                   disabled={answeredCount === 0}
                   className="inline-flex h-11 items-center justify-center rounded-full border border-black/10 bg-white px-5 text-[14px] font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-45"
                 >
-                  Start over
+                  重新开始
                 </button>
               </div>
             </div>
           ) : (
             <div className="mt-6 rounded-[28px] border border-black/8 bg-[linear-gradient(180deg,#fbfdff_0%,#f6f9fd_100%)] p-5 md:p-6">
-              <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-sky-700">Ready to resolve</p>
+              <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-sky-700">准备生成结果</p>
               <h3 className="mt-3 text-[28px] font-semibold tracking-[-0.04em] text-slate-950">
-                Your answers are ready for a saved match.
+                当前答案已经可以生成并保存测配结果。
               </h3>
               <p className="mt-3 text-[15px] leading-7 text-slate-600">
-                Jeslect will save this result to your device history so compare can reuse it later.
+                婕选会把这次结果保存在当前设备上，方便之后进入对比时继续复用。
               </p>
 
               <div className="mt-6 grid gap-3">
@@ -337,10 +337,10 @@ export default function MatchExperience({ initialCategory, hasExplicitCategory }
                     onClick={() => setCurrentStep(index)}
                     className="rounded-[22px] border border-black/8 bg-white px-4 py-4 text-left transition hover:-translate-y-[1px] hover:shadow-[0_12px_28px_rgba(15,23,42,0.05)]"
                   >
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Question {index + 1}</div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">问题 {index + 1}</div>
                     <div className="mt-2 text-[16px] font-semibold tracking-[-0.02em] text-slate-950">{step.title}</div>
                     <div className="mt-2 text-[14px] leading-6 text-slate-600">
-                      {choice ? `${choice.label} - ${choice.description}` : "Choose an answer"}
+                      {choice ? `${choice.label} - ${choice.description}` : "请选择一个答案"}
                     </div>
                   </button>
                 ))}
@@ -348,7 +348,7 @@ export default function MatchExperience({ initialCategory, hasExplicitCategory }
 
               {submitError ? (
                 <div className="mt-5 rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-4 text-[14px] leading-6 text-rose-700">
-                  Match submission failed: {submitError}
+                  测配提交失败：{submitError}
                 </div>
               ) : null}
 
@@ -359,7 +359,7 @@ export default function MatchExperience({ initialCategory, hasExplicitCategory }
                   disabled={submitting}
                   className="inline-flex h-12 items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-6 text-[14px] font-semibold text-white shadow-[0_14px_36px_rgba(0,113,227,0.28)] disabled:cursor-wait disabled:opacity-70"
                 >
-                  {submitting ? "Saving your match..." : "See my match"}
+                  {submitting ? "正在保存测配结果..." : "查看我的测配结果"}
                 </button>
                 <button
                   type="button"
@@ -367,7 +367,7 @@ export default function MatchExperience({ initialCategory, hasExplicitCategory }
                   disabled={submitting}
                   className="inline-flex h-12 items-center justify-center rounded-full border border-black/10 bg-white px-6 text-[14px] font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-45"
                 >
-                  Reset answers
+                  清空答案
                 </button>
               </div>
             </div>
@@ -376,14 +376,14 @@ export default function MatchExperience({ initialCategory, hasExplicitCategory }
 
         <div className="space-y-5">
           <article className="rounded-[32px] border border-black/8 bg-white/94 p-6 shadow-[0_20px_46px_rgba(15,23,42,0.06)]">
-            <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-500">Saved fit basis</p>
+            <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-500">已存适配基础</p>
             {latestSession ? (
               <>
                 <h3 className="mt-3 text-[28px] font-semibold tracking-[-0.04em] text-slate-950">
-                  {latestSession.is_pinned ? "Pinned match ready" : "Latest saved match ready"}
+                  {latestSession.is_pinned ? "已固定的测配结果可用" : "最新测配结果可直接复用"}
                 </h3>
                 <p className="mt-3 text-[15px] leading-7 text-slate-600">
-                  Compare reuses your latest saved match for this category. Keep one profile pinned when you want a more stable basis.
+                  对比页会复用这个品类最近一次的测配结果。如果你想保留更稳定的基础，可以固定其中一条。
                 </p>
                   <div className="mt-5 rounded-[26px] border border-black/8 bg-slate-50 p-4">
                   <div className="flex items-center gap-4">
@@ -403,7 +403,7 @@ export default function MatchExperience({ initialCategory, hasExplicitCategory }
                         </span>
                         {latestSession.is_pinned ? (
                           <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-medium text-amber-700">
-                            Pinned
+                            已固定
                           </span>
                         ) : null}
                       </div>
@@ -416,22 +416,22 @@ export default function MatchExperience({ initialCategory, hasExplicitCategory }
                       href={`/match/${encodeURIComponent(latestSession.session_id)}`}
                       className="inline-flex h-11 items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-5 text-[13px] font-semibold text-white"
                     >
-                      Open saved match
+                      查看已存测配
                     </Link>
                     <Link
                       href={`/compare?category=${encodeURIComponent(category)}`}
                       className="inline-flex h-11 items-center justify-center rounded-full border border-black/10 bg-white px-5 text-[13px] font-semibold text-slate-700"
                     >
-                      Use in compare
+                      在对比中使用
                     </Link>
                   </div>
                 </div>
               </>
             ) : (
               <>
-                <h3 className="mt-3 text-[28px] font-semibold tracking-[-0.04em] text-slate-950">No saved match yet</h3>
+                <h3 className="mt-3 text-[28px] font-semibold tracking-[-0.04em] text-slate-950">还没有已存测配结果</h3>
                 <p className="mt-3 text-[15px] leading-7 text-slate-600">
-                  Once you finish one match, this category will keep a reusable decision basis for compare and future visits.
+                  完成一次测配后，这个品类就会留下可复用的决策基础，方便之后继续对比和回看。
                 </p>
               </>
             )}
@@ -440,8 +440,8 @@ export default function MatchExperience({ initialCategory, hasExplicitCategory }
           <article className="rounded-[32px] border border-black/8 bg-white/94 p-6 shadow-[0_20px_46px_rgba(15,23,42,0.06)]">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-500">Recent history</p>
-                <h3 className="mt-3 text-[28px] font-semibold tracking-[-0.04em] text-slate-950">Saved matches on this device</h3>
+                <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-500">最近历史</p>
+                <h3 className="mt-3 text-[28px] font-semibold tracking-[-0.04em] text-slate-950">当前设备上的测配记录</h3>
               </div>
               <span className="rounded-full border border-black/8 bg-slate-50 px-3 py-1 text-[12px] font-medium text-slate-600">
                 {sessions.length}
@@ -449,14 +449,14 @@ export default function MatchExperience({ initialCategory, hasExplicitCategory }
             </div>
 
             {loadingHistory ? (
-              <p className="mt-5 text-[15px] leading-7 text-slate-600">Loading saved matches...</p>
+              <p className="mt-5 text-[15px] leading-7 text-slate-600">正在加载已存测配记录...</p>
             ) : historyError ? (
               <div className="mt-5 rounded-[22px] border border-rose-200 bg-rose-50 px-4 py-4 text-[14px] leading-6 text-rose-700">
-                History failed to load: {historyError}
+                历史记录加载失败：{historyError}
               </div>
             ) : sessions.length === 0 ? (
               <p className="mt-5 text-[15px] leading-7 text-slate-600">
-                This device has no saved {CATEGORIES.find((entry) => entry.key === category)?.label.toLowerCase() || category} matches yet.
+                当前设备还没有这个品类的已存测配结果。
               </p>
             ) : (
               <div className="mt-5 space-y-3">
@@ -482,7 +482,7 @@ export default function MatchExperience({ initialCategory, hasExplicitCategory }
                         </span>
                         {entry.is_pinned ? (
                           <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-medium text-amber-700">
-                            Pinned
+                            已固定
                           </span>
                         ) : null}
                       </div>

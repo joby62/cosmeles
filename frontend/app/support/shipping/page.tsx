@@ -4,13 +4,13 @@ import { POLICY_SCOPE_NOTE, SHIPPING_POLICY_SECTIONS } from "@/lib/storefrontPol
 export default function ShippingPage() {
   return (
     <FeatureShell
-      eyebrow="Shipping"
-      title="Shipping should stay readable before a customer ever reaches payment."
-      summary="This page defines how Jeslect frames shipping on the current US pre-checkout storefront: what should already be visible now, what belongs in the future commerce feed, and which details should never feel hidden."
+      eyebrow="配送"
+      title="在支付开放前，配送信息也应该先讲清楚。"
+      summary="这里定义的是婕选当前独立站如何表达配送：哪些内容现在就该可见，哪些字段仍依赖后续 commerce feed，以及哪些基础信息不该被隐藏。"
       metaNote={POLICY_SCOPE_NOTE}
-      highlights={["US-first shipping scope", "Readable pre-order timing", "No hidden delivery basics"]}
-      primaryCta={{ href: "/support", label: "Support hub" }}
-      secondaryCta={{ href: "/bag", label: "Open bag" }}
+      highlights={["美国市场优先", "时效表达可读", "基础配送信息前置"]}
+      primaryCta={{ href: "/support", label: "返回支持中心" }}
+      secondaryCta={{ href: "/bag", label: "查看袋中" }}
     >
       <div className="space-y-4">
         {SHIPPING_POLICY_SECTIONS.map((section) => (

@@ -22,12 +22,12 @@ export default async function MatchPage({
 
   return (
     <FeatureShell
-      eyebrow="Match"
-      title="Find a calmer product fit before you compare or shop."
-      summary="Jeslect Match now runs inside the new US storefront shell. Start with one category, answer a short sequence, and save a reusable fit basis for this device."
-      highlights={["Single-task question flow", "Saved by device", "Reusable compare basis"]}
-      primaryCta={{ href: "/shop", label: "Browse products" }}
-      secondaryCta={{ href: "/compare", label: "Open compare" }}
+      eyebrow="测配"
+      title="在比较或选购之前，先把更适合你的路线收出来。"
+      summary="婕选测配会先聚焦一个品类，用一段简短问答帮你生成可复用的适配基础，并保存在当前设备上。"
+      highlights={["单任务问答流", "设备侧保存", "可复用的对比基础"]}
+      primaryCta={{ href: "/shop", label: "进入选购" }}
+      secondaryCta={{ href: "/compare", label: "打开对比" }}
     >
       <MatchExperience initialCategory={initialCategory} hasExplicitCategory={hasExplicitCategory} />
     </FeatureShell>

@@ -22,7 +22,7 @@ export default function AddToBagButton({ productId, className = "", compact = fa
         onClick={async () => {
           const value = productId.trim();
           if (!value) {
-            setError("Missing product id.");
+            setError("缺少商品 ID。");
             return;
           }
 
@@ -47,7 +47,7 @@ export default function AddToBagButton({ productId, className = "", compact = fa
             : "bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] text-white shadow-[0_12px_30px_rgba(0,113,227,0.26)] hover:brightness-[1.03]"
         }`}
       >
-        {busy ? "Adding..." : done ? "Added" : "Add to bag"}
+        {busy ? "加入中..." : done ? "已加入" : "加入袋中"}
       </button>
       {error ? <p className="mt-2 text-[12px] text-rose-600">{error}</p> : null}
     </div>

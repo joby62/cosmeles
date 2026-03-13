@@ -12,9 +12,9 @@ type CompareResultViewProps = {
 };
 
 function decisionLabel(value: "keep" | "switch" | "hybrid"): string {
-  if (value === "keep") return "Keep";
-  if (value === "switch") return "Switch";
-  return "Hybrid";
+  if (value === "keep") return "保留";
+  if (value === "switch") return "切换";
+  return "混合";
 }
 
 function decisionTone(value: "keep" | "switch" | "hybrid"): string {
@@ -25,18 +25,18 @@ function decisionTone(value: "keep" | "switch" | "hybrid"): string {
 
 function formatDateTime(value: string | null | undefined): string {
   const raw = String(value || "").trim();
-  if (!raw) return "Unknown time";
+  if (!raw) return "未知时间";
   const date = new Date(raw);
   if (Number.isNaN(date.getTime())) return raw;
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "numeric",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
   }).format(date);
 }
 
-function productTitle(brand?: string | null, name?: string | null, fallback = "Untitled product"): string {
+function productTitle(brand?: string | null, name?: string | null, fallback = "未命名商品"): string {
   return [brand, name].filter(Boolean).join(" ").trim() || name || brand || fallback;
 }
 
@@ -62,7 +62,7 @@ function ProductVisual({
           <Image src={src} alt={title} fill sizes="(min-width: 768px) 28vw, 100vw" className="object-cover" />
         ) : (
           <div className="flex h-full items-center justify-center px-6 text-center text-[14px] text-slate-500">
-            No mapped product image is available yet.
+            暂时还没有可用的商品图片。
           </div>
         )}
       </div>
@@ -106,7 +106,7 @@ export default function CompareResultView({ compareId }: CompareResultViewProps)
   }, [compareId]);
 
   const overallDecision = result?.overall?.decision || result?.verdict.decision || "keep";
-  const overallHeadline = result?.overall?.headline || result?.verdict.headline || "Compare result";
+  const overallHeadline = result?.overall?.headline || result?.verdict.headline || "对比结果";
   const overallConfidence = Math.round((result?.overall?.confidence || result?.verdict.confidence || 0) * 100);
   const overallItems = useMemo(() => {
     if (!result) return [];
@@ -122,7 +122,7 @@ export default function CompareResultView({ compareId }: CompareResultViewProps)
     return (
       <section className="mx-auto max-w-6xl px-4 py-10">
         <article className="rounded-[32px] border border-black/8 bg-white/92 px-6 py-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
-          <p className="text-[15px] leading-7 text-slate-600">Loading your compare result...</p>
+          <p className="text-[15px] leading-7 text-slate-600">正在加载对比结果...</p>
         </article>
       </section>
     );
@@ -132,7 +132,7 @@ export default function CompareResultView({ compareId }: CompareResultViewProps)
     return (
       <section className="mx-auto max-w-4xl px-4 py-10">
         <article className="rounded-[32px] border border-rose-200 bg-rose-50 px-6 py-6 shadow-[0_20px_46px_rgba(15,23,42,0.06)]">
-          <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-rose-700">Compare unavailable</p>
+          <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-rose-700">对比结果不可用</p>
           <h1 className="mt-3 text-[34px] font-semibold tracking-[-0.04em] text-rose-950">This compare result could not be loaded.</h1>
           <p className="mt-4 text-[15px] leading-7 text-rose-800">{error || "Unknown compare result error."}</p>
           <div className="mt-6 flex flex-wrap gap-3">
@@ -156,11 +156,11 @@ export default function CompareResultView({ compareId }: CompareResultViewProps)
 
   const category = getCategoryMeta(result.category);
   const routeMeta = getMatchRouteMeta(result.category, result.recommendation.route.key);
-  const currentProductTitle = productTitle(result.current_product.product.brand, result.current_product.product.name, "Current product");
+  const currentProductTitle = productTitle(result.current_product.product.brand, result.current_product.product.name, "当前商品");
   const recommendedProductTitle = productTitle(
     result.recommendation.recommended_product.brand,
     result.recommendation.recommended_product.name,
-    "Recommended product",
+    "推荐商品",
   );
   const currentImage = resolveStoredImageUrl(result.current_product.evidence.image_path);
   const recommendedImage = resolveImageUrl(result.recommendation.recommended_product);
@@ -179,7 +179,7 @@ export default function CompareResultView({ compareId }: CompareResultViewProps)
             {decisionLabel(overallDecision)}
           </span>
           <span className="rounded-full border border-black/8 bg-slate-50 px-3 py-1 text-[11px] font-medium text-slate-600">
-            Confidence {overallConfidence}%
+            置信度 {overallConfidence}%
           </span>
           {routeMeta ? (
             <span className="rounded-full border border-sky-100 bg-sky-50 px-3 py-1 text-[11px] font-medium text-sky-700">
@@ -187,7 +187,7 @@ export default function CompareResultView({ compareId }: CompareResultViewProps)
             </span>
           ) : null}
           <span className="rounded-full border border-black/8 bg-slate-50 px-3 py-1 text-[11px] font-medium text-slate-600">
-            Saved {formatDateTime(result.created_at)}
+            保存于 {formatDateTime(result.created_at)}
           </span>
         </div>
 
@@ -214,20 +214,20 @@ export default function CompareResultView({ compareId }: CompareResultViewProps)
             href="/compare"
             className="inline-flex h-11 items-center justify-center rounded-full border border-black/10 bg-white px-5 text-[14px] font-semibold text-slate-700"
           >
-            Run another compare
+            再做一次对比
           </Link>
           <Link
             href="/saved"
             className="inline-flex h-11 items-center justify-center rounded-full border border-black/10 bg-white px-5 text-[14px] font-semibold text-slate-700"
           >
-            Open saved
+            打开已存
           </Link>
           {recommendedProductId ? (
             <Link
               href={`/product/${encodeURIComponent(recommendedProductId)}`}
               className="inline-flex h-11 items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-5 text-[14px] font-semibold text-white"
             >
-              View recommended product
+              查看推荐商品
             </Link>
           ) : (
             <Link
@@ -243,13 +243,13 @@ export default function CompareResultView({ compareId }: CompareResultViewProps)
       <section className="mt-8 grid gap-6 lg:grid-cols-2">
         <ProductVisual
           src={currentImage}
-          eyebrow="Current product"
+          eyebrow="当前商品"
           title={currentProductTitle}
           summary={result.current_product.summary.one_sentence || "This is the product you brought into the compare."}
         />
         <ProductVisual
           src={recommendedImage}
-          eyebrow="Recommended product"
+          eyebrow="推荐商品"
           title={recommendedProductTitle}
           summary={
             result.recommendation.recommended_product.one_sentence ||
@@ -265,7 +265,7 @@ export default function CompareResultView({ compareId }: CompareResultViewProps)
             <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-500">Why this result landed here</p>
             {routeMeta ? (
               <div className="mt-4 rounded-[24px] border border-sky-100 bg-sky-50 px-4 py-4">
-                <div className="text-[12px] font-semibold uppercase tracking-[0.16em] text-sky-700">Saved route basis</div>
+                <div className="text-[12px] font-semibold uppercase tracking-[0.16em] text-sky-700">已存路线基础</div>
                 <div className="mt-2 text-[18px] font-semibold tracking-[-0.03em] text-slate-950">{routeMeta.title}</div>
                 <p className="mt-2 text-[14px] leading-6 text-slate-700">{routeMeta.summary}</p>
               </div>

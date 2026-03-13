@@ -30,9 +30,9 @@ export default function ProductCard({
   priority = false,
 }: ProductCardProps) {
   const category = getCategoryMeta(product.category);
-  const productName = product.name || "Untitled product";
+  const productName = product.name || "未命名商品";
   const productBrand = product.brand || category?.label || "Jeslect";
-  const summary = headline || product.one_sentence || product.description || "Open the full profile for details.";
+  const summary = headline || product.one_sentence || product.description || "打开完整画像页查看更多细节。";
   const packSizeLabel = commercePackSizeLabel(product.commerce);
   const statusLabel = commerceBadgeLabel(product.commerce);
   const priceLabel = commercePriceLabel(product.commerce);
@@ -130,7 +130,7 @@ export default function ProductCard({
             href={`/product/${encodeURIComponent(product.id)}`}
             className="inline-flex h-10 items-center justify-center rounded-full border border-black/10 bg-white px-4 text-[13px] font-medium text-slate-700 transition hover:border-slate-300 hover:text-slate-950"
           >
-            View details
+            查看详情
           </Link>
           <AddToBagButton productId={product.id} compact />
         </div>
