@@ -25,6 +25,13 @@
 - Utility shell route group plus loop-closure routing for wiki/compare/me.
 - Event wiring aligned to the shared analytics contract.
 
+## Phase 3 Deliverables
+- Decision result flow hardened around the fixed result-page shape and contract boundary.
+- Backend reporting and ingestion migrated to `result_*` decision-result events.
+- Shared questionnaire/resolve/result helpers remove per-category page duplication.
+- Utility pages consume `return_to`, `scenario_id`, `result_cta`, and `source` consistently.
+- `me` becomes the shared memory layer for resume and recent-result continuation.
+
 ## Worker Prompt A
 ```text
 You are responsible for the decision kernel and shared contracts.
@@ -96,6 +103,11 @@ Definition of done:
 - `docs/prompts/mobile/phase2-worker-b.prompt.md`
 - `docs/prompts/mobile/phase2-worker-c.prompt.md`
 
+## Phase 3 Prompt Files
+- `docs/prompts/mobile/phase3-worker-a.prompt.md`
+- `docs/prompts/mobile/phase3-worker-b.prompt.md`
+- `docs/prompts/mobile/phase3-worker-c.prompt.md`
+
 ## Review Gates
 - No duplicate questionnaire truth across frontend and backend.
 - No worker branch edits legacy and new modules for the same concern unless explicitly approved.
@@ -104,6 +116,9 @@ Definition of done:
 - No new result renderer escape hatches beyond `selection_result.v3`.
 - Any change touching route semantics must update `shared/mobile/contracts/route_state.json`.
 - Any change touching result semantics must update `shared/mobile/contracts/selection_result.v3.json`.
+- No worker may add a second decision-result event vocabulary beside `result_*`.
+- Utility pages must tolerate missing or stale route-state context and fall back safely.
+- Category page wrappers should shrink over time; repeated flow logic in page files is a regression.
 
 ## Merge Order
 1. Worker A contracts and parity tests.
@@ -112,3 +127,11 @@ Definition of done:
 4. Worker C utility shell and routing integration.
 5. Architecture owner cutover review.
 6. Legacy deletion only after contract and shell migration both pass.
+
+## Phase 3 Merge Order
+1. Worker A decision-result contract and analytics migration.
+2. Architecture owner review and contract freeze.
+3. Worker B shared questionnaire/resolve/result infrastructure.
+4. Worker C utility return-flow and me memory-layer integration.
+5. Architecture owner integration review across result -> utility -> return path.
+6. Only after that: delete obsolete adapters and analytics aliases.
