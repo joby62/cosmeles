@@ -8,13 +8,10 @@ import { markMobileTargetHandled, trackMobileEvent, trackMobileEventWithBeacon }
 import { describeMobileRouteFocus } from "@/lib/mobile/routeCopy";
 import {
   appendMobileUtilityRouteState,
-  describeMobileUtilityReturnLabel,
-  hasMobileUtilityResultContext,
-  hasMobileUtilityRouteContext,
-  resolveMobileUtilityReturnHref,
   resolveMobileUtilitySource,
   type MobileUtilityRouteState,
 } from "@/features/mobile-utility/routeState";
+import { resolveMobileUtilityReturnTracking } from "@/features/mobile-utility/returnTracking";
 
 type InsightSource = "feel" | "rhythm" | "care" | "consensus" | "ingredient" | "fallback";
 
@@ -50,10 +47,19 @@ export default function MobileCompareResultFlow({
   const [activeSheet, setActiveSheet] = useState<SheetState | null>(null);
   const route = `/m/compare/result/${result.compare_id}`;
   const analyticsSource = resolveMobileUtilitySource(routeState, "m_compare_result");
-  const showReturnAction = hasMobileUtilityRouteContext(routeState);
-  const hasResultContext = hasMobileUtilityResultContext(routeState);
-  const returnActionHref = resolveMobileUtilityReturnHref(routeState);
-  const returnActionLabel = describeMobileUtilityReturnLabel(routeState);
+  const returnTracking = useMemo(
+    () =>
+      resolveMobileUtilityReturnTracking({
+        routeState,
+        page: "compare_result",
+        route,
+        source: analyticsSource,
+        category: result.category,
+        compareId: routeState.compareId || result.compare_id,
+        action: "compare_return",
+      }),
+    [analyticsSource, result.category, result.compare_id, route, routeState],
+  );
 
   const pairResults = useMemo(() => result.pair_results || [], [result.pair_results]);
   const overall = result.overall || null;
@@ -332,28 +338,20 @@ export default function MobileCompareResultFlow({
             >
               再做一次对比
             </Link>
-            {showReturnAction ? (
+            {returnTracking ? (
               <Link
-                href={returnActionHref}
+                href={returnTracking.href}
                 data-analytics-id="result:cta:return"
                 data-analytics-dead-click-watch="true"
                 onClick={() => {
                   markMobileTargetHandled("result:cta:return");
-                  if (hasResultContext && routeState.scenarioId) {
-                    trackMobileEventWithBeacon("result_secondary_loop_click", {
-                      page: "compare_result",
-                      route,
-                      source: analyticsSource,
-                      category: result.category,
-                      scenario_id: routeState.scenarioId,
-                      target_path: returnActionHref,
-                      action: "compare_return",
-                    });
+                  if (returnTracking.eventName && returnTracking.eventProps) {
+                    trackMobileEventWithBeacon(returnTracking.eventName, returnTracking.eventProps);
                   }
                 }}
                 className="m-pressable inline-flex h-11 items-center justify-center rounded-full border border-[#0a84ff]/28 bg-[#eef5ff] px-5 text-[14px] font-semibold text-[#1858b0] active:bg-[#e2efff] dark:border-[#69adff]/35 dark:bg-[#1e3558]/72 dark:text-[#b9daff]"
               >
-                {returnActionLabel}
+                {returnTracking.label}
               </Link>
             ) : null}
           </div>

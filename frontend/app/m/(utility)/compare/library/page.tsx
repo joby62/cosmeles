@@ -14,12 +14,10 @@ import { trackMobileEvent } from "@/lib/mobileAnalytics";
 import { getMobileCategoryLabel } from "@/lib/mobile/routeCopy";
 import {
   applyMobileUtilityRouteState,
-  describeMobileUtilityReturnLabel,
-  hasMobileUtilityRouteContext,
   parseMobileUtilityRouteState,
-  resolveMobileUtilityReturnHref,
   resolveMobileUtilitySource,
 } from "@/features/mobile-utility/routeState";
+import { resolveMobileUtilityReturnTracking } from "@/features/mobile-utility/returnTracking";
 
 const CATEGORY_ORDER: MobileSelectionCategory[] = ["shampoo", "bodywash", "conditioner", "lotion", "cleanser"];
 const MAX_TOTAL_SELECTION = 3;
@@ -135,11 +133,20 @@ function MobileCompareLibraryPageContent() {
 
   const utilityRouteState = useMemo(() => parseMobileUtilityRouteState(searchParams), [searchParams]);
   const analyticsSource = resolveMobileUtilitySource(utilityRouteState, "m_compare_library");
-  const showReturnAction = hasMobileUtilityRouteContext(utilityRouteState);
-  const returnActionHref = resolveMobileUtilityReturnHref(utilityRouteState);
-  const returnActionLabel = describeMobileUtilityReturnLabel(utilityRouteState);
   const analyticsRoute = searchParams?.toString() ? `${pathname}?${searchParams.toString()}` : pathname || "/m/compare/library";
   const categoryLabel = getMobileCategoryLabel(category);
+  const returnTracking = useMemo(
+    () =>
+      resolveMobileUtilityReturnTracking({
+        routeState: utilityRouteState,
+        page: "mobile_compare_library",
+        route: analyticsRoute,
+        source: analyticsSource,
+        category,
+        action: "compare_library_return",
+      }),
+    [analyticsRoute, analyticsSource, category, utilityRouteState],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -233,13 +240,18 @@ function MobileCompareLibraryPageContent() {
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-[28px] leading-[1.14] font-semibold tracking-[-0.02em] text-black/90">产品库筛选</h1>
         <div className="flex items-center gap-2">
-          {showReturnAction ? (
+          {returnTracking ? (
             <button
               type="button"
-              onClick={() => router.push(returnActionHref)}
+              onClick={() => {
+                if (returnTracking.eventName && returnTracking.eventProps) {
+                  void safeTrack(returnTracking.eventName, returnTracking.eventProps);
+                }
+                router.push(returnTracking.href);
+              }}
               className="inline-flex h-9 items-center rounded-full border border-[#0a84ff]/26 bg-[#eef5ff] px-4 text-[12px] font-semibold text-[#1858b0] active:bg-[#e2efff]"
             >
-              {returnActionLabel}
+              {returnTracking.label}
             </button>
           ) : null}
           <button

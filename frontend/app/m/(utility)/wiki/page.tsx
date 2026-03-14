@@ -20,14 +20,11 @@ import { isWikiCategoryKey, WIKI_MAP, WIKI_ORDER, type WikiCategoryKey } from "@
 import {
   appendMobileUtilityRouteState,
   applyMobileUtilityRouteState,
-  describeMobileUtilityReturnLabel,
-  hasMobileUtilityResultContext,
-  hasMobileUtilityRouteContext,
   parseMobileUtilityRouteState,
-  resolveMobileUtilityReturnHref,
   resolveMobileUtilitySource,
   type MobileUtilityRouteState,
 } from "@/features/mobile-utility/routeState";
+import { resolveMobileUtilityReturnTracking } from "@/features/mobile-utility/returnTracking";
 
 type CategoryTheme = {
   heroClass: string;
@@ -487,10 +484,6 @@ function MobileWikiPageContent() {
   const lastTrackedListViewRef = useRef("");
   const utilityRouteState = useMemo(() => parseMobileUtilityRouteState(searchParams), [searchParams]);
   const analyticsSource = resolveMobileUtilitySource(utilityRouteState, "m_wiki");
-  const showReturnAction = hasMobileUtilityRouteContext(utilityRouteState);
-  const hasResultContext = hasMobileUtilityResultContext(utilityRouteState);
-  const returnActionHref = resolveMobileUtilityReturnHref(utilityRouteState);
-  const returnActionLabel = describeMobileUtilityReturnLabel(utilityRouteState);
 
   const stateQueryString = useMemo(
     () =>
@@ -506,6 +499,18 @@ function MobileWikiPageContent() {
   const currentQueryString = searchParams.toString();
   const returnTo = stateQueryString ? `${pathname}?${stateQueryString}` : pathname;
   const currentRoute = currentQueryString ? `${pathname}?${currentQueryString}` : pathname;
+  const returnTracking = useMemo(
+    () =>
+      resolveMobileUtilityReturnTracking({
+        routeState: utilityRouteState,
+        page: "wiki_list",
+        route: currentRoute,
+        source: analyticsSource,
+        category: active,
+        action: "wiki_return",
+      }),
+    [active, analyticsSource, currentRoute, utilityRouteState],
+  );
   const scrollStorageKey = useMemo(() => `m:wiki:scroll:${returnTo}`, [returnTo]);
 
   useEffect(() => {
@@ -932,26 +937,18 @@ function MobileWikiPageContent() {
       />
       <div className="space-y-7">
         <div className="space-y-4">
-          {showReturnAction ? (
+          {returnTracking ? (
             <div className="flex justify-end">
               <Link
-                href={returnActionHref}
+                href={returnTracking.href}
                 onClick={() => {
-                  if (hasResultContext && utilityRouteState.scenarioId) {
-                    void trackMobileEvent("result_secondary_loop_click", {
-                      page: "wiki_list",
-                      route: currentRoute,
-                      source: analyticsSource,
-                      category: active,
-                      scenario_id: utilityRouteState.scenarioId,
-                      target_path: returnActionHref,
-                      action: "wiki_return",
-                    });
+                  if (returnTracking.eventName && returnTracking.eventProps) {
+                    void trackMobileEvent(returnTracking.eventName, returnTracking.eventProps);
                   }
                 }}
                 className="m-pressable inline-flex h-9 items-center rounded-full border border-[#8fb9f5]/45 bg-[rgba(255,255,255,0.14)] px-4 text-[12px] font-semibold text-white/92 active:bg-white/[0.22]"
               >
-                {returnActionLabel}
+                {returnTracking.label}
               </Link>
             </div>
           ) : null}

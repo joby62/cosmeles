@@ -23,13 +23,10 @@ import { describeMobileRouteFocus, getMobileCategoryLabel } from "@/lib/mobile/r
 import {
   appendMobileUtilityRouteState,
   applyMobileUtilityRouteState,
-  describeMobileUtilityReturnLabel,
-  hasMobileUtilityResultContext,
-  hasMobileUtilityRouteContext,
   parseMobileUtilityRouteState,
-  resolveMobileUtilityReturnHref,
   resolveMobileUtilitySource,
 } from "@/features/mobile-utility/routeState";
+import { resolveMobileUtilityReturnTracking } from "@/features/mobile-utility/returnTracking";
 
 const CATEGORY_ORDER: MobileSelectionCategory[] = ["shampoo", "bodywash", "conditioner", "lotion", "cleanser"];
 const MAX_TOTAL_SELECTION = 3;
@@ -296,9 +293,6 @@ function MobileComparePageContent() {
   const selectionShortfall = Math.max(0, 2 - totalSelectedCount);
   const utilityRouteState = useMemo(() => parseMobileUtilityRouteState(searchParams), [searchParams]);
   const analyticsSource = resolveMobileUtilitySource(utilityRouteState, "m_compare");
-  const showReturnAction = hasMobileUtilityRouteContext(utilityRouteState);
-  const returnActionHref = resolveMobileUtilityReturnHref(utilityRouteState);
-  const returnActionLabel = describeMobileUtilityReturnLabel(utilityRouteState);
   const landingCategory = normalizeSelectionCategory(searchParams?.get("category")) || category;
   const profileRefreshed = searchParams?.get("profile_refreshed") === "1";
   const fromLibrary = searchParams?.get(LIBRARY_RETURN_PARAM) === "1";
@@ -340,6 +334,18 @@ function MobileComparePageContent() {
           }
         : null,
     [analyticsRoute, compareOriginId, landingCategory, resultCta],
+  );
+  const returnTracking = useMemo(
+    () =>
+      resolveMobileUtilityReturnTracking({
+        routeState: utilityRouteState,
+        page: "mobile_compare",
+        route: analyticsRoute,
+        source: analyticsSource,
+        category,
+        action: "compare_return",
+      }),
+    [analyticsRoute, analyticsSource, category, utilityRouteState],
   );
 
   useEffect(() => {
@@ -1793,26 +1799,17 @@ function MobileComparePageContent() {
       历史记录
     </button>
   );
-  const returnActionButton = showReturnAction ? (
+  const returnActionButton = returnTracking ? (
     <Link
-      href={returnActionHref}
+      href={returnTracking.href}
       onClick={() => {
-        if (hasMobileUtilityResultContext(utilityRouteState) && utilityRouteState.scenarioId) {
-          void safeTrack("utility_return_click", {
-            page: "mobile_compare",
-            route: analyticsRoute,
-            source: analyticsSource,
-            category,
-            compare_id: utilityRouteState.compareId || undefined,
-            scenario_id: utilityRouteState.scenarioId,
-            target_path: returnActionHref,
-            action: "compare_return",
-          });
+        if (returnTracking.eventName && returnTracking.eventProps) {
+          void safeTrack(returnTracking.eventName, returnTracking.eventProps);
         }
       }}
       className="inline-flex h-9 items-center rounded-full border border-[#0a84ff]/26 bg-[#eef5ff] px-4 text-[12px] font-semibold text-[#1858b0] active:bg-[#e2efff] dark:border-[#69adff]/35 dark:bg-[#1e3558]/72 dark:text-[#b9daff]"
     >
-      {returnActionLabel}
+      {returnTracking.label}
     </Link>
   ) : null;
   const headerActions = (

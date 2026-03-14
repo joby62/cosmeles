@@ -10,13 +10,10 @@ import { formatRuntimeError } from "@/lib/error";
 import {
   applyMobileUtilityRouteState,
   appendMobileUtilityRouteState,
-  describeMobileUtilityReturnLabel,
-  hasMobileUtilityResultContext,
-  hasMobileUtilityRouteContext,
   parseMobileUtilityRouteState,
-  resolveMobileUtilityReturnHref,
   resolveMobileUtilitySource,
 } from "@/features/mobile-utility/routeState";
+import { resolveMobileUtilityReturnTracking } from "@/features/mobile-utility/returnTracking";
 
 const DIAGNOSTIC_LABELS: Record<string, string> = {
   cleanse_intensity: "清洁强度",
@@ -100,10 +97,6 @@ export default async function MobileWikiProductDetailPage({
   const search = (await Promise.resolve(searchParams)) || {};
   const utilityRouteState = parseMobileUtilityRouteState(search);
   const analyticsSource = resolveMobileUtilitySource(utilityRouteState, "wiki_product_detail");
-  const showReturnAction = hasMobileUtilityRouteContext(utilityRouteState);
-  const hasResultContext = hasMobileUtilityResultContext(utilityRouteState);
-  const returnActionHref = resolveMobileUtilityReturnHref(utilityRouteState);
-  const returnActionLabel = describeMobileUtilityReturnLabel(utilityRouteState);
   const returnTo = queryValue(search.return_to);
   const returnHrefBase = returnTo && returnTo.startsWith("/m/wiki") ? returnTo : "/m/wiki";
   const returnHref = appendMobileUtilityRouteState(returnHrefBase, utilityRouteState, { includeReturnTo: false });
@@ -164,6 +157,15 @@ export default async function MobileWikiProductDetailPage({
   const uploadCtaHref = `/m/me/use?${uploadCtaParams.toString()}`;
   const resultCta = utilityRouteState.resultCta;
   const compareOriginId = utilityRouteState.compareId;
+  const returnTracking = resolveMobileUtilityReturnTracking({
+    routeState: utilityRouteState,
+    page: "wiki_product_detail",
+    route: `/m/wiki/product/${productId}`,
+    source: analyticsSource,
+    category: product.category,
+    compareId: compareOriginId,
+    action: "wiki_return",
+  });
   const ingredientRefByIndex = new Map((item.ingredient_refs || []).map((ref) => [ref.index, ref]));
   const analysis = analysisData?.item.profile || null;
   const diagnosticsEntries = analysis ? Object.entries(analysis.diagnostics || {}) : [];
@@ -205,27 +207,14 @@ export default async function MobileWikiProductDetailPage({
         >
           返回百科
         </Link>
-        {showReturnAction ? (
+        {returnTracking ? (
           <MobileTrackedLink
-            href={returnActionHref}
-            eventName={hasResultContext ? "utility_return_click" : undefined}
-            eventProps={
-              hasResultContext && utilityRouteState.scenarioId
-                ? {
-                    page: "wiki_product_detail",
-                    route: `/m/wiki/product/${product.id}`,
-                    source: analyticsSource,
-                    category: product.category,
-                    compare_id: utilityRouteState.compareId || undefined,
-                    scenario_id: utilityRouteState.scenarioId,
-                    target_path: returnActionHref,
-                    action: "wiki_return",
-                  }
-                : undefined
-            }
+            href={returnTracking.href}
+            eventName={returnTracking.eventName}
+            eventProps={returnTracking.eventProps}
             className="inline-flex h-9 items-center rounded-full border border-[#0a84ff]/26 bg-[#eef5ff] px-4 text-[12px] font-semibold text-[#1858b0] active:bg-[#e2efff]"
           >
-            {returnActionLabel}
+            {returnTracking.label}
           </MobileTrackedLink>
         ) : null}
       </div>

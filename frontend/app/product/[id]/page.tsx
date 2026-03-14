@@ -1,6 +1,7 @@
 import MobileEventBeacon from "@/components/mobile/MobileEventBeacon";
 import ProductShowcase from "@/components/ProductShowcase";
 import { fetchProductDoc, fetchProductRouteMapping } from "@/lib/api";
+import { parseResultCtaAttribution } from "@/lib/mobile/resultCtaAttribution";
 
 export default async function ProductShowcasePage({
   params,
@@ -11,15 +12,16 @@ export default async function ProductShowcasePage({
 }) {
   const { id } = await Promise.resolve(params);
   const search = (await Promise.resolve(searchParams)) || {};
-  const resultCta = Array.isArray(search.result_cta) ? search.result_cta[0] : search.result_cta;
-  const fromCompareId = Array.isArray(search.from_compare_id) ? search.from_compare_id[0] : search.from_compare_id;
+  const resultAttribution = parseResultCtaAttribution(search);
+  const resultCta = resultAttribution?.resultCta || "";
+  const compareId = resultAttribution?.fromCompareId || "";
   const [doc, routeMappingDetail] = await Promise.all([
     fetchProductDoc(id),
     fetchProductRouteMapping(id).catch(() => null),
   ]);
   return (
     <>
-      {resultCta && fromCompareId ? (
+      {resultAttribution ? (
         <MobileEventBeacon
           name="compare_result_cta_land"
           props={{
@@ -28,7 +30,7 @@ export default async function ProductShowcasePage({
             source: "m_compare_result",
             category: doc.product.category,
             product_id: id,
-            compare_id: fromCompareId,
+            compare_id: compareId,
             cta: resultCta,
           }}
         />
@@ -38,10 +40,10 @@ export default async function ProductShowcasePage({
         doc={doc}
         routeMapping={routeMappingDetail?.item || null}
         analyticsContext={
-          resultCta && fromCompareId
+          resultAttribution
             ? {
                 resultCta,
-                fromCompareId,
+                fromCompareId: compareId,
               }
             : null
         }

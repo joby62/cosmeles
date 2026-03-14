@@ -8,13 +8,10 @@ import { isWikiCategoryKey, WIKI_MAP, WIKI_ORDER, type WikiCategoryKey } from "@
 import {
   applyMobileUtilityRouteState,
   appendMobileUtilityRouteState,
-  describeMobileUtilityReturnLabel,
-  hasMobileUtilityResultContext,
-  hasMobileUtilityRouteContext,
   parseMobileUtilityRouteState,
-  resolveMobileUtilityReturnHref,
   resolveMobileUtilitySource,
 } from "@/features/mobile-utility/routeState";
+import { resolveMobileUtilityReturnTracking } from "@/features/mobile-utility/returnTracking";
 
 type Params = { category: string };
 type Search = Record<string, string | string[] | undefined>;
@@ -141,10 +138,6 @@ export default async function WikiCategoryPage({
 
   const utilityRouteState = parseMobileUtilityRouteState(search);
   const analyticsSource = resolveMobileUtilitySource(utilityRouteState, "wiki_category");
-  const showReturnAction = hasMobileUtilityRouteContext(utilityRouteState);
-  const hasResultContext = hasMobileUtilityResultContext(utilityRouteState);
-  const returnActionHref = resolveMobileUtilityReturnHref(utilityRouteState);
-  const returnActionLabel = describeMobileUtilityReturnLabel(utilityRouteState);
   const current = WIKI_MAP[category];
   const theme = CATEGORY_THEME[category];
   const focusKey = queryValue(search.focus);
@@ -157,6 +150,15 @@ export default async function WikiCategoryPage({
   if (query) returnQuery.set("q", query);
   const returnToBase = returnQuery.toString() ? `/m/wiki/${category}?${returnQuery.toString()}` : `/m/wiki/${category}`;
   const returnTo = appendMobileUtilityRouteState(returnToBase, utilityRouteState, { includeReturnTo: false });
+  const returnTracking = resolveMobileUtilityReturnTracking({
+    routeState: utilityRouteState,
+    page: "wiki_category",
+    route: `/m/wiki/${category}`,
+    source: analyticsSource,
+    category,
+    compareId: compareOriginId,
+    action: "wiki_return",
+  });
   const chooseHref = appendMobileUtilityRouteState(`/m/${current.key}/profile?step=1`, utilityRouteState);
   const library = await fetchIngredientLibrary({
     category,
@@ -166,28 +168,15 @@ export default async function WikiCategoryPage({
 
   return (
     <section className="m-wiki-page -mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[color:var(--m-wiki-canvas)] px-4 pb-36 pt-4 text-white">
-      {showReturnAction ? (
+      {returnTracking ? (
         <div className="mb-3 flex justify-end">
           <MobileTrackedLink
-            href={returnActionHref}
-            eventName={hasResultContext ? "utility_return_click" : undefined}
-            eventProps={
-              hasResultContext && utilityRouteState.scenarioId
-                ? {
-                    page: "wiki_category",
-                    route: `/m/wiki/${category}`,
-                    source: analyticsSource,
-                    category,
-                    compare_id: compareOriginId || undefined,
-                    scenario_id: utilityRouteState.scenarioId,
-                    target_path: returnActionHref,
-                    action: "wiki_return",
-                  }
-                : undefined
-            }
+            href={returnTracking.href}
+            eventName={returnTracking.eventName}
+            eventProps={returnTracking.eventProps}
             className="m-pressable inline-flex h-9 items-center rounded-full border border-[#8fb9f5]/45 bg-[rgba(255,255,255,0.14)] px-4 text-[12px] font-semibold text-white/92 active:bg-white/[0.22]"
           >
-            {returnActionLabel}
+            {returnTracking.label}
           </MobileTrackedLink>
         </div>
       ) : null}
