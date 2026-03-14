@@ -3,13 +3,12 @@ import {
   appendMobileUtilityRouteState,
   parseMobileUtilityRouteState,
 } from "@/features/mobile-utility/routeState";
+import {
+  pickMobileMeTab,
+  resolveMobileMeEntryPath,
+} from "@/features/mobile-utility/meRouteIntent";
 
 type Search = Record<string, string | string[] | undefined>;
-
-function pickTab(raw: string | string[] | undefined): string {
-  if (Array.isArray(raw)) return String(raw[0] || "").trim().toLowerCase();
-  return String(raw || "").trim().toLowerCase();
-}
 
 export default async function MobileMeEntryPage({
   searchParams,
@@ -17,16 +16,7 @@ export default async function MobileMeEntryPage({
   searchParams?: Promise<Search>;
 }) {
   const raw = (await Promise.resolve(searchParams)) || {};
-  const tab = pickTab(raw.tab);
+  const tab = pickMobileMeTab(raw.tab);
   const routeState = parseMobileUtilityRouteState(raw);
-
-  if (tab === "selection" || tab === "compare") {
-    redirect(appendMobileUtilityRouteState(`/m/me/history?tab=${tab}`, routeState));
-  }
-
-  if (tab === "bag") {
-    redirect(appendMobileUtilityRouteState("/m/me/bag", routeState));
-  }
-
-  redirect(appendMobileUtilityRouteState("/m/me/use", routeState));
+  redirect(appendMobileUtilityRouteState(resolveMobileMeEntryPath(tab), routeState));
 }

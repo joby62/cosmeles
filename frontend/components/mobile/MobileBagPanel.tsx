@@ -8,8 +8,11 @@ import {
   appendMobileUtilityRouteState,
   type MobileUtilityRouteState,
 } from "@/features/mobile-utility/routeState";
-import { describeDecisionContinuationAction } from "@/features/mobile-utility/decisionContinuationCopy";
-import { useDecisionContinuationMap } from "@/features/mobile-utility/useDecisionContinuation";
+import {
+  describeDecisionContinuationAction,
+  describeDecisionContinuationSurface,
+} from "@/features/mobile-utility/decisionContinuationCopy";
+import { useMobileUtilityContinuationLinks } from "@/features/mobile-utility/useMobileUtilityContinuationLinks";
 
 function formatTime(iso: string): string {
   const date = new Date(iso);
@@ -38,8 +41,10 @@ export default function MobileBagPanel({ routeState = null }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [totalQuantity, setTotalQuantity] = useState(0);
-  const continuationSource = routeState?.source || "m_me_bag";
-  const continuationMap = useDecisionContinuationMap({ source: continuationSource });
+  const continuationLinks = useMobileUtilityContinuationLinks({
+    routeState,
+    sourceFallback: "m_me_bag",
+  });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -65,7 +70,7 @@ export default function MobileBagPanel({ routeState = null }: Props) {
     <section className="pb-28">
       <h1 className="text-[30px] leading-[1.12] font-semibold tracking-[-0.02em] text-black/90">购物袋</h1>
       <p className="mt-3 text-[15px] leading-[1.55] text-black/60">
-        当前设备共 {items.length} 件，累计数量 {totalQuantity}，可随时回到测配续接下一步。
+        当前设备共 {items.length} 件，累计数量 {totalQuantity}，{describeDecisionContinuationSurface("bag")}
       </p>
 
       <div className="mt-6 space-y-3">
@@ -90,12 +95,7 @@ export default function MobileBagPanel({ routeState = null }: Props) {
         {!loading && !error
           ? items.map((item) => {
               const p = item.product;
-              const continuationTarget = continuationMap?.resolveByCategory(p.category) || null;
-              const continuationHref = appendMobileUtilityRouteState(
-                continuationTarget?.href || `/m/choose?source=${encodeURIComponent(continuationSource)}`,
-                routeState,
-                { includeSource: false },
-              );
+              const continuation = continuationLinks.resolveByCategory(p.category);
               return (
                 <article key={item.item_id} className="overflow-hidden rounded-[24px] border border-black/10 bg-white">
                   <div className="flex gap-3 p-3">
@@ -135,10 +135,10 @@ export default function MobileBagPanel({ routeState = null }: Props) {
 
                   <div className="flex border-t border-black/8 px-3 py-2">
                     <Link
-                      href={continuationHref}
+                      href={continuation.href}
                       className="inline-flex h-8 items-center rounded-full border border-[#0071e3]/28 bg-[#0071e3]/10 px-3 text-[12px] font-semibold text-[#005fbf] active:bg-[#0071e3]/15"
                     >
-                      {describeDecisionContinuationAction(continuationTarget?.action || "go_choose")}
+                      {describeDecisionContinuationAction(continuation.action)}
                     </Link>
                     <Link
                       href={appendMobileUtilityRouteState(`/m/wiki/product/${encodeURIComponent(p.id)}`, routeState)}

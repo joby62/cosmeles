@@ -11,6 +11,11 @@ export type MobileUtilityRouteState = {
   compareId: string | null;
 };
 
+export type MobileUtilityReturnAction = {
+  href: string;
+  label: string;
+};
+
 type ApplyRouteStateOptions = {
   includeSource?: boolean;
   includeReturnTo?: boolean;
@@ -86,6 +91,17 @@ export function resolveMobileUtilityReturnHref(
 export function describeMobileUtilityReturnLabel(state: MobileUtilityRouteState): string {
   if (hasMobileUtilityResultContext(state)) return "返回上一步结果";
   return "回到个性挑选";
+}
+
+export function resolveMobileUtilityReturnAction(
+  state: MobileUtilityRouteState,
+  fallback = "/m/choose",
+): MobileUtilityReturnAction | null {
+  if (!hasMobileUtilityRouteContext(state)) return null;
+  return {
+    href: resolveMobileUtilityReturnHref(state, fallback),
+    label: describeMobileUtilityReturnLabel(state),
+  };
 }
 
 export function applyMobileUtilityRouteState(
