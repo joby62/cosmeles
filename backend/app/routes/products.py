@@ -936,25 +936,50 @@ def get_mobile_analytics_overview(
         for row, _props in rows
         if row.name == "compare_run_success"
     }
+    compare_result_view_sessions = {
+        row.session_id.strip()
+        for row, _props in rows
+        if row.name == "compare_result_view" and str(row.session_id or "").strip()
+    }
     compare_result_view_keys = {
         _compare_key_for_event(row)
         for row, _props in rows
         if row.name == "compare_result_view"
+    }
+    result_view_sessions = {
+        row.session_id.strip()
+        for row, _props in rows
+        if row.name == "result_view" and str(row.session_id or "").strip()
     }
     result_view_keys = {
         _decision_result_key_for_event(row, props)
         for row, props in rows
         if row.name == "result_view"
     }
+    result_primary_cta_click_sessions = {
+        row.session_id.strip()
+        for row, _props in rows
+        if row.name == "result_primary_cta_click" and str(row.session_id or "").strip()
+    }
     result_primary_cta_click_keys = {
         _decision_result_key_for_event(row, props)
         for row, props in rows
         if row.name == "result_primary_cta_click"
     }
+    result_secondary_loop_click_sessions = {
+        row.session_id.strip()
+        for row, _props in rows
+        if row.name == "result_secondary_loop_click" and str(row.session_id or "").strip()
+    }
     result_secondary_loop_click_keys = {
         _decision_result_key_for_event(row, props)
         for row, props in rows
         if row.name == "result_secondary_loop_click"
+    }
+    utility_return_click_sessions = {
+        row.session_id.strip()
+        for row, _props in rows
+        if row.name == "utility_return_click" and str(row.session_id or "").strip()
     }
     utility_return_click_keys = {
         _decision_result_key_for_event(row, props)
@@ -975,16 +1000,16 @@ def get_mobile_analytics_overview(
         choose_view_sessions=len(choose_view_sessions),
         choose_start_click_sessions=len(choose_start_click_sessions),
         questionnaire_completed_sessions=len(questionnaire_completed_sessions),
-        result_view_sessions=len(result_view_keys),
-        result_primary_cta_click_sessions=len(result_primary_cta_click_keys),
-        result_secondary_loop_click_sessions=len(result_secondary_loop_click_keys),
-        utility_return_click_sessions=len(utility_return_click_keys),
-        compare_result_view_sessions=len(compare_result_view_keys),
+        result_view_sessions=len(result_view_sessions),
+        result_primary_cta_click_sessions=len(result_primary_cta_click_sessions),
+        result_secondary_loop_click_sessions=len(result_secondary_loop_click_sessions),
+        utility_return_click_sessions=len(utility_return_click_sessions),
+        compare_result_view_sessions=len(compare_result_view_sessions),
         choose_start_rate_from_choose_view=_rate(len(choose_start_click_sessions), len(choose_view_sessions)),
-        result_view_rate_from_home_primary_cta=_rate(len(result_view_keys), len(home_primary_cta_click_sessions)),
-        result_primary_cta_rate_from_result_view=_rate(len(result_primary_cta_click_keys), len(result_view_keys)),
-        result_loop_entry_rate_from_result_view=_rate(len(result_secondary_loop_click_keys), len(result_view_keys)),
-        utility_return_rate_from_result_loop=_rate(len(utility_return_click_keys), len(result_secondary_loop_click_keys)),
+        result_view_rate_from_home_primary_cta=_rate(len(result_view_sessions), len(home_primary_cta_click_sessions)),
+        result_primary_cta_rate_from_result_view=_rate(len(result_primary_cta_click_sessions), len(result_view_sessions)),
+        result_loop_entry_rate_from_result_view=_rate(len(result_secondary_loop_click_sessions), len(result_view_sessions)),
+        utility_return_rate_from_result_loop=_rate(len(utility_return_click_sessions), len(result_secondary_loop_click_sessions)),
         question_dropoff_status=ANALYTICS_QUESTION_DROPOFF_STATUS,
         question_dropoff_reason=ANALYTICS_QUESTION_DROPOFF_REASON,
         wiki_detail_views=len(wiki_detail_views),
@@ -1062,8 +1087,8 @@ def get_mobile_analytics_funnel(
             step_sessions["choose_start"].add(session_id)
         elif row.name == "questionnaire_completed" and session_id:
             step_sessions["questionnaire_completed"].add(session_id)
-        elif row.name == "result_view":
-            step_sessions["result_view"].add(_decision_result_key_for_event(row, props))
+        elif row.name == "result_view" and session_id:
+            step_sessions["result_view"].add(session_id)
 
     steps: list[MobileAnalyticsFunnelStep] = []
     first_count = 0

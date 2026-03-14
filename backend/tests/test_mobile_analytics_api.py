@@ -848,6 +848,58 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 props_json='{"scenario_id":"selres-shampoo-2026-03-03-1-abc123","target_path":"/m/shampoo/result","action":"wiki_return"}',
             ),
             MobileClientEvent(
+                event_id="evt-036m",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="result_view",
+                page="selection_result",
+                route="/m/shampoo/result",
+                source="selection_result",
+                category="shampoo",
+                created_at="2026-03-13T01:00:18.200000Z",
+                props_json='{"scenario_id":"selres-shampoo-2026-03-04-2-def456","cta":"recommendation_product"}',
+            ),
+            MobileClientEvent(
+                event_id="evt-036n",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="result_primary_cta_click",
+                page="selection_result",
+                route="/m/shampoo/result",
+                source="selection_result",
+                category="shampoo",
+                created_at="2026-03-13T01:00:18.210000Z",
+                props_json='{"scenario_id":"selres-shampoo-2026-03-04-2-def456","target_path":"/product/p-9"}',
+            ),
+            MobileClientEvent(
+                event_id="evt-036o",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="result_secondary_loop_click",
+                page="selection_result",
+                route="/m/shampoo/result",
+                source="selection_result",
+                category="shampoo",
+                created_at="2026-03-13T01:00:18.220000Z",
+                props_json='{"scenario_id":"selres-shampoo-2026-03-04-2-def456","target_path":"/m/wiki/shampoo","action":"wiki"}',
+            ),
+            MobileClientEvent(
+                event_id="evt-036p",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="utility_return_click",
+                page="wiki_category",
+                route="/m/wiki/shampoo",
+                source="m_wiki",
+                category="shampoo",
+                created_at="2026-03-13T01:00:18.230000Z",
+                props_json='{"scenario_id":"selres-shampoo-2026-03-04-2-def456","target_path":"/m/shampoo/result","action":"wiki_return"}',
+            ),
+            MobileClientEvent(
                 event_id="evt-037",
                 owner_type="device",
                 owner_id="owner-gamma",
@@ -959,6 +1011,36 @@ def test_mobile_analytics_overview_and_funnel(mobile_analytics_client: TestClien
     assert steps["questionnaire_completed"]["count"] == 1
     assert steps["result_view"]["count"] == 1
     assert steps["choose_start"]["from_prev_rate"] == 0.6667
+    assert steps["result_view"]["from_first_rate"] == 0.3333
+
+
+def test_mobile_analytics_p0_sessions_not_inflated_by_multi_scenarios(mobile_analytics_client: TestClient):
+    client = mobile_analytics_client
+    query = "date_from=2026-03-10&date_to=2026-03-13"
+
+    overview = client.get(f"/api/products/analytics/mobile/overview?{query}")
+    assert overview.status_code == 200
+    payload = overview.json()
+
+    # Same session emits two result scenarios; *_sessions must stay session-deduped.
+    assert payload["result_view"] == 2
+    assert payload["result_primary_cta_click"] == 2
+    assert payload["result_secondary_loop_click"] == 2
+    assert payload["utility_return_click"] == 2
+    assert payload["result_view_sessions"] == 1
+    assert payload["result_primary_cta_click_sessions"] == 1
+    assert payload["result_secondary_loop_click_sessions"] == 1
+    assert payload["utility_return_click_sessions"] == 1
+    assert payload["result_view_rate_from_home_primary_cta"] == 0.3333
+    assert payload["result_primary_cta_rate_from_result_view"] == 1.0
+    assert payload["result_loop_entry_rate_from_result_view"] == 1.0
+    assert payload["utility_return_rate_from_result_loop"] == 1.0
+
+    funnel = client.get(f"/api/products/analytics/mobile/funnel?{query}")
+    assert funnel.status_code == 200
+    steps = {item["step_key"]: item for item in funnel.json()["steps"]}
+    assert steps["home_primary_cta"]["count"] == 3
+    assert steps["result_view"]["count"] == 1
     assert steps["result_view"]["from_first_rate"] == 0.3333
 
 
