@@ -17,8 +17,8 @@ export const ANALYTICS_SECTIONS: AnalyticsSectionDef[] = [
     navLabelZh: "实时看板",
     navLabelEn: "Dashboard",
     titleZh: "实时看板",
-    summaryZh: "基于真实事件聚合，直看会话、漏斗、错误、反馈与体验。",
-    bulletsZh: ["Overview", "Funnel", "Stage Errors", "Feedback", "Session Explorer"],
+    summaryZh: "基于真实事件聚合，优先看结果到达、结果动作、utility 回流与排障上下文。",
+    bulletsZh: ["Overview", "Funnel", "Experience", "Stage Errors", "Session Explorer"],
   },
   {
     key: "signals",

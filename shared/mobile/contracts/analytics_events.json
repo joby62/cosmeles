@@ -6,6 +6,7 @@
       "result_primary_cta_click",
       "result_secondary_loop_click"
     ],
+    "utility_loop_event": "utility_return_click",
     "legacy_aliases_removed": [
       "profile_result_view"
     ]
@@ -51,6 +52,9 @@
       "required_props": ["page", "route", "source", "category", "scenario_id", "target_path"]
     },
     "result_secondary_loop_click": {
+      "required_props": ["page", "route", "source", "category", "scenario_id", "target_path", "action"]
+    },
+    "utility_return_click": {
       "required_props": ["page", "route", "source", "category", "scenario_id", "target_path", "action"]
     }
   }

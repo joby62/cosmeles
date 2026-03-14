@@ -134,6 +134,12 @@ function formatPercent(value?: number | null): string {
   return `${(value * 100).toFixed(1)}%`;
 }
 
+function rateFromCounts(numerator?: number | null, denominator?: number | null): number | null {
+  if (typeof numerator !== "number" || Number.isNaN(numerator)) return null;
+  if (typeof denominator !== "number" || Number.isNaN(denominator) || denominator <= 0) return 0;
+  return numerator / denominator;
+}
+
 function formatDateTime(value?: string | null): string {
   const text = String(value || "").trim();
   if (!text) return "-";
@@ -170,9 +176,13 @@ function pageLabel(page?: string | null): string {
     case "wiki_list":
       return "百科列表";
     case "compare_result":
-      return "结果页";
+      return "对比结果";
+    case "selection_result":
+      return "测配结果";
     case "mobile_compare":
       return "横向对比";
+    case "mobile_compare_library":
+      return "对比库";
     case "my_use":
       return "我的在用";
     case "wiki_product_detail":
@@ -203,10 +213,31 @@ function resultCtaLabel(value?: string | null): string {
   }
 }
 
+function loopActionLabel(value?: string | null): string {
+  switch (valueOrEmpty(value)) {
+    case "wiki":
+      return "进入百科";
+    case "compare":
+      return "进入对比";
+    case "me":
+      return "进入我的";
+    case "bag":
+      return "进入购物袋";
+    case "compare_return":
+      return "从对比返回测配结果";
+    case "compare_library_return":
+      return "从对比库返回测配结果";
+    case "wiki_return":
+      return "从百科返回测配结果";
+    default:
+      return valueOrEmpty(value) || "unknown";
+  }
+}
+
 function rageTargetLabel(item: MobileAnalyticsRageClickTargetItem): string {
   const raw = valueOrEmpty(item.target_id) || "unknown";
   if (raw.startsWith("result:cta:")) {
-    return `结果页 · ${raw.replace("result:cta:", "")}`;
+    return `对比结果 · ${raw.replace("result:cta:", "")}`;
   }
   if (raw.startsWith("wiki:")) {
     return `百科 · ${raw.replace("wiki:", "")}`;
@@ -592,9 +623,9 @@ function describeTimelineEvent(item: MobileAnalyticsSessionEventItem): SessionTi
       return {
         eventName,
         phase: "result",
-        title: "进入对比结果页",
-        flowLabel: "进入结果页",
-        summary: "用户已经看到最终建议。",
+        title: "进入对比结果页（兼容）",
+        flowLabel: "进入结果页（兼容）",
+        summary: "legacy compare_result_view 事件，仅作为兼容上下文保留，主结果口径以 result_view 为准。",
         significant: true,
         meta,
         rawMeta,
@@ -603,9 +634,9 @@ function describeTimelineEvent(item: MobileAnalyticsSessionEventItem): SessionTi
       return {
         eventName,
         phase: "exit",
-        title: "离开对比结果页",
-        flowLabel: "离开结果页",
-        summary: dwell ? `结果页停留 ${dwell} 后离开。` : "用户看完结果后离开。",
+        title: "离开对比结果页（兼容）",
+        flowLabel: "离开结果页（兼容）",
+        summary: dwell ? `兼容对比结果页停留 ${dwell} 后离开。` : "兼容上下文：用户看完对比结果后离开。",
         significant: true,
         meta,
         rawMeta,
@@ -632,13 +663,46 @@ function describeTimelineEvent(item: MobileAnalyticsSessionEventItem): SessionTi
         meta,
         rawMeta,
       };
-    case "profile_result_view":
+    case "result_view":
       return {
         eventName,
         phase: "result",
-        title: "查看个人测配结果",
-        flowLabel: "查看测配结果",
-        summary: "用户继续消费更个性化的结果内容。",
+        title: "查看决策结果",
+        flowLabel: "查看决策结果",
+        summary: "用户已经到达固定结构的测配结果页。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "result_primary_cta_click":
+      return {
+        eventName,
+        phase: "result",
+        title: "点击结果主 CTA",
+        flowLabel: "点击结果主 CTA",
+        summary: "用户接受结果页给出的主下一步，继续进入产品或承接页。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "result_secondary_loop_click":
+      return {
+        eventName,
+        phase: "result",
+        title: "从结果进入 utility 回环",
+        flowLabel: "进入 utility 回环",
+        summary: "用户从测配结果页进入百科、对比或其他 utility 能力。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "utility_return_click":
+      return {
+        eventName,
+        phase: "result",
+        title: "从 utility 返回决策链路",
+        flowLabel: "返回决策链路",
+        summary: "utility 页把用户送回了测配结果或后续决策步骤。",
         significant: true,
         meta,
         rawMeta,
@@ -848,7 +912,15 @@ function buildSessionTimelinePresentation(items: MobileAnalyticsSessionEventItem
   });
 
   const hasResult = narratives.some((item) =>
-    ["compare_run_success", "compare_result_view", "profile_result_view", "bag_add_success"].includes(item.eventName),
+    [
+      "compare_run_success",
+      "compare_result_view",
+      "result_view",
+      "result_primary_cta_click",
+      "result_secondary_loop_click",
+      "utility_return_click",
+      "bag_add_success",
+    ].includes(item.eventName),
   );
   const issueEvent = findLastMatching(narratives, (item) => item.phase === "issue");
   const exitEvent = findLastMatching(narratives, (item) => item.phase === "exit");
@@ -1226,6 +1298,9 @@ export default function MobileAnalyticsDashboard() {
     (sessionDetail.data?.items.find((item) => item.session_id === sessionDetail.data?.selected_session_id) ??
       sessionList.data?.items.find((item) => item.session_id === sessionDetail.data?.selected_session_id)) ||
     null;
+  const decisionResultPrimaryCtaRate = rateFromCounts(overview.data?.result_primary_cta_click, overview.data?.result_view);
+  const decisionResultLoopRate = rateFromCounts(overview.data?.result_secondary_loop_click, overview.data?.result_view);
+  const utilityReturnRate = rateFromCounts(overview.data?.utility_return_click, overview.data?.result_secondary_loop_click);
 
   return (
     <section className="mt-8 space-y-6">
@@ -1235,7 +1310,7 @@ export default function MobileAnalyticsDashboard() {
             <div className="text-[12px] font-semibold uppercase tracking-[0.14em] text-black/42">Live Dashboard</div>
             <h2 className="mt-2 text-[30px] font-semibold tracking-[-0.03em] text-black/88">真实数据面板</h2>
             <p className="mt-2 max-w-[720px] text-[14px] leading-[1.7] text-black/62">
-              这里开始展示真实聚合结果。现在已经能直接看 overview、漏斗、体验信号、阶段错误、反馈分布和会话时间线，不再停留在文档层。
+              这里优先回答决策主链路后半段的 3 件事：有没有拿到结果、结果后有没有继续动作、utility 有没有把用户送回决策链路。
             </p>
           </div>
           <div className="text-right text-[12px] text-black/46">
@@ -1352,25 +1427,25 @@ export default function MobileAnalyticsDashboard() {
           accent="emerald"
         />
         <DashboardMetricCard
-          title="CTA 点击率"
-          value={formatPercent(overview.data?.cta_ctr)}
-          detail={`${formatNumber(overview.data?.cta_click)} / ${formatNumber(overview.data?.cta_expose)} 会话`}
+          title="结果到达率"
+          value={formatPercent(overview.data?.result_reach_rate)}
+          detail={`决策结果 ${formatNumber(overview.data?.result_view)} · compare 成功 ${formatNumber(overview.data?.compare_run_success)}`}
           loading={overview.loading}
           error={overview.error}
           accent="amber"
         />
         <DashboardMetricCard
-          title="use → compare"
-          value={formatPercent(overview.data?.use_to_compare_rate)}
-          detail={`${formatNumber(overview.data?.compare_run_start)} 次开始分析`}
+          title="结果主 CTA 点击率"
+          value={formatPercent(decisionResultPrimaryCtaRate)}
+          detail={`点击 ${formatNumber(overview.data?.result_primary_cta_click)} / 到达 ${formatNumber(overview.data?.result_view)}`}
           loading={overview.loading}
           error={overview.error}
           accent="slate"
         />
         <DashboardMetricCard
-          title="分析完成率"
-          value={formatPercent(overview.data?.compare_completion_rate)}
-          detail={`结果页到达 ${formatPercent(overview.data?.result_reach_rate)}`}
+          title="utility 回流率"
+          value={formatPercent(utilityReturnRate)}
+          detail={`返回 ${formatNumber(overview.data?.utility_return_click)} / 进入 utility ${formatNumber(overview.data?.result_secondary_loop_click)}`}
           loading={overview.loading}
           error={overview.error}
           accent="stone"
@@ -1378,18 +1453,36 @@ export default function MobileAnalyticsDashboard() {
       </section>
 
       <section className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
-        <PanelCard title="Funnel" subtitle="从百科详情到结果页的真实漏斗">
+        <PanelCard title="Funnel" subtitle="从百科详情到决策结果的真实漏斗（compare_result_view 仅兼容）">
           {funnel.error ? (
             <PanelError message={funnel.error} />
           ) : funnel.loading ? (
             <PanelLoading />
           ) : funnel.data && funnel.data.steps.length > 0 ? (
             <div className="space-y-4">
+              <div className="rounded-[18px] border border-[#d6e6ff] bg-[#f4f8ff] px-4 py-3 text-[12px] leading-[1.7] text-[#305a98]">
+                决策结果口径统一为
+                <code className="mx-1 rounded bg-white/70 px-1.5 py-0.5 text-[11px]">result_view</code>
+                →
+                <code className="mx-1 rounded bg-white/70 px-1.5 py-0.5 text-[11px]">result_primary_cta_click</code>
+                →
+                <code className="mx-1 rounded bg-white/70 px-1.5 py-0.5 text-[11px]">result_secondary_loop_click</code>
+                →
+                <code className="mx-1 rounded bg-white/70 px-1.5 py-0.5 text-[11px]">utility_return_click</code>
+                ；漏斗最后一步若显示 <code className="mx-1 rounded bg-white/70 px-1.5 py-0.5 text-[11px]">compare_result_view</code>，仅做历史兼容。
+              </div>
               {funnel.data.steps.map((step) => (
                 <article key={step.step_key} className="rounded-[22px] border border-black/10 bg-[#f7f8fb] px-4 py-4">
+                  {step.step_key === "compare_result_view" ? (
+                    <div className="mb-2 inline-flex items-center rounded-full border border-[#d8dbe4] bg-white px-2.5 py-1 text-[11px] text-[#5a6475]">
+                      兼容指标
+                    </div>
+                  ) : null}
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <div className="text-[16px] font-semibold tracking-[-0.02em] text-black/86">{step.step_label}</div>
+                      <div className="text-[16px] font-semibold tracking-[-0.02em] text-black/86">
+                        {step.step_key === "compare_result_view" ? "决策结果到达（兼容 compare_result_view）" : step.step_label}
+                      </div>
                       <div className="mt-1 text-[12px] text-black/48">{step.step_key}</div>
                     </div>
                     <div className="text-right">
@@ -1421,9 +1514,11 @@ export default function MobileAnalyticsDashboard() {
             <div className="grid gap-3 md:grid-cols-2">
               <CompactStat title="百科详情页会话" value={formatNumber(overview.data.wiki_detail_views)} />
               <CompactStat title="use 页会话" value={formatNumber(overview.data.use_page_views)} />
-              <CompactStat title="品类点击会话" value={formatNumber(overview.data.use_category_clicks)} />
+              <CompactStat title="compare 启动" value={formatNumber(overview.data.compare_run_start)} />
               <CompactStat title="compare 成功" value={formatNumber(overview.data.compare_run_success)} />
-              <CompactStat title="结果页到达" value={formatNumber(overview.data.compare_result_view)} />
+              <CompactStat title="决策结果到达" value={formatNumber(overview.data.result_view)} />
+              <CompactStat title="结果后进入 utility" value={`${formatNumber(overview.data.result_secondary_loop_click)} · ${formatPercent(decisionResultLoopRate)}`} />
+              <CompactStat title="utility 返回决策" value={formatNumber(overview.data.utility_return_click)} />
               <CompactStat title="反馈提交率" value={formatPercent(overview.data.feedback_submit_rate)} />
             </div>
           ) : (
@@ -1432,7 +1527,7 @@ export default function MobileAnalyticsDashboard() {
         </PanelCard>
       </section>
 
-      <PanelCard title="Experience Signals" subtitle="列表兴趣、结果阅读与误触停滞">
+      <PanelCard title="Experience Signals" subtitle="决策结果动作、对比结果阅读与误触停滞">
         {experience.error ? (
           <PanelError message={experience.error} />
         ) : experience.loading ? (
@@ -1448,29 +1543,32 @@ export default function MobileAnalyticsDashboard() {
                 title="成分列表 CTR"
                 value={`${formatPercent(experience.data.wiki_ingredient_ctr)} · ${formatNumber(experience.data.wiki_ingredient_clicks)}/${formatNumber(experience.data.wiki_ingredient_list_views)}`}
               />
-              <CompactStat title="结果页平均停留" value={formatDurationMs(experience.data.avg_result_dwell_ms)} />
               <CompactStat
-                title="结果页深读率"
-                value={`${formatPercent(experience.data.result_scroll_75_rate)} · 75% / ${formatPercent(experience.data.result_scroll_100_rate)} · 100%`}
+                title="决策结果到达"
+                value={`${formatNumber(experience.data.decision_result_views)} · 主 CTA ${formatNumber(experience.data.decision_result_primary_cta_clicks)}`}
+              />
+              <CompactStat
+                title="utility 回流"
+                value={`${formatNumber(experience.data.utility_return_clicks)} / ${formatNumber(experience.data.decision_result_secondary_loop_clicks)}`}
               />
             </div>
 
             <div className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
               <div className="space-y-5">
                 <div>
-                  <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-black/42">阅读与离开</div>
+                  <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-black/42">对比结果阅读（兼容上下文）</div>
                   <div className="grid gap-3 md:grid-cols-2">
                     <article className="rounded-[20px] border border-black/10 bg-[#f7f8fb] px-4 py-4">
-                      <div className="text-[12px] text-black/48">结果页离开</div>
+                      <div className="text-[12px] text-black/48">对比结果离开</div>
                       <div className="mt-2 text-[24px] font-semibold tracking-[-0.03em] text-black/86">
                         {formatNumber(experience.data.compare_result_leaves)}
                       </div>
                       <div className="mt-2 text-[12px] text-black/52">
-                        结果页访问 {formatNumber(experience.data.compare_result_views)}
+                        对比结果访问 {formatNumber(experience.data.compare_result_views)}
                       </div>
                     </article>
                     <article className="rounded-[20px] border border-black/10 bg-[#f7f8fb] px-4 py-4">
-                      <div className="text-[12px] text-black/48">结果页 P50 停留</div>
+                      <div className="text-[12px] text-black/48">对比结果 P50 停留</div>
                       <div className="mt-2 text-[24px] font-semibold tracking-[-0.03em] text-black/86">
                         {formatDurationMs(experience.data.p50_result_dwell_ms)}
                       </div>
@@ -1482,9 +1580,45 @@ export default function MobileAnalyticsDashboard() {
                 </div>
 
                 <div>
-                  <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-black/42">结果页 CTA 后续完成</div>
+                  <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-black/42">决策结果回环动作</div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <article className="rounded-[20px] border border-black/10 bg-[#f7f8fb] px-4 py-4">
+                      <div className="text-[12px] text-black/48">从结果进入 utility</div>
+                      <div className="mt-2 text-[24px] font-semibold tracking-[-0.03em] text-black/86">
+                        {formatNumber(experience.data.decision_result_secondary_loop_clicks)}
+                      </div>
+                      <div className="mt-3">
+                        {renderCountList(
+                          experience.data.result_secondary_loop_actions.map((item) => ({
+                            ...item,
+                            label: loopActionLabel(item.key),
+                          })),
+                          "amber",
+                        )}
+                      </div>
+                    </article>
+                    <article className="rounded-[20px] border border-black/10 bg-[#f7f8fb] px-4 py-4">
+                      <div className="text-[12px] text-black/48">从 utility 返回决策</div>
+                      <div className="mt-2 text-[24px] font-semibold tracking-[-0.03em] text-black/86">
+                        {formatNumber(experience.data.utility_return_clicks)}
+                      </div>
+                      <div className="mt-3">
+                        {renderCountList(
+                          experience.data.utility_return_actions.map((item) => ({
+                            ...item,
+                            label: loopActionLabel(item.key),
+                          })),
+                          "emerald",
+                        )}
+                      </div>
+                    </article>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-black/42">对比结果 CTA 落地（兼容上下文）</div>
                   {experience.data.result_cta_followthrough.length === 0 ? (
-                    <EmptyHint label="当前筛选下还没有结果页 CTA 后续完成数据。" />
+                    <EmptyHint label="当前筛选下还没有对比结果 CTA 落地数据。" />
                   ) : (
                     <div className="space-y-3">
                       {experience.data.result_cta_followthrough.map((item) => (
@@ -1508,7 +1642,7 @@ export default function MobileAnalyticsDashboard() {
                 </div>
 
                 <div>
-                  <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-black/42">落地后的真实动作</div>
+                  <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-black/42">对比结果落地后的真实动作（兼容上下文）</div>
                   {experience.data.result_cta_completions.length === 0 ? (
                     <EmptyHint label="当前筛选下还没有落地后的真实动作样本。" />
                   ) : (
@@ -1619,11 +1753,16 @@ export default function MobileAnalyticsDashboard() {
                     )}
                   </div>
                   <div>
-                    <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-black/42">结果页 CTA 点击分布</div>
+                    <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-black/42">对比结果 CTA 点击分布</div>
                     {experience.data.result_cta_clicks.length === 0 ? (
-                      <EmptyHint label="当前筛选下还没有结果页 CTA 点击。" />
+                      <EmptyHint label="当前筛选下还没有对比结果 CTA 点击。" />
                     ) : (
-                      renderCountList(experience.data.result_cta_clicks)
+                      renderCountList(
+                        experience.data.result_cta_clicks.map((item) => ({
+                          ...item,
+                          label: resultCtaLabel(item.key),
+                        })),
+                      )
                     )}
                   </div>
                 </div>

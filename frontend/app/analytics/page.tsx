@@ -6,7 +6,7 @@ import { ANALYTICS_SECTIONS } from "@/lib/analyticsNav";
 
 export const metadata: Metadata = {
   title: "数据分析 · 予选",
-  description: "桌面端移动链路分析台，聚焦 CTA、上传、对比、结果与流失反馈。",
+  description: "桌面端移动链路分析台，聚焦决策结果到达、结果动作、utility 回环与流失反馈。",
 };
 
 const STRUCTURED_FIELDS = [
@@ -22,8 +22,11 @@ const STRUCTURED_FIELDS = [
   "product_id",
   "user_product_id",
   "compare_id",
+  "scenario_id",
   "step",
   "stage",
+  "action",
+  "target_path",
   "dwell_ms",
   "error_code",
   "error_detail",
@@ -77,9 +80,22 @@ const EVENT_GROUPS = [
     value: "能直接按 stage、error_code、http_status 看失败分布。",
   },
   {
-    title: "结果页阅读、后续动作与主观反馈",
+    title: "决策结果与 utility 回环",
     status: "已接入",
-    summary: "现在不只知道结果页被打开了，还能知道读到多深、停留多久、点了哪个 CTA、有没有成功落到下一页，以及落地后又做了什么真实动作。",
+    summary: "现在能直接看决策结果有没有被到达、主 CTA 有没有被点击、结果后有没有进入 utility，以及 utility 有没有把用户送回决策链路。",
+    events: [
+      "result_view",
+      "result_primary_cta_click",
+      "result_secondary_loop_click",
+      "utility_return_click",
+      "bag_add_success",
+    ],
+    value: "把‘拿到结果没有’‘结果后有没有继续’‘utility 有没有把人带回来’放进一套统一口径。",
+  },
+  {
+    title: "对比结果阅读与落地",
+    status: "已接入",
+    summary: "对比结果页的阅读深度、停留、CTA 落地和后续动作继续保留，但退到 compare / utility 语境下解读。",
     events: [
       "compare_result_view",
       "compare_result_leave",
@@ -90,15 +106,13 @@ const EVENT_GROUPS = [
       "wiki_upload_cta_click",
       "wiki_category_ingredient_click",
       "wiki_category_choose_click",
-      "profile_result_view",
-      "bag_add_success",
       "product_showcase_continue_upload_click",
       "product_showcase_governance_click",
       "feedback_prompt_show",
       "feedback_submit",
       "feedback_skip",
     ],
-    value: "把“发生了什么”“看到了多少”“点后有没有继续”“落地后做了什么”“用户觉得为什么”放到同一张图里。",
+    value: "继续回答 compare 结果页是否被阅读、点击和成功承接，但不再冒充决策结果主 KPI。",
   },
   {
     title: "误触、死点与停滞",
@@ -129,6 +143,26 @@ const EVENT_GROUPS = [
 
 const ANALYTIC_QUESTIONS = [
   {
+    question: "本周有多少用户进入了决策主链路？",
+    answer: "可以按首页/choose/问答入口估算主链路起点，先判断是流量问题还是转化问题。",
+    signals: ["home_primary_cta_click", "choose_view", "choose_start_click", "questionnaire_view"],
+  },
+  {
+    question: "进入主链路的用户里，有多少拿到了结果？",
+    answer: "结果到达统一看 result_view（compare_result_view 仅兼容），不再用旧 compare/profile 口径混算。",
+    signals: ["compare_run_success", "result_view", "compare_result_view"],
+  },
+  {
+    question: "到达结果后，有多少继续动作并发生 utility 回流？",
+    answer: "先看 result_primary_cta_click 与 result_secondary_loop_click，再看 utility_return_click 是否把用户送回决策链路。",
+    signals: ["result_primary_cta_click", "result_secondary_loop_click", "utility_return_click"],
+  },
+  {
+    question: "最大掉点发生在首页、choose、分析，还是结果承接？",
+    answer: "用 Funnel 的连续转化率定位断崖，再结合 Session Explorer 看具体卡点上下文。",
+    signals: ["home_primary_cta_click", "choose_start_click", "compare_run_start", "result_view"],
+  },
+  {
     question: "用户是不是在百科列表阶段就已经丧失兴趣？",
     answer: "能直接看列表曝光到产品点击、成分点击的转化，不再只盯详情页 CTA。",
     signals: ["wiki_list_view", "wiki_product_click", "wiki_ingredient_click"],
@@ -139,31 +173,14 @@ const ANALYTIC_QUESTIONS = [
     signals: ["wiki_upload_cta_expose", "wiki_upload_cta_click", "page_exit"],
   },
   {
-    question: "从百科跳到 use 页后，用户有没有继续？",
-    answer: "能看 use 页是否承接住百科意图，还是到了 use 页就断掉。",
-    signals: ["wiki_upload_cta_click", "page_view", "my_use_category_card_click"],
-  },
-  {
-    question: "compare 到底卡在上传、stage1 还是 stage2？",
-    answer: "阶段错误已经结构化，能按 stage、code、http_status 聚合。",
-    signals: ["compare_run_start", "compare_stage_progress", "compare_stage_error", "compare_run_error"],
-  },
-  {
-    question: "分析成功后，用户有没有真的读结果、点下一步、落到下一页并继续动作？",
-    answer: "现在已经能区分结果页到了没有、读到多深、停留多久、CTA 有没有被点击，以及点击后是否落地并触发真实后续动作。",
+    question: "用户拿到决策结果后，有没有继续点下一步，utility 又有没有把用户带回来？",
+    answer: "现在已经能区分结果是否到达、主 CTA 是否被点击、是否进入 utility 回环，以及 utility 页有没有把用户送回决策链路。",
     signals: [
-      "compare_run_success",
-      "compare_result_view",
-      "compare_result_leave",
-      "scroll_depth",
-      "compare_result_cta_click",
-      "compare_result_cta_land",
-      "compare_run_start",
-      "wiki_upload_cta_click",
-      "wiki_category_choose_click",
-      "profile_result_view",
+      "result_view",
+      "result_primary_cta_click",
+      "result_secondary_loop_click",
+      "utility_return_click",
       "bag_add_success",
-      "product_showcase_continue_upload_click",
     ],
   },
   {
@@ -211,8 +228,8 @@ const FIRST_RELEASE_PANELS = [
   {
     title: "Overview",
     badge: "第一屏",
-    description: "给产品、增长、工程一个共同入口，先看会话数、CTA 点击率、compare 完成率、结果到达率。",
-    outputs: ["核心趋势卡", "时间范围筛选", "category 分段", "错误占比摘要"],
+    description: "给产品、增长、工程一个共同入口，先看结果到达率、结果主 CTA 点击率和 utility 回流率。",
+    outputs: ["核心趋势卡", "时间范围筛选", "category 分段", "结果与回流摘要"],
   },
   {
     title: "Funnel",
@@ -235,8 +252,8 @@ const FIRST_RELEASE_PANELS = [
   {
     title: "Experience Signals",
     badge: "体验信号",
-    description: "把列表兴趣、结果页阅读深度、CTA 落地率、落地后真实动作、dead/rage/stall 和环境切片拉到一屏里看。",
-    outputs: ["列表 CTR", "CTA 落地率", "真实动作完成率", "阅读深度", "误触与停滞目标", "环境分布"],
+    description: "把决策结果动作、utility 回环、对比结果阅读深度、dead/rage/stall 和环境切片拉到一屏里看。",
+    outputs: ["列表 CTR", "结果回环动作", "CTA 落地率", "阅读深度", "误触与停滞目标", "环境分布"],
   },
   {
     title: "Session Explorer",
