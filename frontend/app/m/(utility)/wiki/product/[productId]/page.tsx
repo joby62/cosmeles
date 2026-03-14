@@ -283,7 +283,7 @@ export default async function MobileWikiProductDetailPage({
                 product_id: product.id,
                 target_path: "/m/me/use",
                 result_cta: resultCta || undefined,
-                from_compare_id: compareOriginId || undefined,
+                compare_id: compareOriginId || undefined,
               }}
               className="inline-flex max-w-full items-center rounded-full border border-[color:var(--m-wiki-info-border)] bg-[color:var(--m-wiki-info-bg)] px-4 py-2 text-[12px] font-semibold leading-[1.45] text-[color:var(--m-wiki-info-text)] shadow-[0_8px_22px_rgba(36,80,163,0.08)] active:translate-y-[1px]"
             >
@@ -323,7 +323,7 @@ export default async function MobileWikiProductDetailPage({
                 category: product.category,
                 product_id: product.id,
                 result_cta: resultCta || undefined,
-                from_compare_id: compareOriginId || undefined,
+                compare_id: compareOriginId || undefined,
               }}
             />
             <Link

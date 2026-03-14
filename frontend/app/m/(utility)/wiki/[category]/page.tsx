@@ -267,7 +267,7 @@ export default async function WikiCategoryPage({
                 target_path: ingredientHref,
                 ingredient_id: item.ingredient_id,
                 result_cta: resultCta || undefined,
-                from_compare_id: compareOriginId || undefined,
+                compare_id: compareOriginId || undefined,
               }}
               className="m-wiki-hero-card m-pressable block overflow-hidden rounded-[28px] transition-transform active:scale-[0.997]"
             >
@@ -321,7 +321,7 @@ export default async function WikiCategoryPage({
             category,
             target_path: chooseHref,
             result_cta: resultCta || undefined,
-            from_compare_id: compareOriginId || undefined,
+            compare_id: compareOriginId || undefined,
           }}
           className="m-pressable inline-flex h-11 items-center justify-center rounded-full border border-white/20 bg-white/[0.07] px-5 text-[15px] font-semibold text-white/90 backdrop-blur-xl active:bg-white/[0.12]"
         >

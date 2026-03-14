@@ -322,7 +322,7 @@ function MobileComparePageContent() {
       resultCta && compareOriginId
         ? {
             result_cta: resultCta,
-            from_compare_id: compareOriginId,
+            compare_id: compareOriginId,
           }
         : null,
     [compareOriginId, resultCta],

@@ -53,7 +53,7 @@ export function buildResultCtaEventProps(
   if (!attribution) return {};
   return {
     result_cta: attribution.resultCta,
-    from_compare_id: attribution.fromCompareId,
+    compare_id: attribution.fromCompareId,
     source: attribution.source || undefined,
   };
 }

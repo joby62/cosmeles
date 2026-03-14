@@ -7,7 +7,7 @@ import type { MobileCompareResult, MobileCompareResultSection } from "@/lib/api"
 import { markMobileTargetHandled, trackMobileEvent, trackMobileEventWithBeacon } from "@/lib/mobileAnalytics";
 import { describeMobileRouteFocus } from "@/lib/mobile/routeCopy";
 import {
-  applyMobileUtilityRouteState,
+  appendMobileUtilityRouteState,
   describeMobileUtilityReturnLabel,
   hasMobileUtilityResultContext,
   hasMobileUtilityRouteContext,
@@ -213,16 +213,16 @@ export default function MobileCompareResultFlow({
   };
 
   const trackedHref = (href: string, cta: string): string => {
-    const [path, hash = ""] = href.split("#", 2);
-    const [pathname, search = ""] = path.split("?", 2);
-    const params = new URLSearchParams(search);
-    params.set("source", "compare_result");
-    params.set("result_cta", cta);
-    params.set("from_compare_id", result.compare_id);
-    applyMobileUtilityRouteState(params, routeState, { includeSource: false });
-    const query = params.toString();
-    const rebuilt = query ? `${pathname}?${query}` : pathname;
-    return hash ? `${rebuilt}#${hash}` : rebuilt;
+    return appendMobileUtilityRouteState(
+      href,
+      {
+        ...routeState,
+        source: "compare_result",
+        resultCta: cta,
+        compareId: result.compare_id,
+      },
+      { includeSource: true },
+    );
   };
 
   useEffect(() => {
