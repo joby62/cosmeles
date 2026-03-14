@@ -1752,6 +1752,22 @@ class MobileAnalyticsOverviewResponse(BaseModel):
     total_events: int = 0
     sessions: int = 0
     owners: int = 0
+    home_primary_cta_click_sessions: int = 0
+    choose_view_sessions: int = 0
+    choose_start_click_sessions: int = 0
+    questionnaire_completed_sessions: int = 0
+    result_view_sessions: int = 0
+    result_primary_cta_click_sessions: int = 0
+    result_secondary_loop_click_sessions: int = 0
+    utility_return_click_sessions: int = 0
+    compare_result_view_sessions: int = 0
+    choose_start_rate_from_choose_view: float = 0.0
+    result_view_rate_from_home_primary_cta: float = 0.0
+    result_primary_cta_rate_from_result_view: float = 0.0
+    result_loop_entry_rate_from_result_view: float = 0.0
+    utility_return_rate_from_result_loop: float = 0.0
+    question_dropoff_status: str = "blocked_until_stepful_questionnaire_view_exists"
+    question_dropoff_reason: str = ""
     wiki_detail_views: int = 0
     cta_expose: int = 0
     cta_click: int = 0
@@ -1766,6 +1782,7 @@ class MobileAnalyticsOverviewResponse(BaseModel):
     result_view: int = 0
     result_primary_cta_click: int = 0
     result_secondary_loop_click: int = 0
+    utility_return_click: int = 0
     result_reach_rate: float = 0.0
     feedback_prompt_show: int = 0
     feedback_submit: int = 0
@@ -1889,6 +1906,7 @@ class MobileAnalyticsExperienceResponse(BaseModel):
     decision_result_views: int = 0
     decision_result_primary_cta_clicks: int = 0
     decision_result_secondary_loop_clicks: int = 0
+    utility_return_clicks: int = 0
     compare_result_leaves: int = 0
     avg_result_dwell_ms: float = 0.0
     p50_result_dwell_ms: float = 0.0
@@ -1907,6 +1925,7 @@ class MobileAnalyticsExperienceResponse(BaseModel):
     result_cta_followthrough: List[MobileAnalyticsCtaFollowthroughItem] = Field(default_factory=list)
     result_cta_completions: List[MobileAnalyticsCtaCompletionItem] = Field(default_factory=list)
     result_secondary_loop_actions: List[MobileAnalyticsCountItem] = Field(default_factory=list)
+    utility_return_actions: List[MobileAnalyticsCountItem] = Field(default_factory=list)
     browser_families: List[MobileAnalyticsCountItem] = Field(default_factory=list)
     os_families: List[MobileAnalyticsCountItem] = Field(default_factory=list)
     device_types: List[MobileAnalyticsCountItem] = Field(default_factory=list)

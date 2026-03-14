@@ -134,12 +134,6 @@ function formatPercent(value?: number | null): string {
   return `${(value * 100).toFixed(1)}%`;
 }
 
-function rateFromCounts(numerator?: number | null, denominator?: number | null): number | null {
-  if (typeof numerator !== "number" || Number.isNaN(numerator)) return null;
-  if (typeof denominator !== "number" || Number.isNaN(denominator) || denominator <= 0) return 0;
-  return numerator / denominator;
-}
-
 function formatDateTime(value?: string | null): string {
   const text = String(value || "").trim();
   if (!text) return "-";
@@ -1298,9 +1292,11 @@ export default function MobileAnalyticsDashboard() {
     (sessionDetail.data?.items.find((item) => item.session_id === sessionDetail.data?.selected_session_id) ??
       sessionList.data?.items.find((item) => item.session_id === sessionDetail.data?.selected_session_id)) ||
     null;
-  const decisionResultPrimaryCtaRate = rateFromCounts(overview.data?.result_primary_cta_click, overview.data?.result_view);
-  const decisionResultLoopRate = rateFromCounts(overview.data?.result_secondary_loop_click, overview.data?.result_view);
-  const utilityReturnRate = rateFromCounts(overview.data?.utility_return_click, overview.data?.result_secondary_loop_click);
+  const chooseStartRate = overview.data?.choose_start_rate_from_choose_view;
+  const resultViewRateFromHome = overview.data?.result_view_rate_from_home_primary_cta;
+  const resultPrimaryCtaRate = overview.data?.result_primary_cta_rate_from_result_view;
+  const resultLoopEntryRate = overview.data?.result_loop_entry_rate_from_result_view;
+  const utilityReturnRateFromLoop = overview.data?.utility_return_rate_from_result_loop;
 
   return (
     <section className="mt-8 space-y-6">
@@ -1310,7 +1306,7 @@ export default function MobileAnalyticsDashboard() {
             <div className="text-[12px] font-semibold uppercase tracking-[0.14em] text-black/42">Live Dashboard</div>
             <h2 className="mt-2 text-[30px] font-semibold tracking-[-0.03em] text-black/88">真实数据面板</h2>
             <p className="mt-2 max-w-[720px] text-[14px] leading-[1.7] text-black/62">
-              这里优先回答决策主链路后半段的 3 件事：有没有拿到结果、结果后有没有继续动作、utility 有没有把用户送回决策链路。
+              第一屏严格对齐 P0 contract：先回答 5 问中的 4 个可回答项，并把 `question_dropoff` 明确标记为 blocked。
             </p>
           </div>
           <div className="text-right text-[12px] text-black/46">
@@ -1419,33 +1415,33 @@ export default function MobileAnalyticsDashboard() {
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <DashboardMetricCard
-          title="活跃会话"
-          value={formatNumber(overview.data?.sessions)}
-          detail={`设备 ${formatNumber(overview.data?.owners)} · 事件 ${formatNumber(overview.data?.total_events)}`}
+          title="Q1 进入主链路会话"
+          value={formatNumber(overview.data?.home_primary_cta_click_sessions)}
+          detail={`进入 choose ${formatNumber(overview.data?.choose_view_sessions)} · 总事件 ${formatNumber(overview.data?.total_events)}`}
           loading={overview.loading}
           error={overview.error}
           accent="emerald"
         />
         <DashboardMetricCard
-          title="结果到达率"
-          value={formatPercent(overview.data?.result_reach_rate)}
-          detail={`决策结果 ${formatNumber(overview.data?.result_view)} · compare 成功 ${formatNumber(overview.data?.compare_run_success)}`}
+          title="Q2 choose 后开始答题"
+          value={formatNumber(overview.data?.choose_start_click_sessions)}
+          detail={`choose 会话 ${formatNumber(overview.data?.choose_view_sessions)} · 转化 ${formatPercent(chooseStartRate)}`}
           loading={overview.loading}
           error={overview.error}
           accent="amber"
         />
         <DashboardMetricCard
-          title="结果主 CTA 点击率"
-          value={formatPercent(decisionResultPrimaryCtaRate)}
-          detail={`点击 ${formatNumber(overview.data?.result_primary_cta_click)} / 到达 ${formatNumber(overview.data?.result_view)}`}
+          title="Q4 成功到达结果页"
+          value={formatNumber(overview.data?.result_view_sessions)}
+          detail={`从首页 CTA 转化 ${formatPercent(resultViewRateFromHome)} · 完成答题 ${formatNumber(overview.data?.questionnaire_completed_sessions)}`}
           loading={overview.loading}
           error={overview.error}
           accent="slate"
         />
         <DashboardMetricCard
-          title="utility 回流率"
-          value={formatPercent(utilityReturnRate)}
-          detail={`返回 ${formatNumber(overview.data?.utility_return_click)} / 进入 utility ${formatNumber(overview.data?.result_secondary_loop_click)}`}
+          title="Q5 结果后继续动作"
+          value={formatNumber(overview.data?.result_primary_cta_click_sessions)}
+          detail={`次级回环 ${formatNumber(overview.data?.result_secondary_loop_click_sessions)} · utility 回流 ${formatNumber(overview.data?.utility_return_click_sessions)}`}
           loading={overview.loading}
           error={overview.error}
           accent="stone"
@@ -1453,7 +1449,7 @@ export default function MobileAnalyticsDashboard() {
       </section>
 
       <section className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
-        <PanelCard title="Funnel" subtitle="从百科详情到决策结果的真实漏斗（compare_result_view 仅兼容）">
+        <PanelCard title="Funnel" subtitle="P0 主链路漏斗（home CTA → choose → 开始答题 → 完成答题 → result_view）">
           {funnel.error ? (
             <PanelError message={funnel.error} />
           ) : funnel.loading ? (
@@ -1461,28 +1457,14 @@ export default function MobileAnalyticsDashboard() {
           ) : funnel.data && funnel.data.steps.length > 0 ? (
             <div className="space-y-4">
               <div className="rounded-[18px] border border-[#d6e6ff] bg-[#f4f8ff] px-4 py-3 text-[12px] leading-[1.7] text-[#305a98]">
-                决策结果口径统一为
-                <code className="mx-1 rounded bg-white/70 px-1.5 py-0.5 text-[11px]">result_view</code>
-                →
-                <code className="mx-1 rounded bg-white/70 px-1.5 py-0.5 text-[11px]">result_primary_cta_click</code>
-                →
-                <code className="mx-1 rounded bg-white/70 px-1.5 py-0.5 text-[11px]">result_secondary_loop_click</code>
-                →
-                <code className="mx-1 rounded bg-white/70 px-1.5 py-0.5 text-[11px]">utility_return_click</code>
-                ；漏斗最后一步若显示 <code className="mx-1 rounded bg-white/70 px-1.5 py-0.5 text-[11px]">compare_result_view</code>，仅做历史兼容。
+                `question_dropoff` 仍是 blocked：{overview.data?.question_dropoff_reason || "questionnaire_view(step) 真值尚未稳定。"}
+                <div className="mt-1">`compare_result_view` 仅保留在 supporting context，不进入第一屏主 KPI。</div>
               </div>
               {funnel.data.steps.map((step) => (
                 <article key={step.step_key} className="rounded-[22px] border border-black/10 bg-[#f7f8fb] px-4 py-4">
-                  {step.step_key === "compare_result_view" ? (
-                    <div className="mb-2 inline-flex items-center rounded-full border border-[#d8dbe4] bg-white px-2.5 py-1 text-[11px] text-[#5a6475]">
-                      兼容指标
-                    </div>
-                  ) : null}
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <div className="text-[16px] font-semibold tracking-[-0.02em] text-black/86">
-                        {step.step_key === "compare_result_view" ? "决策结果到达（兼容 compare_result_view）" : step.step_label}
-                      </div>
+                      <div className="text-[16px] font-semibold tracking-[-0.02em] text-black/86">{step.step_label}</div>
                       <div className="mt-1 text-[12px] text-black/48">{step.step_key}</div>
                     </div>
                     <div className="text-right">
@@ -1505,21 +1487,60 @@ export default function MobileAnalyticsDashboard() {
           )}
         </PanelCard>
 
-        <PanelCard title="Overview 补充" subtitle="把关键行为和反馈转成经营信号">
+        <PanelCard title="P0 五问状态" subtitle="4 项已可回答，question_dropoff 按 contract 显式 blocked">
           {overview.error ? (
             <PanelError message={overview.error} />
           ) : overview.loading ? (
             <PanelLoading />
           ) : overview.data ? (
-            <div className="grid gap-3 md:grid-cols-2">
-              <CompactStat title="百科详情页会话" value={formatNumber(overview.data.wiki_detail_views)} />
-              <CompactStat title="use 页会话" value={formatNumber(overview.data.use_page_views)} />
-              <CompactStat title="compare 启动" value={formatNumber(overview.data.compare_run_start)} />
-              <CompactStat title="compare 成功" value={formatNumber(overview.data.compare_run_success)} />
-              <CompactStat title="决策结果到达" value={formatNumber(overview.data.result_view)} />
-              <CompactStat title="结果后进入 utility" value={`${formatNumber(overview.data.result_secondary_loop_click)} · ${formatPercent(decisionResultLoopRate)}`} />
-              <CompactStat title="utility 返回决策" value={formatNumber(overview.data.utility_return_click)} />
-              <CompactStat title="反馈提交率" value={formatPercent(overview.data.feedback_submit_rate)} />
+            <div className="space-y-3">
+              <article className="rounded-[18px] border border-black/10 bg-[#f7f8fb] px-4 py-4">
+                <div className="text-[13px] text-black/52">Q1 /m 首页 CTA 进入主链路</div>
+                <div className="mt-2 text-[20px] font-semibold tracking-[-0.02em] text-black/86">
+                  {formatNumber(overview.data.home_primary_cta_click_sessions)}
+                </div>
+              </article>
+
+              <article className="rounded-[18px] border border-black/10 bg-[#f7f8fb] px-4 py-4">
+                <div className="text-[13px] text-black/52">Q2 进入 choose 后开始答题</div>
+                <div className="mt-2 text-[20px] font-semibold tracking-[-0.02em] text-black/86">
+                  {formatNumber(overview.data.choose_start_click_sessions)}
+                  <span className="ml-2 text-[13px] font-medium text-black/55">
+                    / {formatNumber(overview.data.choose_view_sessions)} · {formatPercent(chooseStartRate)}
+                  </span>
+                </div>
+              </article>
+
+              <article className="rounded-[18px] border border-[#f1d9c7] bg-[#fff7ef] px-4 py-4">
+                <div className="text-[13px] text-[#8e4f1f]">Q3 哪一道题流失最高</div>
+                <div className="mt-2 inline-flex items-center rounded-full border border-[#e7c7ad] bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#8e4f1f]">
+                  blocked
+                </div>
+                <p className="mt-2 text-[13px] leading-[1.65] text-[#7d5b43]">{overview.data.question_dropoff_reason}</p>
+              </article>
+
+              <article className="rounded-[18px] border border-black/10 bg-[#f7f8fb] px-4 py-4">
+                <div className="text-[13px] text-black/52">Q4 成功到达结果页</div>
+                <div className="mt-2 text-[20px] font-semibold tracking-[-0.02em] text-black/86">
+                  {formatNumber(overview.data.result_view_sessions)}
+                  <span className="ml-2 text-[13px] font-medium text-black/55">{formatPercent(resultViewRateFromHome)}</span>
+                </div>
+              </article>
+
+              <article className="rounded-[18px] border border-black/10 bg-[#f7f8fb] px-4 py-4">
+                <div className="text-[13px] text-black/52">Q5 到达结果后继续动作</div>
+                <div className="mt-2 text-[20px] font-semibold tracking-[-0.02em] text-black/86">
+                  主 CTA {formatNumber(overview.data.result_primary_cta_click_sessions)}
+                  <span className="ml-2 text-[13px] font-medium text-black/55">{formatPercent(resultPrimaryCtaRate)}</span>
+                </div>
+                <div className="mt-1 text-[12px] text-black/58">
+                  次级回环 {formatNumber(overview.data.result_secondary_loop_click_sessions)}（{formatPercent(resultLoopEntryRate)}） · utility 回流{" "}
+                  {formatNumber(overview.data.utility_return_click_sessions)}（{formatPercent(utilityReturnRateFromLoop)}）
+                </div>
+                <div className="mt-2 text-[12px] text-black/46">
+                  supporting context：compare_result_view {formatNumber(overview.data.compare_result_view_sessions)}
+                </div>
+              </article>
             </div>
           ) : (
             <EmptyHint label="当前筛选下还没有概览数据。" />

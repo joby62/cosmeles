@@ -90,6 +90,58 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 props_json='{"target_path":"/m/me/use"}',
             ),
             MobileClientEvent(
+                event_id="evt-003a",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="home_primary_cta_click",
+                page="selection_home",
+                route="/m",
+                source="m_home",
+                category="shampoo",
+                created_at="2026-03-12T01:00:02.100000Z",
+                props_json='{"target_path":"/m/choose?category=shampoo"}',
+            ),
+            MobileClientEvent(
+                event_id="evt-003b",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="choose_view",
+                page="selection_choose",
+                route="/m/choose?category=shampoo",
+                source="m_choose",
+                category="shampoo",
+                created_at="2026-03-12T01:00:02.200000Z",
+                props_json="{}",
+            ),
+            MobileClientEvent(
+                event_id="evt-003c",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="choose_start_click",
+                page="selection_choose",
+                route="/m/choose?category=shampoo",
+                source="m_choose",
+                category="shampoo",
+                created_at="2026-03-12T01:00:02.300000Z",
+                props_json='{"target_path":"/m/shampoo/profile"}',
+            ),
+            MobileClientEvent(
+                event_id="evt-003d",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="questionnaire_completed",
+                page="selection_profile",
+                route="/m/shampoo/profile",
+                source="m_profile",
+                category="shampoo",
+                created_at="2026-03-12T01:00:02.900000Z",
+                props_json='{"question_count":4}',
+            ),
+            MobileClientEvent(
                 event_id="evt-004",
                 owner_type="device",
                 owner_id="owner-alpha",
@@ -296,6 +348,32 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 props_json="{}",
             ),
             MobileClientEvent(
+                event_id="evt-017c",
+                owner_type="device",
+                owner_id="owner-beta",
+                session_id="sess-2",
+                name="home_primary_cta_click",
+                page="selection_home",
+                route="/m",
+                source="m_home",
+                category="bodywash",
+                created_at="2026-03-12T02:00:04.050000Z",
+                props_json='{"target_path":"/m/choose?category=bodywash"}',
+            ),
+            MobileClientEvent(
+                event_id="evt-017d",
+                owner_type="device",
+                owner_id="owner-beta",
+                session_id="sess-2",
+                name="choose_view",
+                page="selection_choose",
+                route="/m/choose?category=bodywash",
+                source="m_choose",
+                category="bodywash",
+                created_at="2026-03-12T02:00:04.100000Z",
+                props_json="{}",
+            ),
+            MobileClientEvent(
                 event_id="evt-017b",
                 owner_type="device",
                 owner_id="owner-beta",
@@ -365,6 +443,45 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 category="shampoo",
                 created_at="2026-03-12T03:00:00.000000Z",
                 props_json="{}",
+            ),
+            MobileClientEvent(
+                event_id="evt-021a",
+                owner_type="device",
+                owner_id="owner-beta",
+                session_id="sess-3",
+                name="home_primary_cta_click",
+                page="selection_home",
+                route="/m",
+                source="m_home",
+                category="shampoo",
+                created_at="2026-03-12T03:00:00.050000Z",
+                props_json='{"target_path":"/m/choose?category=shampoo"}',
+            ),
+            MobileClientEvent(
+                event_id="evt-021b",
+                owner_type="device",
+                owner_id="owner-beta",
+                session_id="sess-3",
+                name="choose_view",
+                page="selection_choose",
+                route="/m/choose?category=shampoo",
+                source="m_choose",
+                category="shampoo",
+                created_at="2026-03-12T03:00:00.100000Z",
+                props_json="{}",
+            ),
+            MobileClientEvent(
+                event_id="evt-021c",
+                owner_type="device",
+                owner_id="owner-beta",
+                session_id="sess-3",
+                name="choose_start_click",
+                page="selection_choose",
+                route="/m/choose?category=shampoo",
+                source="m_choose",
+                category="shampoo",
+                created_at="2026-03-12T03:00:00.150000Z",
+                props_json='{"target_path":"/m/shampoo/profile"}',
             ),
             MobileClientEvent(
                 event_id="evt-022",
@@ -717,6 +834,20 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 props_json='{"scenario_id":"selres-shampoo-2026-03-03-1-abc123","target_path":"/m/wiki/shampoo","action":"wiki"}',
             ),
             MobileClientEvent(
+                event_id="evt-036l",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="utility_return_click",
+                page="wiki_category",
+                route="/m/wiki/shampoo",
+                source="m_wiki",
+                category="shampoo",
+                compare_id="cmp-1",
+                created_at="2026-03-12T01:00:18.230000Z",
+                props_json='{"scenario_id":"selres-shampoo-2026-03-03-1-abc123","target_path":"/m/shampoo/result","action":"wiki_return"}',
+            ),
+            MobileClientEvent(
                 event_id="evt-037",
                 owner_type="device",
                 owner_id="owner-gamma",
@@ -797,6 +928,23 @@ def test_mobile_analytics_overview_and_funnel(mobile_analytics_client: TestClien
     assert payload["result_view"] == 1
     assert payload["result_primary_cta_click"] == 1
     assert payload["result_secondary_loop_click"] == 1
+    assert payload["utility_return_click"] == 1
+    assert payload["home_primary_cta_click_sessions"] == 3
+    assert payload["choose_view_sessions"] == 3
+    assert payload["choose_start_click_sessions"] == 2
+    assert payload["questionnaire_completed_sessions"] == 1
+    assert payload["result_view_sessions"] == 1
+    assert payload["result_primary_cta_click_sessions"] == 1
+    assert payload["result_secondary_loop_click_sessions"] == 1
+    assert payload["utility_return_click_sessions"] == 1
+    assert payload["compare_result_view_sessions"] == 1
+    assert payload["choose_start_rate_from_choose_view"] == 0.6667
+    assert payload["result_view_rate_from_home_primary_cta"] == 0.3333
+    assert payload["result_primary_cta_rate_from_result_view"] == 1.0
+    assert payload["result_loop_entry_rate_from_result_view"] == 1.0
+    assert payload["utility_return_rate_from_result_loop"] == 1.0
+    assert payload["question_dropoff_status"] == "blocked_until_stepful_questionnaire_view_exists"
+    assert "questionnaire_view(step)" in payload["question_dropoff_reason"]
     assert payload["feedback_prompt_show"] == 2
     assert payload["feedback_submit"] == 1
     assert payload["compare_completion_rate"] == 0.3333
@@ -805,12 +953,13 @@ def test_mobile_analytics_overview_and_funnel(mobile_analytics_client: TestClien
     funnel = client.get(f"/api/products/analytics/mobile/funnel?{query}")
     assert funnel.status_code == 200
     steps = {item["step_key"]: item for item in funnel.json()["steps"]}
-    assert steps["wiki_detail_view"]["count"] == 2
-    assert steps["wiki_upload_cta_click"]["count"] == 1
-    assert steps["my_use_page_view"]["count"] == 2
-    assert steps["compare_page_view"]["count"] == 3
-    assert steps["compare_run_start"]["count"] == 2
-    assert steps["compare_result_view"]["count"] == 1
+    assert steps["home_primary_cta"]["count"] == 3
+    assert steps["choose_view"]["count"] == 3
+    assert steps["choose_start"]["count"] == 2
+    assert steps["questionnaire_completed"]["count"] == 1
+    assert steps["result_view"]["count"] == 1
+    assert steps["choose_start"]["from_prev_rate"] == 0.6667
+    assert steps["result_view"]["from_first_rate"] == 0.3333
 
 
 def test_mobile_analytics_errors_feedback_and_sessions(mobile_analytics_client: TestClient):
@@ -853,6 +1002,7 @@ def test_mobile_analytics_errors_feedback_and_sessions(mobile_analytics_client: 
     assert sessions_payload["items"][0]["latest_location_time_zone"] == "Asia/Shanghai"
     assert any(item["name"] == "compare_run_success" for item in sessions_payload["timeline"])
     assert any(item["name"] == "compare_result_view" for item in sessions_payload["timeline"])
+    assert any(item["name"] == "utility_return_click" for item in sessions_payload["timeline"])
     assert any(item["location_label"] == "31.230, 121.470 · 约1.2km" for item in sessions_payload["timeline"])
 
 
@@ -874,6 +1024,7 @@ def test_mobile_analytics_experience(mobile_analytics_client: TestClient):
     assert payload["decision_result_views"] == 1
     assert payload["decision_result_primary_cta_clicks"] == 1
     assert payload["decision_result_secondary_loop_clicks"] == 1
+    assert payload["utility_return_clicks"] == 1
     assert payload["compare_result_leaves"] == 1
     assert payload["avg_result_dwell_ms"] == 18200.0
     assert payload["p50_result_dwell_ms"] == 18200.0
@@ -919,6 +1070,8 @@ def test_mobile_analytics_experience(mobile_analytics_client: TestClient):
     assert completions[("recommendation_wiki", "result_view")]["completion_rate_from_land"] == 1.0
     secondary_actions = {item["key"]: item["count"] for item in payload["result_secondary_loop_actions"]}
     assert secondary_actions["wiki"] == 1
+    utility_returns = {item["key"]: item["count"] for item in payload["utility_return_actions"]}
+    assert utility_returns["wiki_return"] == 1
 
     browser_counts = {item["key"]: item["count"] for item in payload["browser_families"]}
     assert browser_counts["chrome"] == 3

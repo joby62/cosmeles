@@ -3,46 +3,35 @@
 ## 模块定位
 - 路由：`/analytics`
 - 角色：管理员内部决策分析台
-- 目标：统一 mobile 决策主链路的经营口径，优先回答每周复盘四问
+- 当前阶段：Phase 5 P0 contract 首屏落地
 
-## 北极星口径
-- 首访用户从进入决策链路到 `result_view` 的完成率
-- 结果后续动作分两段：
-  - `result_primary_cta_click`（主承接动作）
-  - `result_secondary_loop_click -> utility_return_click`（回环与回流）
+## 首屏必须回答的 5 个问题
+1. 有多少会话从 `/m` 点击主 CTA 进入主链路（`home_primary_cta_click_sessions`）？
+2. 进入 `/m/choose` 后有多少会话开始答题（`choose_start_click_sessions`，并展示 `choose_start_rate_from_choose_view`）？
+3. 哪一道题流失最高（`question_dropoff`）？
+4. 有多少会话成功到达结果页（`result_view_sessions`，并展示 `result_view_rate_from_home_primary_cta`）？
+5. 到达结果后有多少会话继续动作（`result_primary_cta_click_sessions` + `result_secondary_loop_click_sessions` + `utility_return_click_sessions`）？
 
-## 每周复盘四问（先答这四个）
-1. 本周有多少用户进入主链路？
-2. 其中多少用户拿到了结果（`result_view`）？
-3. 拿到结果后多少用户继续动作（主 CTA / 次级回环 / 回流）？
-4. 最大掉点在首页、choose、分析，还是结果承接？
+## question_dropoff 当前状态
+- 必须显式显示 `blocked`，不能显示“暂无数据”或“默认 0”。
+- 原因：`questionnaire_view(step)` 尚未形成稳定共享真值，现阶段不能在 dashboard 里发明私有 fallback 统计。
 
-## 主事件词汇（当前真值）
+## 主 KPI 事件真值
+- `home_primary_cta_click`
+- `choose_view`
+- `choose_start_click`
+- `questionnaire_completed`
 - `result_view`
 - `result_primary_cta_click`
 - `result_secondary_loop_click`
 - `utility_return_click`
 
-## 兼容事件（仅上下文，不作主 KPI）
+## 兼容事件（仅 supporting context）
 - `compare_result_view`
 - `compare_result_cta_click`
 - `compare_result_cta_land`
 
-说明：
-- 兼容事件仅用于历史会话解释和 compare 语境排障。
-- 主 KPI 面板不再用兼容事件替代 `result_*` 与 `utility_return_click`。
-
-## 面板分工
-- `Overview`
-  - 结果到达率、结果主 CTA 点击率、utility 回流率
-- `Funnel`
-  - 主链路漏斗 + 结果段口径说明（兼容事件显式标注）
-- `Experience Signals`
-  - 决策结果动作、utility 回环、compare 兼容阅读上下文、体验摩擦信号
-- `Session Explorer`
-  - 会话时间线 + Journey Summary + 原始事件上下文
-
 ## 使用原则
+- 首屏先回答 P0 五问，再展开错误、反馈、环境和会话钻取。
+- 不把 `compare_result_view`、`profile_result_view` 重新当成主 KPI。
 - 不把 utility 行为包装成主结果成功。
-- 不把兼容事件当产品真值。
-- 先回答四个经营问题，再展开错误、反馈与环境细分。

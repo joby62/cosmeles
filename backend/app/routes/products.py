@@ -256,16 +256,16 @@ ANALYTICS_STAGE_LABELS: dict[str, str] = {
     "finalize": "整理最终结论",
     "done": "对比完成",
 }
-ANALYTICS_FUNNEL_STEPS: tuple[tuple[str, str], ...] = (
-    ("wiki_detail_view", "百科详情页"),
-    ("wiki_upload_cta_expose", "上传 CTA 曝光"),
-    ("wiki_upload_cta_click", "上传 CTA 点击"),
-    ("my_use_page_view", "我的在用页"),
-    ("my_use_category_click", "品类卡点击"),
-    ("compare_page_view", "横向对比页"),
-    ("compare_run_start", "开始分析"),
-    ("compare_run_success", "分析成功"),
-    ("compare_result_view", "结果页到达"),
+ANALYTICS_P0_FUNNEL_STEPS: tuple[tuple[str, str], ...] = (
+    ("home_primary_cta", "首页主 CTA"),
+    ("choose_view", "进入 choose"),
+    ("choose_start", "开始答题"),
+    ("questionnaire_completed", "答题完成"),
+    ("result_view", "结果到达"),
+)
+ANALYTICS_QUESTION_DROPOFF_STATUS = "blocked_until_stepful_questionnaire_view_exists"
+ANALYTICS_QUESTION_DROPOFF_REASON = (
+    "questionnaire_view(step) 尚未形成稳定共享真值，当前不能按 step 计算 question_dropoff。"
 )
 ANALYTICS_BROWSER_LABELS: dict[str, str] = {
     "chrome": "Chrome",
@@ -846,6 +846,10 @@ def get_mobile_analytics_overview(
         start_iso=start_iso,
         end_iso=end_iso,
         names=[
+            "home_primary_cta_click",
+            "choose_view",
+            "choose_start_click",
+            "questionnaire_completed",
             "page_view",
             "wiki_upload_cta_expose",
             "wiki_upload_cta_click",
@@ -856,6 +860,7 @@ def get_mobile_analytics_overview(
             "result_view",
             "result_primary_cta_click",
             "result_secondary_loop_click",
+            "utility_return_click",
             "feedback_prompt_show",
             "feedback_submit",
         ],
@@ -870,6 +875,26 @@ def get_mobile_analytics_overview(
         row.owner_id.strip()
         for row, _props in rows
         if isinstance(row.owner_id, str) and row.owner_id.strip()
+    }
+    home_primary_cta_click_sessions = {
+        row.session_id.strip()
+        for row, _props in rows
+        if row.name == "home_primary_cta_click" and str(row.session_id or "").strip()
+    }
+    choose_view_sessions = {
+        row.session_id.strip()
+        for row, _props in rows
+        if row.name == "choose_view" and str(row.session_id or "").strip()
+    }
+    choose_start_click_sessions = {
+        row.session_id.strip()
+        for row, _props in rows
+        if row.name == "choose_start_click" and str(row.session_id or "").strip()
+    }
+    questionnaire_completed_sessions = {
+        row.session_id.strip()
+        for row, _props in rows
+        if row.name == "questionnaire_completed" and str(row.session_id or "").strip()
     }
     wiki_detail_views = {
         row.session_id.strip()
@@ -931,6 +956,11 @@ def get_mobile_analytics_overview(
         for row, props in rows
         if row.name == "result_secondary_loop_click"
     }
+    utility_return_click_keys = {
+        _decision_result_key_for_event(row, props)
+        for row, props in rows
+        if row.name == "utility_return_click"
+    }
     result_reach_keys = result_view_keys or compare_result_view_keys
     feedback_prompt_show = sum(1 for row, _props in rows if row.name == "feedback_prompt_show")
     feedback_submit = sum(1 for row, _props in rows if row.name == "feedback_submit")
@@ -941,6 +971,22 @@ def get_mobile_analytics_overview(
         total_events=len(rows),
         sessions=len(session_ids),
         owners=len(owner_ids),
+        home_primary_cta_click_sessions=len(home_primary_cta_click_sessions),
+        choose_view_sessions=len(choose_view_sessions),
+        choose_start_click_sessions=len(choose_start_click_sessions),
+        questionnaire_completed_sessions=len(questionnaire_completed_sessions),
+        result_view_sessions=len(result_view_keys),
+        result_primary_cta_click_sessions=len(result_primary_cta_click_keys),
+        result_secondary_loop_click_sessions=len(result_secondary_loop_click_keys),
+        utility_return_click_sessions=len(utility_return_click_keys),
+        compare_result_view_sessions=len(compare_result_view_keys),
+        choose_start_rate_from_choose_view=_rate(len(choose_start_click_sessions), len(choose_view_sessions)),
+        result_view_rate_from_home_primary_cta=_rate(len(result_view_keys), len(home_primary_cta_click_sessions)),
+        result_primary_cta_rate_from_result_view=_rate(len(result_primary_cta_click_keys), len(result_view_keys)),
+        result_loop_entry_rate_from_result_view=_rate(len(result_secondary_loop_click_keys), len(result_view_keys)),
+        utility_return_rate_from_result_loop=_rate(len(utility_return_click_keys), len(result_secondary_loop_click_keys)),
+        question_dropoff_status=ANALYTICS_QUESTION_DROPOFF_STATUS,
+        question_dropoff_reason=ANALYTICS_QUESTION_DROPOFF_REASON,
         wiki_detail_views=len(wiki_detail_views),
         cta_expose=len(cta_expose),
         cta_click=len(cta_click),
@@ -955,6 +1001,7 @@ def get_mobile_analytics_overview(
         result_view=len(result_view_keys),
         result_primary_cta_click=len(result_primary_cta_click_keys),
         result_secondary_loop_click=len(result_secondary_loop_click_keys),
+        utility_return_click=len(utility_return_click_keys),
         result_reach_rate=_rate(len(result_reach_keys), len(compare_run_success_keys)),
         feedback_prompt_show=feedback_prompt_show,
         feedback_submit=feedback_submit,
@@ -994,47 +1041,34 @@ def get_mobile_analytics_funnel(
         start_iso=start_iso,
         end_iso=end_iso,
         names=[
-            "page_view",
-            "wiki_upload_cta_expose",
-            "wiki_upload_cta_click",
-            "my_use_category_card_click",
-            "compare_run_start",
-            "compare_run_success",
-            "compare_result_view",
+            "home_primary_cta_click",
+            "choose_view",
+            "choose_start_click",
+            "questionnaire_completed",
             "result_view",
         ],
     )
 
     step_sessions: dict[str, set[str]] = {
-        key: set() for key, _label in ANALYTICS_FUNNEL_STEPS
+        key: set() for key, _label in ANALYTICS_P0_FUNNEL_STEPS
     }
-    for row, _props in rows:
+    for row, props in rows:
         session_id = _normalize_optional_text(row.session_id)
-        if not session_id:
-            continue
-        if row.name == "page_view" and str(row.page or "").strip() == "wiki_product_detail":
-            step_sessions["wiki_detail_view"].add(session_id)
-        elif row.name == "wiki_upload_cta_expose":
-            step_sessions["wiki_upload_cta_expose"].add(session_id)
-        elif row.name == "wiki_upload_cta_click":
-            step_sessions["wiki_upload_cta_click"].add(session_id)
-        elif row.name == "page_view" and str(row.page or "").strip() == "my_use":
-            step_sessions["my_use_page_view"].add(session_id)
-        elif row.name == "my_use_category_card_click":
-            step_sessions["my_use_category_click"].add(session_id)
-        elif row.name == "page_view" and str(row.page or "").strip() == "mobile_compare":
-            step_sessions["compare_page_view"].add(session_id)
-        elif row.name == "compare_run_start":
-            step_sessions["compare_run_start"].add(session_id)
-        elif row.name == "compare_run_success":
-            step_sessions["compare_run_success"].add(session_id)
-        elif row.name in {"compare_result_view", "result_view"}:
-            step_sessions["compare_result_view"].add(session_id)
+        if row.name == "home_primary_cta_click" and session_id:
+            step_sessions["home_primary_cta"].add(session_id)
+        elif row.name == "choose_view" and session_id:
+            step_sessions["choose_view"].add(session_id)
+        elif row.name == "choose_start_click" and session_id:
+            step_sessions["choose_start"].add(session_id)
+        elif row.name == "questionnaire_completed" and session_id:
+            step_sessions["questionnaire_completed"].add(session_id)
+        elif row.name == "result_view":
+            step_sessions["result_view"].add(_decision_result_key_for_event(row, props))
 
     steps: list[MobileAnalyticsFunnelStep] = []
     first_count = 0
     previous_count = 0
-    for index, (step_key, step_label) in enumerate(ANALYTICS_FUNNEL_STEPS):
+    for index, (step_key, step_label) in enumerate(ANALYTICS_P0_FUNNEL_STEPS):
         count = len(step_sessions[step_key])
         if index == 0:
             first_count = count
@@ -1340,6 +1374,7 @@ def get_mobile_analytics_experience(
             "result_view",
             "result_primary_cta_click",
             "result_secondary_loop_click",
+            "utility_return_click",
             "bag_add_success",
             "product_showcase_continue_upload_click",
             "product_showcase_governance_click",
@@ -1354,6 +1389,7 @@ def get_mobile_analytics_experience(
     decision_result_views = 0
     decision_result_primary_cta_clicks = 0
     decision_result_secondary_loop_clicks = 0
+    utility_return_clicks = 0
     compare_result_leaves = 0
     result_dwell_values: list[float] = []
     scroll_depth_counter: Counter[tuple[str, int]] = Counter()
@@ -1368,6 +1404,7 @@ def get_mobile_analytics_experience(
     result_cta_land_sessions: dict[str, set[str]] = defaultdict(set)
     result_cta_completion_sessions: dict[tuple[str, str], set[str]] = defaultdict(set)
     result_secondary_loop_action_counter: Counter[str] = Counter()
+    utility_return_action_counter: Counter[str] = Counter()
     browser_counter: Counter[str] = Counter()
     os_counter: Counter[str] = Counter()
     device_counter: Counter[str] = Counter()
@@ -1450,6 +1487,11 @@ def get_mobile_analytics_experience(
             decision_result_secondary_loop_clicks += 1
             action_key = _normalize_optional_text(props.get("action")) or "unknown"
             result_secondary_loop_action_counter[action_key] += 1
+            continue
+        if row.name == "utility_return_click":
+            utility_return_clicks += 1
+            action_key = _normalize_optional_text(props.get("action")) or "unknown"
+            utility_return_action_counter[action_key] += 1
             continue
         if row.name == "compare_result_leave":
             compare_result_leaves += 1
@@ -1591,6 +1633,7 @@ def get_mobile_analytics_experience(
         decision_result_views=decision_result_views,
         decision_result_primary_cta_clicks=decision_result_primary_cta_clicks,
         decision_result_secondary_loop_clicks=decision_result_secondary_loop_clicks,
+        utility_return_clicks=utility_return_clicks,
         compare_result_leaves=compare_result_leaves,
         avg_result_dwell_ms=round(sum(result_dwell_values) / len(result_dwell_values), 2) if result_dwell_values else 0.0,
         p50_result_dwell_ms=_percentile_fraction(result_dwell_values, 0.5),
@@ -1611,6 +1654,10 @@ def get_mobile_analytics_experience(
         result_secondary_loop_actions=_build_count_items(
             result_secondary_loop_action_counter,
             denominator=sum(result_secondary_loop_action_counter.values()),
+        ),
+        utility_return_actions=_build_count_items(
+            utility_return_action_counter,
+            denominator=sum(utility_return_action_counter.values()),
         ),
         browser_families=_build_count_items(browser_counter, denominator=env_denominator, label_map=ANALYTICS_BROWSER_LABELS),
         os_families=_build_count_items(os_counter, denominator=env_denominator, label_map=ANALYTICS_OS_LABELS),
@@ -1735,7 +1782,13 @@ def get_mobile_analytics_sessions(
                 latest_location_label = location_label
                 latest_location_time_zone = _event_location_time_zone(props) or latest_location_time_zone
 
-            if row.name in {"compare_result_view", "result_view"}:
+            if row.name in {
+                "compare_result_view",
+                "result_view",
+                "result_primary_cta_click",
+                "result_secondary_loop_click",
+                "utility_return_click",
+            }:
                 outcome = "result_viewed"
             elif outcome != "result_viewed" and row.name == "feedback_submit":
                 outcome = "feedback_submitted"
