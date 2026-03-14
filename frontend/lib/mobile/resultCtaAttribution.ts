@@ -23,7 +23,8 @@ function readValue(search: SearchLike, key: string): string {
 
 export function parseResultCtaAttribution(search: SearchLike): ResultCtaAttribution | null {
   const resultCta = readValue(search, "result_cta");
-  const fromCompareId = readValue(search, "from_compare_id");
+  // Legacy deep links may still carry from_compare_id; keep adapter read-only compatibility here.
+  const fromCompareId = readValue(search, "compare_id") || readValue(search, "from_compare_id");
   if (!resultCta || !fromCompareId) return null;
   const source = readValue(search, "source");
   return {
@@ -39,7 +40,7 @@ export function applyResultCtaAttribution(
 ): URLSearchParams {
   if (!attribution) return params;
   params.set("result_cta", attribution.resultCta);
-  params.set("from_compare_id", attribution.fromCompareId);
+  params.set("compare_id", attribution.fromCompareId);
   if (attribution.source) {
     params.set("source", attribution.source);
   }

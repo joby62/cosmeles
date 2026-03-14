@@ -6,6 +6,7 @@ import MobileTrackedLink from "@/components/mobile/MobileTrackedLink";
 import { fetchIngredientLibrary } from "@/lib/api";
 import { isWikiCategoryKey, WIKI_MAP, WIKI_ORDER, type WikiCategoryKey } from "@/lib/mobile/ingredientWiki";
 import {
+  applyMobileUtilityRouteState,
   appendMobileUtilityRouteState,
   describeMobileUtilityReturnLabel,
   hasMobileUtilityResultContext,
@@ -147,8 +148,8 @@ export default async function WikiCategoryPage({
   const current = WIKI_MAP[category];
   const theme = CATEGORY_THEME[category];
   const focusKey = queryValue(search.focus);
-  const resultCta = queryValue(search.result_cta);
-  const fromCompareId = queryValue(search.from_compare_id);
+  const resultCta = utilityRouteState.resultCta;
+  const compareOriginId = utilityRouteState.compareId;
   const focus = current.key === "shampoo" && focusKey ? SHAMPOO_FOCUS_MAP[focusKey] : undefined;
   const query = queryValue(search.q);
   const returnQuery = new URLSearchParams();
@@ -169,7 +170,7 @@ export default async function WikiCategoryPage({
         <div className="mb-3 flex justify-end">
           <MobileTrackedLink
             href={returnActionHref}
-            eventName={hasResultContext ? "result_secondary_loop_click" : undefined}
+            eventName={hasResultContext ? "utility_return_click" : undefined}
             eventProps={
               hasResultContext && utilityRouteState.scenarioId
                 ? {
@@ -177,6 +178,7 @@ export default async function WikiCategoryPage({
                     route: `/m/wiki/${category}`,
                     source: analyticsSource,
                     category,
+                    compare_id: compareOriginId || undefined,
                     scenario_id: utilityRouteState.scenarioId,
                     target_path: returnActionHref,
                     action: "wiki_return",
@@ -189,7 +191,7 @@ export default async function WikiCategoryPage({
           </MobileTrackedLink>
         </div>
       ) : null}
-      {resultCta && fromCompareId ? (
+      {resultCta && compareOriginId ? (
         <MobileEventBeacon
           name="compare_result_cta_land"
           props={{
@@ -197,7 +199,7 @@ export default async function WikiCategoryPage({
             route: `/m/wiki/${category}`,
             source: "m_compare_result",
             category,
-            compare_id: fromCompareId,
+            compare_id: compareOriginId,
             cta: resultCta,
           }}
         />
@@ -230,7 +232,7 @@ export default async function WikiCategoryPage({
             return (
               <Link
                 key={item.key}
-                href={`/m/wiki/${item.key}`}
+                href={appendMobileUtilityRouteState(`/m/wiki/${item.key}`, utilityRouteState)}
                 className={`m-pressable inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[12px] ${
                   active
                     ? "border-white/35 bg-white/16 text-white"
@@ -248,11 +250,10 @@ export default async function WikiCategoryPage({
       <div className="space-y-4">
         {library.items.map((item) => {
           const name = splitIngredientName(item.ingredient_name);
-          const ingredientHref = appendMobileUtilityRouteState(
-            `/m/wiki/${category}/${item.ingredient_id}?return_to=${encodeURIComponent(returnTo)}`,
-            utilityRouteState,
-            { includeReturnTo: false },
-          );
+          const ingredientParams = new URLSearchParams();
+          ingredientParams.set("return_to", returnTo);
+          applyMobileUtilityRouteState(ingredientParams, utilityRouteState, { includeReturnTo: false });
+          const ingredientHref = `/m/wiki/${category}/${item.ingredient_id}?${ingredientParams.toString()}`;
           return (
             <MobileTrackedLink
               key={item.ingredient_id}
@@ -266,7 +267,7 @@ export default async function WikiCategoryPage({
                 target_path: ingredientHref,
                 ingredient_id: item.ingredient_id,
                 result_cta: resultCta || undefined,
-                from_compare_id: fromCompareId || undefined,
+                from_compare_id: compareOriginId || undefined,
               }}
               className="m-wiki-hero-card m-pressable block overflow-hidden rounded-[28px] transition-transform active:scale-[0.997]"
             >
@@ -320,7 +321,7 @@ export default async function WikiCategoryPage({
             category,
             target_path: chooseHref,
             result_cta: resultCta || undefined,
-            from_compare_id: fromCompareId || undefined,
+            from_compare_id: compareOriginId || undefined,
           }}
           className="m-pressable inline-flex h-11 items-center justify-center rounded-full border border-white/20 bg-white/[0.07] px-5 text-[15px] font-semibold text-white/90 backdrop-blur-xl active:bg-white/[0.12]"
         >

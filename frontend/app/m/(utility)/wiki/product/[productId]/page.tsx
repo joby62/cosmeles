@@ -8,6 +8,7 @@ import MobileTrackedLink from "@/components/mobile/MobileTrackedLink";
 import { fetchMobileWikiProductAnalysis, fetchMobileWikiProductDetail, resolveImageUrl } from "@/lib/api";
 import { formatRuntimeError } from "@/lib/error";
 import {
+  applyMobileUtilityRouteState,
   appendMobileUtilityRouteState,
   describeMobileUtilityReturnLabel,
   hasMobileUtilityResultContext,
@@ -154,13 +155,15 @@ export default async function MobileWikiProductDetailPage({
 
   const item = data.item;
   const product = item.product;
-  const uploadCtaHref = appendMobileUtilityRouteState(
-    `/m/me/use?category=${encodeURIComponent(product.category)}&source=${encodeURIComponent(analyticsSource)}&product_id=${encodeURIComponent(product.id)}&return_to=${encodeURIComponent(`/m/wiki/product/${product.id}`)}`,
-    utilityRouteState,
-    { includeSource: false, includeReturnTo: false },
-  );
-  const resultCta = queryValue(search.result_cta);
-  const fromCompareId = queryValue(search.from_compare_id);
+  const uploadCtaParams = new URLSearchParams();
+  uploadCtaParams.set("category", product.category);
+  uploadCtaParams.set("source", analyticsSource);
+  uploadCtaParams.set("product_id", product.id);
+  uploadCtaParams.set("return_to", `/m/wiki/product/${product.id}`);
+  applyMobileUtilityRouteState(uploadCtaParams, utilityRouteState, { includeSource: false, includeReturnTo: false });
+  const uploadCtaHref = `/m/me/use?${uploadCtaParams.toString()}`;
+  const resultCta = utilityRouteState.resultCta;
+  const compareOriginId = utilityRouteState.compareId;
   const ingredientRefByIndex = new Map((item.ingredient_refs || []).map((ref) => [ref.index, ref]));
   const analysis = analysisData?.item.profile || null;
   const diagnosticsEntries = analysis ? Object.entries(analysis.diagnostics || {}) : [];
@@ -181,7 +184,7 @@ export default async function MobileWikiProductDetailPage({
         category={product.category}
         productId={product.id}
       />
-      {resultCta && fromCompareId ? (
+      {resultCta && compareOriginId ? (
         <MobileEventBeacon
           name="compare_result_cta_land"
           props={{
@@ -190,7 +193,7 @@ export default async function MobileWikiProductDetailPage({
             source: "m_compare_result",
             category: product.category,
             product_id: product.id,
-            compare_id: fromCompareId,
+            compare_id: compareOriginId,
             cta: resultCta,
           }}
         />
@@ -205,7 +208,7 @@ export default async function MobileWikiProductDetailPage({
         {showReturnAction ? (
           <MobileTrackedLink
             href={returnActionHref}
-            eventName={hasResultContext ? "result_secondary_loop_click" : undefined}
+            eventName={hasResultContext ? "utility_return_click" : undefined}
             eventProps={
               hasResultContext && utilityRouteState.scenarioId
                 ? {
@@ -213,6 +216,7 @@ export default async function MobileWikiProductDetailPage({
                     route: `/m/wiki/product/${product.id}`,
                     source: analyticsSource,
                     category: product.category,
+                    compare_id: utilityRouteState.compareId || undefined,
                     scenario_id: utilityRouteState.scenarioId,
                     target_path: returnActionHref,
                     action: "wiki_return",
@@ -279,7 +283,7 @@ export default async function MobileWikiProductDetailPage({
                 product_id: product.id,
                 target_path: "/m/me/use",
                 result_cta: resultCta || undefined,
-                from_compare_id: fromCompareId || undefined,
+                from_compare_id: compareOriginId || undefined,
               }}
               className="inline-flex max-w-full items-center rounded-full border border-[color:var(--m-wiki-info-border)] bg-[color:var(--m-wiki-info-bg)] px-4 py-2 text-[12px] font-semibold leading-[1.45] text-[color:var(--m-wiki-info-text)] shadow-[0_8px_22px_rgba(36,80,163,0.08)] active:translate-y-[1px]"
             >
@@ -315,11 +319,11 @@ export default async function MobileWikiProductDetailPage({
               analyticsProps={{
                 page: "wiki_product_detail",
                 route: `/m/wiki/product/${product.id}`,
-                source: resultCta && fromCompareId ? "m_compare_result" : analyticsSource,
+                source: resultCta && compareOriginId ? "m_compare_result" : analyticsSource,
                 category: product.category,
                 product_id: product.id,
                 result_cta: resultCta || undefined,
-                from_compare_id: fromCompareId || undefined,
+                from_compare_id: compareOriginId || undefined,
               }}
             />
             <Link
@@ -439,7 +443,10 @@ export default async function MobileWikiProductDetailPage({
                   if (resolved) {
                     return (
                       <Link
-                        href={`/m/wiki/${encodeURIComponent(product.category || item.product.category || "shampoo")}/${encodeURIComponent(String(ref.ingredient_id))}`}
+                        href={appendMobileUtilityRouteState(
+                          `/m/wiki/${encodeURIComponent(product.category || item.product.category || "shampoo")}/${encodeURIComponent(String(ref.ingredient_id))}`,
+                          utilityRouteState,
+                        )}
                         className="inline-flex items-center gap-2 text-[13px] font-semibold text-[color:var(--m-wiki-info-text)] underline underline-offset-2"
                       >
                         {ing.name || "未命名成分"}

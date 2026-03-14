@@ -8,6 +8,7 @@ export type MobileUtilityRouteState = {
   returnTo: string | null;
   scenarioId: string | null;
   resultCta: string | null;
+  compareId: string | null;
 };
 
 type ApplyRouteStateOptions = {
@@ -15,6 +16,7 @@ type ApplyRouteStateOptions = {
   includeReturnTo?: boolean;
   includeScenarioId?: boolean;
   includeResultCta?: boolean;
+  includeCompareId?: boolean;
 };
 
 const DEFAULT_APPLY_OPTIONS: Required<ApplyRouteStateOptions> = {
@@ -22,6 +24,7 @@ const DEFAULT_APPLY_OPTIONS: Required<ApplyRouteStateOptions> = {
   includeReturnTo: true,
   includeScenarioId: true,
   includeResultCta: true,
+  includeCompareId: true,
 };
 
 function isSearchParamsLike(search: SearchLike): search is Pick<URLSearchParams, "get"> {
@@ -50,16 +53,19 @@ export function parseMobileUtilityRouteState(search: SearchLike): MobileUtilityR
   const returnTo = normalizeReturnTo(readValue(search, "return_to"));
   const scenarioId = readValue(search, "scenario_id");
   const resultCta = readValue(search, "result_cta");
+  // Legacy deep links may still carry from_compare_id; keep adapter read-only compatibility here.
+  const compareId = readValue(search, "compare_id") || readValue(search, "from_compare_id");
   return {
     source: source || null,
     returnTo,
     scenarioId: scenarioId || null,
     resultCta: resultCta || null,
+    compareId: compareId || null,
   };
 }
 
 export function hasMobileUtilityRouteContext(state: MobileUtilityRouteState): boolean {
-  return Boolean(state.returnTo || state.scenarioId || state.resultCta || state.source);
+  return Boolean(state.returnTo || state.scenarioId || state.resultCta || state.source || state.compareId);
 }
 
 export function hasMobileUtilityResultContext(state: MobileUtilityRouteState): boolean {
@@ -100,6 +106,9 @@ export function applyMobileUtilityRouteState(
   }
   if (applied.includeResultCta && state.resultCta) {
     params.set("result_cta", state.resultCta);
+  }
+  if (applied.includeCompareId && state.compareId) {
+    params.set("compare_id", state.compareId);
   }
   return params;
 }

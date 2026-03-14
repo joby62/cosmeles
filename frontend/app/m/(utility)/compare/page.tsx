@@ -303,36 +303,43 @@ function MobileComparePageContent() {
   const profileRefreshed = searchParams?.get("profile_refreshed") === "1";
   const fromLibrary = searchParams?.get(LIBRARY_RETURN_PARAM) === "1";
   const libraryPickedIds = useMemo(() => parsePickedProductIds(searchParams?.get(LIBRARY_PICK_PARAM)), [searchParams]);
-  const resultCta = String(searchParams?.get("result_cta") || "").trim();
-  const fromCompareId = String(searchParams?.get("from_compare_id") || "").trim();
+  const resultCta = utilityRouteState.resultCta || "";
+  const compareOriginId = utilityRouteState.compareId || "";
   const analyticsRoute = searchParams?.toString() ? `${pathname}?${searchParams.toString()}` : pathname || "/m/compare";
   const compareBasisReturnTo = useMemo(
     () => appendMobileUtilityRouteState(buildCompareBasisReturnTo(category), utilityRouteState),
     [category, utilityRouteState],
   );
+  const profileRewriteHref = useMemo(() => {
+    const params = new URLSearchParams();
+    params.set("step", "1");
+    params.set("return_to", compareBasisReturnTo);
+    applyMobileUtilityRouteState(params, utilityRouteState, { includeReturnTo: false });
+    return `/m/${category}/profile?${params.toString()}`;
+  }, [category, compareBasisReturnTo, utilityRouteState]);
   const resultActionContext = useMemo(
     () =>
-      resultCta && fromCompareId
+      resultCta && compareOriginId
         ? {
             result_cta: resultCta,
-            from_compare_id: fromCompareId,
+            from_compare_id: compareOriginId,
           }
         : null,
-    [fromCompareId, resultCta],
+    [compareOriginId, resultCta],
   );
   const resultLandingPayload = useMemo(
     () =>
-      resultCta && fromCompareId
+      resultCta && compareOriginId
         ? {
             page: "mobile_compare",
             route: analyticsRoute,
             source: "m_compare_result",
             category: landingCategory,
-            compare_id: fromCompareId,
+            compare_id: compareOriginId,
             cta: resultCta,
           }
         : null,
-    [analyticsRoute, fromCompareId, landingCategory, resultCta],
+    [analyticsRoute, compareOriginId, landingCategory, resultCta],
   );
 
   useEffect(() => {
@@ -1404,7 +1411,7 @@ function MobileComparePageContent() {
     }
     if (step === 2) {
       if (!hasHistoryProfile) {
-        router.push(`/m/${category}/profile?step=1&return_to=${encodeURIComponent(compareBasisReturnTo)}`);
+        router.push(profileRewriteHref);
         return;
       }
       goNextStep();
@@ -1481,7 +1488,7 @@ function MobileComparePageContent() {
           lastCompletedLabel={profileLastCompletedLabel}
           summaryItems={bootstrap?.profile?.summary || []}
           detailButtonLabel="查看依据"
-          rewriteHref={`/m/${category}/profile?step=1&return_to=${encodeURIComponent(compareBasisReturnTo)}`}
+          rewriteHref={profileRewriteHref}
           emptyTitle={`还没有可沿用的“${currentCategoryLabel}”历史首推`}
           emptyDescription={`先完成一次“${currentCategoryLabel}”问答，这次对比才会更贴合你的情况。`}
         />
@@ -1726,7 +1733,7 @@ function MobileComparePageContent() {
             lastCompletedLabel={profileLastCompletedLabel}
             summaryItems={bootstrap?.profile?.summary || []}
             detailButtonLabel="查看带入信息"
-            rewriteHref={`/m/${category}/profile?step=1&return_to=${encodeURIComponent(compareBasisReturnTo)}`}
+            rewriteHref={profileRewriteHref}
             emptyTitle={`“${currentCategoryLabel}”还没有可沿用的历史首推`}
             emptyDescription={`先完成一次“${currentCategoryLabel}”问答，再开始专业对比。`}
             compact
@@ -1791,11 +1798,12 @@ function MobileComparePageContent() {
       href={returnActionHref}
       onClick={() => {
         if (hasMobileUtilityResultContext(utilityRouteState) && utilityRouteState.scenarioId) {
-          void safeTrack("result_secondary_loop_click", {
+          void safeTrack("utility_return_click", {
             page: "mobile_compare",
             route: analyticsRoute,
             source: analyticsSource,
             category,
+            compare_id: utilityRouteState.compareId || undefined,
             scenario_id: utilityRouteState.scenarioId,
             target_path: returnActionHref,
             action: "compare_return",
