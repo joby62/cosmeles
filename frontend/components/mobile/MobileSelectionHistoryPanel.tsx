@@ -17,6 +17,8 @@ import {
   appendMobileUtilityRouteState,
   type MobileUtilityRouteState,
 } from "@/features/mobile-utility/routeState";
+import { describeDecisionContinuationAction } from "@/features/mobile-utility/decisionContinuationCopy";
+import { useDecisionContinuationMap } from "@/features/mobile-utility/useDecisionContinuation";
 import { describeMobileRouteFocus, getMobileCategoryLabel } from "@/lib/mobile/routeCopy";
 
 const SWIPE_ACTION_WIDTH = 84;
@@ -122,6 +124,8 @@ export default function MobileSelectionHistoryPanel({ routeState = null }: Props
   const [cleanupLoading, setCleanupLoading] = useState(false);
   const [cleanupApplying, setCleanupApplying] = useState(false);
   const dragRef = useRef<DragState | null>(null);
+  const continuationSource = routeState?.source || "m_me_history_selection";
+  const continuationMap = useDecisionContinuationMap({ source: continuationSource });
 
   const load = useCallback(async () => {
     try {
@@ -421,7 +425,7 @@ export default function MobileSelectionHistoryPanel({ routeState = null }: Props
       <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="text-[30px] leading-[1.12] font-semibold tracking-[-0.02em] text-black/90">历史选择</h1>
-          <p className="mt-3 text-[15px] leading-[1.55] text-black/60">这里展示当前设备的真实推荐记录。</p>
+          <p className="mt-3 text-[15px] leading-[1.55] text-black/60">这里保存真实推荐记录，并可直接续接到下一步。</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
@@ -484,6 +488,12 @@ export default function MobileSelectionHistoryPanel({ routeState = null }: Props
             const product = entry.recommended_product;
             const categoryLabel = getMobileCategoryLabel(entry.category);
             const routeFocus = describeMobileRouteFocus(entry.category, entry.route.key);
+            const continuationTarget = continuationMap?.resolveByCategory(entry.category) || null;
+            const continuationHref = appendMobileUtilityRouteState(
+              continuationTarget?.href || `/m/choose?source=${encodeURIComponent(continuationSource)}`,
+              routeState,
+              { includeSource: false },
+            );
             const checked = selectedIds.includes(entry.session_id);
             const offset = rowOffset(entry.session_id);
             const showingAction = openRowId === entry.session_id && !selectionMode;
@@ -616,6 +626,12 @@ export default function MobileSelectionHistoryPanel({ routeState = null }: Props
 
                   {!selectionMode && (
                     <div className="mt-4 flex flex-wrap gap-2">
+                      <Link
+                        href={continuationHref}
+                        className="inline-flex h-9 items-center rounded-full border border-[#0071e3]/28 bg-[#0071e3]/10 px-4 text-[13px] font-semibold text-[#005fbf] active:bg-[#0071e3]/15"
+                      >
+                        {describeDecisionContinuationAction(continuationTarget?.action || "go_choose")}
+                      </Link>
                       <Link
                         href={appendMobileUtilityRouteState(entry.links.product, routeState)}
                         className="inline-flex h-9 items-center rounded-full border border-black/15 px-4 text-[13px] font-medium text-black/78 active:bg-black/[0.03]"

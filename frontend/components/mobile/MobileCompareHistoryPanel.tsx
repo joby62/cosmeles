@@ -15,6 +15,8 @@ import {
   appendMobileUtilityRouteState,
   type MobileUtilityRouteState,
 } from "@/features/mobile-utility/routeState";
+import { describeDecisionContinuationAction } from "@/features/mobile-utility/decisionContinuationCopy";
+import { useDecisionContinuationMap } from "@/features/mobile-utility/useDecisionContinuation";
 
 const SWIPE_ACTION_WIDTH = 84;
 const SWIPE_ACTION_TOTAL = SWIPE_ACTION_WIDTH;
@@ -128,6 +130,8 @@ export default function MobileCompareHistoryPanel({ routeState = null }: Props) 
   const [cleanupLoading, setCleanupLoading] = useState(false);
   const [cleanupApplying, setCleanupApplying] = useState(false);
   const dragRef = useRef<DragState | null>(null);
+  const continuationSource = routeState?.source || "m_me_history_compare";
+  const continuationMap = useDecisionContinuationMap({ source: continuationSource });
 
   const load = useCallback(async () => {
     try {
@@ -411,7 +415,7 @@ export default function MobileCompareHistoryPanel({ routeState = null }: Props) 
       <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="text-[30px] leading-[1.12] font-semibold tracking-[-0.02em] text-black/90">历史对比</h1>
-          <p className="mt-3 text-[15px] leading-[1.55] text-black/60">这里展示当前设备完成过的横向对比记录。</p>
+          <p className="mt-3 text-[15px] leading-[1.55] text-black/60">这里保存横向对比记录，并可直接续接下一步决策。</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
@@ -463,6 +467,12 @@ export default function MobileCompareHistoryPanel({ routeState = null }: Props) 
 
         {!loading
           ? entries.map((entry) => {
+              const continuationTarget = continuationMap?.resolveByCategory(entry.category) || null;
+              const continuationHref = appendMobileUtilityRouteState(
+                continuationTarget?.href || `/m/choose?source=${encodeURIComponent(continuationSource)}`,
+                routeState,
+                { includeSource: false },
+              );
               const checked = selectedIds.includes(entry.compare_id);
               const offset = rowOffset(entry.compare_id);
               const showingAction = openRowId === entry.compare_id && !selectionMode;
@@ -574,10 +584,10 @@ export default function MobileCompareHistoryPanel({ routeState = null }: Props) 
                           查看结果
                         </Link>
                         <Link
-                          href={appendMobileUtilityRouteState(`/m/compare?category=${encodeURIComponent(String(entry.category || ""))}`, routeState)}
+                          href={continuationHref}
                           className="inline-flex h-9 items-center rounded-full border border-black/15 px-4 text-[13px] font-medium text-black/78 active:bg-black/[0.03]"
                         >
-                          再做一次
+                          {describeDecisionContinuationAction(continuationTarget?.action || "go_choose")}
                         </Link>
                       </div>
                     ) : null}

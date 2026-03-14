@@ -45,6 +45,16 @@ export type DecisionResumeItem = {
   targetPath: string;
 };
 
+export type DecisionContinuationAction = "resume_profile" | "reopen_result" | "go_choose";
+
+export type DecisionContinuationTarget = {
+  action: DecisionContinuationAction;
+  category: MobileSelectionCategory | null;
+  href: string;
+  titleZh: string;
+  descriptionZh: string;
+};
+
 type StorageLike = Pick<Storage, "getItem">;
 
 type DecisionStorageMeta = {
@@ -77,6 +87,14 @@ const STORAGE_META: Record<MobileSelectionCategory, DecisionStorageMeta> = listD
   {} as Record<MobileSelectionCategory, DecisionStorageMeta>,
 );
 
+type ReadDecisionResumeOptions = {
+  preferredCategory?: MobileSelectionCategory | string | null;
+};
+
+type ReadDecisionContinuationOptions = ReadDecisionResumeOptions & {
+  source?: string | null;
+};
+
 export function normalizeDecisionCategory(
   raw: string | null | undefined,
 ): MobileSelectionCategory | null {
@@ -93,8 +111,11 @@ export function normalizeDecisionCategory(
   return null;
 }
 
-export function readDecisionResumeItem(storage: StorageLike): DecisionResumeItem | null {
-  const preferredCategory = normalizeDecisionCategory(storage.getItem(DECISION_SELECTED_CATEGORY_STORAGE_KEY));
+export function readDecisionResumeItem(
+  storage: StorageLike,
+  options?: ReadDecisionResumeOptions,
+): DecisionResumeItem | null {
+  const preferredCategory = resolvePreferredCategory(storage, options?.preferredCategory);
   const drafts = listDecisionResumeCandidates(storage, "draft");
   if (preferredCategory) {
     const preferredDraft = drafts.find((item) => item.category === preferredCategory);
@@ -110,6 +131,40 @@ export function readDecisionResumeItem(storage: StorageLike): DecisionResumeItem
   return results[0] || null;
 }
 
+export function readDecisionContinuationTarget(
+  storage: StorageLike,
+  options?: ReadDecisionContinuationOptions,
+): DecisionContinuationTarget {
+  const source = String(options?.source || "").trim();
+  const preferredCategory = resolvePreferredCategory(storage, options?.preferredCategory);
+  const resumeItem = readDecisionResumeItem(storage, { preferredCategory });
+  if (resumeItem) {
+    const action = resumeItem.kind === "draft" ? "resume_profile" : "reopen_result";
+    return {
+      action,
+      category: resumeItem.category,
+      href: appendSourceToPath(resumeItem.targetPath, source),
+      titleZh:
+        action === "resume_profile"
+          ? `继续 ${resumeItem.labelZh} 问答`
+          : `回到 ${resumeItem.labelZh} 最近结果`,
+      descriptionZh:
+        action === "resume_profile"
+          ? `已完成 ${resumeItem.answeredCount}/${resumeItem.totalSteps} 步，继续即可。`
+          : "可直接打开最近一次结果，继续下一步操作。",
+    };
+  }
+
+  const choosePath = preferredCategory ? `/m/choose?category=${preferredCategory}` : "/m/choose";
+  return {
+    action: "go_choose",
+    category: preferredCategory,
+    href: appendSourceToPath(choosePath, source),
+    titleZh: "回到个性挑选",
+    descriptionZh: "未检测到可恢复记录，从挑选入口重新开始。",
+  };
+}
+
 export function appendSourceToPath(path: string, source: string): string {
   const cleanSource = String(source || "").trim();
   if (!cleanSource) return path;
@@ -119,6 +174,16 @@ export function appendSourceToPath(path: string, source: string): string {
   params.set("source", cleanSource);
   const nextQuery = params.toString();
   return `${basePath}${nextQuery ? `?${nextQuery}` : ""}${hash ? `#${hash}` : ""}`;
+}
+
+function resolvePreferredCategory(
+  storage: StorageLike,
+  preferredCategory: MobileSelectionCategory | string | null | undefined,
+): MobileSelectionCategory | null {
+  return (
+    normalizeDecisionCategory(preferredCategory) ||
+    normalizeDecisionCategory(storage.getItem(DECISION_SELECTED_CATEGORY_STORAGE_KEY))
+  );
 }
 
 function listDecisionResumeCandidates(
