@@ -20,6 +20,8 @@ import MobilePageAnalytics from "@/components/mobile/MobilePageAnalytics";
 import { markMobileTargetHandled, trackMobileEvent } from "@/lib/mobileAnalytics";
 import { buildCompareBasisReturnTo } from "@/lib/mobile/flowReturn";
 import { describeMobileRouteFocus, getMobileCategoryLabel } from "@/lib/mobile/routeCopy";
+import { DECISION_ENTRY_SOURCE } from "@/features/mobile-decision/decisionEntryHref";
+import { buildUtilityDecisionProfileEntryHref } from "@/features/mobile-utility/decisionEntry";
 import {
   appendMobileUtilityRouteState,
   applyMobileUtilityRouteState,
@@ -304,13 +306,16 @@ function MobileComparePageContent() {
     () => appendMobileUtilityRouteState(buildCompareBasisReturnTo(category), utilityRouteState),
     [category, utilityRouteState],
   );
-  const profileRewriteHref = useMemo(() => {
-    const params = new URLSearchParams();
-    params.set("step", "1");
-    params.set("return_to", compareBasisReturnTo);
-    applyMobileUtilityRouteState(params, utilityRouteState, { includeReturnTo: false });
-    return `/m/${category}/profile?${params.toString()}`;
-  }, [category, compareBasisReturnTo, utilityRouteState]);
+  const profileRewriteHref = useMemo(
+    () =>
+      buildUtilityDecisionProfileEntryHref({
+        category,
+        source: DECISION_ENTRY_SOURCE.utilityCompareReentry,
+        routeState: utilityRouteState,
+        returnTo: compareBasisReturnTo,
+      }),
+    [category, compareBasisReturnTo, utilityRouteState],
+  );
   const resultActionContext = useMemo(
     () =>
       resultCta && compareOriginId

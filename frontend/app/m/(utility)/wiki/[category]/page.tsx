@@ -5,6 +5,8 @@ import MobileEventBeacon from "@/components/mobile/MobileEventBeacon";
 import MobileTrackedLink from "@/components/mobile/MobileTrackedLink";
 import { fetchIngredientLibrary } from "@/lib/api";
 import { isWikiCategoryKey, WIKI_MAP, WIKI_ORDER, type WikiCategoryKey } from "@/lib/mobile/ingredientWiki";
+import { DECISION_ENTRY_SOURCE } from "@/features/mobile-decision/decisionEntryHref";
+import { buildUtilityDecisionProfileEntryHref } from "@/features/mobile-utility/decisionEntry";
 import {
   applyMobileUtilityRouteState,
   appendMobileUtilityRouteState,
@@ -159,7 +161,11 @@ export default async function WikiCategoryPage({
     compareId: compareOriginId,
     action: "wiki_return",
   });
-  const chooseHref = appendMobileUtilityRouteState(`/m/${current.key}/profile?step=1`, utilityRouteState);
+  const chooseHref = buildUtilityDecisionProfileEntryHref({
+    category: current.key,
+    source: DECISION_ENTRY_SOURCE.utilityWikiReentry,
+    routeState: utilityRouteState,
+  });
   const library = await fetchIngredientLibrary({
     category,
     q: query,

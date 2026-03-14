@@ -26,3 +26,22 @@ These are read-only adapters for old deep links. New links write `compare_id` on
 2. Remove `from_compare_id` fallback in `parseMobileUtilityRouteState`.
 3. Remove legacy-read comments and treat `compare_id` as the only accepted compare provenance key.
 
+---
+
+# Utility Decision Re-entry Audit (Phase 7 Worker C)
+
+Date: 2026-03-15
+
+## Landed
+
+- Utility-origin decision profile re-entry now consumes shared decision-entry helper:
+  - compare rewrite CTA: `frontend/app/m/(utility)/compare/page.tsx`
+  - wiki category choose CTA: `frontend/app/m/(utility)/wiki/[category]/page.tsx`
+- New utility adapter wraps shared helper while preserving route-state semantics:
+  - `frontend/features/mobile-utility/decisionEntry.ts`
+  - preserves `scenario_id / result_cta / compare_id`
+  - keeps explicit source propagation by preventing route-state source override
+
+## Intentionally Retained Exceptions
+
+- None for `profile?step=1` under utility + mobile component surfaces in this phase.
