@@ -2,16 +2,21 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { MobileSelectionCategory } from "@/lib/api";
+import {
+  buildDecisionProfileEntryHref,
+  DECISION_ENTRY_SOURCE,
+} from "@/features/mobile-decision/decisionEntryHref";
 
 type Item = {
   key: string;
   label: string;
   short: string;
-  href?: string;
+  category?: MobileSelectionCategory;
 };
 
 const ITEMS: Item[] = [
-  { key: "shampoo", label: "洗发水", short: "洗", href: "/m/shampoo/profile?step=1" },
+  { key: "shampoo", label: "洗发水", short: "洗", category: "shampoo" },
   { key: "bodywash", label: "沐浴露", short: "沐" },
   { key: "conditioner", label: "护发素", short: "护" },
   { key: "lotion", label: "润肤霜", short: "润" },
@@ -35,7 +40,7 @@ export default function MobileCategoryRail() {
             {ITEMS.map((item) => {
               const active = itemActive(pathname, item.key);
 
-              if (!item.href) {
+              if (!item.category) {
                 return (
                   <span
                     key={item.key}
@@ -52,7 +57,10 @@ export default function MobileCategoryRail() {
               return (
                 <Link
                   key={item.key}
-                  href={item.href}
+                  href={buildDecisionProfileEntryHref({
+                    category: item.category,
+                    source: DECISION_ENTRY_SOURCE.categoryRailChoose,
+                  })}
                   className={`inline-flex h-9 items-center gap-2 rounded-full border px-3 text-[13px] transition-colors ${
                     active
                       ? "border-black/80 bg-black text-white"

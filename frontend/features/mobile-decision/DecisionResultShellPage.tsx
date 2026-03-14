@@ -5,6 +5,10 @@ import type {
   DecisionShellConfig,
   DecisionShellSearch,
 } from "@/features/mobile-decision/decisionShellConfig";
+import {
+  buildDecisionProfileEntryHref,
+  DECISION_ENTRY_SOURCE,
+} from "@/features/mobile-decision/decisionEntryHref";
 import { fetchMobileSelectionResult } from "@/lib/api";
 import { formatRuntimeError } from "@/lib/error";
 import { applyMobileReturnTo, parseMobileReturnTo } from "@/lib/mobile/flowReturn";
@@ -24,10 +28,12 @@ export async function renderDecisionResultShell({
   const attribution = parseResultCtaAttribution(raw);
   const returnTo = parseMobileReturnTo(raw);
 
-  const startParams = new URLSearchParams({ step: "1" });
-  applyResultCtaAttribution(startParams, attribution);
-  applyMobileReturnTo(startParams, returnTo);
-  const startHref = `/m/${config.category}/profile?${startParams.toString()}`;
+  const startHref = buildDecisionProfileEntryHref({
+    category: config.category,
+    source: attribution?.source || DECISION_ENTRY_SOURCE.decisionResultRestart,
+    resultAttribution: attribution,
+    returnTo,
+  });
 
   const profileParams = new URLSearchParams();
   applyResultCtaAttribution(profileParams, attribution);

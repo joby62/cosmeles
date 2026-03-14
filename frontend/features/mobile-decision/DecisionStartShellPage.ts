@@ -1,11 +1,12 @@
 import { redirect } from "next/navigation";
 import type { MobileSelectionCategory } from "@/lib/api";
-import { applyMobileReturnTo, parseMobileReturnTo } from "@/lib/mobile/flowReturn";
-import {
-  applyResultCtaAttribution,
-  parseResultCtaAttribution,
-} from "@/lib/mobile/resultCtaAttribution";
+import { parseMobileReturnTo } from "@/lib/mobile/flowReturn";
+import { parseResultCtaAttribution } from "@/lib/mobile/resultCtaAttribution";
 import type { DecisionShellSearch } from "@/features/mobile-decision/decisionShellConfig";
+import {
+  buildDecisionProfileEntryHref,
+  DECISION_ENTRY_SOURCE,
+} from "@/features/mobile-decision/decisionEntryHref";
 import { resolveDecisionAnalyticsSource } from "@/features/mobile-decision/decisionQuestionAnalytics";
 
 export async function runDecisionStartShell({
@@ -18,11 +19,13 @@ export async function runDecisionStartShell({
   const raw = (await Promise.resolve(searchParams)) || {};
   const attribution = parseResultCtaAttribution(raw);
   const returnTo = parseMobileReturnTo(raw);
-  const source = resolveDecisionAnalyticsSource(raw, "decision_start");
-
-  const params = new URLSearchParams({ step: "1" });
-  params.set("source", source);
-  applyResultCtaAttribution(params, attribution);
-  applyMobileReturnTo(params, returnTo);
-  redirect(`/m/${category}/profile?${params.toString()}`);
+  const source = resolveDecisionAnalyticsSource(raw, DECISION_ENTRY_SOURCE.decisionStart);
+  redirect(
+    buildDecisionProfileEntryHref({
+      category,
+      source,
+      resultAttribution: attribution,
+      returnTo,
+    }),
+  );
 }

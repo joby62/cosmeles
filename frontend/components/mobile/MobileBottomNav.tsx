@@ -1,8 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import type { MobileSelectionCategory } from "@/lib/api";
+import {
+  buildDecisionProfileEntryHref,
+  DECISION_ENTRY_SOURCE,
+} from "@/features/mobile-decision/decisionEntryHref";
 import {
   appendMobileUtilityRouteState,
   parseMobileUtilityRouteState,
@@ -11,12 +16,16 @@ import {
 
 type DefaultNavKey = "wiki" | "choose" | "compare";
 
-const CATEGORY_TABS = [
-  { prefix: "/m/shampoo", label: "个性测配", href: "/m/shampoo/profile?step=1" },
-  { prefix: "/m/bodywash", label: "个性测配", href: "/m/bodywash/profile?step=1" },
-  { prefix: "/m/conditioner", label: "个性测配", href: "/m/conditioner/profile?step=1" },
-  { prefix: "/m/lotion", label: "个性测配", href: "/m/lotion/profile?step=1" },
-  { prefix: "/m/cleanser", label: "个性测配", href: "/m/cleanser/profile?step=1" },
+const CATEGORY_TABS: ReadonlyArray<{
+  prefix: string;
+  label: string;
+  category: MobileSelectionCategory;
+}> = [
+  { prefix: "/m/shampoo", label: "个性测配", category: "shampoo" },
+  { prefix: "/m/bodywash", label: "个性测配", category: "bodywash" },
+  { prefix: "/m/conditioner", label: "个性测配", category: "conditioner" },
+  { prefix: "/m/lotion", label: "个性测配", category: "lotion" },
+  { prefix: "/m/cleanser", label: "个性测配", category: "cleanser" },
 ] as const;
 
 const NAV_HIDE_THRESHOLD = 26;
@@ -31,7 +40,14 @@ const SCROLL_IDLE_RESET_MS = 220;
 function getChooseItem(pathname: string) {
   const matched = CATEGORY_TABS.find((item) => pathname.startsWith(item.prefix));
   if (matched) {
-    return { key: "choose" as const, label: matched.label, href: matched.href };
+    return {
+      key: "choose" as const,
+      label: matched.label,
+      href: buildDecisionProfileEntryHref({
+        category: matched.category,
+        source: DECISION_ENTRY_SOURCE.bottomNavChoose,
+      }),
+    };
   }
   return { key: "choose" as const, label: "个性测配", href: "/m/choose" };
 }
@@ -55,14 +71,44 @@ function NavIcon({ name }: { name: "choose" | "compare" | "wiki" | "features" | 
 
 export default function MobileBottomNav() {
   const pathname = usePathname() || "/m/choose";
-  const introPath = pathname === "/m";
-  const chooseItem = getChooseItem(pathname);
   const shouldCarryUtilityState =
     pathname.startsWith("/m/wiki") ||
     pathname.startsWith("/m/compare") ||
     pathname.startsWith("/m/me") ||
     pathname.startsWith("/m/bag");
-  const [navRouteState, setNavRouteState] = useState<MobileUtilityRouteState | null>(null);
+
+  return (
+    <Suspense fallback={<MobileBottomNavInner pathname={pathname} navRouteState={null} />}>
+      <MobileBottomNavRouteState pathname={pathname} shouldCarryUtilityState={shouldCarryUtilityState} />
+    </Suspense>
+  );
+}
+
+function MobileBottomNavRouteState({
+  pathname,
+  shouldCarryUtilityState,
+}: {
+  pathname: string;
+  shouldCarryUtilityState: boolean;
+}) {
+  const searchParams = useSearchParams();
+  const navRouteState = useMemo<MobileUtilityRouteState | null>(() => {
+    if (!shouldCarryUtilityState) return null;
+    return parseMobileUtilityRouteState(searchParams);
+  }, [searchParams, shouldCarryUtilityState]);
+
+  return <MobileBottomNavInner pathname={pathname} navRouteState={navRouteState} />;
+}
+
+function MobileBottomNavInner({
+  pathname,
+  navRouteState,
+}: {
+  pathname: string;
+  navRouteState: MobileUtilityRouteState | null;
+}) {
+  const introPath = pathname === "/m";
+  const chooseItem = getChooseItem(pathname);
   const [chromeBottomInset, setChromeBottomInset] = useState(0);
   const [navVisible, setNavVisible] = useState(true);
   const [isScrollable, setIsScrollable] = useState(false);
@@ -85,15 +131,6 @@ export default function MobileBottomNav() {
   const historyActive = pathname.startsWith("/m/me/history");
   const bagActive = pathname.startsWith("/m/me/bag") || pathname.startsWith("/m/bag");
   const chromeVisible = !isScrollable || navVisible;
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!shouldCarryUtilityState) {
-      setNavRouteState(null);
-      return;
-    }
-    setNavRouteState(parseMobileUtilityRouteState(new URLSearchParams(window.location.search)));
-  }, [pathname, shouldCarryUtilityState]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;

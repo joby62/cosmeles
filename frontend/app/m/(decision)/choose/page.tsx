@@ -17,6 +17,10 @@ import {
   readDecisionResumeItem,
   type DecisionResumeItem,
 } from "@/domain/mobile/progress/decisionResume";
+import {
+  buildDecisionProfileEntryHref,
+  DECISION_ENTRY_SOURCE,
+} from "@/features/mobile-decision/decisionEntryHref";
 import type { MobileSelectionCategory } from "@/lib/api";
 import { trackMobileEvent } from "@/lib/mobileAnalytics";
 
@@ -133,7 +137,10 @@ export default function MobileChoosePage() {
           {categories.map((category) => {
             const presentation = getDecisionCategoryPresentation(category.key);
             const active = selectedCategory === category.key;
-            const startPath = `/m/${category.key}/profile?step=1&source=choose_start`;
+            const startPath = buildDecisionProfileEntryHref({
+              category: category.key,
+              source: DECISION_ENTRY_SOURCE.chooseStart,
+            });
             return (
               <article
                 key={category.key}
