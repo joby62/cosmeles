@@ -137,6 +137,7 @@ from app.schemas import (
     MobileSelectionResultBuildItem,
     MobileAnalyticsFilterState,
     MobileAnalyticsCountItem,
+    MobileAnalyticsQuestionDropoffItem,
     MobileAnalyticsOverviewResponse,
     MobileAnalyticsFunnelStep,
     MobileAnalyticsFunnelResponse,
@@ -265,7 +266,7 @@ ANALYTICS_P0_FUNNEL_STEPS: tuple[tuple[str, str], ...] = (
 )
 ANALYTICS_QUESTION_DROPOFF_STATUS = "blocked_until_stepful_questionnaire_view_exists"
 ANALYTICS_QUESTION_DROPOFF_REASON = (
-    "questionnaire_view(step) 尚未形成稳定共享真值，当前不能按 step 计算 question_dropoff。"
+    "当前时间窗内没有可用于 question_dropoff 的有效 question-step 数据。"
 )
 ANALYTICS_BROWSER_LABELS: dict[str, str] = {
     "chrome": "Chrome",
@@ -641,6 +642,58 @@ def _rate(numerator: int, denominator: int) -> float:
     return round(float(numerator) / float(denominator), 4)
 
 
+def _question_dropoff_step(props: dict[str, Any]) -> int | None:
+    raw = props.get("step")
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, int):
+        return raw if raw > 0 else None
+    if isinstance(raw, float):
+        if raw.is_integer() and raw > 0:
+            return int(raw)
+        return None
+    text = _normalize_optional_text(raw)
+    if not text:
+        return None
+    try:
+        value = int(text)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+def _question_dropoff_category(row: MobileClientEvent, props: dict[str, Any]) -> str | None:
+    raw = _normalize_optional_text(row.category) or _normalize_optional_text(props.get("category"))
+    if not raw:
+        return None
+    key = raw.lower()
+    if key not in VALID_CATEGORIES:
+        return None
+    return key
+
+
+def _question_dropoff_question_key(props: dict[str, Any], step: int) -> str:
+    return (
+        _normalize_optional_text(props.get("question_key"))
+        or _normalize_optional_text(props.get("questionId"))
+        or f"step_{step}"
+    )
+
+
+def _question_dropoff_question_title(props: dict[str, Any], step: int) -> str:
+    return (
+        _normalize_optional_text(props.get("question_title"))
+        or _normalize_optional_text(props.get("questionTitle"))
+        or _normalize_optional_text(props.get("question_text"))
+        or _normalize_optional_text(props.get("questionText"))
+        or f"第{step}题"
+    )
+
+
+def _question_dropoff_sort_key(item: MobileAnalyticsQuestionDropoffItem) -> tuple[int, float, int, str]:
+    return (-item.dropoff_sessions, -item.dropoff_rate, item.step, item.category)
+
+
 def _stage_label(stage: str | None, props: dict[str, Any] | None = None) -> str:
     props = props or {}
     prop_label = _normalize_optional_text(props.get("stage_label"))
@@ -849,6 +902,8 @@ def get_mobile_analytics_overview(
             "home_primary_cta_click",
             "choose_view",
             "choose_start_click",
+            "questionnaire_view",
+            "question_answered",
             "questionnaire_completed",
             "page_view",
             "wiki_upload_cta_expose",
@@ -986,6 +1041,86 @@ def get_mobile_analytics_overview(
         for row, props in rows
         if row.name == "utility_return_click"
     }
+
+    question_view_session_keys: set[tuple[str, str, int]] = set()
+    question_answered_session_keys: set[tuple[str, str, int]] = set()
+    question_meta_by_category_step: dict[tuple[str, int], tuple[str, str]] = {}
+    for row, props in rows:
+        if row.name not in {"questionnaire_view", "question_answered"}:
+            continue
+        session_id = _normalize_optional_text(row.session_id)
+        if not session_id:
+            continue
+        category_key = _question_dropoff_category(row, props)
+        if not category_key:
+            continue
+        step = _question_dropoff_step(props)
+        if step is None:
+            continue
+
+        identity = (session_id, category_key, step)
+        if row.name == "questionnaire_view":
+            question_view_session_keys.add(identity)
+        else:
+            question_answered_session_keys.add(identity)
+
+        meta_key = (category_key, step)
+        next_question_key = _question_dropoff_question_key(props, step)
+        next_question_title = _question_dropoff_question_title(props, step)
+        prev_meta = question_meta_by_category_step.get(meta_key)
+        if prev_meta is None:
+            question_meta_by_category_step[meta_key] = (next_question_key, next_question_title)
+            continue
+        prev_question_key, prev_question_title = prev_meta
+        if prev_question_key.startswith("step_") and not next_question_key.startswith("step_"):
+            prev_question_key = next_question_key
+        if prev_question_title.startswith("第") and prev_question_title.endswith("题") and not (
+            next_question_title.startswith("第") and next_question_title.endswith("题")
+        ):
+            prev_question_title = next_question_title
+        question_meta_by_category_step[meta_key] = (prev_question_key, prev_question_title)
+
+    question_view_counter: Counter[tuple[str, int]] = Counter()
+    question_answered_counter: Counter[tuple[str, int]] = Counter()
+    for _session_id, category_key, step in question_view_session_keys:
+        question_view_counter[(category_key, step)] += 1
+    for _session_id, category_key, step in question_answered_session_keys:
+        question_answered_counter[(category_key, step)] += 1
+
+    question_dropoff_items: list[MobileAnalyticsQuestionDropoffItem] = []
+    for (category_key, step), questionnaire_view_count in question_view_counter.items():
+        question_answered_count = question_answered_counter.get((category_key, step), 0)
+        dropoff_sessions = max(questionnaire_view_count - question_answered_count, 0)
+        question_key, question_title = question_meta_by_category_step.get(
+            (category_key, step),
+            (f"step_{step}", f"第{step}题"),
+        )
+        question_dropoff_items.append(
+            MobileAnalyticsQuestionDropoffItem(
+                category=category_key,
+                step=step,
+                question_key=question_key,
+                question_title=question_title,
+                questionnaire_view_sessions=questionnaire_view_count,
+                question_answered_sessions=question_answered_count,
+                dropoff_sessions=dropoff_sessions,
+                dropoff_rate=_rate(dropoff_sessions, questionnaire_view_count),
+            )
+        )
+
+    sorted_question_dropoff_items = sorted(question_dropoff_items, key=_question_dropoff_sort_key)
+    question_dropoff_top = sorted_question_dropoff_items[0] if sorted_question_dropoff_items else None
+    question_dropoff_by_category_map: dict[str, MobileAnalyticsQuestionDropoffItem] = {}
+    for item in sorted_question_dropoff_items:
+        if item.category not in question_dropoff_by_category_map:
+            question_dropoff_by_category_map[item.category] = item
+    question_dropoff_by_category = [
+        question_dropoff_by_category_map[key]
+        for key in sorted(question_dropoff_by_category_map.keys())
+    ]
+    question_dropoff_status = "live" if question_dropoff_top else ANALYTICS_QUESTION_DROPOFF_STATUS
+    question_dropoff_reason = "" if question_dropoff_top else ANALYTICS_QUESTION_DROPOFF_REASON
+
     result_reach_keys = result_view_keys or compare_result_view_keys
     feedback_prompt_show = sum(1 for row, _props in rows if row.name == "feedback_prompt_show")
     feedback_submit = sum(1 for row, _props in rows if row.name == "feedback_submit")
@@ -1010,8 +1145,10 @@ def get_mobile_analytics_overview(
         result_primary_cta_rate_from_result_view=_rate(len(result_primary_cta_click_sessions), len(result_view_sessions)),
         result_loop_entry_rate_from_result_view=_rate(len(result_secondary_loop_click_sessions), len(result_view_sessions)),
         utility_return_rate_from_result_loop=_rate(len(utility_return_click_sessions), len(result_secondary_loop_click_sessions)),
-        question_dropoff_status=ANALYTICS_QUESTION_DROPOFF_STATUS,
-        question_dropoff_reason=ANALYTICS_QUESTION_DROPOFF_REASON,
+        question_dropoff_status=question_dropoff_status,
+        question_dropoff_reason=question_dropoff_reason,
+        question_dropoff_top=question_dropoff_top,
+        question_dropoff_by_category=question_dropoff_by_category,
         wiki_detail_views=len(wiki_detail_views),
         cta_expose=len(cta_expose),
         cta_click=len(cta_click),

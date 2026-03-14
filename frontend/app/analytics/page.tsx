@@ -154,7 +154,7 @@ const ANALYTIC_QUESTIONS = [
   },
   {
     question: "哪一道题流失最高？",
-    answer: "当前按 contract 显式 blocked：questionnaire_view(step) 还未形成稳定共享真值，禁止本地兜底统计。",
+    answer: "当有有效 stepful 数据时展示 live 的 question_dropoff_top；没有有效 step 数据时保持 blocked，不做本地兜底。",
     signals: ["questionnaire_view(step)", "question_answered(step)", "question_dropoff"],
   },
   {

@@ -13,8 +13,8 @@
 5. 到达结果后有多少会话继续动作（`result_primary_cta_click_sessions` + `result_secondary_loop_click_sessions` + `utility_return_click_sessions`）？
 
 ## question_dropoff 当前状态
-- 必须显式显示 `blocked`，不能显示“暂无数据”或“默认 0”。
-- 原因：`questionnaire_view(step)` 尚未形成稳定共享真值，现阶段不能在 dashboard 里发明私有 fallback 统计。
+- 当 `questionnaire_view(step)` 与 `question_answered(step)` 存在有效数据时，状态为 `live` 并展示 `question_dropoff_top / question_dropoff_by_category`。
+- 当当前时间窗没有有效 step 数据时，状态保持 `blocked_until_stepful_questionnaire_view_exists`，且返回空集合/空对象，不伪造兜底统计。
 
 ## 主 KPI 事件真值
 - `home_primary_cta_click`

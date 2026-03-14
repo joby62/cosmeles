@@ -1746,6 +1746,17 @@ class MobileAnalyticsCountItem(BaseModel):
     rate: float = 0.0
 
 
+class MobileAnalyticsQuestionDropoffItem(BaseModel):
+    category: str
+    step: int
+    question_key: str
+    question_title: str
+    questionnaire_view_sessions: int = 0
+    question_answered_sessions: int = 0
+    dropoff_sessions: int = 0
+    dropoff_rate: float = 0.0
+
+
 class MobileAnalyticsOverviewResponse(BaseModel):
     status: str
     filters: MobileAnalyticsFilterState
@@ -1768,6 +1779,8 @@ class MobileAnalyticsOverviewResponse(BaseModel):
     utility_return_rate_from_result_loop: float = 0.0
     question_dropoff_status: str = "blocked_until_stepful_questionnaire_view_exists"
     question_dropoff_reason: str = ""
+    question_dropoff_top: Optional[MobileAnalyticsQuestionDropoffItem] = None
+    question_dropoff_by_category: List[MobileAnalyticsQuestionDropoffItem] = Field(default_factory=list)
     wiki_detail_views: int = 0
     cta_expose: int = 0
     cta_click: int = 0

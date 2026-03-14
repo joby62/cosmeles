@@ -142,6 +142,58 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 props_json='{"question_count":4}',
             ),
             MobileClientEvent(
+                event_id="evt-003e",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="questionnaire_view",
+                page="selection_profile",
+                route="/m/shampoo/profile",
+                source="m_profile",
+                category="shampoo",
+                created_at="2026-03-12T01:00:02.310000Z",
+                props_json='{"category":"shampoo","step":1,"question_key":"q_shampoo_1","question_title":"头皮状态"}',
+            ),
+            MobileClientEvent(
+                event_id="evt-003f",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="questionnaire_view",
+                page="selection_profile",
+                route="/m/shampoo/profile",
+                source="m_profile",
+                category="shampoo",
+                created_at="2026-03-12T01:00:02.320000Z",
+                props_json='{"category":"shampoo","step":1,"question_key":"q_shampoo_1","question_title":"头皮状态"}',
+            ),
+            MobileClientEvent(
+                event_id="evt-003g",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="question_answered",
+                page="selection_profile",
+                route="/m/shampoo/profile",
+                source="m_profile",
+                category="shampoo",
+                created_at="2026-03-12T01:00:02.330000Z",
+                props_json='{"category":"shampoo","step":1,"question_key":"q_shampoo_1","question_title":"头皮状态"}',
+            ),
+            MobileClientEvent(
+                event_id="evt-003h",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="questionnaire_view",
+                page="selection_profile",
+                route="/m/shampoo/profile",
+                source="m_profile",
+                category="shampoo",
+                created_at="2026-03-12T01:00:02.340000Z",
+                props_json='{"category":"shampoo","step":2,"question_key":"q_shampoo_2","question_title":"发尾受损"}',
+            ),
+            MobileClientEvent(
                 event_id="evt-004",
                 owner_type="device",
                 owner_id="owner-alpha",
@@ -372,6 +424,58 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 category="bodywash",
                 created_at="2026-03-12T02:00:04.100000Z",
                 props_json="{}",
+            ),
+            MobileClientEvent(
+                event_id="evt-017e",
+                owner_type="device",
+                owner_id="owner-beta",
+                session_id="sess-2",
+                name="questionnaire_view",
+                page="selection_profile",
+                route="/m/bodywash/profile",
+                source="m_profile",
+                category="bodywash",
+                created_at="2026-03-12T02:00:04.120000Z",
+                props_json='{"category":"bodywash","step":1,"question_key":"q_bodywash_1","question_title":"清洁力度"}',
+            ),
+            MobileClientEvent(
+                event_id="evt-017f",
+                owner_type="device",
+                owner_id="owner-beta",
+                session_id="sess-2",
+                name="questionnaire_view",
+                page="selection_profile",
+                route="/m/bodywash/profile",
+                source="m_profile",
+                category="bodywash",
+                created_at="2026-03-12T02:00:04.130000Z",
+                props_json='{"category":"bodywash","step":1,"question_key":"q_bodywash_1","question_title":"清洁力度"}',
+            ),
+            MobileClientEvent(
+                event_id="evt-017g",
+                owner_type="device",
+                owner_id="owner-beta",
+                session_id="sess-2",
+                name="questionnaire_view",
+                page="selection_profile",
+                route="/m/bodywash/profile",
+                source="m_profile",
+                category="bodywash",
+                created_at="2026-03-12T02:00:04.140000Z",
+                props_json='{"category":"bodywash","question_key":"q_bodywash_invalid","question_title":"缺失 step"}',
+            ),
+            MobileClientEvent(
+                event_id="evt-017h",
+                owner_type="device",
+                owner_id="owner-beta",
+                session_id="sess-2",
+                name="question_answered",
+                page="selection_profile",
+                route="/m/bodywash/profile",
+                source="m_profile",
+                category="bodywash",
+                created_at="2026-03-12T02:00:04.150000Z",
+                props_json='{"category":"bodywash","question_key":"q_bodywash_invalid","question_title":"缺失 step"}',
             ),
             MobileClientEvent(
                 event_id="evt-017b",
@@ -995,8 +1099,21 @@ def test_mobile_analytics_overview_and_funnel(mobile_analytics_client: TestClien
     assert payload["result_primary_cta_rate_from_result_view"] == 1.0
     assert payload["result_loop_entry_rate_from_result_view"] == 1.0
     assert payload["utility_return_rate_from_result_loop"] == 1.0
-    assert payload["question_dropoff_status"] == "blocked_until_stepful_questionnaire_view_exists"
-    assert "questionnaire_view(step)" in payload["question_dropoff_reason"]
+    assert payload["question_dropoff_status"] == "live"
+    assert payload["question_dropoff_reason"] == ""
+    assert payload["question_dropoff_top"]["category"] == "bodywash"
+    assert payload["question_dropoff_top"]["step"] == 1
+    assert payload["question_dropoff_top"]["question_key"] == "q_bodywash_1"
+    assert payload["question_dropoff_top"]["question_title"] == "清洁力度"
+    assert payload["question_dropoff_top"]["questionnaire_view_sessions"] == 1
+    assert payload["question_dropoff_top"]["question_answered_sessions"] == 0
+    assert payload["question_dropoff_top"]["dropoff_sessions"] == 1
+    assert payload["question_dropoff_top"]["dropoff_rate"] == 1.0
+    by_category = {item["category"]: item for item in payload["question_dropoff_by_category"]}
+    assert by_category["bodywash"]["step"] == 1
+    assert by_category["bodywash"]["dropoff_sessions"] == 1
+    assert by_category["shampoo"]["step"] == 2
+    assert by_category["shampoo"]["dropoff_sessions"] == 1
     assert payload["feedback_prompt_show"] == 2
     assert payload["feedback_submit"] == 1
     assert payload["compare_completion_rate"] == 0.3333
@@ -1042,6 +1159,25 @@ def test_mobile_analytics_p0_sessions_not_inflated_by_multi_scenarios(mobile_ana
     assert steps["home_primary_cta"]["count"] == 3
     assert steps["result_view"]["count"] == 1
     assert steps["result_view"]["from_first_rate"] == 0.3333
+
+
+def test_mobile_analytics_question_dropoff_dedup_and_ignore_invalid_rows(mobile_analytics_client: TestClient):
+    client = mobile_analytics_client
+    query = "date_from=2026-03-10&date_to=2026-03-12"
+
+    overview = client.get(f"/api/products/analytics/mobile/overview?{query}")
+    assert overview.status_code == 200
+    payload = overview.json()
+    top = payload["question_dropoff_top"]
+
+    assert payload["question_dropoff_status"] == "live"
+    # bodywash step=1 has repeated questionnaire_view rows in one session -> must dedupe to 1.
+    assert top["category"] == "bodywash"
+    assert top["step"] == 1
+    assert top["questionnaire_view_sessions"] == 1
+    # question_answered row missing step must be ignored, so answered stays 0.
+    assert top["question_answered_sessions"] == 0
+    assert top["dropoff_sessions"] == 1
 
 
 def test_mobile_analytics_errors_feedback_and_sessions(mobile_analytics_client: TestClient):

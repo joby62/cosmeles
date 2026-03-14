@@ -894,6 +894,17 @@ export type MobileAnalyticsCountItem = {
   rate: number;
 };
 
+export type MobileAnalyticsQuestionDropoffItem = {
+  category: string;
+  step: number;
+  question_key: string;
+  question_title: string;
+  questionnaire_view_sessions: number;
+  question_answered_sessions: number;
+  dropoff_sessions: number;
+  dropoff_rate: number;
+};
+
 export type MobileAnalyticsOverview = {
   status: string;
   filters: MobileAnalyticsFilterState;
@@ -916,6 +927,8 @@ export type MobileAnalyticsOverview = {
   utility_return_rate_from_result_loop: number;
   question_dropoff_status: string;
   question_dropoff_reason: string;
+  question_dropoff_top?: MobileAnalyticsQuestionDropoffItem | null;
+  question_dropoff_by_category: MobileAnalyticsQuestionDropoffItem[];
   wiki_detail_views: number;
   cta_expose: number;
   cta_click: number;
