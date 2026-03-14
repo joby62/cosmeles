@@ -1,5 +1,13 @@
-import { redirect } from "next/navigation";
+import { runDecisionStartShell } from "@/features/mobile-decision/DecisionStartShellPage";
+import type { DecisionShellSearch } from "@/features/mobile-decision/decisionShellConfig";
 
-export default function ShampooStart() {
-  redirect("/m/shampoo/profile?step=1");
+export default async function ShampooStart({
+  searchParams,
+}: {
+  searchParams?: Promise<DecisionShellSearch>;
+}) {
+  return runDecisionStartShell({
+    category: "shampoo",
+    searchParams,
+  });
 }

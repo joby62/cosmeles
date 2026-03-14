@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import MobileLocationConsent from "@/components/mobile/MobileLocationConsent";
 import { applyMobileReturnTo, parseMobileReturnTo } from "@/lib/mobile/flowReturn";
+import { trackMobileEvent } from "@/lib/mobileAnalytics";
 import {
   applyResultCtaAttribution,
   parseResultCtaAttribution,
@@ -14,6 +15,10 @@ import type {
   DecisionShellSignals,
 } from "@/features/mobile-decision/decisionShellConfig";
 import { getDecisionShellConfig } from "@/features/mobile-decision/decisionShellConfig";
+import {
+  resolveDecisionAnalyticsSource,
+  resolveDecisionQuestionStep,
+} from "@/features/mobile-decision/decisionQuestionAnalytics";
 
 export default function DecisionProfileShellClient({
   category,
@@ -26,6 +31,7 @@ export default function DecisionProfileShellClient({
   const stepRefs = useRef<Array<HTMLElement | null>>([]);
   const restoredRef = useRef(false);
   const initialScrolledRef = useRef(false);
+  const viewedStepRef = useRef<number | null>(null);
 
   const stepKeys = useMemo(() => config.steps.map((step) => step.key), [config.steps]);
   const urlStep = useMemo(() => parseStep(searchParams.get("step"), config.steps.length), [config.steps.length, searchParams]);
@@ -39,6 +45,17 @@ export default function DecisionProfileShellClient({
   }, [config, searchParams, stepKeys]);
   const resultAttribution = useMemo(() => parseResultCtaAttribution(searchParams), [searchParams]);
   const returnTo = useMemo(() => parseMobileReturnTo(searchParams), [searchParams]);
+  const analyticsRoute = useMemo(() => `/m/${config.category}/profile`, [config.category]);
+  const analyticsSource = useMemo(() => resolveDecisionAnalyticsSource(searchParams, "decision_profile"), [searchParams]);
+  const activeQuestionStep = useMemo(
+    () =>
+      resolveDecisionQuestionStep({
+        requestedStep: urlStep,
+        stepKeys,
+        signals,
+      }),
+    [signals, stepKeys, urlStep],
+  );
   const answeredChoices = useMemo(
     () =>
       stepKeys
@@ -49,6 +66,19 @@ export default function DecisionProfileShellClient({
         .filter((value): value is string => Boolean(value)),
     [config, signals, stepKeys],
   );
+
+  useEffect(() => {
+    if (!activeQuestionStep) return;
+    if (viewedStepRef.current === activeQuestionStep) return;
+    viewedStepRef.current = activeQuestionStep;
+    void trackMobileEvent("questionnaire_view", {
+      page: "questionnaire",
+      route: analyticsRoute,
+      source: analyticsSource,
+      category: config.category,
+      step: activeQuestionStep,
+    });
+  }, [activeQuestionStep, analyticsRoute, analyticsSource, config.category]);
 
   const scrollToStep = useCallback((index: number, behavior: ScrollBehavior = "smooth") => {
     if (typeof window === "undefined") return;
@@ -113,6 +143,16 @@ export default function DecisionProfileShellClient({
   const handleSelect = useCallback(
     (stepIndex: number, value: string) => {
       if (!isStepEnabled(stepIndex, stepKeys, signals)) return;
+      const questionStep = stepIndex + 1;
+      if (stepKeys[stepIndex]) {
+        void trackMobileEvent("question_answered", {
+          page: "questionnaire",
+          route: analyticsRoute,
+          source: analyticsSource,
+          category: config.category,
+          step: questionStep,
+        });
+      }
       const stepKey = stepKeys[stepIndex];
       const next: DecisionShellSignals = { ...signals, [stepKey]: value };
       for (let index = stepIndex + 1; index < stepKeys.length; index += 1) {
@@ -143,6 +183,8 @@ export default function DecisionProfileShellClient({
     },
     [
       config,
+      analyticsRoute,
+      analyticsSource,
       resultAttribution,
       returnTo,
       router,
