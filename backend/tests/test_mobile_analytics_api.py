@@ -152,7 +152,7 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 source="m_profile",
                 category="shampoo",
                 created_at="2026-03-12T01:00:02.310000Z",
-                props_json='{"category":"shampoo","step":1,"question_key":"q_shampoo_1","question_title":"头皮状态"}',
+                props_json='{"category":"shampoo","step":1}',
             ),
             MobileClientEvent(
                 event_id="evt-003f",
@@ -165,7 +165,7 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 source="m_profile",
                 category="shampoo",
                 created_at="2026-03-12T01:00:02.320000Z",
-                props_json='{"category":"shampoo","step":1,"question_key":"q_shampoo_1","question_title":"头皮状态"}',
+                props_json='{"category":"shampoo","step":1,"question_key":"legacy_shampoo_step_1","question_title":"旧头皮状态"}',
             ),
             MobileClientEvent(
                 event_id="evt-003g",
@@ -178,7 +178,7 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 source="m_profile",
                 category="shampoo",
                 created_at="2026-03-12T01:00:02.330000Z",
-                props_json='{"category":"shampoo","step":1,"question_key":"q_shampoo_1","question_title":"头皮状态"}',
+                props_json='{"category":"shampoo","step":1}',
             ),
             MobileClientEvent(
                 event_id="evt-003h",
@@ -191,7 +191,7 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 source="m_profile",
                 category="shampoo",
                 created_at="2026-03-12T01:00:02.340000Z",
-                props_json='{"category":"shampoo","step":2,"question_key":"q_shampoo_2","question_title":"发尾受损"}',
+                props_json='{"category":"shampoo","step":2}',
             ),
             MobileClientEvent(
                 event_id="evt-004",
@@ -436,7 +436,7 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 source="m_profile",
                 category="bodywash",
                 created_at="2026-03-12T02:00:04.120000Z",
-                props_json='{"category":"bodywash","step":1,"question_key":"q_bodywash_1","question_title":"清洁力度"}',
+                props_json='{"category":"bodywash","step":1}',
             ),
             MobileClientEvent(
                 event_id="evt-017f",
@@ -449,7 +449,7 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 source="m_profile",
                 category="bodywash",
                 created_at="2026-03-12T02:00:04.130000Z",
-                props_json='{"category":"bodywash","step":1,"question_key":"q_bodywash_1","question_title":"清洁力度"}',
+                props_json='{"category":"bodywash","step":1,"question_key":"legacy_bodywash_step_1","question_title":"旧清洁力度"}',
             ),
             MobileClientEvent(
                 event_id="evt-017g",
@@ -1103,16 +1103,20 @@ def test_mobile_analytics_overview_and_funnel(mobile_analytics_client: TestClien
     assert payload["question_dropoff_reason"] == ""
     assert payload["question_dropoff_top"]["category"] == "bodywash"
     assert payload["question_dropoff_top"]["step"] == 1
-    assert payload["question_dropoff_top"]["question_key"] == "q_bodywash_1"
-    assert payload["question_dropoff_top"]["question_title"] == "清洁力度"
+    assert payload["question_dropoff_top"]["question_key"] == "q1"
+    assert payload["question_dropoff_top"]["question_title"] == "气候与微环境"
     assert payload["question_dropoff_top"]["questionnaire_view_sessions"] == 1
     assert payload["question_dropoff_top"]["question_answered_sessions"] == 0
     assert payload["question_dropoff_top"]["dropoff_sessions"] == 1
     assert payload["question_dropoff_top"]["dropoff_rate"] == 1.0
     by_category = {item["category"]: item for item in payload["question_dropoff_by_category"]}
     assert by_category["bodywash"]["step"] == 1
+    assert by_category["bodywash"]["question_key"] == "q1"
+    assert by_category["bodywash"]["question_title"] == "气候与微环境"
     assert by_category["bodywash"]["dropoff_sessions"] == 1
     assert by_category["shampoo"]["step"] == 2
+    assert by_category["shampoo"]["question_key"] == "q2"
+    assert by_category["shampoo"]["question_title"] == "头皮核心痛点"
     assert by_category["shampoo"]["dropoff_sessions"] == 1
     assert payload["feedback_prompt_show"] == 2
     assert payload["feedback_submit"] == 1
@@ -1174,6 +1178,8 @@ def test_mobile_analytics_question_dropoff_dedup_and_ignore_invalid_rows(mobile_
     # bodywash step=1 has repeated questionnaire_view rows in one session -> must dedupe to 1.
     assert top["category"] == "bodywash"
     assert top["step"] == 1
+    assert top["question_key"] == "q1"
+    assert top["question_title"] == "气候与微环境"
     assert top["questionnaire_view_sessions"] == 1
     # question_answered row missing step must be ignored, so answered stays 0.
     assert top["question_answered_sessions"] == 0

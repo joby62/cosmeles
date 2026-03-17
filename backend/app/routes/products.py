@@ -6,6 +6,7 @@ import re
 import io
 import zipfile
 import unicodedata
+from functools import lru_cache
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -27,6 +28,7 @@ from app.constants import (
     PRODUCT_PROFILE_SUPPORTED_CATEGORIES,
     ROUTE_MAPPING_SUPPORTED_CATEGORIES,
 )
+from app.domain.mobile.decision import load_mobile_decision_category_config
 from app.db.session import get_db
 from app.db.models import (
     ProductIndex,
@@ -672,7 +674,41 @@ def _question_dropoff_category(row: MobileClientEvent, props: dict[str, Any]) ->
     return key
 
 
-def _question_dropoff_question_key(props: dict[str, Any], step: int) -> str:
+@lru_cache(maxsize=16)
+def _question_dropoff_shared_question_meta_by_step(category: str) -> dict[int, tuple[str, str]]:
+    normalized_category = str(category or "").strip().lower()
+    if not normalized_category or normalized_category not in VALID_CATEGORIES:
+        return {}
+    try:
+        config = load_mobile_decision_category_config(normalized_category)
+    except Exception:
+        return {}
+
+    matrix = config.matrix if isinstance(config.matrix, dict) else {}
+    raw_questions = matrix.get("questions")
+    if not isinstance(raw_questions, list):
+        return {}
+
+    meta_by_step: dict[int, tuple[str, str]] = {}
+    for index, raw_question in enumerate(raw_questions, start=1):
+        if not isinstance(raw_question, dict):
+            continue
+        question_key = _normalize_optional_text(raw_question.get("key")) or f"step_{index}"
+        question_title = _normalize_optional_text(raw_question.get("title")) or f"第{index}题"
+        meta_by_step[index] = (question_key, question_title)
+    return meta_by_step
+
+
+def _question_dropoff_shared_question_meta(category: str, step: int) -> tuple[str, str] | None:
+    if step <= 0:
+        return None
+    return _question_dropoff_shared_question_meta_by_step(category).get(step)
+
+
+def _question_dropoff_question_key(category: str, props: dict[str, Any], step: int) -> str:
+    shared_meta = _question_dropoff_shared_question_meta(category, step)
+    if shared_meta:
+        return shared_meta[0]
     return (
         _normalize_optional_text(props.get("question_key"))
         or _normalize_optional_text(props.get("questionId"))
@@ -680,7 +716,10 @@ def _question_dropoff_question_key(props: dict[str, Any], step: int) -> str:
     )
 
 
-def _question_dropoff_question_title(props: dict[str, Any], step: int) -> str:
+def _question_dropoff_question_title(category: str, props: dict[str, Any], step: int) -> str:
+    shared_meta = _question_dropoff_shared_question_meta(category, step)
+    if shared_meta:
+        return shared_meta[1]
     return (
         _normalize_optional_text(props.get("question_title"))
         or _normalize_optional_text(props.get("questionTitle"))
@@ -1065,8 +1104,8 @@ def get_mobile_analytics_overview(
             question_answered_session_keys.add(identity)
 
         meta_key = (category_key, step)
-        next_question_key = _question_dropoff_question_key(props, step)
-        next_question_title = _question_dropoff_question_title(props, step)
+        next_question_key = _question_dropoff_question_key(category_key, props, step)
+        next_question_title = _question_dropoff_question_title(category_key, props, step)
         prev_meta = question_meta_by_category_step.get(meta_key)
         if prev_meta is None:
             question_meta_by_category_step[meta_key] = (next_question_key, next_question_title)
