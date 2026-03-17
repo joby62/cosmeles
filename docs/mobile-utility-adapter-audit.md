@@ -45,3 +45,24 @@ Date: 2026-03-15
 ## Intentionally Retained Exceptions
 
 - None for `profile?step=1` under utility + mobile component surfaces in this phase.
+
+---
+
+# Frozen Source Call-site Adoption (Phase 8 Worker C)
+
+Date: 2026-03-18
+
+## Landed
+
+- Me/history/bag continuation call sites now consume continuation surface helper presets instead of passing `sourceFallback` at page/component call sites:
+  - `frontend/components/mobile/MobileBagPanel.tsx`
+  - `frontend/components/mobile/MobileSelectionHistoryPanel.tsx`
+  - `frontend/components/mobile/MobileCompareHistoryPanel.tsx`
+- Surface-to-frozen-source mapping now stays in one helper owner:
+  - `frontend/features/mobile-utility/useMobileUtilityContinuationLinks.ts`
+  - frozen continuation vocabulary still resolved through `DECISION_CONTINUATION_SOURCE`
+
+## Intentionally Retained Source Exceptions
+
+- `frontend/app/m/(utility)/me/use/page.tsx` keeps `resolveMobileUtilitySource(..., "m_me_use")`.
+- Reason: this is page analytics source for `my_use`, not decision-entry/continuation source propagation, so it stays outside `decision_entry_sources.v1.json`.

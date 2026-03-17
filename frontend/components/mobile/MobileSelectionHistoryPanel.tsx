@@ -21,8 +21,10 @@ import {
   describeDecisionContinuationAction,
   describeDecisionContinuationSurface,
 } from "@/features/mobile-utility/decisionContinuationCopy";
-import { useMobileUtilityContinuationLinks } from "@/features/mobile-utility/useMobileUtilityContinuationLinks";
-import { DECISION_CONTINUATION_SOURCE } from "@/features/mobile-decision/decisionEntryHref";
+import {
+  MOBILE_UTILITY_CONTINUATION_SURFACE,
+  useMobileUtilitySurfaceContinuationLinks,
+} from "@/features/mobile-utility/useMobileUtilityContinuationLinks";
 import { describeMobileRouteFocus, getMobileCategoryLabel } from "@/lib/mobile/routeCopy";
 
 const SWIPE_ACTION_WIDTH = 84;
@@ -128,9 +130,9 @@ export default function MobileSelectionHistoryPanel({ routeState = null }: Props
   const [cleanupLoading, setCleanupLoading] = useState(false);
   const [cleanupApplying, setCleanupApplying] = useState(false);
   const dragRef = useRef<DragState | null>(null);
-  const continuationLinks = useMobileUtilityContinuationLinks({
+  const continuationLinks = useMobileUtilitySurfaceContinuationLinks({
     routeState,
-    sourceFallback: DECISION_CONTINUATION_SOURCE.meHistorySelection,
+    surface: MOBILE_UTILITY_CONTINUATION_SURFACE.meHistorySelection,
   });
 
   const load = useCallback(async () => {

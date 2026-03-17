@@ -12,8 +12,10 @@ import {
   describeDecisionContinuationAction,
   describeDecisionContinuationSurface,
 } from "@/features/mobile-utility/decisionContinuationCopy";
-import { useMobileUtilityContinuationLinks } from "@/features/mobile-utility/useMobileUtilityContinuationLinks";
-import { DECISION_CONTINUATION_SOURCE } from "@/features/mobile-decision/decisionEntryHref";
+import {
+  MOBILE_UTILITY_CONTINUATION_SURFACE,
+  useMobileUtilitySurfaceContinuationLinks,
+} from "@/features/mobile-utility/useMobileUtilityContinuationLinks";
 
 function formatTime(iso: string): string {
   const date = new Date(iso);
@@ -42,9 +44,9 @@ export default function MobileBagPanel({ routeState = null }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [totalQuantity, setTotalQuantity] = useState(0);
-  const continuationLinks = useMobileUtilityContinuationLinks({
+  const continuationLinks = useMobileUtilitySurfaceContinuationLinks({
     routeState,
-    sourceFallback: DECISION_CONTINUATION_SOURCE.meBag,
+    surface: MOBILE_UTILITY_CONTINUATION_SURFACE.meBag,
   });
 
   const load = useCallback(async () => {
