@@ -1,15 +1,13 @@
 import type { MobileSelectionCategory } from "@/lib/api";
 import {
   buildDecisionProfileEntryHref,
-  DECISION_ENTRY_SOURCE,
+  type DecisionEntrySource,
 } from "@/features/mobile-decision/decisionEntryHref";
 import {
   appendMobileUtilityRouteState,
   type MobileUtilityRouteState,
 } from "@/features/mobile-utility/routeState";
 import type { ResultCtaAttribution } from "@/lib/mobile/resultCtaAttribution";
-
-type DecisionEntrySource = (typeof DECISION_ENTRY_SOURCE)[keyof typeof DECISION_ENTRY_SOURCE];
 
 type BuildUtilityDecisionProfileEntryHrefOptions = {
   category: MobileSelectionCategory;

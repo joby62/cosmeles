@@ -3,6 +3,10 @@
 import { useMemo } from "react";
 import type { DecisionContinuationAction } from "@/domain/mobile/progress/decisionResume";
 import {
+  resolveDecisionContinuationSource,
+  type DecisionContinuationSource,
+} from "@/features/mobile-decision/decisionEntryHref";
+import {
   appendMobileUtilityRouteState,
   type MobileUtilityRouteState,
 } from "@/features/mobile-utility/routeState";
@@ -15,7 +19,7 @@ type ContinuationLink = {
 
 type UseContinuationLinksOptions = {
   routeState?: MobileUtilityRouteState | null;
-  sourceFallback: string;
+  sourceFallback: DecisionContinuationSource;
 };
 
 function buildFallbackChoosePath(source: string): string {
@@ -26,7 +30,7 @@ export function useMobileUtilityContinuationLinks({
   routeState = null,
   sourceFallback,
 }: UseContinuationLinksOptions) {
-  const source = routeState?.source || sourceFallback;
+  const source = resolveDecisionContinuationSource(routeState?.source, sourceFallback);
   const continuationMap = useDecisionContinuationMap({ source });
 
   return useMemo(

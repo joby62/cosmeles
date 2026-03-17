@@ -20,6 +20,7 @@ import {
   describeDecisionContinuationSurface,
 } from "@/features/mobile-utility/decisionContinuationCopy";
 import { useMobileUtilityContinuationLinks } from "@/features/mobile-utility/useMobileUtilityContinuationLinks";
+import { DECISION_CONTINUATION_SOURCE } from "@/features/mobile-decision/decisionEntryHref";
 
 const SWIPE_ACTION_WIDTH = 84;
 const SWIPE_ACTION_TOTAL = SWIPE_ACTION_WIDTH;
@@ -135,7 +136,7 @@ export default function MobileCompareHistoryPanel({ routeState = null }: Props) 
   const dragRef = useRef<DragState | null>(null);
   const continuationLinks = useMobileUtilityContinuationLinks({
     routeState,
-    sourceFallback: "m_me_history_compare",
+    sourceFallback: DECISION_CONTINUATION_SOURCE.meHistoryCompare,
   });
 
   const load = useCallback(async () => {

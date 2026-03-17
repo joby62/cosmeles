@@ -4,16 +4,16 @@ import {
   applyResultCtaAttribution,
   type ResultCtaAttribution,
 } from "@/lib/mobile/resultCtaAttribution";
+import {
+  DECISION_CONTINUATION_SOURCE,
+  DECISION_ENTRY_SOURCE,
+  resolveDecisionContinuationSource,
+  type DecisionContinuationSource,
+  type DecisionEntrySource,
+} from "@/features/mobile-decision/decisionSources";
 
-export const DECISION_ENTRY_SOURCE = {
-  chooseStart: "choose_start",
-  bottomNavChoose: "bottom_nav_choose",
-  categoryRailChoose: "category_rail_choose",
-  decisionStart: "decision_start",
-  decisionResultRestart: "decision_result_restart",
-  utilityCompareReentry: "utility_compare_reentry",
-  utilityWikiReentry: "utility_wiki_reentry",
-} as const;
+export { DECISION_ENTRY_SOURCE, DECISION_CONTINUATION_SOURCE, resolveDecisionContinuationSource };
+export type { DecisionEntrySource, DecisionContinuationSource };
 
 type BuildDecisionProfileEntryHrefOptions = {
   category: MobileSelectionCategory;

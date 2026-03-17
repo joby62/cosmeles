@@ -3,6 +3,10 @@
 import Link from "next/link";
 import { useMemo } from "react";
 import {
+  DECISION_CONTINUATION_SOURCE,
+  resolveDecisionContinuationSource,
+} from "@/features/mobile-decision/decisionEntryHref";
+import {
   appendMobileUtilityRouteState,
   type MobileUtilityRouteState,
 } from "@/features/mobile-utility/routeState";
@@ -14,7 +18,10 @@ type Props = {
 };
 
 export default function MeDecisionResumeCard({ routeState }: Props) {
-  const source = routeState.source || "m_me_resume";
+  const source = resolveDecisionContinuationSource(
+    routeState.source,
+    DECISION_CONTINUATION_SOURCE.meResume,
+  );
   const continuation = useDecisionContinuationMap({ source });
   const target = continuation?.defaultTarget || null;
   const resumeHref = useMemo(() => {
