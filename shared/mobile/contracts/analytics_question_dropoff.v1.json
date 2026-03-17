@@ -1,0 +1,55 @@
+{
+  "schema_version": "mobile_analytics_question_dropoff.v1",
+  "status": "owner_frozen",
+  "frozen_at": "2026-03-15",
+  "owner_intent": "Freeze the response shape and counting rules for P0 question-dropoff analytics now that stepful decision events exist in shared flow infrastructure.",
+  "response_contract": {
+    "overview_fields": [
+      "question_dropoff_status",
+      "question_dropoff_reason",
+      "question_dropoff_top",
+      "question_dropoff_by_category"
+    ],
+    "status_values": [
+      "live",
+      "blocked_until_stepful_questionnaire_view_exists"
+    ],
+    "top_item_shape": [
+      "category",
+      "step",
+      "question_key",
+      "question_title",
+      "questionnaire_view_sessions",
+      "question_answered_sessions",
+      "dropoff_sessions",
+      "dropoff_rate"
+    ]
+  },
+  "counting_rules": {
+    "reporting_unit": "session_id + category + step",
+    "questionnaire_view_identity": "Dedup by session_id + category + step.",
+    "question_answered_identity": "Dedup by session_id + category + step.",
+    "dropoff_definition": "dropoff_sessions = questionnaire_view_sessions - question_answered_sessions for the same category and step.",
+    "dropoff_rate_definition": "dropoff_sessions / questionnaire_view_sessions",
+    "invalid_rows_policy": [
+      "Ignore rows that do not carry a valid category from the shared decision catalog.",
+      "Ignore rows that do not carry a valid positive integer step.",
+      "Do not fabricate step from route or query when the event payload is incomplete."
+    ]
+  },
+  "ranking_rules": {
+    "top_item": "Pick the highest dropoff_sessions item across all categories; break ties by higher dropoff_rate, then lower step number, then category key ascending.",
+    "by_category": "Return one top item per category using the same tie-break rules.",
+    "empty_state": "If no valid stepful data exists, keep status blocked and return null/empty collections rather than fake rows."
+  },
+  "dashboard_rules": [
+    "First-screen P0 analytics may surface question_dropoff_top and question_dropoff_by_category once status is live.",
+    "Do not compute question_dropoff from questionnaire_completed or result_view as a proxy.",
+    "Do not let compare or utility events participate in question_dropoff."
+  ],
+  "implementation_gates": [
+    "Worker A may extend backend schemas and frontend API types only in line with this frozen shape.",
+    "Worker A must add regression coverage for repeated rows within one session and for invalid rows missing step.",
+    "Worker B/C may assume explicit source propagation matters for supporting breakdowns, but it is not part of the question_dropoff counting identity."
+  ]
+}

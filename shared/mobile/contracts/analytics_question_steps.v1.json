@@ -1,0 +1,81 @@
+{
+  "schema_version": "mobile_analytics_question_steps.v1",
+  "status": "owner_frozen_pending_implementation",
+  "frozen_at": "2026-03-14",
+  "owner_intent": "Freeze the shared semantics for decision question-step analytics before Worker B instruments the profile flow.",
+  "scope": {
+    "applies_to": [
+      "frontend/features/mobile-decision/*",
+      "frontend/domain/mobile/decision/*",
+      "frontend/app/m/(decision)/*/profile/*",
+      "frontend/app/m/(decision)/*/start/*"
+    ],
+    "does_not_apply_to": [
+      "frontend/app/m/(utility)/*",
+      "frontend/app/analytics/*",
+      "compare multi-step flows"
+    ]
+  },
+  "events": {
+    "questionnaire_view": {
+      "required_props": [
+        "page",
+        "route",
+        "source",
+        "category",
+        "step"
+      ],
+      "identity": "session_id + category + step",
+      "emit_when": "Emit once when a decision question step becomes the active visible step in the shared profile flow.",
+      "must_not_emit_when": [
+        "do not emit for hidden or pre-rendered future steps",
+        "do not emit from category page wrappers via bespoke logic",
+        "do not emit from compare or utility flows"
+      ]
+    },
+    "question_answered": {
+      "required_props": [
+        "page",
+        "route",
+        "source",
+        "category",
+        "step"
+      ],
+      "identity": "session_id + category + step",
+      "emit_when": "Emit when the user explicitly commits a valid answer for the current active decision question step.",
+      "must_not_emit_when": [
+        "do not emit while hydrating query params or localStorage drafts",
+        "do not emit for prefilled answers restored before fresh user action",
+        "do not emit from category page wrappers via bespoke logic"
+      ]
+    }
+  },
+  "step_semantics": {
+    "canonical_meaning": "step is the 1-based ordinal of the active question within the shared decision config for that category.",
+    "source_of_truth": "shared decision config ordering consumed through shared decision flow helpers",
+    "normalization_rules": [
+      "step must map to a real question in the current category config",
+      "step must not be derived from compare flow progress or unrelated query state",
+      "if the active question cannot be resolved from shared config, no question-step event may be emitted"
+    ],
+    "recommended_future_enrichment": [
+      "question_key may be added later as supporting context, but it is not required for Phase 6 freeze"
+    ]
+  },
+  "counting_contract": {
+    "reporting_unit": "session_id",
+    "dropoff_definition": "Per category and per step, drop-off is questionnaire_view(step=N) sessions minus question_answered(step=N) sessions.",
+    "dedupe_rule": "Repeated renders or repeated answer changes inside one session may emit multiple rows, but reporting must dedupe by session_id + category + step."
+  },
+  "implementation_rules": [
+    "Shared decision flow infrastructure owns emission for all five categories.",
+    "Category page wrappers may pass category/context into shared helpers but may not define private step semantics.",
+    "The same step semantics must hold for fresh entry and resume entry.",
+    "questionnaire_completed remains a separate event and is not a substitute for stepful question instrumentation."
+  ],
+  "review_gates": [
+    "No page file may invent category-specific step numbering.",
+    "No private analytics event vocabulary may be introduced for individual categories.",
+    "Worker B must prove the emitted step maps to the shared config order for all five categories."
+  ]
+}

@@ -1,0 +1,195 @@
+{
+  "schema_version": "mobile_analytics_p0_funnel.v1",
+  "status": "owner_frozen",
+  "frozen_at": "2026-03-14",
+  "owner_intent": "Freeze the Phase 5 P0 analytics summary contract before Worker A builds the first-screen dashboard panels.",
+  "north_star": {
+    "name": "decision_result_completion_rate",
+    "description": "Share of decision-entry sessions that later reach result_view.",
+    "reporting_unit": "session_id",
+    "current_proxy_note": "Until cross-session new-vs-return identity is hardened, P0 reporting uses session-level truth. Do not present this as permanent user-level truth.",
+    "numerator_metric": "result_view_sessions",
+    "denominator_metric": "home_primary_cta_click_sessions"
+  },
+  "first_screen_questions": [
+    {
+      "id": "decision_entry_volume",
+      "question": "有多少会话从 /m 点击了主 CTA 进入主链路？",
+      "primary_metric": "home_primary_cta_click_sessions"
+    },
+    {
+      "id": "choose_to_start_rate",
+      "question": "进入 /m/choose 后，有多少会话开始答题？",
+      "primary_metric": "choose_start_click_sessions",
+      "rate_metric": "choose_start_rate_from_choose_view"
+    },
+    {
+      "id": "question_dropoff",
+      "question": "哪一道题流失最高？",
+      "primary_metric": "question_dropoff_by_step"
+    },
+    {
+      "id": "result_reach",
+      "question": "有多少会话成功到达结果页？",
+      "primary_metric": "result_view_sessions",
+      "rate_metric": "result_view_rate_from_home_primary_cta"
+    },
+    {
+      "id": "result_engagement",
+      "question": "到达结果后有多少会话继续动作？",
+      "primary_metric": "result_primary_cta_click_sessions",
+      "supporting_metrics": [
+        "result_secondary_loop_click_sessions",
+        "utility_return_click_sessions"
+      ]
+    }
+  ],
+  "summary_metrics": {
+    "home_primary_cta_click_sessions": {
+      "event": "home_primary_cta_click",
+      "identity": "session_id",
+      "role": "p0_primary"
+    },
+    "choose_view_sessions": {
+      "event": "choose_view",
+      "identity": "session_id",
+      "role": "p0_primary"
+    },
+    "choose_start_click_sessions": {
+      "event": "choose_start_click",
+      "identity": "session_id",
+      "role": "p0_primary"
+    },
+    "questionnaire_view_sessions": {
+      "event": "questionnaire_view",
+      "identity": "session_id",
+      "role": "p0_primary",
+      "required_props": [
+        "category",
+        "step"
+      ]
+    },
+    "question_answered_sessions": {
+      "event": "question_answered",
+      "identity": "session_id",
+      "role": "p0_primary",
+      "required_props": [
+        "category",
+        "step"
+      ]
+    },
+    "questionnaire_completed_sessions": {
+      "event": "questionnaire_completed",
+      "identity": "session_id",
+      "role": "p0_primary"
+    },
+    "result_view_sessions": {
+      "event": "result_view",
+      "identity": "session_id",
+      "role": "p0_primary"
+    },
+    "result_primary_cta_click_sessions": {
+      "event": "result_primary_cta_click",
+      "identity": "session_id",
+      "role": "p0_primary"
+    },
+    "result_secondary_loop_click_sessions": {
+      "event": "result_secondary_loop_click",
+      "identity": "session_id",
+      "role": "p0_supporting"
+    },
+    "utility_return_click_sessions": {
+      "event": "utility_return_click",
+      "identity": "session_id",
+      "role": "p0_supporting"
+    }
+  },
+  "rates": {
+    "choose_start_rate_from_choose_view": {
+      "numerator": "choose_start_click_sessions",
+      "denominator": "choose_view_sessions"
+    },
+    "result_view_rate_from_home_primary_cta": {
+      "numerator": "result_view_sessions",
+      "denominator": "home_primary_cta_click_sessions"
+    },
+    "result_primary_cta_rate_from_result_view": {
+      "numerator": "result_primary_cta_click_sessions",
+      "denominator": "result_view_sessions"
+    },
+    "result_loop_entry_rate_from_result_view": {
+      "numerator": "result_secondary_loop_click_sessions",
+      "denominator": "result_view_sessions"
+    },
+    "utility_return_rate_from_result_loop": {
+      "numerator": "utility_return_click_sessions",
+      "denominator": "result_secondary_loop_click_sessions"
+    }
+  },
+  "funnel_steps": [
+    {
+      "step_key": "home_primary_cta",
+      "step_label": "首页主 CTA",
+      "event": "home_primary_cta_click",
+      "identity": "session_id"
+    },
+    {
+      "step_key": "choose_view",
+      "step_label": "进入 choose",
+      "event": "choose_view",
+      "identity": "session_id"
+    },
+    {
+      "step_key": "choose_start",
+      "step_label": "开始答题",
+      "event": "choose_start_click",
+      "identity": "session_id"
+    },
+    {
+      "step_key": "questionnaire_completed",
+      "step_label": "答题完成",
+      "event": "questionnaire_completed",
+      "identity": "session_id"
+    },
+    {
+      "step_key": "result_view",
+      "step_label": "结果到达",
+      "event": "result_view",
+      "identity": "session_id"
+    }
+  ],
+  "question_dropoff_contract": {
+    "status": "blocked_until_stepful_questionnaire_view_exists",
+    "definition": "Per category and per step, drop-off is computed from questionnaire_view(step=N) sessions minus question_answered(step=N) sessions.",
+    "current_gap": "Owner semantics are now frozen, but the shared decision profile flow does not yet emit stable question-step events from one shared source of truth.",
+    "owner_freeze_file": "shared/mobile/contracts/analytics_question_steps.v1.json",
+    "exit_condition": "questionnaire_view and question_answered are emitted from shared decision flow infrastructure with the frozen category + step semantics and land in ingestion without page-local variants."
+  },
+  "allowed_primary_dimensions": [
+    "date_range",
+    "category"
+  ],
+  "supporting_dimensions": [
+    "source",
+    "route",
+    "owner_id",
+    "location_presence",
+    "location_time_zone"
+  ],
+  "compatibility_context_only": [
+    "compare_result_view",
+    "compare_result_cta_click",
+    "compare_result_cta_land",
+    "home_resume_click",
+    "choose_resume_click"
+  ],
+  "forbidden_primary_kpi_inputs": [
+    "profile_result_view",
+    "compare_result_view"
+  ],
+  "implementation_gates": [
+    "Worker A may not build a private dashboard summary shape before backend and frontend both consume these metric keys.",
+    "Question drop-off stays blocked until the questionnaire step instrumentation gap is explicitly resolved in shared contracts and ingestion.",
+    "First-screen analytics must answer the five P0 questions before any compare, reliability, feedback, or environment detail."
+  ]
+}

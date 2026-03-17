@@ -6,7 +6,8 @@
     "return_to",
     "resume_token",
     "scenario_id",
-    "result_cta"
+    "result_cta",
+    "compare_id"
   ],
   "rules": [
     "return_to must point to a /m path",
@@ -15,6 +16,7 @@
     "category must be one of the shared decision catalog keys",
     "scenario_id is required on result-to-utility hops",
     "result_cta is required when a utility page is opened from the result page",
+    "compare_id is optional compare-result provenance and must be preserved across compare-origin utility hops",
     "resume_token is only valid for questionnaire resume flows"
   ]
 }

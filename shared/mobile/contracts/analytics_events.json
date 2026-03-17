@@ -37,7 +37,7 @@
       "required_props": ["page", "route", "source", "category", "target_path"]
     },
     "questionnaire_view": {
-      "required_props": ["page", "route", "source", "category"]
+      "required_props": ["page", "route", "source", "category", "step"]
     },
     "question_answered": {
       "required_props": ["page", "route", "source", "category", "step"]

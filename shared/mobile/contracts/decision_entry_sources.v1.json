@@ -1,0 +1,31 @@
+{
+  "schema_version": "mobile_decision_entry_sources.v1",
+  "status": "owner_frozen",
+  "frozen_at": "2026-03-18",
+  "owner_intent": "Freeze the approved source vocabulary for decision entry and continuation flows so analytics source labels stop growing as raw string literals.",
+  "fresh_profile_entry_sources": [
+    "choose_start",
+    "bottom_nav_choose",
+    "category_rail_choose",
+    "decision_start",
+    "decision_result_restart",
+    "utility_compare_reentry",
+    "utility_wiki_reentry"
+  ],
+  "continuation_sources": [
+    "m_me_resume",
+    "m_me_bag",
+    "m_me_history_selection",
+    "m_me_history_compare"
+  ],
+  "rules": [
+    "Fresh decision profile entry links must use the fresh_profile_entry_sources vocabulary through shared helpers.",
+    "Continuation links from me/history/bag may use continuation_sources but may not invent new raw strings without owner freeze.",
+    "If a surface cannot determine a specific source, it may preserve an existing propagated source; it may not create a new fallback label ad hoc.",
+    "Source vocabulary freeze applies to query param `source` and any analytics props derived from it for decision entry/continuation flows."
+  ],
+  "review_gates": [
+    "No component or page may hardcode a new decision-entry or continuation source string outside shared helper ownership.",
+    "Any new source label must first land in this file and then in the shared helper constants."
+  ]
+}
