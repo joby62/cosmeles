@@ -36,12 +36,19 @@ type ResultReason = {
   id: string;
   title: string;
   body: string;
+  details: string[];
 };
 
 type ResultAction = {
-  action: "product" | "compare" | "wiki" | "me";
+  action: string;
   label: string;
   href: string;
+};
+
+type NextStepSupport = {
+  title: string;
+  body: string;
+  details: string[];
 };
 
 export default function SelectionPublishedResultFlow({
@@ -54,27 +61,29 @@ export default function SelectionPublishedResultFlow({
   analyticsContext,
 }: Props) {
   const routeFocus = describeMobileRouteFocus(result.category, result.route.key);
-  const hero = findBlock(result.blocks, "hero");
-  const attention = findBlock(result.blocks, "attention");
-  const pitfalls = findBlock(result.blocks, "pitfalls");
+  const orderedBlocks = orderBlocks(result.blocks, result.display_order);
+  const hero = findBlock(orderedBlocks, "hero");
+  const shareTitle = normalizeText(result.share_copy.title);
+  const shareSubtitle = normalizeText(result.share_copy.subtitle);
+  const shareCaption = normalizeText(result.share_copy.caption);
   const summaryHeadline =
+    shareTitle ||
     hero?.title ||
-    normalizeText(result.share_copy.subtitle) ||
+    shareSubtitle ||
     `你当前更适合先走 ${result.route.title} 这条线`;
   const summaryBody =
+    shareSubtitle ||
     hero?.subtitle ||
+    shareCaption ||
     normalizeText(result.micro_summary) ||
     routeFocus ||
     `先按 ${result.route.title} 这条线判断当前更适合你的护理方向。`;
+  const summaryHighlights = buildSummaryHighlights(hero, summaryBody, shareCaption);
 
   const primaryAction = resolvePrimaryAction(result.ctas, result, startHref, profileHref);
-  const reasons = buildReasons(result.blocks, result);
-  const nextStepBody =
-    summarizeBlock(attention) ||
-    summarizeBlock(findBlock(result.blocks, "product_bridge")) ||
-    routeFocus ||
-    "先沿着当前结果给出的主线执行，再决定是否继续深挖。";
-  const cautionText = summarizeBlock(pitfalls);
+  const { reasons, usedBlockIds } = buildReasons(orderedBlocks, result);
+  const nextStepSupport = buildNextStepSupport(orderedBlocks, usedBlockIds, result, routeFocus);
+  const cautionText = buildCautionText(orderedBlocks, usedBlockIds, nextStepSupport.body);
   const secondaryLoops = buildSecondaryLoops(result, resultHref, primaryAction);
   const generatedAt = formatGeneratedAt(result.meta?.generated_at);
   const product = result.recommended_product;
@@ -106,6 +115,15 @@ export default function SelectionPublishedResultFlow({
           {summaryHeadline}
         </h1>
         <p className="mt-4 max-w-[29rem] text-[15px] leading-[1.75] text-[#53647d]">{summaryBody}</p>
+        {summaryHighlights.length > 0 ? (
+          <ul className="mt-4 space-y-2 text-[14px] leading-[1.65] text-[#51627a]">
+            {summaryHighlights.map((item) => (
+              <li key={item} className="rounded-[18px] border border-[#dfe8f8] bg-white/86 px-4 py-3">
+                {item}
+              </li>
+            ))}
+          </ul>
+        ) : null}
 
         <div className="mt-8 rounded-[30px] border border-white/90 bg-white/92 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.78)]">
           <div className="text-[12px] font-medium text-[#607089]">一个结果</div>
@@ -132,7 +150,7 @@ export default function SelectionPublishedResultFlow({
                 {product.name || "未命名产品"}
               </div>
               <p className="mt-3 text-[14px] leading-[1.7] text-[#55677f]">
-                这一步先让产品服务于当前路线，而不是反过来拿产品定义你。
+                {shareCaption || "这一步先让产品服务于当前路线，而不是反过来拿产品定义你。"}
               </p>
             </div>
           </div>
@@ -152,6 +170,15 @@ export default function SelectionPublishedResultFlow({
                 {reason.title}
               </h2>
               <p className="mt-2 text-[14px] leading-[1.72] text-[#55677f]">{reason.body}</p>
+              {reason.details.length > 0 ? (
+                <ul className="mt-3 space-y-2 text-[13px] leading-[1.68] text-[#60708a]">
+                  {reason.details.map((detail) => (
+                    <li key={detail} className="rounded-[16px] bg-white px-3 py-2">
+                      {detail}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
             </article>
           ))}
         </div>
@@ -159,10 +186,22 @@ export default function SelectionPublishedResultFlow({
 
       <section className="mt-5 rounded-[28px] border border-[#d8e6ff] bg-[linear-gradient(180deg,#fbfdff_0%,#f4f8ff_100%)] px-5 py-5 shadow-[0_14px_30px_rgba(10,132,255,0.08)]">
         <div className="text-[12px] font-semibold tracking-[0.06em] text-[#4d6b95]">一个下一步</div>
+        {nextStepSupport.title ? (
+          <div className="mt-3 text-[12px] font-medium tracking-[0.03em] text-[#5f7597]">{nextStepSupport.title}</div>
+        ) : null}
         <h2 className="mt-3 text-[24px] leading-[1.24] font-semibold tracking-[-0.03em] text-[#18253b]">
           {primaryAction.label}
         </h2>
-        <p className="mt-3 text-[14px] leading-[1.72] text-[#55677f]">{nextStepBody}</p>
+        <p className="mt-3 text-[14px] leading-[1.72] text-[#55677f]">{nextStepSupport.body}</p>
+        {nextStepSupport.details.length > 0 ? (
+          <ul className="mt-3 space-y-2 text-[13px] leading-[1.68] text-[#5d6f88]">
+            {nextStepSupport.details.map((detail) => (
+              <li key={detail} className="rounded-[16px] bg-white/92 px-3 py-2">
+                {detail}
+              </li>
+            ))}
+          </ul>
+        ) : null}
         {cautionText ? (
           <p className="mt-3 text-[13px] leading-[1.65] text-[#8a6435]">
             先注意：{cautionText}
@@ -190,7 +229,7 @@ export default function SelectionPublishedResultFlow({
             <div className="flex flex-wrap gap-2.5">
               {secondaryLoops.map((loop) => (
                 <MobileTrackedLink
-                  key={loop.action}
+                  key={`${loop.action}:${loop.href}`}
                   href={loop.href}
                   eventName="result_secondary_loop_click"
                   eventProps={{
@@ -221,21 +260,33 @@ export default function SelectionPublishedResultFlow({
   );
 }
 
-function buildReasons(blocks: MobileSelectionResultBlock[], result: MobileSelectionPublishedResult): ResultReason[] {
-  const preferredIds = ["situation", "evidence", "product_bridge", "attention", "pitfalls"];
-  const picked: ResultReason[] = [];
+function buildSummaryHighlights(block: ParsedBlock | null, summaryBody: string, shareCaption: string): string[] {
+  return uniqueText([
+    ...(block?.items || []),
+    normalizeText(shareCaption) !== normalizeText(summaryBody) ? shareCaption : "",
+  ]).slice(0, 3);
+}
 
-  for (const id of preferredIds) {
-    const block = findBlock(blocks, id);
-    if (!block) continue;
-    const body = summarizeBlock(block);
+function buildReasons(
+  blocks: MobileSelectionResultBlock[],
+  result: MobileSelectionPublishedResult,
+): { reasons: ResultReason[]; usedBlockIds: Set<string> } {
+  const picked: ResultReason[] = [];
+  const usedBlockIds = new Set<string>();
+
+  for (const rawBlock of blocks) {
+    if (picked.length >= 3) break;
+    if (rawBlock.id === "hero") continue;
+    const block = parseBlock(rawBlock);
+    const body = primaryBlockText(block);
     if (!block.title || !body) continue;
     picked.push({
       id: block.id,
       title: block.title,
       body,
+      details: secondaryBlockTexts(block, body).slice(0, 2),
     });
-    if (picked.length === 3) return picked;
+    usedBlockIds.add(block.id);
   }
 
   const fallbackBodies = [
@@ -259,10 +310,66 @@ function buildReasons(blocks: MobileSelectionResultBlock[], result: MobileSelect
         (fallbackIndex === 2
           ? "先用当前主推承接这条路线，再决定是否继续扩展更多候选。"
           : "系统会优先收敛到更适合你的护理方向，而不是先把商品堆给你。"),
+      details: [],
     });
   }
 
-  return picked.slice(0, 3);
+  return {
+    reasons: picked.slice(0, 3),
+    usedBlockIds,
+  };
+}
+
+function buildNextStepSupport(
+  blocks: MobileSelectionResultBlock[],
+  usedBlockIds: Set<string>,
+  result: MobileSelectionPublishedResult,
+  routeFocus: string,
+): NextStepSupport {
+  const candidateIds = ["attention", "product_bridge", "pitfalls", "evidence", "situation"];
+  for (const id of candidateIds) {
+    if (usedBlockIds.has(id)) continue;
+    const block = findBlock(blocks, id);
+    const body = primaryBlockText(block);
+    if (!block || !body) continue;
+    return {
+      title: block.title,
+      body,
+      details: secondaryBlockTexts(block, body).slice(0, 2),
+    };
+  }
+
+  for (const rawBlock of blocks) {
+    if (usedBlockIds.has(rawBlock.id) || rawBlock.id === "hero") continue;
+    const block = parseBlock(rawBlock);
+    const body = primaryBlockText(block);
+    if (!body) continue;
+    return {
+      title: block.title,
+      body,
+      details: secondaryBlockTexts(block, body).slice(0, 2),
+    };
+  }
+
+  return {
+    title: "你当前更该先做什么",
+    body: routeFocus || "先沿着当前结果给出的主线执行，再决定是否继续深挖。",
+    details: [],
+  };
+}
+
+function buildCautionText(
+  blocks: MobileSelectionResultBlock[],
+  usedBlockIds: Set<string>,
+  nextStepBody: string,
+): string {
+  const pitfall = findBlock(blocks, "pitfalls");
+  const primary = primaryBlockText(pitfall);
+  if (!primary || primary === nextStepBody) return "";
+  if (usedBlockIds.has("pitfalls")) {
+    return secondaryBlockTexts(pitfall, primary)[0] || "";
+  }
+  return primary;
 }
 
 function resolvePrimaryAction(
@@ -271,11 +378,13 @@ function resolvePrimaryAction(
   startHref: string,
   profileHref: string,
 ): ResultAction {
-  const preferred = ctas.find((item) => item.action === "product") || ctas[0] || null;
-  const href = preferred ? resolveActionHref(preferred.action, preferred.href, result, startHref, profileHref) : result.links.product;
+  const preferred = ctas[0] || null;
+  const href = preferred
+    ? resolvePrimaryActionHref(preferred.action, preferred.href, result, startHref, profileHref)
+    : result.links.product;
   const label = normalizeText(preferred?.label) || "查看推荐产品";
   return {
-    action: "product",
+    action: normalizeText(preferred?.action) || "product",
     label,
     href,
   };
@@ -290,37 +399,137 @@ function buildSecondaryLoops(
     scenario_id: result.scenario_id,
     return_to: resultHref,
   };
-  const actions: ResultAction[] = [
+
+  const published = result.ctas
+    .slice(1)
+    .map((item) => {
+      const href = resolveSecondaryLoopHref(item, result);
+      const action = resolveSecondaryLoopAction(item.action, href);
+      if (!href || !action) return null;
+      return {
+        action,
+        label: normalizeText(item.label) || humanizeSecondaryLoopAction(action),
+        href: appendLoopContext(href, action, sharedParams),
+      };
+    })
+    .filter((item): item is ResultAction => Boolean(item));
+
+  const defaults: ResultAction[] = [
     {
       action: "compare",
       label: "和其他候选再对比",
-      href: appendQueryParams(`/m/compare?category=${encodeURIComponent(result.category)}`, {
-        ...sharedParams,
-        source: "result_compare",
-        result_cta: "compare",
-      }),
+      href: appendLoopContext(`/m/compare?category=${encodeURIComponent(result.category)}`, "compare", sharedParams),
     },
     {
       action: "wiki",
       label: "查看产品或成分百科",
-      href: appendQueryParams(result.links.wiki || `/m/wiki?category=${encodeURIComponent(result.category)}`, {
-        ...sharedParams,
-        source: "result_wiki",
-        result_cta: "wiki",
-      }),
+      href: appendLoopContext(
+        result.links.wiki || `/m/wiki?category=${encodeURIComponent(result.category)}`,
+        "wiki",
+        sharedParams,
+      ),
     },
     {
       action: "me",
       label: "回到我的记录",
-      href: appendQueryParams("/m/me/history", {
-        ...sharedParams,
-        source: "result_me",
-        result_cta: "me",
-      }),
+      href: appendLoopContext("/m/me/history", "me", sharedParams),
     },
   ];
 
-  return actions.filter((item) => item.href !== primaryAction.href);
+  const source = published.length > 0 ? published : defaults;
+  return dedupeActions(source).filter((item) => item.href !== primaryAction.href);
+}
+
+function appendLoopContext(
+  href: string,
+  action: string,
+  sharedParams: { scenario_id: string; return_to: string },
+): string {
+  const normalizedAction = normalizeText(action).toLowerCase();
+  const source =
+    normalizedAction === "compare"
+      ? "result_compare"
+      : normalizedAction === "wiki"
+        ? "result_wiki"
+        : "result_me";
+  const resultCta =
+    normalizedAction === "compare"
+      ? "compare"
+      : normalizedAction === "wiki"
+        ? "wiki"
+        : "me";
+  return appendQueryParams(href, {
+    ...sharedParams,
+    source,
+    result_cta: resultCta,
+  });
+}
+
+function resolveSecondaryLoopAction(action: string, href: string): string {
+  const actionKey = normalizeText(action).toLowerCase();
+  const hrefKey = normalizeText(href).toLowerCase();
+  if (
+    actionKey === "compare" ||
+    actionKey === "restart" ||
+    actionKey === "rerun" ||
+    actionKey === "retry" ||
+    hrefKey.includes("/compare")
+  ) {
+    return "compare";
+  }
+  if (actionKey === "wiki" || hrefKey.includes("/wiki")) {
+    return "wiki";
+  }
+  if (
+    actionKey === "me" ||
+    actionKey === "profile" ||
+    actionKey === "history" ||
+    hrefKey.includes("/m/me")
+  ) {
+    return "me";
+  }
+  return "";
+}
+
+function dedupeActions(actions: ResultAction[]): ResultAction[] {
+  const seen = new Set<string>();
+  const items: ResultAction[] = [];
+  for (const action of actions) {
+    const key = `${action.action}:${action.href}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    items.push(action);
+  }
+  return items;
+}
+
+function orderBlocks(blocks: MobileSelectionResultBlock[], displayOrder: string[]): MobileSelectionResultBlock[] {
+  const byId = new Map<string, MobileSelectionResultBlock>();
+  for (const block of blocks) {
+    const key = normalizeText(block.id);
+    if (!key || byId.has(key)) continue;
+    byId.set(key, block);
+  }
+
+  const ordered: MobileSelectionResultBlock[] = [];
+  const seen = new Set<string>();
+  for (const id of displayOrder) {
+    const key = normalizeText(id);
+    if (!key || key === "ctas" || seen.has(key)) continue;
+    const block = byId.get(key);
+    if (!block) continue;
+    ordered.push(block);
+    seen.add(key);
+  }
+
+  for (const block of blocks) {
+    const key = normalizeText(block.id);
+    if (!key || seen.has(key)) continue;
+    ordered.push(block);
+    seen.add(key);
+  }
+
+  return ordered;
 }
 
 function findBlock(blocks: MobileSelectionResultBlock[], id: string): ParsedBlock | null {
@@ -339,17 +548,20 @@ function parseBlock(block: MobileSelectionResultBlock): ParsedBlock {
   };
 }
 
-function summarizeBlock(block: ParsedBlock | null): string {
+function primaryBlockText(block: ParsedBlock | null): string {
   if (!block) return "";
-  return (
-    normalizeText(block.subtitle) ||
-    normalizeText(block.items[0] || "") ||
-    normalizeText(block.note) ||
-    ""
-  );
+  return normalizeText(block.subtitle) || normalizeText(block.items[0] || "") || normalizeText(block.note);
 }
 
-function resolveActionHref(
+function secondaryBlockTexts(block: ParsedBlock | null, primaryText: string): string[] {
+  if (!block) return [];
+  return uniqueText([
+    ...block.items.filter((item) => normalizeText(item) !== normalizeText(primaryText)),
+    normalizeText(block.note) !== normalizeText(primaryText) ? block.note : "",
+  ]);
+}
+
+function resolvePrimaryActionHref(
   action: string,
   explicitHref: string,
   result: MobileSelectionPublishedResult,
@@ -357,11 +569,26 @@ function resolveActionHref(
   profileHref: string,
 ): string {
   const cleanHref = normalizeText(explicitHref);
+  const actionKey = normalizeText(action).toLowerCase();
   if (cleanHref) return cleanHref;
-  if (action === "wiki") return result.links.wiki;
-  if (action === "restart") return startHref;
-  if (action === "profile") return profileHref;
+  if (actionKey === "wiki" || actionKey === "open_wiki") return result.links.wiki;
+  if (actionKey === "restart" || actionKey === "rerun" || actionKey === "retry") return startHref;
+  if (actionKey === "profile") return profileHref;
+  if (actionKey === "me" || actionKey === "history") return "/m/me/history";
+  if (actionKey === "compare") return `/m/compare?category=${encodeURIComponent(result.category)}`;
   return result.links.product;
+}
+
+function resolveSecondaryLoopHref(cta: MobileSelectionResultCTA, result: MobileSelectionPublishedResult): string {
+  const cleanHref = normalizeText(cta.href);
+  const actionKey = normalizeText(cta.action).toLowerCase();
+  if (cleanHref) return cleanHref;
+  if (actionKey === "wiki" || actionKey === "open_wiki") return result.links.wiki;
+  if (actionKey === "me" || actionKey === "profile" || actionKey === "history") return "/m/me/history";
+  if (actionKey === "compare" || actionKey === "restart" || actionKey === "rerun" || actionKey === "retry") {
+    return `/m/compare?category=${encodeURIComponent(result.category)}`;
+  }
+  return "";
 }
 
 function appendQueryParams(path: string, params: Record<string, string>): string {
@@ -405,11 +632,30 @@ function humanizeBlockId(id: string): string {
   return "结果说明";
 }
 
+function humanizeSecondaryLoopAction(action: string): string {
+  if (action === "compare") return "和其他候选再对比";
+  if (action === "wiki") return "查看产品或成分百科";
+  if (action === "me") return "回到我的记录";
+  return "继续了解";
+}
+
 function humanizeRecommendationSource(source: string): string {
   if (source === "featured_slot") return "主推槽位";
   if (source === "route_mapping") return "类型映射";
   if (source === "category_fallback") return "品类兜底";
   return source;
+}
+
+function uniqueText(values: string[]): string[] {
+  const seen = new Set<string>();
+  const items: string[] = [];
+  for (const value of values) {
+    const text = normalizeText(value);
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    items.push(text);
+  }
+  return items;
 }
 
 function normalizeText(value: string | null | undefined): string {
