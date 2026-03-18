@@ -284,3 +284,39 @@ Definition of done:
 4. Worker C retrofits utility and me/history/bag call sites onto the frozen source helper.
 5. Architecture owner reviews source-vocabulary closure plus analytics metadata quality.
 6. Only after that: refresh branch convergence checklist and begin preparing replay/cherry-pick onto `codex/mobile-arch-v2`.
+
+## Phase 9 Deliverables
+- Owner freeze docs reflect the post-Phase 8 reality: `question_dropoff` is live when valid stepful data exists, source vocabulary freeze is explicit, and branch facts match the real heads.
+- Worker tasks shrink from broad module build-out to acceptance recheck plus thin contract-alignment cleanup.
+- Equivalent deploy/config fixes already present on `codex/mobile-arch-v2` are recognized as converged even when the feature branch carries different hashes.
+- The only accepted post-freeze product delta still missing on `codex/mobile-arch-v2` is the result renderer fix that keeps generated result copy authoritative.
+
+## Phase 9 Prompt Files
+- `docs/prompts/mobile/phase9-worker-a.prompt.md`
+- `docs/prompts/mobile/phase9-worker-b.prompt.md`
+- `docs/prompts/mobile/phase9-worker-c.prompt.md`
+
+## Phase 9 Owner Freeze Files
+- `shared/mobile/contracts/analytics_p0_funnel.v1.json`
+- `shared/mobile/contracts/analytics_question_steps.v1.json`
+- `shared/mobile/contracts/decision_entry_sources.v1.json`
+- `docs/mobile-branch-convergence-checklist.md`
+- `docs/prompts/mobile/phase9-worker-a.prompt.md`
+- `docs/prompts/mobile/phase9-worker-b.prompt.md`
+- `docs/prompts/mobile/phase9-worker-c.prompt.md`
+
+## Phase 9 Review Gates
+- No Phase 9 worker may start new product-surface feature work; only acceptance recheck or thin contract-alignment cleanup is allowed.
+- Equivalent fixes already present on `codex/mobile-arch-v2` or `main` may not be replayed again under new hashes.
+- `question_dropoff` freeze docs must describe live-when-data-exists semantics, not a permanently blocked state.
+- `SelectionPublishedResultFlow` must keep generated result fields such as `share_copy`, `display_order`, `blocks`, and `ctas` authoritative over page-local paraphrase logic.
+- `m_me_use` may remain a utility-page analytics source only; it may not expand into decision-entry or continuation vocabulary without a new owner freeze.
+- No Phase 9 worker may modify `main`; accepted fixes still converge through `codex/mobile-arch-v2`.
+
+## Phase 9 Merge Order
+1. Architecture owner refreshes freeze docs and the convergence delta map.
+2. Worker B rechecks route-state and source-vocabulary closure against the frozen contracts.
+3. Worker C rechecks utility and `me/history/bag` call sites against Worker B's shared helper truth.
+4. Worker A rechecks P0 analytics contract consumption and live question-dropoff semantics on top of the refreshed freeze docs.
+5. Architecture owner integrates the findings and decides the exact replay set for `codex/mobile-arch-v2`.
+6. Only after that: move the accepted missing delta into `codex/mobile-arch-v2`, rerun the gate suite, and prepare the mainline sync.

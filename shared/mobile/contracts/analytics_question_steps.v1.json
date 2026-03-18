@@ -1,8 +1,14 @@
 {
   "schema_version": "mobile_analytics_question_steps.v1",
-  "status": "owner_frozen_pending_implementation",
+  "status": "owner_frozen",
   "frozen_at": "2026-03-14",
-  "owner_intent": "Freeze the shared semantics for decision question-step analytics before Worker B instruments the profile flow.",
+  "refreshed_at": "2026-03-18",
+  "owner_intent": "Freeze the shared semantics for decision question-step analytics; this contract now backs the live question-dropoff path when valid stepful data exists.",
+  "implementation_status": {
+    "status": "implemented_and_data_gated",
+    "updated_at": "2026-03-18",
+    "note": "Shared decision flow now emits the frozen category + step semantics. question_dropoff becomes live only when valid stepful data exists in the selected time window."
+  },
   "scope": {
     "applies_to": [
       "frontend/features/mobile-decision/*",
@@ -76,6 +82,7 @@
   "review_gates": [
     "No page file may invent category-specific step numbering.",
     "No private analytics event vocabulary may be introduced for individual categories.",
-    "Worker B must prove the emitted step maps to the shared config order for all five categories."
+    "Worker B must prove the emitted step maps to the shared config order for all five categories.",
+    "Any later question_dropoff work must treat missing data as a reporting-state issue, not as permission to redefine step semantics."
   ]
 }
