@@ -2,7 +2,8 @@
   "schema_version": "mobile_analytics_p0_funnel.v1",
   "status": "owner_frozen",
   "frozen_at": "2026-03-14",
-  "owner_intent": "Freeze the Phase 5 P0 analytics summary contract before Worker A builds the first-screen dashboard panels.",
+  "refreshed_at": "2026-03-18",
+  "owner_intent": "Freeze the Phase 5 P0 analytics summary contract and keep later live question-dropoff semantics aligned to the same first-screen keys.",
   "north_star": {
     "name": "decision_result_completion_rate",
     "description": "Share of decision-entry sessions that later reach result_view.",
@@ -26,7 +27,11 @@
     {
       "id": "question_dropoff",
       "question": "哪一道题流失最高？",
-      "primary_metric": "question_dropoff_by_step"
+      "primary_metric": "question_dropoff_top",
+      "supporting_metrics": [
+        "question_dropoff_by_category",
+        "question_dropoff_status"
+      ]
     },
     {
       "id": "result_reach",
@@ -159,11 +164,14 @@
     }
   ],
   "question_dropoff_contract": {
-    "status": "blocked_until_stepful_questionnaire_view_exists",
+    "status": "live_when_stepful_data_exists",
     "definition": "Per category and per step, drop-off is computed from questionnaire_view(step=N) sessions minus question_answered(step=N) sessions.",
-    "current_gap": "Owner semantics are now frozen, but the shared decision profile flow does not yet emit stable question-step events from one shared source of truth.",
-    "owner_freeze_file": "shared/mobile/contracts/analytics_question_steps.v1.json",
-    "exit_condition": "questionnaire_view and question_answered are emitted from shared decision flow infrastructure with the frozen category + step semantics and land in ingestion without page-local variants."
+    "activation_rule": "When the selected time window contains valid stepful questionnaire_view and question_answered rows, the API returns live question_dropoff_top/question_dropoff_by_category data. When valid stepful rows are absent, it keeps blocked status and returns empty collections without local fallback.",
+    "current_gap": "No contract gap remains. A blocked status now means the selected time window lacks valid stepful data, not that shared step semantics are undefined.",
+    "owner_freeze_files": [
+      "shared/mobile/contracts/analytics_question_steps.v1.json",
+      "shared/mobile/contracts/analytics_question_dropoff.v1.json"
+    ]
   },
   "allowed_primary_dimensions": [
     "date_range",
@@ -189,7 +197,7 @@
   ],
   "implementation_gates": [
     "Worker A may not build a private dashboard summary shape before backend and frontend both consume these metric keys.",
-    "Question drop-off stays blocked until the questionnaire step instrumentation gap is explicitly resolved in shared contracts and ingestion.",
+    "Question drop-off may surface as live only from valid stepful events that obey the frozen shared decision-step semantics; no dashboard or API layer may invent a fallback aggregate.",
     "First-screen analytics must answer the five P0 questions before any compare, reliability, feedback, or environment detail."
   ]
 }

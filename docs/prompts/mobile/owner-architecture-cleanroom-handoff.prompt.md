@@ -98,6 +98,13 @@
 4. 再做总体验收
 5. 再决定是否把 stack 回收到 `codex/mobile-arch-v2`
 
+## 当前真实基线（2026-03-18）
+- Phase 4-8 架构栈已经收口完成，当前主任务不是继续大拆，而是 owner-led convergence。
+- `codex/mobile-arch-v2` 已有 frontend/backend Docker 相关等价修复：`8eea4fe`、`d9a1d90`。
+- `main` 另外已带上结果页 renderer 修复 `f7e0007`；`codex/mobile-arch-v2` 还需要把这一个产品 delta 收进去。
+- `question_dropoff` 语义已经不是“永久 blocked”；当时间窗里存在有效 stepful 数据时必须返回 `live`，没有数据才保持 blocked。
+- `m_me_use` 目前是允许保留的 utility 页面 analytics source 例外，不属于 decision-entry / continuation 冻结词汇。
+
 ## 什么时候必须你亲自下场
 只有在这些场景亲自写代码：
 - 架构边界
@@ -139,18 +146,31 @@
 
 ## 当前已冻结 / 已存在的 owner 文件
 - `/Users/lijiabo/Documents/New project/shared/mobile/contracts/analytics_p0_funnel.v1.json`
+- `/Users/lijiabo/Documents/New project/shared/mobile/contracts/analytics_question_steps.v1.json`
+- `/Users/lijiabo/Documents/New project/shared/mobile/contracts/analytics_question_dropoff.v1.json`
+- `/Users/lijiabo/Documents/New project/shared/mobile/contracts/decision_entry_sources.v1.json`
 - `/Users/lijiabo/Documents/New project/docs/mobile-branch-convergence-checklist.md`
 - `/Users/lijiabo/Documents/New project/docs/prompts/mobile/worker-a-cleanroom-handoff.prompt.md`
-- `/Users/lijiabo/Documents/New project/docs/prompts/mobile/phase5-worker-a-active-task.prompt.md`
-- `/Users/lijiabo/Documents/New project/docs/prompts/mobile/phase5-worker-a.prompt.md`
-- `/Users/lijiabo/Documents/New project/docs/prompts/mobile/phase5-worker-b.prompt.md`
-- `/Users/lijiabo/Documents/New project/docs/prompts/mobile/phase5-worker-c.prompt.md`
+- `/Users/lijiabo/Documents/New project/docs/prompts/mobile/phase6-worker-a.prompt.md`
+- `/Users/lijiabo/Documents/New project/docs/prompts/mobile/phase6-worker-b.prompt.md`
+- `/Users/lijiabo/Documents/New project/docs/prompts/mobile/phase6-worker-c.prompt.md`
+- `/Users/lijiabo/Documents/New project/docs/prompts/mobile/phase7-worker-a.prompt.md`
+- `/Users/lijiabo/Documents/New project/docs/prompts/mobile/phase7-worker-b.prompt.md`
+- `/Users/lijiabo/Documents/New project/docs/prompts/mobile/phase7-worker-c.prompt.md`
+- `/Users/lijiabo/Documents/New project/docs/prompts/mobile/phase8-worker-a.prompt.md`
+- `/Users/lijiabo/Documents/New project/docs/prompts/mobile/phase8-worker-b.prompt.md`
+- `/Users/lijiabo/Documents/New project/docs/prompts/mobile/phase8-worker-c.prompt.md`
+- `/Users/lijiabo/Documents/New project/docs/prompts/mobile/phase9-worker-a.prompt.md`
+- `/Users/lijiabo/Documents/New project/docs/prompts/mobile/phase9-worker-b.prompt.md`
+- `/Users/lijiabo/Documents/New project/docs/prompts/mobile/phase9-worker-c.prompt.md`
 
 ## Git 与分支纪律
 - repo root：`/Users/lijiabo/Documents/New project`
+- current feature integration branch：`codex/mobile-utility-route-state-loop`
 - authoritative mobile integration branch：`codex/mobile-arch-v2`
 - legacy freeze branch：`codex/mobile-v1-baseline`
 - legacy freeze tag：`mobile-v1-freeze-2026-03-13`
+- clean convergence worktree：`/private/tmp/mobile-arch-v2-converge`
 
 你必须遵守：
 - 不做 destructive git 操作
@@ -162,6 +182,7 @@
   - `codex/mobile-arch-v2`
   - review through `origin/main`
   - 最后才可能是 `main`
+- 不要因为 feature branch 上有新 hash 就重复 replay 已经等价落到 `codex/mobile-arch-v2` 的 deploy/config 修复。
 
 ## 已验证可运行命令
 
