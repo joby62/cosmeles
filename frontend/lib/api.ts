@@ -1070,6 +1070,11 @@ export type MobileAnalyticsExperience = {
   decision_result_secondary_loop_clicks: number;
   utility_return_clicks: number;
   home_workspace_quick_action_clicks: number;
+  compare_closure_accept_recommendation: number;
+  compare_closure_keep_current: number;
+  rationale_view: number;
+  rationale_to_bag_click: number;
+  rationale_to_compare_click: number;
   compare_result_leaves: number;
   avg_result_dwell_ms: number;
   p50_result_dwell_ms: number;
@@ -1096,6 +1101,8 @@ export type MobileAnalyticsExperience = {
   utility_return_result_ctas: MobileAnalyticsCountItem[];
   utility_return_target_paths: MobileAnalyticsCountItem[];
   home_workspace_quick_actions: MobileAnalyticsCountItem[];
+  compare_closure_actions: MobileAnalyticsCountItem[];
+  rationale_closure_actions: MobileAnalyticsCountItem[];
   browser_families: MobileAnalyticsCountItem[];
   os_families: MobileAnalyticsCountItem[];
   device_types: MobileAnalyticsCountItem[];

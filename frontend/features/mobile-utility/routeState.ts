@@ -1,6 +1,7 @@
 import { normalizeMobileReturnTo } from "@/lib/mobile/flowReturn";
 import {
   normalizeMobileResultCta,
+  type MobileResultCta,
 } from "@/lib/mobile/resultCta";
 type SearchValue = string | string[] | null | undefined;
 type SearchRecord = Record<string, SearchValue>;
@@ -85,6 +86,13 @@ export function hasMobileUtilityRouteContext(state: MobileUtilityRouteState): bo
 
 export function hasMobileUtilityResultContext(state: MobileUtilityRouteState): boolean {
   return Boolean(state.returnTo && state.scenarioId && state.resultCta);
+}
+
+export function isMobileUtilityResultIntent(
+  state: MobileUtilityRouteState,
+  intent: MobileResultCta,
+): boolean {
+  return hasMobileUtilityResultContext(state) && state.resultCta === intent;
 }
 
 export function resolveMobileUtilitySource(state: MobileUtilityRouteState, fallback: string): string {

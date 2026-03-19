@@ -1922,6 +1922,11 @@ class MobileAnalyticsExperienceResponse(BaseModel):
     decision_result_secondary_loop_clicks: int = 0
     utility_return_clicks: int = 0
     home_workspace_quick_action_clicks: int = 0
+    compare_closure_accept_recommendation: int = 0
+    compare_closure_keep_current: int = 0
+    rationale_view: int = 0
+    rationale_to_bag_click: int = 0
+    rationale_to_compare_click: int = 0
     compare_result_leaves: int = 0
     avg_result_dwell_ms: float = 0.0
     p50_result_dwell_ms: float = 0.0
@@ -1948,6 +1953,8 @@ class MobileAnalyticsExperienceResponse(BaseModel):
     utility_return_result_ctas: List[MobileAnalyticsCountItem] = Field(default_factory=list)
     utility_return_target_paths: List[MobileAnalyticsCountItem] = Field(default_factory=list)
     home_workspace_quick_actions: List[MobileAnalyticsCountItem] = Field(default_factory=list)
+    compare_closure_actions: List[MobileAnalyticsCountItem] = Field(default_factory=list)
+    rationale_closure_actions: List[MobileAnalyticsCountItem] = Field(default_factory=list)
     browser_families: List[MobileAnalyticsCountItem] = Field(default_factory=list)
     os_families: List[MobileAnalyticsCountItem] = Field(default_factory=list)
     device_types: List[MobileAnalyticsCountItem] = Field(default_factory=list)

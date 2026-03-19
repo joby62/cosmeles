@@ -10,6 +10,7 @@ import { formatRuntimeError } from "@/lib/error";
 import {
   applyMobileUtilityRouteState,
   appendMobileUtilityRouteState,
+  isMobileUtilityResultIntent,
   parseMobileUtilityRouteState,
   resolveMobileUtilitySource,
 } from "@/features/mobile-utility/routeState";
@@ -82,10 +83,6 @@ function fmtTime(value?: string | null): string {
   }).format(date);
 }
 
-function queryValue(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
-}
-
 export default async function MobileWikiProductDetailPage({
   params,
   searchParams,
@@ -97,8 +94,9 @@ export default async function MobileWikiProductDetailPage({
   const search = (await Promise.resolve(searchParams)) || {};
   const utilityRouteState = parseMobileUtilityRouteState(search);
   const analyticsSource = resolveMobileUtilitySource(utilityRouteState, "wiki_product_detail");
-  const returnTo = queryValue(search.return_to);
-  const returnHrefBase = returnTo && returnTo.startsWith("/m/wiki") ? returnTo : "/m/wiki";
+  const isRationaleMode = isMobileUtilityResultIntent(utilityRouteState, "rationale");
+  const returnHrefBase = utilityRouteState.returnTo || "/m/wiki";
+  const returnLabel = isRationaleMode ? "返回上一步结果" : "返回百科";
   const returnHref = appendMobileUtilityRouteState(returnHrefBase, utilityRouteState, { includeReturnTo: false });
 
   let data: Awaited<ReturnType<typeof fetchMobileWikiProductDetail>> | null = null;
@@ -132,7 +130,7 @@ export default async function MobileWikiProductDetailPage({
               href={returnHref}
               className="inline-flex h-9 items-center rounded-full border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)] px-4 text-[12px] font-semibold text-[color:var(--m-wiki-text-mid)]"
             >
-              返回百科
+              {returnLabel}
             </Link>
             <Link
               href={appendMobileUtilityRouteState("/m/choose", utilityRouteState)}
@@ -166,9 +164,80 @@ export default async function MobileWikiProductDetailPage({
     compareId: compareOriginId,
     action: "wiki_return",
   });
+  const shouldRenderPrimaryReturn = !returnTracking || returnTracking.href !== returnHref;
   const ingredientRefByIndex = new Map((item.ingredient_refs || []).map((ref) => [ref.index, ref]));
   const analysis = analysisData?.item.profile || null;
   const diagnosticsEntries = analysis ? Object.entries(analysis.diagnostics || {}) : [];
+  const rationaleCompareHref = appendMobileUtilityRouteState(
+    `/m/compare?category=${encodeURIComponent(product.category)}`,
+    {
+      ...utilityRouteState,
+      source: "wiki_product_detail",
+      resultCta: "compare",
+      compareId: compareOriginId || null,
+    },
+    { includeSource: true },
+  );
+  const rationalePrimaryHeadline = String(analysis?.headline || "").trim() || `${product.name || "这款产品"}更贴合你当前状态。`;
+  const rationaleSecondarySummary =
+    String(analysis?.positioning_summary || "").trim() ||
+    String(analysis?.subtype_fit_reason || "").trim() ||
+    String(product.one_sentence || "").trim() ||
+    "这次推荐会优先承接你当前最需要解决的问题。";
+  const rationaleWhyFitItems = pickRationaleItems(
+    [
+      analysis?.subtype_fit_reason,
+      analysis?.positioning_summary,
+      analysis?.headline,
+      product.one_sentence,
+    ],
+    ["这款产品与当前画像更匹配，先按当前建议执行更稳。"],
+  );
+  const rationaleSolveItems = pickRationaleItems(
+    [...(analysis?.best_for || []), ...(analysis?.usage_tips || [])],
+    ["先解决当前最核心诉求，再看是否需要额外叠加。"],
+  );
+  const rationaleWatchoutItems = pickRationaleItems(
+    [...(analysis?.watchouts || []), ...(analysis?.not_ideal_for || [])],
+    ["先从低频使用开始，观察肤感和状态反馈。"],
+  );
+  const closureSource = resultCta && compareOriginId ? "m_compare_result" : analyticsSource;
+  const rationaleActionEventProps = {
+    page: "wiki_product_detail",
+    route: `/m/wiki/product/${product.id}`,
+    source: closureSource,
+    category: product.category,
+    product_id: product.id,
+    result_cta: resultCta || undefined,
+    compare_id: compareOriginId || undefined,
+  };
+  const rationaleDecisionActions = (
+    <div className="mt-4 flex flex-wrap items-center gap-2">
+      <AddToBagButton
+        productId={product.id}
+        className="min-w-[188px] flex-1"
+        buttonClassName="h-10 w-full border-transparent bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-4 text-[13px] font-semibold text-white shadow-[0_10px_24px_rgba(0,113,227,0.24)] active:opacity-95"
+        label={isRationaleMode ? "先加入购物袋" : "加入购物袋"}
+        doneLabel="已加入购物袋"
+        analyticsProps={rationaleActionEventProps}
+        clickEventName={isRationaleMode ? "rationale_to_bag_click" : undefined}
+        clickEventProps={isRationaleMode ? rationaleActionEventProps : undefined}
+      />
+      <MobileTrackedLink
+        href={rationaleCompareHref}
+        eventName={isRationaleMode ? "rationale_to_compare_click" : "wiki_compare_entry_click"}
+        data-analytics-id={isRationaleMode ? "rationale:to-compare" : "wiki-detail:to-compare"}
+        data-analytics-dead-click-watch="true"
+        eventProps={{
+          ...rationaleActionEventProps,
+          target_path: "/m/compare",
+        }}
+        className="inline-flex h-10 min-w-[188px] flex-1 items-center justify-center rounded-full border border-[#0a84ff]/24 bg-[#eef5ff] px-4 text-[13px] font-semibold text-[#1e5eb5] active:bg-[#e2efff]"
+      >
+        和我现在在用的比一下
+      </MobileTrackedLink>
+    </div>
+  );
 
   return (
     <section className="m-wiki-page -mx-4 -mt-6 min-h-[calc(100dvh-3rem)] bg-[color:var(--m-wiki-canvas)] px-4 pb-40 pt-4 text-white">
@@ -200,13 +269,23 @@ export default async function MobileWikiProductDetailPage({
           }}
         />
       ) : null}
+      {isRationaleMode ? (
+        <MobileEventBeacon
+          name="rationale_view"
+          props={{
+            ...rationaleActionEventProps,
+          }}
+        />
+      ) : null}
       <div className="flex flex-wrap items-center gap-2">
-        <Link
-          href={returnHref}
-          className="inline-flex h-9 items-center rounded-full border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)] px-4 text-[12px] font-semibold text-[color:var(--m-wiki-text-mid)] backdrop-blur-xl active:bg-black/[0.03]"
-        >
-          返回百科
-        </Link>
+        {shouldRenderPrimaryReturn ? (
+          <Link
+            href={returnHref}
+            className="inline-flex h-9 items-center rounded-full border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)] px-4 text-[12px] font-semibold text-[color:var(--m-wiki-text-mid)] backdrop-blur-xl active:bg-black/[0.03]"
+          >
+            {returnLabel}
+          </Link>
+        ) : null}
         {returnTracking ? (
           <MobileTrackedLink
             href={returnTracking.href}
@@ -218,6 +297,24 @@ export default async function MobileWikiProductDetailPage({
           </MobileTrackedLink>
         ) : null}
       </div>
+
+      {isRationaleMode ? (
+        <article className="m-wiki-card mt-3 rounded-[26px] border border-[#cfe2ff] bg-[linear-gradient(180deg,#f8fbff_0%,#edf4ff_100%)] px-4 py-4 text-[#19396d] shadow-[0_10px_26px_rgba(36,80,163,0.12)]">
+          <div className="inline-flex rounded-full border border-[#b8d3ff] bg-white/72 px-3 py-1 text-[11px] font-semibold tracking-[0.04em] text-[#2f5db2]">
+            推荐依据
+          </div>
+          <h2 className="mt-3 text-[24px] leading-[1.24] font-semibold tracking-[-0.02em] text-[#163464]">{rationalePrimaryHeadline}</h2>
+          <p className="mt-2 text-[13px] leading-[1.62] text-[#335caa]">{rationaleSecondarySummary}</p>
+
+          <div className="mt-4 grid grid-cols-1 gap-2.5">
+            <RationaleListCard title="为什么适合你" items={rationaleWhyFitItems} tone="blue" />
+            <RationaleListCard title="主要解决什么" items={rationaleSolveItems} tone="green" />
+            <RationaleListCard title="使用时注意什么" items={rationaleWatchoutItems} tone="amber" />
+          </div>
+
+          {rationaleDecisionActions}
+        </article>
+      ) : null}
 
       <article className="m-wiki-card mt-3 overflow-hidden rounded-[26px]">
         <div className="relative aspect-[4/3] bg-[color:var(--m-wiki-soft-bg)]">
@@ -302,26 +399,27 @@ export default async function MobileWikiProductDetailPage({
             </div>
           </div>
 
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <AddToBagButton
-              productId={product.id}
-              analyticsProps={{
-                page: "wiki_product_detail",
-                route: `/m/wiki/product/${product.id}`,
-                source: resultCta && compareOriginId ? "m_compare_result" : analyticsSource,
-                category: product.category,
-                product_id: product.id,
-                result_cta: resultCta || undefined,
-                compare_id: compareOriginId || undefined,
-              }}
-            />
-            <Link
-              href={`/product/${encodeURIComponent(product.id)}`}
-              className="inline-flex h-10 items-center rounded-full border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)] px-4 text-[12px] font-semibold text-[color:var(--m-wiki-text-mid)] active:bg-black/[0.03]"
-            >
-              打开完整产品页
-            </Link>
-          </div>
+          {isRationaleMode ? (
+            <>
+              <div className="mt-4 rounded-[16px] border border-[#d5e4ff] bg-[#f4f8ff] px-3 py-2 text-[12px] leading-[1.55] text-[#345fa8]">
+                看完产品信息后，仍可直接做决定：先收下推荐，或回到换不换对比。
+              </div>
+              {rationaleDecisionActions}
+            </>
+          ) : (
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <AddToBagButton
+                productId={product.id}
+                analyticsProps={rationaleActionEventProps}
+              />
+              <Link
+                href={`/product/${encodeURIComponent(product.id)}`}
+                className="inline-flex h-10 items-center rounded-full border border-[color:var(--m-wiki-border)] bg-[color:var(--m-wiki-frost)] px-4 text-[12px] font-semibold text-[color:var(--m-wiki-text-mid)] active:bg-black/[0.03]"
+              >
+                打开完整产品页
+              </Link>
+            </div>
+          )}
         </div>
       </article>
 
@@ -493,6 +591,46 @@ function MobileListCard({
     <div className={`rounded-[18px] border px-3 py-3 ${toneClass}`}>
       <div className="text-[13px] font-semibold text-white/84">{title}</div>
       <ul className="mt-2 space-y-1 text-[12px] leading-[1.55] text-white/62">
+        {items.length > 0 ? items.map((item) => <li key={item}>• {item}</li>) : <li>-</li>}
+      </ul>
+    </div>
+  );
+}
+
+function pickRationaleItems(values: Array<string | null | undefined>, fallback: string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of values) {
+    const text = String(raw || "").replace(/\s+/g, " ").trim();
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    out.push(text);
+    if (out.length >= 3) break;
+  }
+  if (out.length > 0) return out;
+  return fallback;
+}
+
+function RationaleListCard({
+  title,
+  items,
+  tone,
+}: {
+  title: string;
+  items: string[];
+  tone: "green" | "blue" | "amber";
+}) {
+  const toneClass =
+    tone === "green"
+      ? "border-[#bde4d0] bg-[#ecf8f1] text-[#1e5d3b]"
+      : tone === "blue"
+        ? "border-[#c8dcff] bg-[#f1f7ff] text-[#1f4f97]"
+        : "border-[#ecd9bf] bg-[#fbf4ea] text-[#7a5a24]";
+
+  return (
+    <div className={`rounded-[18px] border px-3 py-3 ${toneClass}`}>
+      <div className="text-[13px] font-semibold">{title}</div>
+      <ul className="mt-2 space-y-1.5 text-[12px] leading-[1.6]">
         {items.length > 0 ? items.map((item) => <li key={item}>• {item}</li>) : <li>-</li>}
       </ul>
     </div>
