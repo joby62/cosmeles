@@ -3,6 +3,16 @@ type SearchRecord = Record<string, SearchValue>;
 
 type SearchLike = Pick<URLSearchParams, "get"> | SearchRecord | null | undefined;
 
+const MOBILE_UTILITY_ROUTE_STATE_QUERY_KEY = {
+  source: "source",
+  returnTo: "return_to",
+  scenarioId: "scenario_id",
+  resultCta: "result_cta",
+  compareId: "compare_id",
+  // Legacy deep links only; adapter reads it but never writes it.
+  legacyCompareId: "from_compare_id",
+} as const;
+
 export type MobileUtilityRouteState = {
   source: string | null;
   returnTo: string | null;
@@ -54,12 +64,14 @@ function normalizeReturnTo(raw: string): string | null {
 }
 
 export function parseMobileUtilityRouteState(search: SearchLike): MobileUtilityRouteState {
-  const source = readValue(search, "source");
-  const returnTo = normalizeReturnTo(readValue(search, "return_to"));
-  const scenarioId = readValue(search, "scenario_id");
-  const resultCta = readValue(search, "result_cta");
+  const source = readValue(search, MOBILE_UTILITY_ROUTE_STATE_QUERY_KEY.source);
+  const returnTo = normalizeReturnTo(readValue(search, MOBILE_UTILITY_ROUTE_STATE_QUERY_KEY.returnTo));
+  const scenarioId = readValue(search, MOBILE_UTILITY_ROUTE_STATE_QUERY_KEY.scenarioId);
+  const resultCta = readValue(search, MOBILE_UTILITY_ROUTE_STATE_QUERY_KEY.resultCta);
   // Legacy deep links may still carry from_compare_id; keep adapter read-only compatibility here.
-  const compareId = readValue(search, "compare_id") || readValue(search, "from_compare_id");
+  const compareId =
+    readValue(search, MOBILE_UTILITY_ROUTE_STATE_QUERY_KEY.compareId) ||
+    readValue(search, MOBILE_UTILITY_ROUTE_STATE_QUERY_KEY.legacyCompareId);
   return {
     source: source || null,
     returnTo,
@@ -112,19 +124,19 @@ export function applyMobileUtilityRouteState(
   if (!state) return params;
   const applied = { ...DEFAULT_APPLY_OPTIONS, ...(options || {}) };
   if (applied.includeSource && state.source) {
-    params.set("source", state.source);
+    params.set(MOBILE_UTILITY_ROUTE_STATE_QUERY_KEY.source, state.source);
   }
   if (applied.includeReturnTo && state.returnTo) {
-    params.set("return_to", state.returnTo);
+    params.set(MOBILE_UTILITY_ROUTE_STATE_QUERY_KEY.returnTo, state.returnTo);
   }
   if (applied.includeScenarioId && state.scenarioId) {
-    params.set("scenario_id", state.scenarioId);
+    params.set(MOBILE_UTILITY_ROUTE_STATE_QUERY_KEY.scenarioId, state.scenarioId);
   }
   if (applied.includeResultCta && state.resultCta) {
-    params.set("result_cta", state.resultCta);
+    params.set(MOBILE_UTILITY_ROUTE_STATE_QUERY_KEY.resultCta, state.resultCta);
   }
   if (applied.includeCompareId && state.compareId) {
-    params.set("compare_id", state.compareId);
+    params.set(MOBILE_UTILITY_ROUTE_STATE_QUERY_KEY.compareId, state.compareId);
   }
   return params;
 }
