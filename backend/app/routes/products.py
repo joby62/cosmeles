@@ -385,6 +385,17 @@ ANALYTICS_HOME_WORKSPACE_ACTION_LABELS: dict[str, str] = {
     "in_use_compare": "和当前在用做对比",
     "unknown": "未标注 action",
 }
+ANALYTICS_COMPARE_CLOSURE_ACTION_LABELS: dict[str, str] = {
+    "accept_recommendation": "接受推荐",
+    "keep_current": "保留当前",
+    "retry_current_product": "换一个当前产品再比",
+    "switch_category": "切换到其他品类",
+}
+ANALYTICS_RATIONALE_CLOSURE_ACTION_LABELS: dict[str, str] = {
+    "view": "查看推荐依据",
+    "to_bag": "依据页加入购物袋",
+    "to_compare": "依据页去对比",
+}
 
 
 def _normalize_optional_text(value: Any) -> str | None:
@@ -1594,9 +1605,19 @@ def get_mobile_analytics_experience(
             "dead_click",
             "compare_result_cta_click",
             "compare_result_cta_land",
+            "compare_entry_view",
+            "compare_upload_start",
+            "compare_upload_success",
+            "compare_result_accept_recommendation",
+            "compare_result_keep_current",
+            "compare_result_retry_current_product",
+            "compare_result_switch_category_click",
             "compare_run_start",
             "location_context_captured",
             "wiki_upload_cta_click",
+            "rationale_view",
+            "rationale_to_bag_click",
+            "rationale_to_compare_click",
             "result_view",
             "result_primary_cta_click",
             "result_secondary_loop_click",
@@ -1618,6 +1639,11 @@ def get_mobile_analytics_experience(
     decision_result_secondary_loop_clicks = 0
     utility_return_clicks = 0
     home_workspace_quick_action_clicks = 0
+    compare_closure_accept_recommendation = 0
+    compare_closure_keep_current = 0
+    rationale_view = 0
+    rationale_to_bag_click = 0
+    rationale_to_compare_click = 0
     compare_result_leaves = 0
     result_dwell_values: list[float] = []
     scroll_depth_counter: Counter[tuple[str, int]] = Counter()
@@ -1640,6 +1666,8 @@ def get_mobile_analytics_experience(
     utility_return_result_cta_counter: Counter[str] = Counter()
     utility_return_target_path_counter: Counter[str] = Counter()
     home_workspace_quick_action_counter: Counter[str] = Counter()
+    compare_closure_action_counter: Counter[str] = Counter()
+    rationale_closure_action_counter: Counter[str] = Counter()
     browser_counter: Counter[str] = Counter()
     os_counter: Counter[str] = Counter()
     device_counter: Counter[str] = Counter()
@@ -1738,6 +1766,32 @@ def get_mobile_analytics_experience(
             home_workspace_quick_action_clicks += 1
             action_key = _normalize_optional_text(props.get("action")) or "unknown"
             home_workspace_quick_action_counter[action_key] += 1
+            continue
+        if row.name == "compare_result_accept_recommendation":
+            compare_closure_accept_recommendation += 1
+            compare_closure_action_counter["accept_recommendation"] += 1
+            continue
+        if row.name == "compare_result_keep_current":
+            compare_closure_keep_current += 1
+            compare_closure_action_counter["keep_current"] += 1
+            continue
+        if row.name == "compare_result_retry_current_product":
+            compare_closure_action_counter["retry_current_product"] += 1
+            continue
+        if row.name == "compare_result_switch_category_click":
+            compare_closure_action_counter["switch_category"] += 1
+            continue
+        if row.name == "rationale_view":
+            rationale_view += 1
+            rationale_closure_action_counter["view"] += 1
+            continue
+        if row.name == "rationale_to_bag_click":
+            rationale_to_bag_click += 1
+            rationale_closure_action_counter["to_bag"] += 1
+            continue
+        if row.name == "rationale_to_compare_click":
+            rationale_to_compare_click += 1
+            rationale_closure_action_counter["to_compare"] += 1
             continue
         if row.name == "compare_result_leave":
             compare_result_leaves += 1
@@ -1881,6 +1935,11 @@ def get_mobile_analytics_experience(
         decision_result_secondary_loop_clicks=decision_result_secondary_loop_clicks,
         utility_return_clicks=utility_return_clicks,
         home_workspace_quick_action_clicks=home_workspace_quick_action_clicks,
+        compare_closure_accept_recommendation=compare_closure_accept_recommendation,
+        compare_closure_keep_current=compare_closure_keep_current,
+        rationale_view=rationale_view,
+        rationale_to_bag_click=rationale_to_bag_click,
+        rationale_to_compare_click=rationale_to_compare_click,
         compare_result_leaves=compare_result_leaves,
         avg_result_dwell_ms=round(sum(result_dwell_values) / len(result_dwell_values), 2) if result_dwell_values else 0.0,
         p50_result_dwell_ms=_percentile_fraction(result_dwell_values, 0.5),
@@ -1937,6 +1996,16 @@ def get_mobile_analytics_experience(
             home_workspace_quick_action_counter,
             denominator=sum(home_workspace_quick_action_counter.values()),
             label_map=ANALYTICS_HOME_WORKSPACE_ACTION_LABELS,
+        ),
+        compare_closure_actions=_build_count_items(
+            compare_closure_action_counter,
+            denominator=sum(compare_closure_action_counter.values()),
+            label_map=ANALYTICS_COMPARE_CLOSURE_ACTION_LABELS,
+        ),
+        rationale_closure_actions=_build_count_items(
+            rationale_closure_action_counter,
+            denominator=sum(rationale_closure_action_counter.values()),
+            label_map=ANALYTICS_RATIONALE_CLOSURE_ACTION_LABELS,
         ),
         browser_families=_build_count_items(browser_counter, denominator=env_denominator, label_map=ANALYTICS_BROWSER_LABELS),
         os_families=_build_count_items(os_counter, denominator=env_denominator, label_map=ANALYTICS_OS_LABELS),

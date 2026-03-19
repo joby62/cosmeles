@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import AddToBagButton from "@/components/mobile/AddToBagButton";
 import type { MobileCompareResult, MobileCompareResultSection } from "@/lib/api";
 import { markMobileTargetHandled, trackMobileEvent, trackMobileEventWithBeacon } from "@/lib/mobileAnalytics";
 import { describeMobileRouteFocus } from "@/lib/mobile/routeCopy";
@@ -92,6 +93,7 @@ export default function MobileCompareResultFlow({
     fullName: recommendedFullName,
     imageSrc: normalizeImageSrc(recommendedProduct?.image_url, categoryImage),
   };
+  const recommendedProductId = String(recommendedProduct?.id || "").trim();
 
   const heroTitle = heroDecisionTitle(finalDecision, currentVisual.shortName, recommendedVisual.shortName);
   const attitudeText = heroDecisionAttitude(finalDecision);
@@ -171,8 +173,8 @@ export default function MobileCompareResultFlow({
         source: "fallback",
         title: "本次结论摘要",
         hero: "先按这次建议执行，减少试错。",
-        teaser: ["如需更细节，再看成分百科与推荐产品。"],
-        items: ["先按这次建议执行，减少试错。", "如需更细节，再看成分百科与推荐产品。"],
+        teaser: ["如需更细节，再看关键差异与推荐依据。"],
+        items: ["先按这次建议执行，减少试错。", "如需更细节，再看关键差异与推荐依据。"],
         showAllCta: false,
       },
     ];
@@ -193,7 +195,7 @@ export default function MobileCompareResultFlow({
     if (out.length === 0) {
       add("先按本次建议执行 7 天，再观察头皮和发丝反馈。");
       add("出现不适时先降低频次，并暂停叠加强清洁产品。");
-      add("需要更细信息时，再展开建议卡的全部内容。");
+      add("需要更细信息时，再展开关键差异卡的全部内容。");
     }
 
     return out.slice(0, 3);
@@ -218,18 +220,48 @@ export default function MobileCompareResultFlow({
     void trackMobileEvent("compare_result_cta_click", payload);
   };
 
-  const trackedHref = (href: string, cta: string): string => {
+  const trackedHref = (
+    href: string,
+    cta: string,
+    routeResultCta: "bag_add" | "compare" | "rationale" | "retry_same_category" | "switch_category" = "compare",
+  ): string => {
     return appendMobileUtilityRouteState(
       href,
       {
         ...routeState,
         source: "compare_result",
-        resultCta: cta,
+        resultCta: routeResultCta,
         compareId: result.compare_id,
       },
       { includeSource: true },
     );
   };
+  const rationaleHref = trackedHref(result.recommendation.links.wiki, "rationale", "rationale");
+  const retryCurrentProductHref = trackedHref(`/m/compare?category=${encodeURIComponent(result.category)}`, "retry_current_product", "compare");
+  const switchCategoryHref = trackedHref("/m/choose", "switch_category", "switch_category");
+  const currentTarget = result.products?.[0] || null;
+  const keepCurrentParams = new URLSearchParams({
+    category: result.category,
+    closure: "keep_current",
+    decision: finalDecision,
+  });
+  const currentBrand = String(currentProduct?.brand || "").trim();
+  const currentName = String(currentProduct?.name || "").trim();
+  const currentSource = String(currentTarget?.source || "").trim();
+  if (currentBrand) keepCurrentParams.set("product_brand", currentBrand);
+  if (currentName) keepCurrentParams.set("product_name", currentName);
+  if (currentSource) keepCurrentParams.set("product_source", currentSource);
+  const keepCurrentHref = trackedHref(`/m/me/use?${keepCurrentParams.toString()}`, "keep_current", "compare");
+  const primaryDecisionLabel = decisionPrimaryCtaLabel(finalDecision);
+  const closureEventProps = {
+    page: "compare_result",
+    route,
+    source: analyticsSource,
+    category: result.category,
+    compare_id: result.compare_id,
+    decision: finalDecision,
+    confidence: finalConfidence / 100,
+  } as const;
 
   useEffect(() => {
     if (!activeSheet) return;
@@ -313,31 +345,136 @@ export default function MobileCompareResultFlow({
             <MiniProductCard title="另一款可选" visual={secondaryVisual} />
           </div>
 
-          <div className="mt-6 flex flex-wrap gap-2">
-            <a
-              href="#reason-gallery"
-              data-analytics-id="result:cta:reason-gallery"
-              data-analytics-dead-click-watch="true"
-              onClick={() => {
-                markMobileTargetHandled("result:cta:reason-gallery");
-                trackResultCta("reason_gallery_anchor");
-              }}
-              className="m-pressable inline-flex h-11 items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-6 text-[15px] font-semibold text-white shadow-[0_12px_28px_rgba(0,113,227,0.28)] active:opacity-95"
-            >
-              看原因
-            </a>
-            <Link
-              href={trackedHref(`/m/compare?category=${encodeURIComponent(result.category)}`, "rerun_compare")}
-              data-analytics-id="result:cta:rerun-compare"
-              data-analytics-dead-click-watch="true"
-              onClick={() => {
-                markMobileTargetHandled("result:cta:rerun-compare");
-                trackResultCta("rerun_compare", undefined, true);
-              }}
-              className="m-pressable inline-flex h-11 items-center justify-center rounded-full border border-[#d0d6e0] bg-white px-5 text-[14px] font-medium text-[#2f3b53] active:bg-black/[0.03] dark:border-[#5f6b82] dark:bg-[#1f2a3e] dark:text-[#d7e4ff]"
-            >
-              再做一次对比
-            </Link>
+          <div className="mt-6 space-y-3">
+            {finalDecision === "switch" ? (
+              recommendedProductId ? (
+                <div
+                  data-analytics-id="result:cta:decision-primary"
+                  data-analytics-dead-click-watch="true"
+                  onClickCapture={() => {
+                    markMobileTargetHandled("result:cta:decision-primary");
+                    trackResultCta("accept_recommendation", { target_path: result.recommendation.links.product });
+                  }}
+                >
+                  <AddToBagButton
+                    productId={recommendedProductId}
+                    className="w-full"
+                    buttonClassName="h-11 w-full border-transparent bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-6 text-[15px] font-semibold text-white shadow-[0_12px_28px_rgba(0,113,227,0.28)] active:opacity-95"
+                    label={primaryDecisionLabel}
+                    doneLabel="已加入购物袋"
+                    analyticsProps={{
+                      ...closureEventProps,
+                      cta: "accept_recommendation",
+                      target_path: result.recommendation.links.product,
+                    }}
+                    clickEventName="compare_result_accept_recommendation"
+                    clickEventProps={{
+                      ...closureEventProps,
+                      cta: "accept_recommendation",
+                      target_path: result.recommendation.links.product,
+                    }}
+                  />
+                </div>
+              ) : (
+                <Link
+                  href={trackedHref(result.recommendation.links.product, "accept_recommendation", "bag_add")}
+                  data-analytics-id="result:cta:decision-primary"
+                  data-analytics-dead-click-watch="true"
+                  onClick={() => {
+                    markMobileTargetHandled("result:cta:decision-primary");
+                    trackResultCta("accept_recommendation", { target_path: result.recommendation.links.product }, true);
+                    trackMobileEventWithBeacon("compare_result_accept_recommendation", {
+                      ...closureEventProps,
+                      cta: "accept_recommendation",
+                      target_path: result.recommendation.links.product,
+                    });
+                  }}
+                  className="m-pressable inline-flex h-11 w-full items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-6 text-[15px] font-semibold text-white shadow-[0_12px_28px_rgba(0,113,227,0.28)] active:opacity-95"
+                >
+                  {primaryDecisionLabel}
+                </Link>
+              )
+            ) : (
+              <Link
+                href={keepCurrentHref}
+                data-analytics-id="result:cta:decision-primary"
+                data-analytics-dead-click-watch="true"
+                onClick={() => {
+                  markMobileTargetHandled("result:cta:decision-primary");
+                  trackResultCta("keep_current", { target_path: "/m/me/use" }, true);
+                  trackMobileEventWithBeacon("compare_result_keep_current", {
+                    ...closureEventProps,
+                    cta: "keep_current",
+                    target_path: "/m/me/use",
+                  });
+                }}
+                className="m-pressable inline-flex h-11 w-full items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-6 text-[15px] font-semibold text-white shadow-[0_12px_28px_rgba(0,113,227,0.28)] active:opacity-95"
+              >
+                {primaryDecisionLabel}
+              </Link>
+            )}
+
+            <div className="flex flex-wrap gap-2">
+              <a
+                href="#reason-gallery"
+                data-analytics-id="result:cta:key-diff"
+                data-analytics-dead-click-watch="true"
+                onClick={() => {
+                  markMobileTargetHandled("result:cta:key-diff");
+                  trackResultCta("key_diff_anchor");
+                }}
+                className="m-pressable inline-flex h-10 items-center justify-center rounded-full border border-[#d0d6e0] bg-white px-4 text-[13px] font-medium text-[#2f3b53] active:bg-black/[0.03] dark:border-[#5f6b82] dark:bg-[#1f2a3e] dark:text-[#d7e4ff]"
+              >
+                看关键差异
+              </a>
+              <Link
+                href={rationaleHref}
+                data-analytics-id="result:cta:rationale"
+                data-analytics-dead-click-watch="true"
+                onClick={() => {
+                  markMobileTargetHandled("result:cta:rationale");
+                  trackResultCta("rationale", { target_path: result.recommendation.links.wiki }, true);
+                }}
+                className="m-pressable inline-flex h-10 items-center justify-center rounded-full border border-[#d0d6e0] bg-white px-4 text-[13px] font-medium text-[#2f3b53] active:bg-black/[0.03] dark:border-[#5f6b82] dark:bg-[#1f2a3e] dark:text-[#d7e4ff]"
+              >
+                看为什么推荐这款
+              </Link>
+              <Link
+                href={retryCurrentProductHref}
+                data-analytics-id="result:cta:retry-current"
+                data-analytics-dead-click-watch="true"
+                onClick={() => {
+                  markMobileTargetHandled("result:cta:retry-current");
+                  trackResultCta("retry_current_product", { target_path: "/m/compare" }, true);
+                  trackMobileEventWithBeacon("compare_result_retry_current_product", {
+                    ...closureEventProps,
+                    cta: "retry_current_product",
+                    target_path: "/m/compare",
+                  });
+                }}
+                className="m-pressable inline-flex h-10 items-center justify-center rounded-full border border-[#d0d6e0] bg-white px-4 text-[13px] font-medium text-[#2f3b53] active:bg-black/[0.03] dark:border-[#5f6b82] dark:bg-[#1f2a3e] dark:text-[#d7e4ff]"
+              >
+                换一个当前产品再比
+              </Link>
+              <Link
+                href={switchCategoryHref}
+                data-analytics-id="result:cta:switch-category"
+                data-analytics-dead-click-watch="true"
+                onClick={() => {
+                  markMobileTargetHandled("result:cta:switch-category");
+                  trackResultCta("switch_category", { target_path: "/m/choose" }, true);
+                  trackMobileEventWithBeacon("compare_result_switch_category_click", {
+                    ...closureEventProps,
+                    cta: "switch_category",
+                    target_path: "/m/choose",
+                  });
+                }}
+                className="m-pressable inline-flex h-10 items-center justify-center rounded-full border border-[#d0d6e0] bg-white px-4 text-[13px] font-medium text-[#2f3b53] active:bg-black/[0.03] dark:border-[#5f6b82] dark:bg-[#1f2a3e] dark:text-[#d7e4ff]"
+              >
+                测其他品类
+              </Link>
+            </div>
+
             {returnTracking ? (
               <Link
                 href={returnTracking.href}
@@ -349,7 +486,7 @@ export default function MobileCompareResultFlow({
                     trackMobileEventWithBeacon(returnTracking.eventName, returnTracking.eventProps);
                   }
                 }}
-                className="m-pressable inline-flex h-11 items-center justify-center rounded-full border border-[#0a84ff]/28 bg-[#eef5ff] px-5 text-[14px] font-semibold text-[#1858b0] active:bg-[#e2efff] dark:border-[#69adff]/35 dark:bg-[#1e3558]/72 dark:text-[#b9daff]"
+                className="m-pressable inline-flex h-10 items-center justify-center rounded-full border border-[#0a84ff]/28 bg-[#eef5ff] px-4 text-[13px] font-semibold text-[#1858b0] active:bg-[#e2efff] dark:border-[#69adff]/35 dark:bg-[#1e3558]/72 dark:text-[#b9daff]"
               >
                 {returnTracking.label}
               </Link>
@@ -359,7 +496,7 @@ export default function MobileCompareResultFlow({
 
         <section id="reason-gallery" className="space-y-4">
           <header className="px-1">
-            <h2 className="text-[24px] font-semibold tracking-[-0.02em] text-[#18253b] dark:text-[#ecf2ff]">建议卡</h2>
+            <h2 className="text-[24px] font-semibold tracking-[-0.02em] text-[#18253b] dark:text-[#ecf2ff]">关键差异</h2>
             <p className="mt-1 text-[14px] leading-[1.62] text-[#5a6780] dark:text-[#aebfdb]">一张卡讲一件事，先读重点；条目超过 4 条再展开“全部内容”。</p>
           </header>
 
@@ -429,36 +566,6 @@ export default function MobileCompareResultFlow({
             ))}
           </ul>
 
-          <div className="mt-5 flex flex-wrap gap-2">
-            <Link
-              href={trackedHref(result.recommendation.links.product, "recommendation_product")}
-              data-analytics-id="result:cta:product"
-              data-analytics-dead-click-watch="true"
-              onClick={() => {
-                markMobileTargetHandled("result:cta:product");
-                trackResultCta("recommendation_product", {
-                  target_path: result.recommendation.links.product,
-                }, true);
-              }}
-              className="m-pressable inline-flex h-11 items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-6 text-[15px] font-semibold text-white shadow-[0_12px_28px_rgba(0,113,227,0.28)] active:opacity-95"
-            >
-              查看推荐产品
-            </Link>
-            <Link
-              href={trackedHref(result.recommendation.links.wiki, "recommendation_wiki")}
-              data-analytics-id="result:cta:wiki"
-              data-analytics-dead-click-watch="true"
-              onClick={() => {
-                markMobileTargetHandled("result:cta:wiki");
-                trackResultCta("recommendation_wiki", {
-                  target_path: result.recommendation.links.wiki,
-                }, true);
-              }}
-              className="m-pressable inline-flex h-11 items-center justify-center rounded-full border border-[#d0d6e0] bg-white px-5 text-[14px] font-medium text-[#2f3b53] active:bg-black/[0.03] dark:border-[#5f6b82] dark:bg-[#1f2a3e] dark:text-[#d7e4ff]"
-            >
-              查看成分百科
-            </Link>
-          </div>
         </article>
 
         {result.transparency.warnings.length > 0 ? (
@@ -612,6 +719,12 @@ function decisionLabel(value: "keep" | "switch" | "hybrid"): string {
   if (value === "keep") return "建议继续用";
   if (value === "switch") return "建议切换";
   return "建议分场景";
+}
+
+function decisionPrimaryCtaLabel(value: "keep" | "switch" | "hybrid"): string {
+  if (value === "switch") return "换成推荐这款";
+  if (value === "keep") return "继续用现在这款";
+  return "先保留现在这款";
 }
 
 function decisionTone(value: "keep" | "switch" | "hybrid"): string {

@@ -12,6 +12,9 @@ export default function AddToBagButton({
   analyticsProps,
   clickEventName,
   clickEventProps,
+  label,
+  busyLabel,
+  doneLabel,
 }: {
   productId: string;
   className?: string;
@@ -20,6 +23,9 @@ export default function AddToBagButton({
   analyticsProps?: Record<string, unknown>;
   clickEventName?: string;
   clickEventProps?: Record<string, unknown>;
+  label?: string;
+  busyLabel?: string;
+  doneLabel?: string;
 }) {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
@@ -73,7 +79,7 @@ export default function AddToBagButton({
             : "border-black/15 bg-white text-black/78 active:bg-black/[0.03]"
         } disabled:opacity-55 ${buttonClassName}`.trim()}
       >
-        {busy ? "加入中..." : done ? "已加入" : "加入购物袋"}
+        {busy ? busyLabel || "加入中..." : done ? doneLabel || "已加入" : label || "加入购物袋"}
       </button>
       {error ? <div className="mt-1 text-[11px] text-[#b42318]">错误：{error}</div> : null}
     </div>

@@ -912,6 +912,79 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 props_json='{"cta":"recommendation_wiki"}',
             ),
             MobileClientEvent(
+                event_id="evt-036ha",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="compare_result_accept_recommendation",
+                page="compare_result",
+                route="/m/compare/result/cmp-1",
+                source="m_compare_result",
+                category="shampoo",
+                compare_id="cmp-1",
+                created_at="2026-03-12T01:00:18.191000Z",
+                props_json='{"target_path":"/product/p-9"}',
+            ),
+            MobileClientEvent(
+                event_id="evt-036hb",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="compare_result_keep_current",
+                page="compare_result",
+                route="/m/compare/result/cmp-1",
+                source="m_compare_result",
+                category="shampoo",
+                compare_id="cmp-1",
+                created_at="2026-03-12T01:00:18.192000Z",
+                props_json='{"target_path":"/m/me/use?category=shampoo"}',
+            ),
+            MobileClientEvent(
+                event_id="evt-036hc",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="rationale_view",
+                page="wiki_product_detail",
+                route="/m/wiki/product/p-9",
+                source="m_compare_result",
+                category="shampoo",
+                product_id="p-9",
+                compare_id="cmp-1",
+                created_at="2026-03-12T01:00:18.193000Z",
+                props_json='{"result_cta":"recommendation_wiki"}',
+            ),
+            MobileClientEvent(
+                event_id="evt-036hd",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="rationale_to_bag_click",
+                page="wiki_product_detail",
+                route="/m/wiki/product/p-9",
+                source="m_compare_result",
+                category="shampoo",
+                product_id="p-9",
+                compare_id="cmp-1",
+                created_at="2026-03-12T01:00:18.194000Z",
+                props_json='{"result_cta":"recommendation_wiki","target_path":"/product/p-9"}',
+            ),
+            MobileClientEvent(
+                event_id="evt-036he",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="rationale_to_compare_click",
+                page="wiki_product_detail",
+                route="/m/wiki/product/p-9",
+                source="m_compare_result",
+                category="shampoo",
+                product_id="p-9",
+                compare_id="cmp-1",
+                created_at="2026-03-12T01:00:18.195000Z",
+                props_json='{"result_cta":"recommendation_wiki","target_path":"/m/compare?category=shampoo"}',
+            ),
+            MobileClientEvent(
                 event_id="evt-036i",
                 owner_type="device",
                 owner_id="owner-alpha",
@@ -1256,6 +1329,9 @@ def test_mobile_analytics_errors_feedback_and_sessions(mobile_analytics_client: 
     assert sessions_payload["items"][0]["latest_location_time_zone"] == "Asia/Shanghai"
     assert any(item["name"] == "compare_run_success" for item in sessions_payload["timeline"])
     assert any(item["name"] == "compare_result_view" for item in sessions_payload["timeline"])
+    assert any(item["name"] == "compare_result_accept_recommendation" for item in sessions_payload["timeline"])
+    assert any(item["name"] == "compare_result_keep_current" for item in sessions_payload["timeline"])
+    assert any(item["name"] == "rationale_to_bag_click" for item in sessions_payload["timeline"])
     assert any(item["name"] == "utility_return_click" for item in sessions_payload["timeline"])
     assert any(item["location_label"] == "31.230, 121.470 · 约1.2km" for item in sessions_payload["timeline"])
     utility_return = next(item for item in sessions_payload["timeline"] if item["name"] == "utility_return_click")
@@ -1284,6 +1360,11 @@ def test_mobile_analytics_experience(mobile_analytics_client: TestClient):
     assert payload["decision_result_secondary_loop_clicks"] == 1
     assert payload["utility_return_clicks"] == 1
     assert payload["home_workspace_quick_action_clicks"] == 1
+    assert payload["compare_closure_accept_recommendation"] == 1
+    assert payload["compare_closure_keep_current"] == 1
+    assert payload["rationale_view"] == 1
+    assert payload["rationale_to_bag_click"] == 1
+    assert payload["rationale_to_compare_click"] == 1
     assert payload["compare_result_leaves"] == 1
     assert payload["avg_result_dwell_ms"] == 18200.0
     assert payload["p50_result_dwell_ms"] == 18200.0
@@ -1345,6 +1426,13 @@ def test_mobile_analytics_experience(mobile_analytics_client: TestClient):
     assert utility_target_paths["/m/shampoo/result"] == 1
     home_workspace_actions = {item["key"]: item["count"] for item in payload["home_workspace_quick_actions"]}
     assert home_workspace_actions["compare"] == 1
+    compare_closure_actions = {item["key"]: item["count"] for item in payload["compare_closure_actions"]}
+    assert compare_closure_actions["accept_recommendation"] == 1
+    assert compare_closure_actions["keep_current"] == 1
+    rationale_closure_actions = {item["key"]: item["count"] for item in payload["rationale_closure_actions"]}
+    assert rationale_closure_actions["view"] == 1
+    assert rationale_closure_actions["to_bag"] == 1
+    assert rationale_closure_actions["to_compare"] == 1
 
     browser_counts = {item["key"]: item["count"] for item in payload["browser_families"]}
     assert browser_counts["chrome"] == 3

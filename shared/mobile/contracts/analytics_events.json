@@ -59,6 +59,36 @@
     },
     "utility_return_click": {
       "required_props": ["page", "route", "source", "category", "scenario_id", "result_cta", "target_path", "action"]
+    },
+    "compare_entry_view": {
+      "required_props": ["page", "route", "source", "category"]
+    },
+    "compare_upload_start": {
+      "required_props": ["page", "route", "source", "category"]
+    },
+    "compare_upload_success": {
+      "required_props": ["page", "route", "source", "category"]
+    },
+    "compare_result_accept_recommendation": {
+      "required_props": ["page", "route", "source", "category", "compare_id", "target_path"]
+    },
+    "compare_result_keep_current": {
+      "required_props": ["page", "route", "source", "category", "compare_id", "target_path"]
+    },
+    "compare_result_retry_current_product": {
+      "required_props": ["page", "route", "source", "category", "compare_id", "target_path"]
+    },
+    "compare_result_switch_category_click": {
+      "required_props": ["page", "route", "source", "category", "compare_id", "target_path"]
+    },
+    "rationale_view": {
+      "required_props": ["page", "route", "source", "category", "product_id", "result_cta"]
+    },
+    "rationale_to_bag_click": {
+      "required_props": ["page", "route", "source", "category", "product_id", "result_cta", "target_path"]
+    },
+    "rationale_to_compare_click": {
+      "required_props": ["page", "route", "source", "category", "product_id", "result_cta", "target_path"]
     }
   }
 }

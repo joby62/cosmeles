@@ -17,6 +17,9 @@ type UseCategory = {
   tip: string;
 };
 
+type KeepCurrentClosureDecision = "keep" | "hybrid";
+type KeepCurrentClosureSource = "upload_new" | "history_product";
+
 type SearchParamsValue = string | string[] | undefined;
 type UseSearchParams = Record<string, SearchParamsValue>;
 
@@ -39,6 +42,21 @@ function normalizeRequestedCategory(raw: string): UseCategory["key"] | null {
   return USE_CATEGORIES.find((item) => item.key === value)?.key || null;
 }
 
+function normalizeKeepCurrentClosureDecision(raw: string): KeepCurrentClosureDecision | null {
+  if (raw === "keep" || raw === "hybrid") return raw;
+  return null;
+}
+
+function normalizeKeepCurrentClosureSource(raw: string): KeepCurrentClosureSource | null {
+  if (raw === "upload_new" || raw === "history_product") return raw;
+  return null;
+}
+
+function formatProductLabel(brand: string, name: string): string {
+  const value = [brand, name].filter(Boolean).join(" ").trim();
+  return value || "当前这款";
+}
+
 export default async function MobileMeUsePage({
   searchParams,
 }: {
@@ -49,6 +67,13 @@ export default async function MobileMeUsePage({
   const requestedCategory = normalizeRequestedCategory(firstSearchParam(resolvedSearchParams.category));
   const source = routeState.source || "";
   const analyticsSource = resolveMobileUtilitySource(routeState, "m_me_use");
+  const keepCurrentClosure = firstSearchParam(resolvedSearchParams.closure) === "keep_current";
+  const keepCurrentDecision = normalizeKeepCurrentClosureDecision(firstSearchParam(resolvedSearchParams.decision));
+  const keepCurrentSource = normalizeKeepCurrentClosureSource(firstSearchParam(resolvedSearchParams.product_source));
+  const keepCurrentProductLabel = formatProductLabel(
+    firstSearchParam(resolvedSearchParams.product_brand),
+    firstSearchParam(resolvedSearchParams.product_name),
+  );
   const orderedCategories = requestedCategory
     ? [
         ...USE_CATEGORIES.filter((item) => item.key === requestedCategory),
@@ -58,6 +83,12 @@ export default async function MobileMeUsePage({
   const requestedCategoryLabel = requestedCategory
     ? USE_CATEGORIES.find((item) => item.key === requestedCategory)?.label || requestedCategory
     : "";
+  const keepCurrentClosureTitle =
+    keepCurrentDecision === "hybrid" ? "已先保留现在这款" : "已继续用现在这款";
+  const keepCurrentClosureBody =
+    keepCurrentSource === "upload_new"
+      ? `${keepCurrentProductLabel} 已写入你的在用清单，后面可以继续观察肤感和状态，再决定要不要换。`
+      : `${keepCurrentProductLabel} 已继续保留在你的在用清单里，这次结论是不必急着换。`;
 
   return (
     <section className="space-y-4 pb-8">
@@ -67,6 +98,20 @@ export default async function MobileMeUsePage({
         routeState={routeState}
         className="m-pressable inline-flex h-9 items-center rounded-full border border-black/12 bg-white/82 px-4 text-[12px] font-semibold text-black/72 active:bg-black/[0.03] dark:border-white/14 dark:bg-white/[0.05] dark:text-white/78"
       />
+      {keepCurrentClosure && keepCurrentDecision ? (
+        <article className="rounded-[26px] border border-[#cfe2ff] bg-[linear-gradient(180deg,#f7faff_0%,#edf4ff_100%)] px-4 py-4 text-[#214d99] shadow-[0_10px_24px_rgba(36,80,163,0.1)]">
+          <div className="inline-flex rounded-full border border-[#b8d3ff] bg-white/78 px-3 py-1 text-[11px] font-semibold tracking-[0.04em] text-[#3565b8]">
+            Compare 裁决已完成
+          </div>
+          <h2 className="mt-3 text-[22px] leading-[1.28] font-semibold tracking-[-0.02em] text-[#183b77]">{keepCurrentClosureTitle}</h2>
+          <p className="mt-2 text-[13px] leading-[1.65] text-[#3560aa]">{keepCurrentClosureBody}</p>
+          {requestedCategoryLabel ? (
+            <div className="mt-3 rounded-[18px] border border-[#d5e4ff] bg-white/72 px-3 py-2 text-[12px] leading-[1.55] text-[#3f68ab]">
+              已帮你把这次决定落到“{requestedCategoryLabel}”在用入口，后续这类 compare 会直接复用这瓶当前产品。
+            </div>
+          ) : null}
+        </article>
+      ) : null}
       <header className="overflow-hidden rounded-[30px] border border-black/10 bg-white/88 p-5 shadow-[0_10px_28px_rgba(20,34,58,0.08)] dark:border-white/15 dark:bg-[#0f1724]/84">
         <div className="inline-flex rounded-full border border-[#0071e3]/24 bg-[#0071e3]/8 px-3 py-1 text-[11px] font-semibold tracking-[0.01em] text-[#0071e3]">
           在用管理

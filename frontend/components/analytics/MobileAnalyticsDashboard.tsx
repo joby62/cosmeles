@@ -689,6 +689,83 @@ function describeTimelineEvent(item: MobileAnalyticsSessionEventItem): SessionTi
         meta,
         rawMeta,
       };
+    case "compare_result_accept_recommendation":
+      return {
+        eventName,
+        phase: "result",
+        title: "Compare 裁决：接受推荐",
+        flowLabel: "接受推荐",
+        summary: "用户在 compare 裁决后选择了推荐方案。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "compare_result_keep_current":
+      return {
+        eventName,
+        phase: "result",
+        title: "Compare 裁决：保留当前",
+        flowLabel: "保留当前",
+        summary: "用户在 compare 裁决后选择继续使用当前产品。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "compare_result_retry_current_product":
+      return {
+        eventName,
+        phase: "action",
+        title: "Compare：换一个当前产品再比",
+        flowLabel: "重试当前产品",
+        summary: "用户没有直接收口，选择更换当前产品继续裁决。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "compare_result_switch_category_click":
+      return {
+        eventName,
+        phase: "action",
+        title: "Compare：切换到其他品类",
+        flowLabel: "切换品类",
+        summary: "用户从 compare 裁决切到新的决策任务。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "rationale_view":
+      return {
+        eventName,
+        phase: "result",
+        title: "进入推荐依据页",
+        flowLabel: "进入推荐依据页",
+        summary: "用户开始查看“为什么推荐这款”的依据说明。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "rationale_to_bag_click":
+      return {
+        eventName,
+        phase: "result",
+        title: "依据页：加入购物袋",
+        flowLabel: "依据页加入购物袋",
+        summary: "用户在依据页直接完成“先收下”动作。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "rationale_to_compare_click":
+      return {
+        eventName,
+        phase: "result",
+        title: "依据页：去 compare 裁决",
+        flowLabel: "依据页去 compare",
+        summary: "用户在依据页仍有疑虑，转入 compare 裁决路径。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
     case "result_view":
       return {
         eventName,
@@ -969,6 +1046,10 @@ function buildSessionTimelinePresentation(items: MobileAnalyticsSessionEventItem
       "result_secondary_loop_click",
       "utility_return_click",
       "bag_add_success",
+      "compare_result_accept_recommendation",
+      "compare_result_keep_current",
+      "rationale_to_bag_click",
+      "rationale_to_compare_click",
     ].includes(item.eventName),
   );
   const issueEvent = findLastMatching(narratives, (item) => item.phase === "issue");
@@ -1760,6 +1841,32 @@ export default function MobileAnalyticsDashboard() {
                       })),
                       "emerald",
                     )}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-black/42">Phase 12 Decision Closure</div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <article className="rounded-[20px] border border-black/10 bg-[#f7f8fb] px-4 py-4">
+                      <div className="text-[12px] text-black/48">Compare 裁决闭环</div>
+                      <div className="mt-2 text-[20px] font-semibold tracking-[-0.02em] text-black/86">
+                        接受推荐 {formatNumber(experience.data.compare_closure_accept_recommendation)}
+                      </div>
+                      <div className="mt-1 text-[12px] text-black/58">
+                        保留当前 {formatNumber(experience.data.compare_closure_keep_current)}
+                      </div>
+                      <div className="mt-3">{renderCountList(experience.data.compare_closure_actions, "emerald")}</div>
+                    </article>
+                    <article className="rounded-[20px] border border-black/10 bg-[#f7f8fb] px-4 py-4">
+                      <div className="text-[12px] text-black/48">Rationale 回到决定</div>
+                      <div className="mt-2 text-[20px] font-semibold tracking-[-0.02em] text-black/86">
+                        去购物袋 {formatNumber(experience.data.rationale_to_bag_click)}
+                      </div>
+                      <div className="mt-1 text-[12px] text-black/58">
+                        去对比 {formatNumber(experience.data.rationale_to_compare_click)} · 浏览 {formatNumber(experience.data.rationale_view)}
+                      </div>
+                      <div className="mt-3">{renderCountList(experience.data.rationale_closure_actions, "amber")}</div>
+                    </article>
                   </div>
                 </div>
 

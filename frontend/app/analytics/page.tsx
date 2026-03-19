@@ -6,7 +6,7 @@ import { ANALYTICS_SECTIONS } from "@/lib/analyticsNav";
 
 export const metadata: Metadata = {
   title: "数据分析 · 予选",
-  description: "桌面端移动链路分析台，聚焦决策结果到达、结果动作、utility 回环与流失反馈。",
+  description: "桌面端移动链路分析台，聚焦决策结果到达、结果动作、decision closure、utility 回环与流失反馈。",
 };
 
 const STRUCTURED_FIELDS = [
@@ -94,6 +94,21 @@ const EVENT_GROUPS = [
       "bag_add_success",
     ],
     value: "把‘拿到结果没有’‘结果后有没有继续’‘utility 有没有把人带回来’放进一套统一口径，并用 result_cta / action / target_path 观测 Phase 10 意图分流。",
+  },
+  {
+    title: "Decision Closure（Phase 12）",
+    status: "已接入",
+    summary: "compare / rationale 不再只看阅读与跳转，而是要看能否回到明确决定：接受推荐或保留当前。",
+    events: [
+      "compare_result_accept_recommendation",
+      "compare_result_keep_current",
+      "compare_result_retry_current_product",
+      "compare_result_switch_category_click",
+      "rationale_view",
+      "rationale_to_bag_click",
+      "rationale_to_compare_click",
+    ],
+    value: "把“接受推荐”与“保留当前”都纳入 closure success，不再把 compare 当成信息黑洞。",
   },
   {
     title: "对比结果阅读与落地",
