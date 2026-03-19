@@ -24,6 +24,9 @@
     "home_weak_entry_click": {
       "required_props": ["page", "route", "source", "target_path"]
     },
+    "home_workspace_quick_action_click": {
+      "required_props": ["page", "route", "source", "target_path", "action"]
+    },
     "choose_view": {
       "required_props": ["page", "route", "source"]
     },
@@ -49,13 +52,13 @@
       "required_props": ["page", "route", "source", "category", "scenario_id"]
     },
     "result_primary_cta_click": {
-      "required_props": ["page", "route", "source", "category", "scenario_id", "target_path"]
+      "required_props": ["page", "route", "source", "category", "scenario_id", "result_cta", "target_path"]
     },
     "result_secondary_loop_click": {
-      "required_props": ["page", "route", "source", "category", "scenario_id", "target_path", "action"]
+      "required_props": ["page", "route", "source", "category", "scenario_id", "result_cta", "target_path", "action"]
     },
     "utility_return_click": {
-      "required_props": ["page", "route", "source", "category", "scenario_id", "target_path", "action"]
+      "required_props": ["page", "route", "source", "category", "scenario_id", "result_cta", "target_path", "action"]
     }
   }
 }

@@ -1,3 +1,7 @@
+import { normalizeMobileReturnTo } from "@/lib/mobile/flowReturn";
+import {
+  normalizeMobileResultCta,
+} from "@/lib/mobile/resultCta";
 type SearchValue = string | string[] | null | undefined;
 type SearchRecord = Record<string, SearchValue>;
 
@@ -57,17 +61,11 @@ function readValue(search: SearchLike, key: string): string {
   return String(raw || "").trim();
 }
 
-function normalizeReturnTo(raw: string): string | null {
-  if (!raw) return null;
-  if (!raw.startsWith("/m/")) return null;
-  return raw;
-}
-
 export function parseMobileUtilityRouteState(search: SearchLike): MobileUtilityRouteState {
   const source = readValue(search, MOBILE_UTILITY_ROUTE_STATE_QUERY_KEY.source);
-  const returnTo = normalizeReturnTo(readValue(search, MOBILE_UTILITY_ROUTE_STATE_QUERY_KEY.returnTo));
+  const returnTo = normalizeMobileReturnTo(readValue(search, MOBILE_UTILITY_ROUTE_STATE_QUERY_KEY.returnTo));
   const scenarioId = readValue(search, MOBILE_UTILITY_ROUTE_STATE_QUERY_KEY.scenarioId);
-  const resultCta = readValue(search, MOBILE_UTILITY_ROUTE_STATE_QUERY_KEY.resultCta);
+  const resultCta = normalizeMobileResultCta(readValue(search, MOBILE_UTILITY_ROUTE_STATE_QUERY_KEY.resultCta));
   // Legacy deep links may still carry from_compare_id; keep adapter read-only compatibility here.
   const compareId =
     readValue(search, MOBILE_UTILITY_ROUTE_STATE_QUERY_KEY.compareId) ||
@@ -123,20 +121,27 @@ export function applyMobileUtilityRouteState(
 ): URLSearchParams {
   if (!state) return params;
   const applied = { ...DEFAULT_APPLY_OPTIONS, ...(options || {}) };
-  if (applied.includeSource && state.source) {
-    params.set(MOBILE_UTILITY_ROUTE_STATE_QUERY_KEY.source, state.source);
+  const source = String(state.source || "").trim();
+  if (applied.includeSource && source) {
+    params.set(MOBILE_UTILITY_ROUTE_STATE_QUERY_KEY.source, source);
   }
-  if (applied.includeReturnTo && state.returnTo) {
-    params.set(MOBILE_UTILITY_ROUTE_STATE_QUERY_KEY.returnTo, state.returnTo);
+  const returnTo = normalizeMobileReturnTo(state.returnTo);
+  if (applied.includeReturnTo && returnTo) {
+    params.set(MOBILE_UTILITY_ROUTE_STATE_QUERY_KEY.returnTo, returnTo);
   }
-  if (applied.includeScenarioId && state.scenarioId) {
-    params.set(MOBILE_UTILITY_ROUTE_STATE_QUERY_KEY.scenarioId, state.scenarioId);
+  const scenarioId = String(state.scenarioId || "").trim();
+  if (applied.includeScenarioId && scenarioId) {
+    params.set(MOBILE_UTILITY_ROUTE_STATE_QUERY_KEY.scenarioId, scenarioId);
   }
   if (applied.includeResultCta && state.resultCta) {
-    params.set(MOBILE_UTILITY_ROUTE_STATE_QUERY_KEY.resultCta, state.resultCta);
+    const normalizedResultCta = normalizeMobileResultCta(state.resultCta);
+    if (normalizedResultCta) {
+      params.set(MOBILE_UTILITY_ROUTE_STATE_QUERY_KEY.resultCta, normalizedResultCta);
+    }
   }
-  if (applied.includeCompareId && state.compareId) {
-    params.set(MOBILE_UTILITY_ROUTE_STATE_QUERY_KEY.compareId, state.compareId);
+  const compareId = String(state.compareId || "").trim();
+  if (applied.includeCompareId && compareId) {
+    params.set(MOBILE_UTILITY_ROUTE_STATE_QUERY_KEY.compareId, compareId);
   }
   return params;
 }

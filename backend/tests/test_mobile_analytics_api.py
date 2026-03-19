@@ -103,6 +103,19 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 props_json='{"target_path":"/m/choose?category=shampoo"}',
             ),
             MobileClientEvent(
+                event_id="evt-003aa",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="home_workspace_quick_action_click",
+                page="selection_home",
+                route="/m",
+                source="m_home_workspace",
+                category="shampoo",
+                created_at="2026-03-12T01:00:02.150000Z",
+                props_json='{"target_path":"/m/compare?category=shampoo","action":"compare"}',
+            ),
+            MobileClientEvent(
                 event_id="evt-003b",
                 owner_type="device",
                 owner_id="owner-alpha",
@@ -922,7 +935,7 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 source="selection_result",
                 category="shampoo",
                 created_at="2026-03-12T01:00:18.210000Z",
-                props_json='{"scenario_id":"selres-shampoo-2026-03-03-1-abc123","target_path":"/product/p-9"}',
+                props_json='{"scenario_id":"selres-shampoo-2026-03-03-1-abc123","result_cta":"bag_add","action":"bag_add","target_path":"/product/p-9"}',
             ),
             MobileClientEvent(
                 event_id="evt-036k",
@@ -935,7 +948,7 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 source="selection_result",
                 category="shampoo",
                 created_at="2026-03-12T01:00:18.220000Z",
-                props_json='{"scenario_id":"selres-shampoo-2026-03-03-1-abc123","target_path":"/m/wiki/shampoo","action":"wiki"}',
+                props_json='{"scenario_id":"selres-shampoo-2026-03-03-1-abc123","result_cta":"rationale","target_path":"/m/wiki/shampoo","action":"wiki"}',
             ),
             MobileClientEvent(
                 event_id="evt-036l",
@@ -949,7 +962,7 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 category="shampoo",
                 compare_id="cmp-1",
                 created_at="2026-03-12T01:00:18.230000Z",
-                props_json='{"scenario_id":"selres-shampoo-2026-03-03-1-abc123","target_path":"/m/shampoo/result","action":"wiki_return"}',
+                props_json='{"scenario_id":"selres-shampoo-2026-03-03-1-abc123","result_cta":"rationale","target_path":"/m/shampoo/result","action":"wiki_return"}',
             ),
             MobileClientEvent(
                 event_id="evt-036m",
@@ -975,7 +988,7 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 source="selection_result",
                 category="shampoo",
                 created_at="2026-03-13T01:00:18.210000Z",
-                props_json='{"scenario_id":"selres-shampoo-2026-03-04-2-def456","target_path":"/product/p-9"}',
+                props_json='{"scenario_id":"selres-shampoo-2026-03-04-2-def456","result_cta":"bag_add","action":"bag_add","target_path":"/product/p-9"}',
             ),
             MobileClientEvent(
                 event_id="evt-036o",
@@ -988,7 +1001,7 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 source="selection_result",
                 category="shampoo",
                 created_at="2026-03-13T01:00:18.220000Z",
-                props_json='{"scenario_id":"selres-shampoo-2026-03-04-2-def456","target_path":"/m/wiki/shampoo","action":"wiki"}',
+                props_json='{"scenario_id":"selres-shampoo-2026-03-04-2-def456","result_cta":"rationale","target_path":"/m/wiki/shampoo","action":"wiki"}',
             ),
             MobileClientEvent(
                 event_id="evt-036p",
@@ -1001,7 +1014,7 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 source="m_wiki",
                 category="shampoo",
                 created_at="2026-03-13T01:00:18.230000Z",
-                props_json='{"scenario_id":"selres-shampoo-2026-03-04-2-def456","target_path":"/m/shampoo/result","action":"wiki_return"}',
+                props_json='{"scenario_id":"selres-shampoo-2026-03-04-2-def456","result_cta":"rationale","target_path":"/m/shampoo/result","action":"wiki_return"}',
             ),
             MobileClientEvent(
                 event_id="evt-037",
@@ -1086,6 +1099,7 @@ def test_mobile_analytics_overview_and_funnel(mobile_analytics_client: TestClien
     assert payload["result_secondary_loop_click"] == 1
     assert payload["utility_return_click"] == 1
     assert payload["home_primary_cta_click_sessions"] == 3
+    assert payload["home_workspace_quick_action_click_sessions"] == 1
     assert payload["choose_view_sessions"] == 3
     assert payload["choose_start_click_sessions"] == 2
     assert payload["questionnaire_completed_sessions"] == 1
@@ -1244,6 +1258,10 @@ def test_mobile_analytics_errors_feedback_and_sessions(mobile_analytics_client: 
     assert any(item["name"] == "compare_result_view" for item in sessions_payload["timeline"])
     assert any(item["name"] == "utility_return_click" for item in sessions_payload["timeline"])
     assert any(item["location_label"] == "31.230, 121.470 · 约1.2km" for item in sessions_payload["timeline"])
+    utility_return = next(item for item in sessions_payload["timeline"] if item["name"] == "utility_return_click")
+    assert utility_return["result_cta"] == "rationale"
+    assert utility_return["action"] == "wiki_return"
+    assert utility_return["target_path"] == "/m/shampoo/result"
 
 
 def test_mobile_analytics_experience(mobile_analytics_client: TestClient):
@@ -1265,6 +1283,7 @@ def test_mobile_analytics_experience(mobile_analytics_client: TestClient):
     assert payload["decision_result_primary_cta_clicks"] == 1
     assert payload["decision_result_secondary_loop_clicks"] == 1
     assert payload["utility_return_clicks"] == 1
+    assert payload["home_workspace_quick_action_clicks"] == 1
     assert payload["compare_result_leaves"] == 1
     assert payload["avg_result_dwell_ms"] == 18200.0
     assert payload["p50_result_dwell_ms"] == 18200.0
@@ -1312,6 +1331,20 @@ def test_mobile_analytics_experience(mobile_analytics_client: TestClient):
     assert secondary_actions["wiki"] == 1
     utility_returns = {item["key"]: item["count"] for item in payload["utility_return_actions"]}
     assert utility_returns["wiki_return"] == 1
+    primary_result_ctas = {item["key"]: item["count"] for item in payload["result_primary_cta_result_ctas"]}
+    assert primary_result_ctas["bag_add"] == 1
+    primary_target_paths = {item["key"]: item["count"] for item in payload["result_primary_cta_target_paths"]}
+    assert primary_target_paths["/product/p-9"] == 1
+    loop_result_ctas = {item["key"]: item["count"] for item in payload["result_secondary_loop_result_ctas"]}
+    assert loop_result_ctas["rationale"] == 1
+    loop_target_paths = {item["key"]: item["count"] for item in payload["result_secondary_loop_target_paths"]}
+    assert loop_target_paths["/m/wiki/shampoo"] == 1
+    utility_result_ctas = {item["key"]: item["count"] for item in payload["utility_return_result_ctas"]}
+    assert utility_result_ctas["rationale"] == 1
+    utility_target_paths = {item["key"]: item["count"] for item in payload["utility_return_target_paths"]}
+    assert utility_target_paths["/m/shampoo/result"] == 1
+    home_workspace_actions = {item["key"]: item["count"] for item in payload["home_workspace_quick_actions"]}
+    assert home_workspace_actions["compare"] == 1
 
     browser_counts = {item["key"]: item["count"] for item in payload["browser_families"]}
     assert browser_counts["chrome"] == 3

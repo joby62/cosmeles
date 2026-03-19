@@ -8,6 +8,7 @@ import {
   type MobileUtilityRouteState,
 } from "@/features/mobile-utility/routeState";
 import type { ResultCtaAttribution } from "@/lib/mobile/resultCtaAttribution";
+import { normalizeMobileResultCta } from "@/lib/mobile/resultCta";
 
 type BuildUtilityDecisionProfileEntryHrefOptions = {
   category: MobileSelectionCategory;
@@ -20,12 +21,12 @@ function toUtilityResultAttribution(
   routeState: MobileUtilityRouteState | null | undefined,
 ): ResultCtaAttribution | null {
   if (!routeState) return null;
-  const resultCta = String(routeState.resultCta || "").trim();
+  const resultCta = normalizeMobileResultCta(routeState.resultCta);
+  if (!resultCta) return null;
   const compareId = String(routeState.compareId || "").trim();
-  if (!resultCta || !compareId) return null;
   return {
     resultCta,
-    fromCompareId: compareId,
+    fromCompareId: compareId || undefined,
   };
 }
 

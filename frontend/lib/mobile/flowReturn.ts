@@ -14,18 +14,24 @@ function readValue(search: SearchLike, key: string): string {
   return Array.isArray(raw) ? String(raw[0] || "").trim() : String(raw || "").trim();
 }
 
+export function normalizeMobileReturnTo(raw: string | null | undefined): string | null {
+  const value = String(raw || "").trim();
+  if (!value) return null;
+  if (value === "/m" || value.startsWith("/m/")) return value;
+  return null;
+}
+
 export function parseMobileReturnTo(search: SearchLike): string | null {
-  const value = readValue(search, "return_to");
-  if (!value.startsWith("/m/")) return null;
-  return value;
+  return normalizeMobileReturnTo(readValue(search, "return_to"));
 }
 
 export function applyMobileReturnTo(
   params: URLSearchParams,
   returnTo: string | null | undefined,
 ): URLSearchParams {
-  if (!returnTo) return params;
-  params.set("return_to", returnTo);
+  const normalized = normalizeMobileReturnTo(returnTo);
+  if (!normalized) return params;
+  params.set("return_to", normalized);
   return params;
 }
 

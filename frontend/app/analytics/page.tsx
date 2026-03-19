@@ -25,6 +25,7 @@ const STRUCTURED_FIELDS = [
   "scenario_id",
   "step",
   "stage",
+  "result_cta",
   "action",
   "target_path",
   "dwell_ms",
@@ -82,15 +83,17 @@ const EVENT_GROUPS = [
   {
     title: "决策结果与 utility 回环",
     status: "已接入",
-    summary: "现在能直接看决策结果有没有被到达、主 CTA 有没有被点击、结果后有没有进入 utility，以及 utility 有没有把用户送回决策链路。",
+    summary:
+      "现在能直接看决策结果有没有被到达、主 CTA 有没有被点击、结果后有没有进入 utility，以及 utility 有没有把用户送回决策链路；老用户首页 workspace 快捷动作也可作为 supporting context 观察。",
     events: [
       "result_view",
       "result_primary_cta_click",
       "result_secondary_loop_click",
       "utility_return_click",
+      "home_workspace_quick_action_click",
       "bag_add_success",
     ],
-    value: "把‘拿到结果没有’‘结果后有没有继续’‘utility 有没有把人带回来’放进一套统一口径。",
+    value: "把‘拿到结果没有’‘结果后有没有继续’‘utility 有没有把人带回来’放进一套统一口径，并用 result_cta / action / target_path 观测 Phase 10 意图分流。",
   },
   {
     title: "对比结果阅读与落地",
@@ -171,11 +174,13 @@ const ANALYTIC_QUESTIONS = [
   },
   {
     question: "到达结果后有多少会话继续动作？",
-    answer: "拆开展示 result_primary_cta_click / result_secondary_loop_click / utility_return_click，compare 事件只做 supporting context。",
+    answer:
+      "拆开展示 result_primary_cta_click / result_secondary_loop_click / utility_return_click；并用 result_cta / action / target_path 解释动作语义，compare 事件只做 supporting context。",
     signals: [
       "result_primary_cta_click",
       "result_secondary_loop_click",
       "utility_return_click",
+      "home_workspace_quick_action_click (supporting only)",
       "compare_result_view (supporting only)",
     ],
   },

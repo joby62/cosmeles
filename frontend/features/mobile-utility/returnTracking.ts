@@ -46,6 +46,7 @@ export function resolveMobileUtilityReturnTracking(
   }
   const compareId = normalizeValue(options.compareId) || normalizeValue(options.routeState.compareId);
   const category = normalizeValue(options.category);
+  const resultCta = normalizeValue(options.routeState.resultCta);
   return {
     href: targetPath,
     label: action.label,
@@ -57,6 +58,7 @@ export function resolveMobileUtilityReturnTracking(
       category: category || undefined,
       compare_id: compareId || undefined,
       scenario_id: scenarioId,
+      result_cta: resultCta || undefined,
       target_path: targetPath,
       action: options.action,
     },

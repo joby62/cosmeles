@@ -8,12 +8,18 @@ export default function AddToBagButton({
   productId,
   className = "",
   compact = false,
+  buttonClassName = "",
   analyticsProps,
+  clickEventName,
+  clickEventProps,
 }: {
   productId: string;
   className?: string;
   compact?: boolean;
+  buttonClassName?: string;
   analyticsProps?: Record<string, unknown>;
+  clickEventName?: string;
+  clickEventProps?: Record<string, unknown>;
 }) {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
@@ -29,6 +35,12 @@ export default function AddToBagButton({
           if (!pid) {
             setError("product_id 为空，无法加入购物袋。");
             return;
+          }
+          if (clickEventName) {
+            void trackMobileEvent(clickEventName, {
+              product_id: pid,
+              ...(clickEventProps || {}),
+            });
           }
           setBusy(true);
           setError(null);
@@ -59,7 +71,7 @@ export default function AddToBagButton({
           done
             ? "border-[#1f7a45]/35 bg-[#eaf8ef] text-[#116a3f]"
             : "border-black/15 bg-white text-black/78 active:bg-black/[0.03]"
-        } disabled:opacity-55`}
+        } disabled:opacity-55 ${buttonClassName}`.trim()}
       >
         {busy ? "加入中..." : done ? "已加入" : "加入购物袋"}
       </button>

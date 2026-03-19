@@ -8,9 +8,20 @@ import {
   readDecisionResumeItem,
   type DecisionResumeItem,
 } from "@/domain/mobile/progress/decisionResume";
+import { fetchMobileUserProducts, type MobileSelectionCategory } from "@/lib/api";
 import { trackMobileEvent } from "@/lib/mobileAnalytics";
 
 const TRUST_POINTS = ["约 30-45 秒", "直接给结果和理由", "少靠猜，少踩坑"] as const;
+const HOME_PRIMARY_TARGET = "/m/choose?source=home_primary_cta";
+const HOME_WEAK_TARGET = "/m/wiki?source=home_weak_entry";
+
+type HomeWorkspaceAction = {
+  label: string;
+  description: string;
+  href: string;
+  eventName: "home_resume_click" | "home_workspace_quick_action_click";
+  action?: "resume" | "review_result" | "in_use_compare";
+};
 
 function getResumeTitle(item: DecisionResumeItem): string {
   if (item.kind === "draft") {
@@ -20,17 +31,59 @@ function getResumeTitle(item: DecisionResumeItem): string {
 }
 
 function getResumeActionLabel(item: DecisionResumeItem): string {
-  return item.kind === "draft" ? "继续上次进度" : "查看上次结果";
+  return item.kind === "draft" ? "继续上次进度" : "回看上次结果";
+}
+
+function resolveCompareHref(category: MobileSelectionCategory | null): string {
+  if (!category) return "/m/compare";
+  return `/m/compare?category=${encodeURIComponent(category)}`;
 }
 
 export default function MobileDecisionHomePage() {
   const [resumeItem, setResumeItem] = useState<DecisionResumeItem | null>(null);
+  const [inUseCategory, setInUseCategory] = useState<MobileSelectionCategory | null>(null);
   const [revealed, setRevealed] = useState(false);
   const analyticsSource = "m_home";
   const resumeTargetPath = useMemo(
     () => (resumeItem ? appendSourceToPath(resumeItem.targetPath, "home_resume") : null),
     [resumeItem],
   );
+  const compareInUsePath = useMemo(
+    () => resolveCompareHref(inUseCategory),
+    [inUseCategory],
+  );
+  const isReturningUser = Boolean(resumeItem || inUseCategory);
+  const workspacePrimaryAction = useMemo<HomeWorkspaceAction | null>(() => {
+    if (resumeItem && resumeTargetPath) {
+      return {
+        label: getResumeActionLabel(resumeItem),
+        description: getResumeTitle(resumeItem),
+        href: resumeTargetPath,
+        eventName: "home_resume_click",
+        action: resumeItem.kind === "draft" ? "resume" : "review_result",
+      };
+    }
+    if (inUseCategory) {
+      return {
+        label: "和当前在用做对比",
+        description: "已检测到在用品记录，直接带入对比并判断是否值得继续用。",
+        href: compareInUsePath,
+        eventName: "home_workspace_quick_action_click",
+        action: "in_use_compare",
+      };
+    }
+    return null;
+  }, [compareInUsePath, inUseCategory, resumeItem, resumeTargetPath]);
+  const workspaceQuickActions = useMemo(
+    () => [
+      { label: "测新的", href: "/m/choose", action: "new_test" as const },
+      { label: "对比", href: compareInUsePath, action: "compare" as const },
+      { label: "查百科", href: "/m/wiki", action: "wiki" as const },
+      { label: "我的", href: "/m/me", action: "me" as const },
+    ],
+    [compareInUsePath],
+  );
+  const showInUsePriorityCard = Boolean(inUseCategory && resumeItem);
 
   useEffect(() => {
     const rafId = window.requestAnimationFrame(() => {
@@ -52,6 +105,30 @@ export default function MobileDecisionHomePage() {
     return () => {
       window.removeEventListener("focus", syncResume);
       window.removeEventListener("storage", syncResume);
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const syncInUseCategory = async () => {
+      try {
+        const response = await fetchMobileUserProducts({ limit: 1 });
+        if (!active) return;
+        setInUseCategory(response.items[0]?.category || null);
+      } catch {
+        if (!active) return;
+        setInUseCategory(null);
+      }
+    };
+
+    void syncInUseCategory();
+    const onFocus = () => {
+      void syncInUseCategory();
+    };
+    window.addEventListener("focus", onFocus);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", onFocus);
     };
   }, []);
 
@@ -104,41 +181,74 @@ export default function MobileDecisionHomePage() {
           </div>
 
           <div className="mt-7 grid gap-3">
-            <MobileTrackedLink
-              href="/m/choose?source=home_primary_cta"
-              eventName="home_primary_cta_click"
-              eventProps={{
-                page: "mobile_home",
-                route: "/m",
-                source: analyticsSource,
-                target_path: "/m/choose?source=home_primary_cta",
-              }}
-              className="m-pressable inline-flex h-14 items-center justify-center rounded-full bg-[linear-gradient(180deg,#4aa8ff_0%,#0a84ff_42%,#0071e3_100%)] px-6 text-[16px] font-semibold tracking-[-0.02em] text-white shadow-[0_18px_36px_rgba(10,132,255,0.28),inset_0_1px_0_rgba(255,255,255,0.28)] active:scale-[0.992]"
-            >
-              开始测配
-            </MobileTrackedLink>
-
-            {resumeItem && resumeTargetPath ? (
+            {!isReturningUser ? (
               <MobileTrackedLink
-                href={resumeTargetPath}
-                eventName="home_resume_click"
+                href={HOME_PRIMARY_TARGET}
+                eventName="home_primary_cta_click"
                 eventProps={{
                   page: "mobile_home",
                   route: "/m",
                   source: analyticsSource,
-                  target_path: resumeTargetPath,
+                  target_path: HOME_PRIMARY_TARGET,
                 }}
+                className="m-pressable inline-flex h-14 items-center justify-center rounded-full bg-[linear-gradient(180deg,#4aa8ff_0%,#0a84ff_42%,#0071e3_100%)] px-6 text-[16px] font-semibold tracking-[-0.02em] text-white shadow-[0_18px_36px_rgba(10,132,255,0.28),inset_0_1px_0_rgba(255,255,255,0.28)] active:scale-[0.992]"
+              >
+                开始测配
+              </MobileTrackedLink>
+            ) : null}
+
+            {isReturningUser && workspacePrimaryAction ? (
+              <MobileTrackedLink
+                href={workspacePrimaryAction.href}
+                eventName={workspacePrimaryAction.eventName}
+                eventProps={
+                  workspacePrimaryAction.eventName === "home_resume_click"
+                    ? {
+                        page: "mobile_home",
+                        route: "/m",
+                        source: analyticsSource,
+                        target_path: workspacePrimaryAction.href,
+                      }
+                    : {
+                        page: "mobile_home",
+                        route: "/m",
+                        source: analyticsSource,
+                        target_path: workspacePrimaryAction.href,
+                        action: workspacePrimaryAction.action,
+                      }
+                }
                 className="m-pressable inline-flex min-h-14 items-center justify-between gap-4 rounded-[24px] border border-black/8 bg-white/70 px-5 py-4 text-left shadow-[0_20px_40px_rgba(15,29,53,0.06)] dark:border-white/10 dark:bg-white/6 dark:shadow-[0_20px_44px_rgba(0,0,0,0.22)]"
               >
                 <span>
                   <span className="block text-[14px] font-semibold tracking-[-0.01em] text-black/82 dark:text-white/86">
-                    {getResumeActionLabel(resumeItem)}
+                    {workspacePrimaryAction.label}
                   </span>
                   <span className="mt-1 block text-[13px] leading-[1.55] text-black/58 dark:text-white/60">
-                    {getResumeTitle(resumeItem)}
+                    {workspacePrimaryAction.description}
                   </span>
                 </span>
                 <span className="text-[15px] font-semibold text-[#0a84ff] dark:text-[#9ed0ff]">继续</span>
+              </MobileTrackedLink>
+            ) : null}
+
+            {showInUsePriorityCard ? (
+              <MobileTrackedLink
+                href={compareInUsePath}
+                eventName="home_workspace_quick_action_click"
+                eventProps={{
+                  page: "mobile_home",
+                  route: "/m",
+                  source: analyticsSource,
+                  target_path: compareInUsePath,
+                  action: "in_use_compare",
+                }}
+                className="m-pressable inline-flex min-h-12 items-center justify-between gap-3 rounded-[20px] border border-black/8 bg-white/65 px-5 py-3.5 text-left shadow-[0_14px_30px_rgba(15,29,53,0.06)] dark:border-white/10 dark:bg-white/6 dark:shadow-[0_18px_36px_rgba(0,0,0,0.22)]"
+              >
+                <span>
+                  <span className="block text-[14px] font-semibold text-black/82 dark:text-white/86">和当前在用做对比</span>
+                  <span className="mt-1 block text-[12px] leading-[1.55] text-black/56 dark:text-white/60">保持当前习惯，同时判断要不要替换。</span>
+                </span>
+                <span className="text-[15px] font-semibold text-[#0a84ff] dark:text-[#9ed0ff]">前往</span>
               </MobileTrackedLink>
             ) : null}
           </div>
@@ -149,27 +259,55 @@ export default function MobileDecisionHomePage() {
             revealed ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0"
           }`}
         >
-          <div className="rounded-[28px] border border-black/8 bg-white/64 p-5 shadow-[0_18px_36px_rgba(15,29,53,0.06)] backdrop-blur-2xl dark:border-white/10 dark:bg-[rgba(18,27,40,0.62)] dark:shadow-[0_20px_42px_rgba(0,0,0,0.24)]">
-            <p className="text-[12px] font-semibold tracking-[0.06em] text-black/44 dark:text-white/46">怎么工作</p>
-            <p className="mt-3 text-[18px] leading-[1.6] tracking-[-0.02em] text-black/82 dark:text-white/84">
-              先问少量问题，快速收敛到更适合你的护理方向，再给产品答案和理由。
-            </p>
-          </div>
+          {!isReturningUser ? (
+            <>
+              <div className="rounded-[28px] border border-black/8 bg-white/64 p-5 shadow-[0_18px_36px_rgba(15,29,53,0.06)] backdrop-blur-2xl dark:border-white/10 dark:bg-[rgba(18,27,40,0.62)] dark:shadow-[0_20px_42px_rgba(0,0,0,0.24)]">
+                <p className="text-[12px] font-semibold tracking-[0.06em] text-black/44 dark:text-white/46">怎么工作</p>
+                <p className="mt-3 text-[18px] leading-[1.6] tracking-[-0.02em] text-black/82 dark:text-white/84">
+                  先问少量问题，快速收敛到更适合你的护理方向，再给产品答案和理由。
+                </p>
+              </div>
 
-          <MobileTrackedLink
-            href="/m/wiki?source=home_weak_entry"
-            eventName="home_weak_entry_click"
-            eventProps={{
-              page: "mobile_home",
-              route: "/m",
-              source: analyticsSource,
-              target_path: "/m/wiki?source=home_weak_entry",
-            }}
-            className="m-pressable inline-flex items-center justify-between rounded-[24px] border border-black/8 bg-white/60 px-5 py-4 text-[15px] font-medium text-black/72 shadow-[0_18px_36px_rgba(15,29,53,0.06)] backdrop-blur-2xl dark:border-white/10 dark:bg-white/6 dark:text-white/72 dark:shadow-[0_20px_42px_rgba(0,0,0,0.22)]"
-          >
-            <span>先查产品或成分</span>
-            <span className="text-[16px] text-black/36 dark:text-white/38">→</span>
-          </MobileTrackedLink>
+              <MobileTrackedLink
+                href={HOME_WEAK_TARGET}
+                eventName="home_weak_entry_click"
+                eventProps={{
+                  page: "mobile_home",
+                  route: "/m",
+                  source: analyticsSource,
+                  target_path: HOME_WEAK_TARGET,
+                }}
+                className="m-pressable inline-flex items-center justify-between rounded-[24px] border border-black/8 bg-white/60 px-5 py-4 text-[15px] font-medium text-black/72 shadow-[0_18px_36px_rgba(15,29,53,0.06)] backdrop-blur-2xl dark:border-white/10 dark:bg-white/6 dark:text-white/72 dark:shadow-[0_20px_42px_rgba(0,0,0,0.22)]"
+              >
+                <span>先查产品或成分</span>
+                <span className="text-[16px] text-black/36 dark:text-white/38">→</span>
+              </MobileTrackedLink>
+            </>
+          ) : (
+            <div className="rounded-[28px] border border-black/8 bg-white/64 p-5 shadow-[0_18px_36px_rgba(15,29,53,0.06)] backdrop-blur-2xl dark:border-white/10 dark:bg-[rgba(18,27,40,0.62)] dark:shadow-[0_20px_42px_rgba(0,0,0,0.24)]">
+              <p className="text-[12px] font-semibold tracking-[0.06em] text-black/44 dark:text-white/46">快捷动作</p>
+              <div className="mt-3 grid grid-cols-2 gap-2.5">
+                {workspaceQuickActions.map((item) => (
+                  <MobileTrackedLink
+                    key={item.action}
+                    href={item.href}
+                    eventName="home_workspace_quick_action_click"
+                    eventProps={{
+                      page: "mobile_home",
+                      route: "/m",
+                      source: analyticsSource,
+                      target_path: item.href,
+                      action: item.action,
+                    }}
+                    className="m-pressable inline-flex min-h-11 items-center justify-between rounded-[18px] border border-black/10 bg-white/80 px-4 py-3 text-[14px] font-semibold text-black/76 active:bg-black/[0.03] dark:border-white/12 dark:bg-white/7 dark:text-white/78"
+                  >
+                    <span>{item.label}</span>
+                    <span className="text-black/32 dark:text-white/38">→</span>
+                  </MobileTrackedLink>
+                ))}
+              </div>
+            </div>
+          )}
         </section>
       </div>
     </section>

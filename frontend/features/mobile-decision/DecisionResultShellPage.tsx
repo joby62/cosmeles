@@ -72,10 +72,6 @@ export async function renderDecisionResultShell({
     );
   }
 
-  if (returnTo) {
-    redirect(returnTo);
-  }
-
   return (
     <SelectionPublishedResultFlow
       titlePrefix={config.titlePrefix}

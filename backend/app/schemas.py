@@ -1764,6 +1764,7 @@ class MobileAnalyticsOverviewResponse(BaseModel):
     sessions: int = 0
     owners: int = 0
     home_primary_cta_click_sessions: int = 0
+    home_workspace_quick_action_click_sessions: int = 0
     choose_view_sessions: int = 0
     choose_start_click_sessions: int = 0
     questionnaire_completed_sessions: int = 0
@@ -1920,6 +1921,7 @@ class MobileAnalyticsExperienceResponse(BaseModel):
     decision_result_primary_cta_clicks: int = 0
     decision_result_secondary_loop_clicks: int = 0
     utility_return_clicks: int = 0
+    home_workspace_quick_action_clicks: int = 0
     compare_result_leaves: int = 0
     avg_result_dwell_ms: float = 0.0
     p50_result_dwell_ms: float = 0.0
@@ -1939,6 +1941,13 @@ class MobileAnalyticsExperienceResponse(BaseModel):
     result_cta_completions: List[MobileAnalyticsCtaCompletionItem] = Field(default_factory=list)
     result_secondary_loop_actions: List[MobileAnalyticsCountItem] = Field(default_factory=list)
     utility_return_actions: List[MobileAnalyticsCountItem] = Field(default_factory=list)
+    result_primary_cta_result_ctas: List[MobileAnalyticsCountItem] = Field(default_factory=list)
+    result_primary_cta_target_paths: List[MobileAnalyticsCountItem] = Field(default_factory=list)
+    result_secondary_loop_result_ctas: List[MobileAnalyticsCountItem] = Field(default_factory=list)
+    result_secondary_loop_target_paths: List[MobileAnalyticsCountItem] = Field(default_factory=list)
+    utility_return_result_ctas: List[MobileAnalyticsCountItem] = Field(default_factory=list)
+    utility_return_target_paths: List[MobileAnalyticsCountItem] = Field(default_factory=list)
+    home_workspace_quick_actions: List[MobileAnalyticsCountItem] = Field(default_factory=list)
     browser_families: List[MobileAnalyticsCountItem] = Field(default_factory=list)
     os_families: List[MobileAnalyticsCountItem] = Field(default_factory=list)
     device_types: List[MobileAnalyticsCountItem] = Field(default_factory=list)
@@ -1992,6 +2001,9 @@ class MobileAnalyticsSessionEventItem(BaseModel):
     trigger_reason: Optional[str] = None
     reason_label: Optional[str] = None
     dwell_ms: Optional[int] = None
+    result_cta: Optional[str] = None
+    action: Optional[str] = None
+    target_path: Optional[str] = None
     location_label: Optional[str] = None
     location_time_zone: Optional[str] = None
     location_geocode_status: Optional[str] = None
