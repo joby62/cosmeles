@@ -154,8 +154,15 @@ const ANALYTIC_QUESTIONS = [
   },
   {
     question: "哪一道题流失最高？",
-    answer: "当有有效 stepful 数据时展示 live 的 question_dropoff_top；没有有效 step 数据时保持 blocked，不做本地兜底。",
-    signals: ["questionnaire_view(step)", "question_answered(step)", "question_dropoff"],
+    answer:
+      "当有有效 stepful 数据时，首屏展示 question_dropoff_top，并用 question_dropoff_by_category 做补充；是否 live 由 question_dropoff_status 决定。",
+    signals: [
+      "questionnaire_view(step)",
+      "question_answered(step)",
+      "question_dropoff_top",
+      "question_dropoff_by_category",
+      "question_dropoff_status",
+    ],
   },
   {
     question: "有多少会话成功到达结果页？",

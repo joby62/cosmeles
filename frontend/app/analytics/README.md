@@ -8,7 +8,7 @@
 ## 首屏必须回答的 5 个问题
 1. 有多少会话从 `/m` 点击主 CTA 进入主链路（`home_primary_cta_click_sessions`）？
 2. 进入 `/m/choose` 后有多少会话开始答题（`choose_start_click_sessions`，并展示 `choose_start_rate_from_choose_view`）？
-3. 哪一道题流失最高（`question_dropoff`）？
+3. 哪一道题流失最高（`question_dropoff_top` + `question_dropoff_by_category` + `question_dropoff_status`）？
 4. 有多少会话成功到达结果页（`result_view_sessions`，并展示 `result_view_rate_from_home_primary_cta`）？
 5. 到达结果后有多少会话继续动作（`result_primary_cta_click_sessions` + `result_secondary_loop_click_sessions` + `utility_return_click_sessions`）？
 
