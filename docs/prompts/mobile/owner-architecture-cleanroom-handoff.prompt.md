@@ -93,10 +93,38 @@
 
 ### 5. 你的默认处理顺序
 1. 先冻结 owner contract / branch plan
-2. 再让 Worker B / C 做模块清理
-3. 最后让 Worker A 在冻结 contract 上做 analytics consumption
-4. 再做总体验收
-5. 再决定是否把 stack 回收到 `codex/mobile-arch-v2`
+2. 能并行时优先并行，不要把互不阻塞的工人排成假串行
+3. 默认先让 Worker A / Worker B 并行推进
+4. 再让 Worker C 在 Worker B 的 helper / source freeze 点上收口 call-site
+5. 再做总体验收
+6. 再决定是否把 stack 回收到 `codex/mobile-arch-v2`
+
+### 6. 并行排期与 checkpoint 纪律
+- 三个工人可以并行，但不能在共享语义尚未冻结时同时改同一层真相。
+- 当前 convergence 阶段的默认排法是：
+  - 第一波：Worker A 和 Worker B 同时开工。
+  - 第一波里：Worker C 可以同时做只读盘点、audit 对照、风险标记，但不要先改 shared helper owner。
+  - 第二波：一旦 Worker B 确认 helper / source vocabulary 不再变，Worker C 再落 utility 与 `me/history/bag` call-site 改动。
+  - 最后：Owner 做 integration review 和 replay 决策。
+- Worker A 的边界：
+  - 可以与 Worker B 并行。
+  - 不等 Worker B / C 才开始。
+  - 不准顺手改 utility、route-state helper、result renderer。
+- Worker B 的边界：
+  - 可以与 Worker A 并行。
+  - 只收 shared helper / source / route-state 语义。
+  - 不准扩散到 utility call-site 页面和 analytics dashboard 页面。
+- Worker C 的边界：
+  - 可以先并行做只读审计。
+  - 真正写 call-site 前，必须先等 Worker B 的 helper truth 冻结。
+  - 不准反向修改 Worker B 正在收口的 shared helper owner。
+- 每个 worker 开工后 30 分钟内必须给一次状态：
+  - `green`：按边界推进，无 blocker
+  - `yellow`：有风险或依赖待确认
+  - `red`：被 contract / branch / context 阻塞
+- `yellow` 持续 30 分钟以上，必须升级给 owner，不能自己默默扩 scope。
+- 如果两个 worker 的任务共享同一真相层，owner 必须先指定“谁是 truth owner，谁是 call-site adopter”，再允许并行。
+- 任何时候都不要为了“看起来都很忙”而制造假并行；并行的目标是缩短路径，不是增加碰撞面。
 
 ## 当前真实基线（2026-03-18）
 - Phase 4-8 架构栈已经收口完成，当前主任务不是继续大拆，而是 owner-led convergence。
