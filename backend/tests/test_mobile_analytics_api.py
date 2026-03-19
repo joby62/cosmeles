@@ -1186,6 +1186,22 @@ def test_mobile_analytics_question_dropoff_dedup_and_ignore_invalid_rows(mobile_
     assert top["dropoff_sessions"] == 1
 
 
+def test_mobile_analytics_question_dropoff_blocked_without_valid_stepful_rows(mobile_analytics_client: TestClient):
+    client = mobile_analytics_client
+    query = "date_from=2026-03-13&date_to=2026-03-13"
+
+    overview = client.get(f"/api/products/analytics/mobile/overview?{query}")
+    assert overview.status_code == 200
+    payload = overview.json()
+
+    # The day has analytics rows, but no valid questionnaire_view/question_answered stepful rows.
+    assert payload["total_events"] > 0
+    assert payload["question_dropoff_status"] == "blocked_until_stepful_questionnaire_view_exists"
+    assert payload["question_dropoff_reason"] != ""
+    assert payload["question_dropoff_top"] is None
+    assert payload["question_dropoff_by_category"] == []
+
+
 def test_mobile_analytics_errors_feedback_and_sessions(mobile_analytics_client: TestClient):
     client = mobile_analytics_client
     query = "date_from=2026-03-10&date_to=2026-03-12"
