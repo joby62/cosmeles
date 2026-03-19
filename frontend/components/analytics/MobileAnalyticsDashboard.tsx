@@ -192,6 +192,16 @@ function pageLabel(page?: string | null): string {
 
 function resultCtaLabel(value?: string | null): string {
   switch (valueOrEmpty(value)) {
+    case "bag_add":
+      return "加入购物袋";
+    case "compare":
+      return "和我现在在用的比一下";
+    case "rationale":
+      return "看为什么推荐这款";
+    case "retry_same_category":
+      return "重测这类";
+    case "switch_category":
+      return "测其他品类";
     case "reason_gallery_anchor":
       return "看原因";
     case "rerun_compare":
@@ -209,6 +219,12 @@ function resultCtaLabel(value?: string | null): string {
 
 function loopActionLabel(value?: string | null): string {
   switch (valueOrEmpty(value)) {
+    case "rationale":
+      return "看为什么推荐这款";
+    case "retry_same_category":
+      return "重测这类";
+    case "switch_category":
+      return "测其他品类";
     case "wiki":
       return "进入百科";
     case "compare":
@@ -217,6 +233,16 @@ function loopActionLabel(value?: string | null): string {
       return "进入我的";
     case "bag":
       return "进入购物袋";
+    case "bag_add":
+      return "加入购物袋";
+    case "new_test":
+      return "测新的";
+    case "review_result":
+      return "回看上次结果";
+    case "resume":
+      return "继续上次进度";
+    case "in_use_compare":
+      return "和当前在用做对比";
     case "compare_return":
       return "从对比返回测配结果";
     case "compare_library_return":
@@ -396,6 +422,9 @@ function describeTimelineEvent(item: MobileAnalyticsSessionEventItem): SessionTi
   if (item.error_code) pushUniqueLabel(meta, `错误 ${item.error_code}`);
   if (item.reason_label) pushUniqueLabel(meta, `反馈 ${feedbackReasonLabel(item.reason_label)}`);
   if (item.trigger_reason) pushUniqueLabel(meta, `触发 ${feedbackTriggerLabel(item.trigger_reason)}`);
+  if (item.result_cta) pushUniqueLabel(meta, `意图 ${resultCtaLabel(item.result_cta)}`);
+  if (item.action) pushUniqueLabel(meta, `动作 ${loopActionLabel(item.action)}`);
+  if (item.target_path) pushUniqueLabel(meta, `去向 ${item.target_path}`);
   if (hasLocationContext(item.location_label, item.location_time_zone)) {
     pushUniqueLabel(meta, buildLocationBadgeLabel(item.location_label, item.location_time_zone));
   }
@@ -407,6 +436,9 @@ function describeTimelineEvent(item: MobileAnalyticsSessionEventItem): SessionTi
   if (item.route) pushUniqueLabel(rawMeta, `route ${valueOrEmpty(item.route)}`);
   if (item.stage) pushUniqueLabel(rawMeta, `stage ${valueOrEmpty(item.stage)}`);
   if (item.error_code) pushUniqueLabel(rawMeta, `error ${item.error_code}`);
+  if (item.result_cta) pushUniqueLabel(rawMeta, `result_cta ${valueOrEmpty(item.result_cta)}`);
+  if (item.action) pushUniqueLabel(rawMeta, `action ${valueOrEmpty(item.action)}`);
+  if (item.target_path) pushUniqueLabel(rawMeta, `target ${valueOrEmpty(item.target_path)}`);
   if (item.location_label) pushUniqueLabel(rawMeta, `location ${valueOrEmpty(item.location_label)}`);
   if (item.location_time_zone) pushUniqueLabel(rawMeta, `tz ${valueOrEmpty(item.location_time_zone)}`);
   if (item.location_geocode_status) pushUniqueLabel(rawMeta, `geocode ${valueOrEmpty(item.location_geocode_status)}`);
@@ -674,7 +706,10 @@ function describeTimelineEvent(item: MobileAnalyticsSessionEventItem): SessionTi
         phase: "result",
         title: "点击结果主 CTA",
         flowLabel: "点击结果主 CTA",
-        summary: "用户接受结果页给出的主下一步，继续进入产品或承接页。",
+        summary:
+          item.result_cta || item.target_path
+            ? `用户按“${item.result_cta ? resultCtaLabel(item.result_cta) : "未标注"}”继续，目标 ${valueOrEmpty(item.target_path) || "未标注"}。`
+            : "用户接受结果页给出的主下一步，继续进入产品或承接页。",
         significant: true,
         meta,
         rawMeta,
@@ -685,7 +720,10 @@ function describeTimelineEvent(item: MobileAnalyticsSessionEventItem): SessionTi
         phase: "result",
         title: "从结果进入 utility 回环",
         flowLabel: "进入 utility 回环",
-        summary: "用户从测配结果页进入百科、对比或其他 utility 能力。",
+        summary:
+          item.action || item.result_cta || item.target_path
+            ? `动作 ${item.action ? loopActionLabel(item.action) : "未标注"}，意图 ${item.result_cta ? resultCtaLabel(item.result_cta) : "未标注"}，目标 ${valueOrEmpty(item.target_path) || "未标注"}。`
+            : "用户从测配结果页进入百科、对比或其他 utility 能力。",
         significant: true,
         meta,
         rawMeta,
@@ -696,7 +734,24 @@ function describeTimelineEvent(item: MobileAnalyticsSessionEventItem): SessionTi
         phase: "result",
         title: "从 utility 返回决策链路",
         flowLabel: "返回决策链路",
-        summary: "utility 页把用户送回了测配结果或后续决策步骤。",
+        summary:
+          item.action || item.result_cta || item.target_path
+            ? `回流动作 ${item.action ? loopActionLabel(item.action) : "未标注"}，意图 ${item.result_cta ? resultCtaLabel(item.result_cta) : "未标注"}，目标 ${valueOrEmpty(item.target_path) || "未标注"}。`
+            : "utility 页把用户送回了测配结果或后续决策步骤。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "home_workspace_quick_action_click":
+      return {
+        eventName,
+        phase: "action",
+        title: "首页 workspace 快捷动作",
+        flowLabel: "首页快捷动作",
+        summary:
+          item.action || item.target_path
+            ? `老用户从首页 workspace 触发 ${loopActionLabel(item.action)}，目标 ${valueOrEmpty(item.target_path) || "未标注"}。`
+            : "老用户从首页 workspace 触发了快捷动作。",
         significant: true,
         meta,
         rawMeta,
@@ -1589,7 +1644,7 @@ export default function MobileAnalyticsDashboard() {
           <PanelLoading />
         ) : experience.data ? (
           <div className="space-y-5">
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
               <CompactStat
                 title="产品列表 CTR"
                 value={`${formatPercent(experience.data.wiki_product_ctr)} · ${formatNumber(experience.data.wiki_product_clicks)}/${formatNumber(experience.data.wiki_product_list_views)}`}
@@ -1605,6 +1660,10 @@ export default function MobileAnalyticsDashboard() {
               <CompactStat
                 title="utility 回流"
                 value={`${formatNumber(experience.data.utility_return_clicks)} / ${formatNumber(experience.data.decision_result_secondary_loop_clicks)}`}
+              />
+              <CompactStat
+                title="首页快捷动作"
+                value={formatNumber(experience.data.home_workspace_quick_action_clicks)}
               />
             </div>
 
@@ -1635,13 +1694,28 @@ export default function MobileAnalyticsDashboard() {
                 </div>
 
                 <div>
-                  <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-black/42">决策结果回环动作</div>
-                  <div className="grid gap-3 md:grid-cols-2">
+                  <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-black/42">Phase 10 意图观测（decision props）</div>
+                  <div className="grid gap-3 md:grid-cols-3">
                     <article className="rounded-[20px] border border-black/10 bg-[#f7f8fb] px-4 py-4">
-                      <div className="text-[12px] text-black/48">从结果进入 utility</div>
+                      <div className="text-[12px] text-black/48">结果主 CTA（result_cta / target_path）</div>
+                      <div className="mt-2 text-[24px] font-semibold tracking-[-0.03em] text-black/86">
+                        {formatNumber(experience.data.decision_result_primary_cta_clicks)}
+                      </div>
+                      <div className="mt-3 text-[12px] text-black/48">意图分布</div>
+                      <div className="mt-2">
+                        {renderCountList(experience.data.result_primary_cta_result_ctas, "emerald")}
+                      </div>
+                      <div className="mt-3 text-[12px] text-black/48">目标分布</div>
+                      <div className="mt-2">
+                        {renderCountList(experience.data.result_primary_cta_target_paths, "amber")}
+                      </div>
+                    </article>
+                    <article className="rounded-[20px] border border-black/10 bg-[#f7f8fb] px-4 py-4">
+                      <div className="text-[12px] text-black/48">从结果进入 utility（action / result_cta / target_path）</div>
                       <div className="mt-2 text-[24px] font-semibold tracking-[-0.03em] text-black/86">
                         {formatNumber(experience.data.decision_result_secondary_loop_clicks)}
                       </div>
+                      <div className="mt-3 text-[12px] text-black/48">动作分布</div>
                       <div className="mt-3">
                         {renderCountList(
                           experience.data.result_secondary_loop_actions.map((item) => ({
@@ -1651,12 +1725,17 @@ export default function MobileAnalyticsDashboard() {
                           "amber",
                         )}
                       </div>
+                      <div className="mt-3 text-[12px] text-black/48">意图分布</div>
+                      <div className="mt-2">{renderCountList(experience.data.result_secondary_loop_result_ctas, "emerald")}</div>
+                      <div className="mt-3 text-[12px] text-black/48">目标分布</div>
+                      <div className="mt-2">{renderCountList(experience.data.result_secondary_loop_target_paths, "amber")}</div>
                     </article>
                     <article className="rounded-[20px] border border-black/10 bg-[#f7f8fb] px-4 py-4">
-                      <div className="text-[12px] text-black/48">从 utility 返回决策</div>
+                      <div className="text-[12px] text-black/48">从 utility 返回决策（action / result_cta / target_path）</div>
                       <div className="mt-2 text-[24px] font-semibold tracking-[-0.03em] text-black/86">
                         {formatNumber(experience.data.utility_return_clicks)}
                       </div>
+                      <div className="mt-3 text-[12px] text-black/48">动作分布</div>
                       <div className="mt-3">
                         {renderCountList(
                           experience.data.utility_return_actions.map((item) => ({
@@ -1666,7 +1745,21 @@ export default function MobileAnalyticsDashboard() {
                           "emerald",
                         )}
                       </div>
+                      <div className="mt-3 text-[12px] text-black/48">意图分布</div>
+                      <div className="mt-2">{renderCountList(experience.data.utility_return_result_ctas, "emerald")}</div>
+                      <div className="mt-3 text-[12px] text-black/48">目标分布</div>
+                      <div className="mt-2">{renderCountList(experience.data.utility_return_target_paths, "amber")}</div>
                     </article>
+                  </div>
+                  <div className="mt-3">
+                    <div className="mb-2 text-[12px] font-semibold uppercase tracking-[0.12em] text-black/42">首页 workspace 快捷动作（supporting）</div>
+                    {renderCountList(
+                      experience.data.home_workspace_quick_actions.map((item) => ({
+                        ...item,
+                        label: loopActionLabel(item.key),
+                      })),
+                      "emerald",
+                    )}
                   </div>
                 </div>
 

@@ -11,11 +11,13 @@
   ],
   "rules": [
     "return_to must point to a /m path",
+    "return_to on a decision result page is downstream return context; it must not trigger an automatic redirect away from the result page by itself",
     "utility pages must preserve source, scenario_id, result_cta, and return_to across in-utility hops",
     "if a utility surface cannot honor return_to, it must degrade to /m/choose",
     "category must be one of the shared decision catalog keys",
     "scenario_id is required on result-to-utility hops",
     "result_cta is required when a utility page is opened from the result page",
+    "phase-10 result_cta vocabulary is bag_add, compare, rationale, retry_same_category, or switch_category",
     "compare_id is optional compare-result provenance and must be preserved across compare-origin utility hops",
     "resume_token is only valid for questionnaire resume flows"
   ]

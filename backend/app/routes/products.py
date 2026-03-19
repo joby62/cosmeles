@@ -367,6 +367,24 @@ ANALYTICS_CTA_COMPLETION_LABELS: dict[str, str] = {
     "product_showcase_continue_upload_click": "继续上传解析",
     "product_showcase_governance_click": "返回产品治理",
 }
+ANALYTICS_RESULT_CTA_LABELS: dict[str, str] = {
+    "bag_add": "加入购物袋",
+    "compare": "和我现在在用的比一下",
+    "rationale": "看为什么推荐这款",
+    "retry_same_category": "重测这类",
+    "switch_category": "测其他品类",
+    "unknown": "未标注 result_cta",
+}
+ANALYTICS_HOME_WORKSPACE_ACTION_LABELS: dict[str, str] = {
+    "new_test": "测新的",
+    "compare": "对比",
+    "wiki": "查百科",
+    "me": "我的",
+    "resume": "继续上次进度",
+    "review_result": "回看上次结果",
+    "in_use_compare": "和当前在用做对比",
+    "unknown": "未标注 action",
+}
 
 
 def _normalize_optional_text(value: Any) -> str | None:
@@ -939,6 +957,7 @@ def get_mobile_analytics_overview(
         end_iso=end_iso,
         names=[
             "home_primary_cta_click",
+            "home_workspace_quick_action_click",
             "choose_view",
             "choose_start_click",
             "questionnaire_view",
@@ -974,6 +993,11 @@ def get_mobile_analytics_overview(
         row.session_id.strip()
         for row, _props in rows
         if row.name == "home_primary_cta_click" and str(row.session_id or "").strip()
+    }
+    home_workspace_quick_action_click_sessions = {
+        row.session_id.strip()
+        for row, _props in rows
+        if row.name == "home_workspace_quick_action_click" and str(row.session_id or "").strip()
     }
     choose_view_sessions = {
         row.session_id.strip()
@@ -1171,6 +1195,7 @@ def get_mobile_analytics_overview(
         sessions=len(session_ids),
         owners=len(owner_ids),
         home_primary_cta_click_sessions=len(home_primary_cta_click_sessions),
+        home_workspace_quick_action_click_sessions=len(home_workspace_quick_action_click_sessions),
         choose_view_sessions=len(choose_view_sessions),
         choose_start_click_sessions=len(choose_start_click_sessions),
         questionnaire_completed_sessions=len(questionnaire_completed_sessions),
@@ -1576,6 +1601,7 @@ def get_mobile_analytics_experience(
             "result_primary_cta_click",
             "result_secondary_loop_click",
             "utility_return_click",
+            "home_workspace_quick_action_click",
             "bag_add_success",
             "product_showcase_continue_upload_click",
             "product_showcase_governance_click",
@@ -1591,6 +1617,7 @@ def get_mobile_analytics_experience(
     decision_result_primary_cta_clicks = 0
     decision_result_secondary_loop_clicks = 0
     utility_return_clicks = 0
+    home_workspace_quick_action_clicks = 0
     compare_result_leaves = 0
     result_dwell_values: list[float] = []
     scroll_depth_counter: Counter[tuple[str, int]] = Counter()
@@ -1606,6 +1633,13 @@ def get_mobile_analytics_experience(
     result_cta_completion_sessions: dict[tuple[str, str], set[str]] = defaultdict(set)
     result_secondary_loop_action_counter: Counter[str] = Counter()
     utility_return_action_counter: Counter[str] = Counter()
+    result_primary_cta_result_cta_counter: Counter[str] = Counter()
+    result_primary_cta_target_path_counter: Counter[str] = Counter()
+    result_secondary_loop_result_cta_counter: Counter[str] = Counter()
+    result_secondary_loop_target_path_counter: Counter[str] = Counter()
+    utility_return_result_cta_counter: Counter[str] = Counter()
+    utility_return_target_path_counter: Counter[str] = Counter()
+    home_workspace_quick_action_counter: Counter[str] = Counter()
     browser_counter: Counter[str] = Counter()
     os_counter: Counter[str] = Counter()
     device_counter: Counter[str] = Counter()
@@ -1683,16 +1717,27 @@ def get_mobile_analytics_experience(
             continue
         if row.name == "result_primary_cta_click":
             decision_result_primary_cta_clicks += 1
+            result_primary_cta_result_cta_counter[_event_prop_key(props, "result_cta")] += 1
+            result_primary_cta_target_path_counter[_event_prop_key(props, "target_path")] += 1
             continue
         if row.name == "result_secondary_loop_click":
             decision_result_secondary_loop_clicks += 1
             action_key = _normalize_optional_text(props.get("action")) or "unknown"
             result_secondary_loop_action_counter[action_key] += 1
+            result_secondary_loop_result_cta_counter[_event_prop_key(props, "result_cta")] += 1
+            result_secondary_loop_target_path_counter[_event_prop_key(props, "target_path")] += 1
             continue
         if row.name == "utility_return_click":
             utility_return_clicks += 1
             action_key = _normalize_optional_text(props.get("action")) or "unknown"
             utility_return_action_counter[action_key] += 1
+            utility_return_result_cta_counter[_event_prop_key(props, "result_cta")] += 1
+            utility_return_target_path_counter[_event_prop_key(props, "target_path")] += 1
+            continue
+        if row.name == "home_workspace_quick_action_click":
+            home_workspace_quick_action_clicks += 1
+            action_key = _normalize_optional_text(props.get("action")) or "unknown"
+            home_workspace_quick_action_counter[action_key] += 1
             continue
         if row.name == "compare_result_leave":
             compare_result_leaves += 1
@@ -1835,6 +1880,7 @@ def get_mobile_analytics_experience(
         decision_result_primary_cta_clicks=decision_result_primary_cta_clicks,
         decision_result_secondary_loop_clicks=decision_result_secondary_loop_clicks,
         utility_return_clicks=utility_return_clicks,
+        home_workspace_quick_action_clicks=home_workspace_quick_action_clicks,
         compare_result_leaves=compare_result_leaves,
         avg_result_dwell_ms=round(sum(result_dwell_values) / len(result_dwell_values), 2) if result_dwell_values else 0.0,
         p50_result_dwell_ms=_percentile_fraction(result_dwell_values, 0.5),
@@ -1859,6 +1905,38 @@ def get_mobile_analytics_experience(
         utility_return_actions=_build_count_items(
             utility_return_action_counter,
             denominator=sum(utility_return_action_counter.values()),
+        ),
+        result_primary_cta_result_ctas=_build_count_items(
+            result_primary_cta_result_cta_counter,
+            denominator=sum(result_primary_cta_result_cta_counter.values()),
+            label_map=ANALYTICS_RESULT_CTA_LABELS,
+        ),
+        result_primary_cta_target_paths=_build_count_items(
+            result_primary_cta_target_path_counter,
+            denominator=sum(result_primary_cta_target_path_counter.values()),
+        ),
+        result_secondary_loop_result_ctas=_build_count_items(
+            result_secondary_loop_result_cta_counter,
+            denominator=sum(result_secondary_loop_result_cta_counter.values()),
+            label_map=ANALYTICS_RESULT_CTA_LABELS,
+        ),
+        result_secondary_loop_target_paths=_build_count_items(
+            result_secondary_loop_target_path_counter,
+            denominator=sum(result_secondary_loop_target_path_counter.values()),
+        ),
+        utility_return_result_ctas=_build_count_items(
+            utility_return_result_cta_counter,
+            denominator=sum(utility_return_result_cta_counter.values()),
+            label_map=ANALYTICS_RESULT_CTA_LABELS,
+        ),
+        utility_return_target_paths=_build_count_items(
+            utility_return_target_path_counter,
+            denominator=sum(utility_return_target_path_counter.values()),
+        ),
+        home_workspace_quick_actions=_build_count_items(
+            home_workspace_quick_action_counter,
+            denominator=sum(home_workspace_quick_action_counter.values()),
+            label_map=ANALYTICS_HOME_WORKSPACE_ACTION_LABELS,
         ),
         browser_families=_build_count_items(browser_counter, denominator=env_denominator, label_map=ANALYTICS_BROWSER_LABELS),
         os_families=_build_count_items(os_counter, denominator=env_denominator, label_map=ANALYTICS_OS_LABELS),
@@ -2056,6 +2134,9 @@ def get_mobile_analytics_sessions(
                     trigger_reason=_normalize_optional_text(props.get("trigger_reason")),
                     reason_label=_normalize_optional_text(props.get("reason_label")),
                     dwell_ms=row.dwell_ms,
+                    result_cta=_normalize_optional_text(props.get("result_cta")),
+                    action=_normalize_optional_text(props.get("action")),
+                    target_path=_normalize_optional_text(props.get("target_path")),
                     location_label=_event_location_label(props),
                     location_time_zone=_event_location_time_zone(props),
                     location_geocode_status=_normalize_optional_text(props.get("location_geocode_status")),

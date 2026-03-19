@@ -1,13 +1,15 @@
 import Image from "next/image";
+import AddToBagButton from "@/components/mobile/AddToBagButton";
 import MobileEventBeacon from "@/components/mobile/MobileEventBeacon";
 import MobilePageAnalytics from "@/components/mobile/MobilePageAnalytics";
 import MobileTrackedLink from "@/components/mobile/MobileTrackedLink";
+import { appendMobileUtilityRouteState } from "@/features/mobile-utility/routeState";
 import {
   MobileSelectionPublishedResult,
   MobileSelectionResultBlock,
-  MobileSelectionResultCTA,
   resolveImageUrl,
 } from "@/lib/api";
+import type { MobileResultCta } from "@/lib/mobile/resultCta";
 import { describeMobileRouteFocus } from "@/lib/mobile/routeCopy";
 
 type Props = {
@@ -40,22 +42,16 @@ type ResultReason = {
 };
 
 type ResultAction = {
+  resultCta: MobileResultCta;
   action: string;
   label: string;
   href: string;
-};
-
-type NextStepSupport = {
-  title: string;
-  body: string;
-  details: string[];
 };
 
 export default function SelectionPublishedResultFlow({
   titlePrefix,
   emptyImageLabel,
   startHref,
-  profileHref,
   resultHref,
   result,
   analyticsContext,
@@ -80,11 +76,9 @@ export default function SelectionPublishedResultFlow({
     `先按 ${result.route.title} 这条线判断当前更适合你的护理方向。`;
   const summaryHighlights = buildSummaryHighlights(hero, summaryBody, shareCaption);
 
-  const primaryAction = resolvePrimaryAction(result.ctas, result, startHref, profileHref);
-  const { reasons, usedBlockIds } = buildReasons(orderedBlocks, result);
-  const nextStepSupport = buildNextStepSupport(orderedBlocks, usedBlockIds, result, routeFocus);
-  const cautionText = buildCautionText(orderedBlocks, usedBlockIds, nextStepSupport.body);
-  const secondaryLoops = buildSecondaryLoops(result, resultHref, primaryAction);
+  const reasons = buildReasons(orderedBlocks, result);
+  const doubtResolutionActions = buildDoubtResolutionActions(result, resultHref, analyticsContext.source);
+  const taskSwitchActions = buildTaskSwitchActions(startHref);
   const generatedAt = formatGeneratedAt(result.meta?.generated_at);
   const product = result.recommended_product;
 
@@ -185,69 +179,91 @@ export default function SelectionPublishedResultFlow({
       </section>
 
       <section className="mt-5 rounded-[28px] border border-[#d8e6ff] bg-[linear-gradient(180deg,#fbfdff_0%,#f4f8ff_100%)] px-5 py-5 shadow-[0_14px_30px_rgba(10,132,255,0.08)]">
-        <div className="text-[12px] font-semibold tracking-[0.06em] text-[#4d6b95]">一个下一步</div>
-        {nextStepSupport.title ? (
-          <div className="mt-3 text-[12px] font-medium tracking-[0.03em] text-[#5f7597]">{nextStepSupport.title}</div>
-        ) : null}
+        <div className="text-[12px] font-semibold tracking-[0.06em] text-[#4d6b95]">先收下当前推荐</div>
         <h2 className="mt-3 text-[24px] leading-[1.24] font-semibold tracking-[-0.03em] text-[#18253b]">
-          {primaryAction.label}
+          加入购物袋
         </h2>
-        <p className="mt-3 text-[14px] leading-[1.72] text-[#55677f]">{nextStepSupport.body}</p>
-        {nextStepSupport.details.length > 0 ? (
-          <ul className="mt-3 space-y-2 text-[13px] leading-[1.68] text-[#5d6f88]">
-            {nextStepSupport.details.map((detail) => (
-              <li key={detail} className="rounded-[16px] bg-white/92 px-3 py-2">
-                {detail}
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        {cautionText ? (
-          <p className="mt-3 text-[13px] leading-[1.65] text-[#8a6435]">
-            先注意：{cautionText}
-          </p>
-        ) : null}
-
-        <div className="mt-5 grid gap-3">
-          <MobileTrackedLink
-            href={primaryAction.href}
-            eventName="result_primary_cta_click"
-            eventProps={{
+        <p className="mt-3 text-[14px] leading-[1.72] text-[#55677f]">
+          先收下，后续仍可继续对比或查看依据。
+        </p>
+        <div className="mt-5">
+          <AddToBagButton
+            productId={product.id}
+            className="w-full"
+            buttonClassName="m-pressable h-12 w-full rounded-full border-0 bg-[#0a84ff] px-5 text-[16px] font-semibold tracking-[-0.02em] text-white shadow-[0_14px_28px_rgba(10,132,255,0.24)] active:opacity-90"
+            clickEventName="result_primary_cta_click"
+            clickEventProps={{
               page: analyticsContext.page,
               route: analyticsContext.route,
               source: analyticsContext.source,
               category: result.category,
               scenario_id: result.scenario_id,
-              target_path: primaryAction.href,
+              result_cta: "bag_add",
+              target_path: "/m/me/bag",
             }}
-            className="m-pressable inline-flex h-12 items-center justify-center rounded-full bg-[#0a84ff] px-5 text-[16px] font-semibold tracking-[-0.02em] text-white shadow-[0_14px_28px_rgba(10,132,255,0.24)] active:opacity-90"
-          >
-            {primaryAction.label}
-          </MobileTrackedLink>
+            analyticsProps={{
+              page: analyticsContext.page,
+              route: analyticsContext.route,
+              source: analyticsContext.source,
+              category: result.category,
+              scenario_id: result.scenario_id,
+              result_cta: "bag_add",
+            }}
+          />
+        </div>
+      </section>
 
-          {secondaryLoops.length > 0 ? (
-            <div className="flex flex-wrap gap-2.5">
-              {secondaryLoops.map((loop) => (
-                <MobileTrackedLink
-                  key={`${loop.action}:${loop.href}`}
-                  href={loop.href}
-                  eventName="result_secondary_loop_click"
-                  eventProps={{
-                    page: analyticsContext.page,
-                    route: analyticsContext.route,
-                    source: analyticsContext.source,
-                    category: result.category,
-                    scenario_id: result.scenario_id,
-                    target_path: loop.href,
-                    action: loop.action,
-                  }}
-                  className="m-pressable inline-flex h-10 items-center justify-center rounded-full border border-black/10 bg-white/92 px-4 text-[14px] font-semibold text-black/74 active:bg-black/[0.03]"
-                >
-                  {loop.label}
-                </MobileTrackedLink>
-              ))}
-            </div>
-          ) : null}
+      <section className="mt-5 rounded-[28px] border border-black/8 bg-white/90 px-5 py-5 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
+        <div className="text-[12px] font-semibold tracking-[0.06em] text-black/42">还想再确认</div>
+        <div className="mt-4 grid gap-2.5">
+          {doubtResolutionActions.map((action) => (
+            <MobileTrackedLink
+              key={`${action.action}:${action.href}`}
+              href={action.href}
+              eventName="result_secondary_loop_click"
+              eventProps={{
+                page: analyticsContext.page,
+                route: analyticsContext.route,
+                source: analyticsContext.source,
+                category: result.category,
+                scenario_id: result.scenario_id,
+                result_cta: action.resultCta,
+                target_path: action.href,
+                action: action.action,
+              }}
+              className="m-pressable flex min-h-12 items-center justify-between rounded-[18px] border border-black/10 bg-white px-4 py-3 text-[14px] font-semibold text-black/78 active:bg-black/[0.03]"
+            >
+              <span>{action.label}</span>
+              <span className="text-black/34">→</span>
+            </MobileTrackedLink>
+          ))}
+        </div>
+      </section>
+
+      <section className="mt-5 rounded-[28px] border border-black/8 bg-white/90 px-5 py-5 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
+        <div className="text-[12px] font-semibold tracking-[0.06em] text-black/42">换一个任务</div>
+        <div className="mt-4 grid gap-2.5">
+          {taskSwitchActions.map((action) => (
+            <MobileTrackedLink
+              key={`${action.action}:${action.href}`}
+              href={action.href}
+              eventName="result_secondary_loop_click"
+              eventProps={{
+                page: analyticsContext.page,
+                route: analyticsContext.route,
+                source: analyticsContext.source,
+                category: result.category,
+                scenario_id: result.scenario_id,
+                result_cta: action.resultCta,
+                target_path: action.href,
+                action: action.action,
+              }}
+              className="m-pressable flex min-h-12 items-center justify-between rounded-[18px] border border-black/10 bg-white px-4 py-3 text-[14px] font-semibold text-black/78 active:bg-black/[0.03]"
+            >
+              <span>{action.label}</span>
+              <span className="text-black/34">→</span>
+            </MobileTrackedLink>
+          ))}
         </div>
       </section>
 
@@ -270,9 +286,8 @@ function buildSummaryHighlights(block: ParsedBlock | null, summaryBody: string, 
 function buildReasons(
   blocks: MobileSelectionResultBlock[],
   result: MobileSelectionPublishedResult,
-): { reasons: ResultReason[]; usedBlockIds: Set<string> } {
+): ResultReason[] {
   const picked: ResultReason[] = [];
-  const usedBlockIds = new Set<string>();
 
   for (const rawBlock of blocks) {
     if (picked.length >= 3) break;
@@ -286,7 +301,6 @@ function buildReasons(
       body,
       details: secondaryBlockTexts(block, body).slice(0, 2),
     });
-    usedBlockIds.add(block.id);
   }
 
   const fallbackBodies = [
@@ -314,193 +328,85 @@ function buildReasons(
     });
   }
 
-  return {
-    reasons: picked.slice(0, 3),
-    usedBlockIds,
-  };
+  return picked.slice(0, 3);
 }
 
-function buildNextStepSupport(
-  blocks: MobileSelectionResultBlock[],
-  usedBlockIds: Set<string>,
-  result: MobileSelectionPublishedResult,
-  routeFocus: string,
-): NextStepSupport {
-  const candidateIds = ["attention", "product_bridge", "pitfalls", "evidence", "situation"];
-  for (const id of candidateIds) {
-    if (usedBlockIds.has(id)) continue;
-    const block = findBlock(blocks, id);
-    const body = primaryBlockText(block);
-    if (!block || !body) continue;
-    return {
-      title: block.title,
-      body,
-      details: secondaryBlockTexts(block, body).slice(0, 2),
-    };
-  }
-
-  for (const rawBlock of blocks) {
-    if (usedBlockIds.has(rawBlock.id) || rawBlock.id === "hero") continue;
-    const block = parseBlock(rawBlock);
-    const body = primaryBlockText(block);
-    if (!body) continue;
-    return {
-      title: block.title,
-      body,
-      details: secondaryBlockTexts(block, body).slice(0, 2),
-    };
-  }
-
-  return {
-    title: "你当前更该先做什么",
-    body: routeFocus || "先沿着当前结果给出的主线执行，再决定是否继续深挖。",
-    details: [],
-  };
-}
-
-function buildCautionText(
-  blocks: MobileSelectionResultBlock[],
-  usedBlockIds: Set<string>,
-  nextStepBody: string,
-): string {
-  const pitfall = findBlock(blocks, "pitfalls");
-  const primary = primaryBlockText(pitfall);
-  if (!primary || primary === nextStepBody) return "";
-  if (usedBlockIds.has("pitfalls")) {
-    return secondaryBlockTexts(pitfall, primary)[0] || "";
-  }
-  return primary;
-}
-
-function resolvePrimaryAction(
-  ctas: MobileSelectionResultCTA[],
-  result: MobileSelectionPublishedResult,
-  startHref: string,
-  profileHref: string,
-): ResultAction {
-  const preferred = ctas[0] || null;
-  const href = preferred
-    ? resolvePrimaryActionHref(preferred.action, preferred.href, result, startHref, profileHref)
-    : result.links.product;
-  const label = normalizeText(preferred?.label) || "查看推荐产品";
-  return {
-    action: normalizeText(preferred?.action) || "product",
-    label,
-    href,
-  };
-}
-
-function buildSecondaryLoops(
+function buildDoubtResolutionActions(
   result: MobileSelectionPublishedResult,
   resultHref: string,
-  primaryAction: ResultAction,
+  source: string,
 ): ResultAction[] {
-  const sharedParams = {
-    scenario_id: result.scenario_id,
-    return_to: resultHref,
-  };
-
-  const published = result.ctas
-    .slice(1)
-    .map((item) => {
-      const href = resolveSecondaryLoopHref(item, result);
-      const action = resolveSecondaryLoopAction(item.action, href);
-      if (!href || !action) return null;
-      return {
-        action,
-        label: normalizeText(item.label) || humanizeSecondaryLoopAction(action),
-        href: appendLoopContext(href, action, sharedParams),
-      };
-    })
-    .filter((item): item is ResultAction => Boolean(item));
-
-  const defaults: ResultAction[] = [
+  const compareHref = buildResultUtilityHref({
+    href: `/m/compare?category=${encodeURIComponent(result.category)}`,
+    source,
+    resultHref,
+    scenarioId: result.scenario_id,
+    resultCta: "compare",
+  });
+  const rationaleHref = buildResultUtilityHref({
+    href: result.links.wiki || `/m/wiki?category=${encodeURIComponent(result.category)}`,
+    source,
+    resultHref,
+    scenarioId: result.scenario_id,
+    resultCta: "rationale",
+  });
+  return [
     {
+      resultCta: "compare",
       action: "compare",
-      label: "和其他候选再对比",
-      href: appendLoopContext(`/m/compare?category=${encodeURIComponent(result.category)}`, "compare", sharedParams),
+      label: "和我现在在用的比一下",
+      href: compareHref,
     },
     {
-      action: "wiki",
-      label: "查看产品或成分百科",
-      href: appendLoopContext(
-        result.links.wiki || `/m/wiki?category=${encodeURIComponent(result.category)}`,
-        "wiki",
-        sharedParams,
-      ),
-    },
-    {
-      action: "me",
-      label: "回到我的记录",
-      href: appendLoopContext("/m/me/history", "me", sharedParams),
+      resultCta: "rationale",
+      action: "rationale",
+      label: "看为什么推荐这款",
+      href: rationaleHref,
     },
   ];
-
-  const source = published.length > 0 ? published : defaults;
-  return dedupeActions(source).filter((item) => item.href !== primaryAction.href);
 }
 
-function appendLoopContext(
-  href: string,
-  action: string,
-  sharedParams: { scenario_id: string; return_to: string },
-): string {
-  const normalizedAction = normalizeText(action).toLowerCase();
-  const source =
-    normalizedAction === "compare"
-      ? "result_compare"
-      : normalizedAction === "wiki"
-        ? "result_wiki"
-        : "result_me";
-  const resultCta =
-    normalizedAction === "compare"
-      ? "compare"
-      : normalizedAction === "wiki"
-        ? "wiki"
-        : "me";
-  return appendQueryParams(href, {
-    ...sharedParams,
-    source,
-    result_cta: resultCta,
+function buildTaskSwitchActions(startHref: string): ResultAction[] {
+  return [
+    {
+      resultCta: "retry_same_category",
+      action: "retry_same_category",
+      label: "重测这类",
+      href: appendQueryParams(startHref, {
+        result_cta: "retry_same_category",
+      }),
+    },
+    {
+      resultCta: "switch_category",
+      action: "switch_category",
+      label: "测其他品类",
+      href: appendQueryParams("/m/choose", {
+        result_cta: "switch_category",
+      }),
+    },
+  ];
+}
+
+function buildResultUtilityHref({
+  href,
+  source,
+  resultHref,
+  scenarioId,
+  resultCta,
+}: {
+  href: string;
+  source: string;
+  resultHref: string;
+  scenarioId: string;
+  resultCta: MobileResultCta;
+}): string {
+  return appendMobileUtilityRouteState(href, {
+    source: normalizeText(source) || null,
+    returnTo: resultHref,
+    scenarioId,
+    resultCta,
+    compareId: null,
   });
-}
-
-function resolveSecondaryLoopAction(action: string, href: string): string {
-  const actionKey = normalizeText(action).toLowerCase();
-  const hrefKey = normalizeText(href).toLowerCase();
-  if (
-    actionKey === "compare" ||
-    actionKey === "restart" ||
-    actionKey === "rerun" ||
-    actionKey === "retry" ||
-    hrefKey.includes("/compare")
-  ) {
-    return "compare";
-  }
-  if (actionKey === "wiki" || hrefKey.includes("/wiki")) {
-    return "wiki";
-  }
-  if (
-    actionKey === "me" ||
-    actionKey === "profile" ||
-    actionKey === "history" ||
-    hrefKey.includes("/m/me")
-  ) {
-    return "me";
-  }
-  return "";
-}
-
-function dedupeActions(actions: ResultAction[]): ResultAction[] {
-  const seen = new Set<string>();
-  const items: ResultAction[] = [];
-  for (const action of actions) {
-    const key = `${action.action}:${action.href}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    items.push(action);
-  }
-  return items;
 }
 
 function orderBlocks(blocks: MobileSelectionResultBlock[], displayOrder: string[]): MobileSelectionResultBlock[] {
@@ -561,36 +467,6 @@ function secondaryBlockTexts(block: ParsedBlock | null, primaryText: string): st
   ]);
 }
 
-function resolvePrimaryActionHref(
-  action: string,
-  explicitHref: string,
-  result: MobileSelectionPublishedResult,
-  startHref: string,
-  profileHref: string,
-): string {
-  const cleanHref = normalizeText(explicitHref);
-  const actionKey = normalizeText(action).toLowerCase();
-  if (cleanHref) return cleanHref;
-  if (actionKey === "wiki" || actionKey === "open_wiki") return result.links.wiki;
-  if (actionKey === "restart" || actionKey === "rerun" || actionKey === "retry") return startHref;
-  if (actionKey === "profile") return profileHref;
-  if (actionKey === "me" || actionKey === "history") return "/m/me/history";
-  if (actionKey === "compare") return `/m/compare?category=${encodeURIComponent(result.category)}`;
-  return result.links.product;
-}
-
-function resolveSecondaryLoopHref(cta: MobileSelectionResultCTA, result: MobileSelectionPublishedResult): string {
-  const cleanHref = normalizeText(cta.href);
-  const actionKey = normalizeText(cta.action).toLowerCase();
-  if (cleanHref) return cleanHref;
-  if (actionKey === "wiki" || actionKey === "open_wiki") return result.links.wiki;
-  if (actionKey === "me" || actionKey === "profile" || actionKey === "history") return "/m/me/history";
-  if (actionKey === "compare" || actionKey === "restart" || actionKey === "rerun" || actionKey === "retry") {
-    return `/m/compare?category=${encodeURIComponent(result.category)}`;
-  }
-  return "";
-}
-
 function appendQueryParams(path: string, params: Record<string, string>): string {
   const [pathname, hash = ""] = path.split("#", 2);
   const [basePath, query = ""] = pathname.split("?", 2);
@@ -630,13 +506,6 @@ function humanizeBlockId(id: string): string {
   if (id === "attention") return "你当前最该抓住什么";
   if (id === "pitfalls") return "你现在最该少踩的坑";
   return "结果说明";
-}
-
-function humanizeSecondaryLoopAction(action: string): string {
-  if (action === "compare") return "和其他候选再对比";
-  if (action === "wiki") return "查看产品或成分百科";
-  if (action === "me") return "回到我的记录";
-  return "继续了解";
 }
 
 function humanizeRecommendationSource(source: string): string {

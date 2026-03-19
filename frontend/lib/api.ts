@@ -912,6 +912,7 @@ export type MobileAnalyticsOverview = {
   sessions: number;
   owners: number;
   home_primary_cta_click_sessions: number;
+  home_workspace_quick_action_click_sessions: number;
   choose_view_sessions: number;
   choose_start_click_sessions: number;
   questionnaire_completed_sessions: number;
@@ -1068,6 +1069,7 @@ export type MobileAnalyticsExperience = {
   decision_result_primary_cta_clicks: number;
   decision_result_secondary_loop_clicks: number;
   utility_return_clicks: number;
+  home_workspace_quick_action_clicks: number;
   compare_result_leaves: number;
   avg_result_dwell_ms: number;
   p50_result_dwell_ms: number;
@@ -1087,6 +1089,13 @@ export type MobileAnalyticsExperience = {
   result_cta_completions: MobileAnalyticsCtaCompletionItem[];
   result_secondary_loop_actions: MobileAnalyticsCountItem[];
   utility_return_actions: MobileAnalyticsCountItem[];
+  result_primary_cta_result_ctas: MobileAnalyticsCountItem[];
+  result_primary_cta_target_paths: MobileAnalyticsCountItem[];
+  result_secondary_loop_result_ctas: MobileAnalyticsCountItem[];
+  result_secondary_loop_target_paths: MobileAnalyticsCountItem[];
+  utility_return_result_ctas: MobileAnalyticsCountItem[];
+  utility_return_target_paths: MobileAnalyticsCountItem[];
+  home_workspace_quick_actions: MobileAnalyticsCountItem[];
   browser_families: MobileAnalyticsCountItem[];
   os_families: MobileAnalyticsCountItem[];
   device_types: MobileAnalyticsCountItem[];
@@ -1140,6 +1149,9 @@ export type MobileAnalyticsSessionEventItem = {
   trigger_reason?: string | null;
   reason_label?: string | null;
   dwell_ms?: number | null;
+  result_cta?: string | null;
+  action?: string | null;
+  target_path?: string | null;
   location_label?: string | null;
   location_time_zone?: string | null;
   location_geocode_status?: string | null;
