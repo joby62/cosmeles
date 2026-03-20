@@ -139,10 +139,36 @@ def test_analytics_events_contract_uses_result_event_family() -> None:
     payload = json.loads((REPO_ROOT / "shared/mobile/contracts/analytics_events.json").read_text(encoding="utf-8"))
     events = payload["events"]
     assert "result_view" in events
-    assert "result_primary_cta_click" in events
-    assert "result_secondary_loop_click" in events
+    assert "choose_category_start_click" in events
+    assert "result_add_to_bag_click" in events
+    assert "result_compare_entry_click" in events
+    assert "result_rationale_entry_click" in events
+    assert "result_retry_same_category_click" in events
+    assert "result_switch_category_click" in events
+    assert events["choose_start_click"]["status"] == "compatibility_only"
+    assert events["result_primary_cta_click"]["status"] == "compatibility_only"
+    assert events["result_secondary_loop_click"]["status"] == "compatibility_only"
     assert "profile_result_view" not in events
     assert payload["decision_result_semantics"]["legacy_aliases_removed"] == ["profile_result_view"]
+    assert payload["decision_result_semantics"]["legacy_bridge_by_result_cta"]["compare"] == "result_compare_entry_click"
+
+
+def test_analytics_p0_funnel_contract_keeps_phase_13_canonical_truth_with_legacy_bridges() -> None:
+    payload = json.loads((REPO_ROOT / "shared/mobile/contracts/analytics_p0_funnel.v1.json").read_text(encoding="utf-8"))
+    assert payload["canonical_event_vocabulary"]["first_run_funnel"] == [
+        "home_primary_cta_click",
+        "choose_category_start_click",
+        "questionnaire_view",
+        "questionnaire_completed",
+        "result_view",
+    ]
+    assert payload["summary_metrics"]["choose_start_click_sessions"]["event"] == "choose_category_start_click"
+    assert payload["summary_metrics"]["choose_start_click_sessions"]["compatibility_bridges"] == [
+        {"event": "choose_start_click"}
+    ]
+    assert payload["summary_metrics"]["result_primary_cta_click_sessions"]["event"] == "result_add_to_bag_click"
+    assert payload["funnel_steps"][1]["step_key"] == "choose_category_start"
+    assert payload["funnel_steps"][2]["required_prop_values"] == {"step": 1}
 
 
 def test_selection_result_adapter_builds_v3_contract() -> None:

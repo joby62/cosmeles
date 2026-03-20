@@ -6,6 +6,7 @@ import re
 import io
 import zipfile
 import unicodedata
+from urllib.parse import parse_qs, urlsplit
 from functools import lru_cache
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
@@ -261,10 +262,117 @@ ANALYTICS_STAGE_LABELS: dict[str, str] = {
 }
 ANALYTICS_P0_FUNNEL_STEPS: tuple[tuple[str, str], ...] = (
     ("home_primary_cta", "首页主 CTA"),
-    ("choose_view", "进入 choose"),
-    ("choose_start", "开始答题"),
+    ("choose_category_start", "点击品类直接开始"),
+    ("questionnaire_step1_view", "进入第1题"),
     ("questionnaire_completed", "答题完成"),
     ("result_view", "结果到达"),
+)
+ANALYTICS_RESULT_CANONICAL_EVENT_TO_CTA: dict[str, str] = {
+    "result_add_to_bag_click": "bag_add",
+    "result_compare_entry_click": "compare",
+    "result_rationale_entry_click": "rationale",
+    "result_retry_same_category_click": "retry_same_category",
+    "result_switch_category_click": "switch_category",
+}
+ANALYTICS_RESULT_SECONDARY_CANONICAL_EVENTS: tuple[str, ...] = (
+    "result_compare_entry_click",
+    "result_rationale_entry_click",
+    "result_retry_same_category_click",
+    "result_switch_category_click",
+)
+ANALYTICS_COMPARE_CLOSURE_EVENT_TO_ACTION_KEY: dict[str, str] = {
+    "compare_result_accept_recommendation": "accept_recommendation",
+    "compare_result_keep_current": "keep_current",
+    "compare_result_hold_current": "hold_current",
+    "compare_result_view_key_differences": "view_key_differences",
+    "compare_result_open_rationale": "open_rationale",
+    "compare_result_retry_current_product": "retry_current_product",
+    "compare_result_switch_category_click": "switch_category",
+    "compare_result_accept_recommendation_land": "accept_recommendation_land",
+    "compare_result_keep_current_land": "keep_current_land",
+}
+ANALYTICS_OVERVIEW_EVENT_NAMES: tuple[str, ...] = (
+    "home_primary_cta_click",
+    "home_workspace_quick_action_click",
+    "choose_view",
+    "choose_start_click",
+    "choose_category_start_click",
+    "questionnaire_view",
+    "question_answered",
+    "questionnaire_completed",
+    "page_view",
+    "wiki_upload_cta_expose",
+    "wiki_upload_cta_click",
+    "my_use_category_card_click",
+    "compare_run_start",
+    "compare_run_success",
+    "compare_result_view",
+    "result_view",
+    "result_primary_cta_click",
+    "result_secondary_loop_click",
+    "result_add_to_bag_click",
+    "result_compare_entry_click",
+    "result_rationale_entry_click",
+    "result_retry_same_category_click",
+    "result_switch_category_click",
+    "utility_return_click",
+    "feedback_prompt_show",
+    "feedback_submit",
+)
+ANALYTICS_FUNNEL_EVENT_NAMES: tuple[str, ...] = (
+    "home_primary_cta_click",
+    "choose_start_click",
+    "choose_category_start_click",
+    "questionnaire_view",
+    "questionnaire_completed",
+    "result_view",
+)
+ANALYTICS_EXPERIENCE_EVENT_NAMES: tuple[str, ...] = (
+    "page_view",
+    "wiki_list_view",
+    "wiki_product_click",
+    "wiki_ingredient_click",
+    "wiki_category_ingredient_click",
+    "wiki_category_choose_click",
+    "compare_result_view",
+    "compare_result_leave",
+    "scroll_depth",
+    "stall_detected",
+    "rage_click",
+    "dead_click",
+    "compare_result_cta_click",
+    "compare_result_cta_land",
+    "compare_entry_view",
+    "compare_upload_start",
+    "compare_upload_success",
+    "compare_result_accept_recommendation",
+    "compare_result_keep_current",
+    "compare_result_hold_current",
+    "compare_result_view_key_differences",
+    "compare_result_open_rationale",
+    "compare_result_retry_current_product",
+    "compare_result_switch_category_click",
+    "compare_result_accept_recommendation_land",
+    "compare_result_keep_current_land",
+    "compare_run_start",
+    "location_context_captured",
+    "wiki_upload_cta_click",
+    "rationale_view",
+    "rationale_to_bag_click",
+    "rationale_to_compare_click",
+    "result_view",
+    "result_primary_cta_click",
+    "result_secondary_loop_click",
+    "result_add_to_bag_click",
+    "result_compare_entry_click",
+    "result_rationale_entry_click",
+    "result_retry_same_category_click",
+    "result_switch_category_click",
+    "utility_return_click",
+    "home_workspace_quick_action_click",
+    "bag_add_success",
+    "product_showcase_continue_upload_click",
+    "product_showcase_governance_click",
 )
 ANALYTICS_QUESTION_DROPOFF_STATUS = "blocked_until_stepful_questionnaire_view_exists"
 ANALYTICS_QUESTION_DROPOFF_REASON = (
@@ -388,8 +496,13 @@ ANALYTICS_HOME_WORKSPACE_ACTION_LABELS: dict[str, str] = {
 ANALYTICS_COMPARE_CLOSURE_ACTION_LABELS: dict[str, str] = {
     "accept_recommendation": "接受推荐",
     "keep_current": "保留当前",
+    "hold_current": "先保留当前",
+    "view_key_differences": "查看关键差异",
+    "open_rationale": "打开推荐依据",
     "retry_current_product": "换一个当前产品再比",
     "switch_category": "切换到其他品类",
+    "accept_recommendation_land": "接受推荐成功落点",
+    "keep_current_land": "保留当前成功落点",
 }
 ANALYTICS_RATIONALE_CLOSURE_ACTION_LABELS: dict[str, str] = {
     "view": "查看推荐依据",
@@ -785,6 +898,161 @@ def _event_prop_key(props: dict[str, Any], key: str, *, fallback: str = "unknown
     return value or fallback
 
 
+def _is_choose_category_start_event(row: MobileClientEvent) -> bool:
+    return row.name in {"choose_category_start_click", "choose_start_click"}
+
+
+def _is_questionnaire_step1_view_event(row: MobileClientEvent, props: dict[str, Any]) -> bool:
+    return row.name == "questionnaire_view" and _question_dropoff_step(props) == 1
+
+
+def _canonical_result_event_name(row: MobileClientEvent, props: dict[str, Any]) -> str | None:
+    if row.name in ANALYTICS_RESULT_CANONICAL_EVENT_TO_CTA:
+        return row.name
+    result_cta = _normalize_optional_text(props.get("result_cta"))
+    if row.name == "result_primary_cta_click" and result_cta == "bag_add":
+        return "result_add_to_bag_click"
+    if row.name == "result_secondary_loop_click" and result_cta:
+        for event_name, expected_cta in ANALYTICS_RESULT_CANONICAL_EVENT_TO_CTA.items():
+            if event_name == "result_add_to_bag_click":
+                continue
+            if result_cta == expected_cta:
+                return event_name
+    return None
+
+
+def _result_secondary_action_key(row: MobileClientEvent, props: dict[str, Any], canonical_event_name: str) -> str:
+    action_key = _normalize_optional_text(props.get("action"))
+    if canonical_event_name == "result_rationale_entry_click" and action_key in {None, "", "wiki"}:
+        return "rationale"
+    if action_key:
+        return action_key
+    fallback_by_event = {
+        "result_compare_entry_click": "compare",
+        "result_rationale_entry_click": "rationale",
+        "result_retry_same_category_click": "retry_same_category",
+        "result_switch_category_click": "switch_category",
+    }
+    return fallback_by_event.get(canonical_event_name, "unknown")
+
+
+def _compare_result_cta_click_key(row: MobileClientEvent, props: dict[str, Any]) -> str | None:
+    if row.name == "compare_result_cta_click":
+        return _normalize_optional_text(props.get("cta"))
+    if row.name == "compare_result_accept_recommendation":
+        return "recommendation_product"
+    if row.name == "compare_result_open_rationale":
+        return "recommendation_wiki"
+    if row.name == "compare_result_keep_current":
+        return "keep_current"
+    return None
+
+
+def _compare_result_cta_land_key(row: MobileClientEvent, props: dict[str, Any]) -> str | None:
+    if row.name == "compare_result_cta_land":
+        return _normalize_optional_text(props.get("cta"))
+    if row.name == "compare_result_accept_recommendation_land":
+        return "recommendation_product"
+    if row.name == "compare_result_keep_current_land":
+        return "keep_current"
+    return None
+
+
+def _canonical_compare_closure_action_key(row: MobileClientEvent, props: dict[str, Any]) -> str | None:
+    direct_key = ANALYTICS_COMPARE_CLOSURE_EVENT_TO_ACTION_KEY.get(str(row.name or "").strip())
+    if direct_key:
+        return direct_key
+    cta_key = _normalize_optional_text(props.get("cta"))
+    if row.name == "compare_result_cta_click" and cta_key == "recommendation_wiki":
+        return "open_rationale"
+    if row.name == "compare_result_cta_land" and cta_key == "recommendation_product":
+        return "accept_recommendation_land"
+    return None
+
+
+def _route_query_params(route: str | None) -> dict[str, str]:
+    route_text = _normalize_optional_text(route)
+    if not route_text or "?" not in route_text:
+        return {}
+    query_text = ""
+    try:
+        query_text = urlsplit(route_text).query
+    except Exception:
+        query_text = str(route_text.split("?", 1)[1] if "?" in route_text else "")
+    if not query_text:
+        return {}
+    parsed = parse_qs(query_text, keep_blank_values=False)
+    out: dict[str, str] = {}
+    for key, values in parsed.items():
+        if not values:
+            continue
+        value = _normalize_optional_text(values[0])
+        if value:
+            out[key] = value
+    return out
+
+
+def _event_route_state_value(props: dict[str, Any], route_query: dict[str, str], key: str) -> str | None:
+    return _normalize_optional_text(props.get(key)) or _normalize_optional_text(route_query.get(key))
+
+
+def _event_compare_provenance(
+    row: MobileClientEvent,
+    props: dict[str, Any],
+    route_query: dict[str, str],
+) -> str | None:
+    return (
+        _normalize_optional_text(props.get("compare_id"))
+        or _normalize_optional_text(row.compare_id)
+        or _normalize_optional_text(route_query.get("compare_id"))
+        or _normalize_optional_text(props.get("from_compare_id"))
+        or _normalize_optional_text(route_query.get("from_compare_id"))
+    )
+
+
+def _route_context_key(
+    *,
+    return_to: str | None,
+    scenario_id: str | None,
+    result_cta: str | None,
+    compare_id: str | None,
+) -> str:
+    parts: list[str] = []
+    if return_to:
+        parts.append("return_to")
+    if scenario_id:
+        parts.append("scenario_id")
+    if result_cta:
+        parts.append("result_cta")
+    if compare_id:
+        parts.append("compare_id")
+    return "+".join(parts) if parts else "none"
+
+
+def _route_context_label(value: str) -> str:
+    if value == "none":
+        return "未携带 return_to / scenario_id / result_cta / compare_id"
+    token_label_map = {
+        "return_to": "return_to",
+        "scenario_id": "scenario_id",
+        "result_cta": "result_cta",
+        "compare_id": "compare_id",
+    }
+    return " + ".join(token_label_map.get(token, token) for token in value.split("+"))
+
+
+def _build_route_context_count_items(counter: Counter[str]) -> list[MobileAnalyticsCountItem]:
+    label_map = {key: _route_context_label(key) for key in counter.keys()}
+    return _build_count_items(counter, denominator=sum(counter.values()), label_map=label_map)
+
+
+def _is_my_use_target_path(path: str | None) -> bool:
+    target_path = _normalize_optional_text(path)
+    if not target_path:
+        return False
+    return target_path == "/m/me/use" or target_path.startswith("/m/me/use?")
+
+
 def _has_event_environment(props: dict[str, Any]) -> bool:
     return any(
         _normalize_optional_text(props.get(key))
@@ -966,28 +1234,7 @@ def get_mobile_analytics_overview(
         filters=filters,
         start_iso=start_iso,
         end_iso=end_iso,
-        names=[
-            "home_primary_cta_click",
-            "home_workspace_quick_action_click",
-            "choose_view",
-            "choose_start_click",
-            "questionnaire_view",
-            "question_answered",
-            "questionnaire_completed",
-            "page_view",
-            "wiki_upload_cta_expose",
-            "wiki_upload_cta_click",
-            "my_use_category_card_click",
-            "compare_run_start",
-            "compare_run_success",
-            "compare_result_view",
-            "result_view",
-            "result_primary_cta_click",
-            "result_secondary_loop_click",
-            "utility_return_click",
-            "feedback_prompt_show",
-            "feedback_submit",
-        ],
+        names=list(ANALYTICS_OVERVIEW_EVENT_NAMES),
     )
 
     session_ids = {
@@ -1018,7 +1265,7 @@ def get_mobile_analytics_overview(
     choose_start_click_sessions = {
         row.session_id.strip()
         for row, _props in rows
-        if row.name == "choose_start_click" and str(row.session_id or "").strip()
+        if _is_choose_category_start_event(row) and str(row.session_id or "").strip()
     }
     questionnaire_completed_sessions = {
         row.session_id.strip()
@@ -1087,23 +1334,24 @@ def get_mobile_analytics_overview(
     }
     result_primary_cta_click_sessions = {
         row.session_id.strip()
-        for row, _props in rows
-        if row.name == "result_primary_cta_click" and str(row.session_id or "").strip()
+        for row, props in rows
+        if _canonical_result_event_name(row, props) == "result_add_to_bag_click" and str(row.session_id or "").strip()
     }
     result_primary_cta_click_keys = {
         _decision_result_key_for_event(row, props)
         for row, props in rows
-        if row.name == "result_primary_cta_click"
+        if _canonical_result_event_name(row, props) == "result_add_to_bag_click"
     }
     result_secondary_loop_click_sessions = {
         row.session_id.strip()
-        for row, _props in rows
-        if row.name == "result_secondary_loop_click" and str(row.session_id or "").strip()
+        for row, props in rows
+        if _canonical_result_event_name(row, props) in ANALYTICS_RESULT_SECONDARY_CANONICAL_EVENTS
+        and str(row.session_id or "").strip()
     }
     result_secondary_loop_click_keys = {
         _decision_result_key_for_event(row, props)
         for row, props in rows
-        if row.name == "result_secondary_loop_click"
+        if _canonical_result_event_name(row, props) in ANALYTICS_RESULT_SECONDARY_CANONICAL_EVENTS
     }
     utility_return_click_sessions = {
         row.session_id.strip()
@@ -1277,13 +1525,7 @@ def get_mobile_analytics_funnel(
         filters=filters,
         start_iso=start_iso,
         end_iso=end_iso,
-        names=[
-            "home_primary_cta_click",
-            "choose_view",
-            "choose_start_click",
-            "questionnaire_completed",
-            "result_view",
-        ],
+        names=list(ANALYTICS_FUNNEL_EVENT_NAMES),
     )
 
     step_sessions: dict[str, set[str]] = {
@@ -1293,10 +1535,10 @@ def get_mobile_analytics_funnel(
         session_id = _normalize_optional_text(row.session_id)
         if row.name == "home_primary_cta_click" and session_id:
             step_sessions["home_primary_cta"].add(session_id)
-        elif row.name == "choose_view" and session_id:
-            step_sessions["choose_view"].add(session_id)
-        elif row.name == "choose_start_click" and session_id:
-            step_sessions["choose_start"].add(session_id)
+        elif _is_choose_category_start_event(row) and session_id:
+            step_sessions["choose_category_start"].add(session_id)
+        elif _is_questionnaire_step1_view_event(row, props) and session_id:
+            step_sessions["questionnaire_step1_view"].add(session_id)
         elif row.name == "questionnaire_completed" and session_id:
             step_sessions["questionnaire_completed"].add(session_id)
         elif row.name == "result_view" and session_id:
@@ -1590,43 +1832,7 @@ def get_mobile_analytics_experience(
         filters=filters,
         start_iso=start_iso,
         end_iso=end_iso,
-        names=[
-            "page_view",
-            "wiki_list_view",
-            "wiki_product_click",
-            "wiki_ingredient_click",
-            "wiki_category_ingredient_click",
-            "wiki_category_choose_click",
-            "compare_result_view",
-            "compare_result_leave",
-            "scroll_depth",
-            "stall_detected",
-            "rage_click",
-            "dead_click",
-            "compare_result_cta_click",
-            "compare_result_cta_land",
-            "compare_entry_view",
-            "compare_upload_start",
-            "compare_upload_success",
-            "compare_result_accept_recommendation",
-            "compare_result_keep_current",
-            "compare_result_retry_current_product",
-            "compare_result_switch_category_click",
-            "compare_run_start",
-            "location_context_captured",
-            "wiki_upload_cta_click",
-            "rationale_view",
-            "rationale_to_bag_click",
-            "rationale_to_compare_click",
-            "result_view",
-            "result_primary_cta_click",
-            "result_secondary_loop_click",
-            "utility_return_click",
-            "home_workspace_quick_action_click",
-            "bag_add_success",
-            "product_showcase_continue_upload_click",
-            "product_showcase_governance_click",
-        ],
+        names=list(ANALYTICS_EXPERIENCE_EVENT_NAMES),
     )
 
     wiki_product_list_views = 0
@@ -1639,8 +1845,12 @@ def get_mobile_analytics_experience(
     decision_result_secondary_loop_clicks = 0
     utility_return_clicks = 0
     home_workspace_quick_action_clicks = 0
+    compare_entry_views = 0
+    compare_upload_starts = 0
+    compare_upload_successes = 0
     compare_closure_accept_recommendation = 0
     compare_closure_keep_current = 0
+    compare_keep_current_my_use_clicks = 0
     rationale_view = 0
     rationale_to_bag_click = 0
     rationale_to_compare_click = 0
@@ -1657,6 +1867,14 @@ def get_mobile_analytics_experience(
     result_cta_click_sessions: dict[str, set[str]] = defaultdict(set)
     result_cta_land_sessions: dict[str, set[str]] = defaultdict(set)
     result_cta_completion_sessions: dict[tuple[str, str], set[str]] = defaultdict(set)
+    compare_entry_result_cta_counter: Counter[str] = Counter()
+    compare_upload_start_result_cta_counter: Counter[str] = Counter()
+    compare_upload_success_result_cta_counter: Counter[str] = Counter()
+    compare_entry_route_context_counter: Counter[str] = Counter()
+    compare_upload_start_route_context_counter: Counter[str] = Counter()
+    compare_upload_success_route_context_counter: Counter[str] = Counter()
+    compare_keep_current_target_path_sessions: dict[str, set[str]] = defaultdict(set)
+    compare_keep_current_my_use_keys: set[str] = set()
     result_secondary_loop_action_counter: Counter[str] = Counter()
     utility_return_action_counter: Counter[str] = Counter()
     result_primary_cta_result_cta_counter: Counter[str] = Counter()
@@ -1666,7 +1884,7 @@ def get_mobile_analytics_experience(
     utility_return_result_cta_counter: Counter[str] = Counter()
     utility_return_target_path_counter: Counter[str] = Counter()
     home_workspace_quick_action_counter: Counter[str] = Counter()
-    compare_closure_action_counter: Counter[str] = Counter()
+    compare_closure_action_sessions: dict[str, set[str]] = defaultdict(set)
     rationale_closure_action_counter: Counter[str] = Counter()
     browser_counter: Counter[str] = Counter()
     os_counter: Counter[str] = Counter()
@@ -1712,6 +1930,27 @@ def get_mobile_analytics_experience(
         if row.name == "location_context_captured":
             location_capture_events += 1
             location_capture_sessions.add(session_key)
+        compare_closure_action_key = _canonical_compare_closure_action_key(row, props)
+        if compare_closure_action_key:
+            compare_key = f"{session_key}:{_normalize_optional_text(row.compare_id) or 'no-compare'}"
+            compare_closure_action_sessions[compare_closure_action_key].add(compare_key)
+        compare_cta_click_key = _compare_result_cta_click_key(row, props)
+        if compare_cta_click_key:
+            result_cta_counter[compare_cta_click_key] += 1
+            result_cta_click_sessions[compare_cta_click_key].add(
+                f"{session_key}:{_normalize_optional_text(row.compare_id) or 'no-compare'}:{compare_cta_click_key}"
+            )
+        compare_cta_land_key = _compare_result_cta_land_key(row, props)
+        if compare_cta_land_key:
+            result_cta_land_counter[compare_cta_land_key] += 1
+            origin_compare_id = (
+                _normalize_optional_text(props.get("from_compare_id"))
+                or _normalize_optional_text(row.compare_id)
+                or "no-compare"
+            )
+            result_cta_land_sessions[compare_cta_land_key].add(
+                f"{session_key}:{origin_compare_id}:{compare_cta_land_key}"
+            )
         if row.name in ANALYTICS_CTA_COMPLETION_LABELS:
             cta_key = _normalize_optional_text(props.get("result_cta")) or _normalize_optional_text(props.get("cta"))
             if cta_key:
@@ -1736,6 +1975,48 @@ def get_mobile_analytics_experience(
         if row.name == "wiki_ingredient_click":
             wiki_ingredient_clicks += 1
             continue
+        if row.name == "compare_entry_view":
+            compare_entry_views += 1
+            route_query = _route_query_params(row.route)
+            result_cta = _event_route_state_value(props, route_query, "result_cta")
+            compare_entry_result_cta_counter[result_cta or "unknown"] += 1
+            compare_entry_route_context_counter[
+                _route_context_key(
+                    return_to=_event_route_state_value(props, route_query, "return_to"),
+                    scenario_id=_event_route_state_value(props, route_query, "scenario_id"),
+                    result_cta=result_cta,
+                    compare_id=_event_compare_provenance(row, props, route_query),
+                )
+            ] += 1
+            continue
+        if row.name == "compare_upload_start":
+            compare_upload_starts += 1
+            route_query = _route_query_params(row.route)
+            result_cta = _event_route_state_value(props, route_query, "result_cta")
+            compare_upload_start_result_cta_counter[result_cta or "unknown"] += 1
+            compare_upload_start_route_context_counter[
+                _route_context_key(
+                    return_to=_event_route_state_value(props, route_query, "return_to"),
+                    scenario_id=_event_route_state_value(props, route_query, "scenario_id"),
+                    result_cta=result_cta,
+                    compare_id=_event_compare_provenance(row, props, route_query),
+                )
+            ] += 1
+            continue
+        if row.name == "compare_upload_success":
+            compare_upload_successes += 1
+            route_query = _route_query_params(row.route)
+            result_cta = _event_route_state_value(props, route_query, "result_cta")
+            compare_upload_success_result_cta_counter[result_cta or "unknown"] += 1
+            compare_upload_success_route_context_counter[
+                _route_context_key(
+                    return_to=_event_route_state_value(props, route_query, "return_to"),
+                    scenario_id=_event_route_state_value(props, route_query, "scenario_id"),
+                    result_cta=result_cta,
+                    compare_id=_event_compare_provenance(row, props, route_query),
+                )
+            ] += 1
+            continue
         if row.name == "compare_result_view":
             compare_result_views += 1
             page_view_counter[row_page] += 1
@@ -1743,16 +2024,17 @@ def get_mobile_analytics_experience(
         if row.name == "result_view":
             decision_result_views += 1
             continue
-        if row.name == "result_primary_cta_click":
+        canonical_result_event_name = _canonical_result_event_name(row, props)
+        if canonical_result_event_name == "result_add_to_bag_click":
             decision_result_primary_cta_clicks += 1
-            result_primary_cta_result_cta_counter[_event_prop_key(props, "result_cta")] += 1
+            result_primary_cta_result_cta_counter[ANALYTICS_RESULT_CANONICAL_EVENT_TO_CTA[canonical_result_event_name]] += 1
             result_primary_cta_target_path_counter[_event_prop_key(props, "target_path")] += 1
             continue
-        if row.name == "result_secondary_loop_click":
+        if canonical_result_event_name in ANALYTICS_RESULT_SECONDARY_CANONICAL_EVENTS:
             decision_result_secondary_loop_clicks += 1
-            action_key = _normalize_optional_text(props.get("action")) or "unknown"
+            action_key = _result_secondary_action_key(row, props, canonical_result_event_name)
             result_secondary_loop_action_counter[action_key] += 1
-            result_secondary_loop_result_cta_counter[_event_prop_key(props, "result_cta")] += 1
+            result_secondary_loop_result_cta_counter[ANALYTICS_RESULT_CANONICAL_EVENT_TO_CTA[canonical_result_event_name]] += 1
             result_secondary_loop_target_path_counter[_event_prop_key(props, "target_path")] += 1
             continue
         if row.name == "utility_return_click":
@@ -1769,17 +2051,32 @@ def get_mobile_analytics_experience(
             continue
         if row.name == "compare_result_accept_recommendation":
             compare_closure_accept_recommendation += 1
-            compare_closure_action_counter["accept_recommendation"] += 1
             continue
         if row.name == "compare_result_keep_current":
             compare_closure_keep_current += 1
-            compare_closure_action_counter["keep_current"] += 1
+            target_path = _normalize_optional_text(props.get("target_path"))
+            compare_key = f"{session_key}:{_normalize_optional_text(row.compare_id) or 'no-compare'}"
+            compare_keep_current_target_path_sessions[target_path or "unknown"].add(compare_key)
+            if _is_my_use_target_path(target_path):
+                compare_keep_current_my_use_keys.add(compare_key)
             continue
-        if row.name == "compare_result_retry_current_product":
-            compare_closure_action_counter["retry_current_product"] += 1
+        if row.name == "compare_result_keep_current_land":
+            target_path = _normalize_optional_text(props.get("target_path"))
+            compare_key = f"{session_key}:{_normalize_optional_text(row.compare_id) or 'no-compare'}"
+            compare_keep_current_target_path_sessions[target_path or "unknown"].add(compare_key)
+            if _is_my_use_target_path(target_path):
+                compare_keep_current_my_use_keys.add(compare_key)
             continue
-        if row.name == "compare_result_switch_category_click":
-            compare_closure_action_counter["switch_category"] += 1
+        if row.name in {
+            "compare_result_hold_current",
+            "compare_result_view_key_differences",
+            "compare_result_open_rationale",
+            "compare_result_retry_current_product",
+            "compare_result_switch_category_click",
+            "compare_result_accept_recommendation_land",
+            "compare_result_cta_click",
+            "compare_result_cta_land",
+        }:
             continue
         if row.name == "rationale_view":
             rationale_view += 1
@@ -1826,19 +2123,6 @@ def get_mobile_analytics_experience(
             target_id = _normalize_optional_text(props.get("target_id")) or "unknown"
             dead_click_counter[(row_page, target_id)] += 1
             continue
-        if row.name == "compare_result_cta_click":
-            cta_key = _normalize_optional_text(props.get("cta")) or "unknown"
-            result_cta_counter[cta_key] += 1
-            result_cta_click_sessions[cta_key].add(
-                f"{session_key}:{_normalize_optional_text(row.compare_id) or 'no-compare'}:{cta_key}"
-            )
-            continue
-        if row.name == "compare_result_cta_land":
-            cta_key = _normalize_optional_text(props.get("cta")) or "unknown"
-            result_cta_land_counter[cta_key] += 1
-            origin_compare_id = _normalize_optional_text(props.get("from_compare_id")) or _normalize_optional_text(row.compare_id) or "no-compare"
-            result_cta_land_sessions[cta_key].add(f"{session_key}:{origin_compare_id}:{cta_key}")
-            continue
     scroll_depth_items = [
         MobileAnalyticsPageDepthItem(
             page=page_key,
@@ -1877,6 +2161,8 @@ def get_mobile_analytics_experience(
             key=lambda item: (-item[1], item[0][0], item[0][1]),
         )[:12]
     ]
+    result_cta_counter = Counter({key: len(session_keys) for key, session_keys in result_cta_click_sessions.items()})
+    result_cta_land_counter = Counter({key: len(session_keys) for key, session_keys in result_cta_land_sessions.items()})
     followthrough_keys = sorted(set(result_cta_counter.keys()) | set(result_cta_land_counter.keys()))
     followthrough_items = [
         MobileAnalyticsCtaFollowthroughItem(
@@ -1935,8 +2221,14 @@ def get_mobile_analytics_experience(
         decision_result_secondary_loop_clicks=decision_result_secondary_loop_clicks,
         utility_return_clicks=utility_return_clicks,
         home_workspace_quick_action_clicks=home_workspace_quick_action_clicks,
+        compare_entry_views=compare_entry_views,
+        compare_upload_starts=compare_upload_starts,
+        compare_upload_successes=compare_upload_successes,
+        compare_upload_success_rate=_rate(compare_upload_successes, compare_upload_starts),
         compare_closure_accept_recommendation=compare_closure_accept_recommendation,
         compare_closure_keep_current=compare_closure_keep_current,
+        compare_keep_current_my_use_clicks=len(compare_keep_current_my_use_keys),
+        compare_keep_current_my_use_rate=_rate(len(compare_keep_current_my_use_keys), compare_closure_keep_current),
         rationale_view=rationale_view,
         rationale_to_bag_click=rationale_to_bag_click,
         rationale_to_compare_click=rationale_to_compare_click,
@@ -1957,6 +2249,28 @@ def get_mobile_analytics_experience(
         result_cta_clicks=_build_count_items(result_cta_counter, denominator=sum(result_cta_counter.values())),
         result_cta_followthrough=followthrough_items,
         result_cta_completions=completion_items,
+        compare_entry_result_ctas=_build_count_items(
+            compare_entry_result_cta_counter,
+            denominator=sum(compare_entry_result_cta_counter.values()),
+            label_map=ANALYTICS_RESULT_CTA_LABELS,
+        ),
+        compare_upload_start_result_ctas=_build_count_items(
+            compare_upload_start_result_cta_counter,
+            denominator=sum(compare_upload_start_result_cta_counter.values()),
+            label_map=ANALYTICS_RESULT_CTA_LABELS,
+        ),
+        compare_upload_success_result_ctas=_build_count_items(
+            compare_upload_success_result_cta_counter,
+            denominator=sum(compare_upload_success_result_cta_counter.values()),
+            label_map=ANALYTICS_RESULT_CTA_LABELS,
+        ),
+        compare_entry_route_contexts=_build_route_context_count_items(compare_entry_route_context_counter),
+        compare_upload_start_route_contexts=_build_route_context_count_items(compare_upload_start_route_context_counter),
+        compare_upload_success_route_contexts=_build_route_context_count_items(compare_upload_success_route_context_counter),
+        compare_keep_current_target_paths=_build_count_items(
+            Counter({key: len(session_keys) for key, session_keys in compare_keep_current_target_path_sessions.items()}),
+            denominator=sum(len(session_keys) for session_keys in compare_keep_current_target_path_sessions.values()),
+        ),
         result_secondary_loop_actions=_build_count_items(
             result_secondary_loop_action_counter,
             denominator=sum(result_secondary_loop_action_counter.values()),
@@ -1998,8 +2312,8 @@ def get_mobile_analytics_experience(
             label_map=ANALYTICS_HOME_WORKSPACE_ACTION_LABELS,
         ),
         compare_closure_actions=_build_count_items(
-            compare_closure_action_counter,
-            denominator=sum(compare_closure_action_counter.values()),
+            Counter({key: len(session_keys) for key, session_keys in compare_closure_action_sessions.items()}),
+            denominator=sum(len(session_keys) for session_keys in compare_closure_action_sessions.values()),
             label_map=ANALYTICS_COMPARE_CLOSURE_ACTION_LABELS,
         ),
         rationale_closure_actions=_build_count_items(
@@ -2135,6 +2449,11 @@ def get_mobile_analytics_sessions(
                 "result_view",
                 "result_primary_cta_click",
                 "result_secondary_loop_click",
+                "result_add_to_bag_click",
+                "result_compare_entry_click",
+                "result_rationale_entry_click",
+                "result_retry_same_category_click",
+                "result_switch_category_click",
                 "utility_return_click",
             }:
                 outcome = "result_viewed"

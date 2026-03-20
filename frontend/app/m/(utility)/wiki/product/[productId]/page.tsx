@@ -316,46 +316,75 @@ export default async function MobileWikiProductDetailPage({
         </article>
       ) : null}
 
-      <article className="m-wiki-card mt-3 overflow-hidden rounded-[26px]">
-        <div className="relative aspect-[4/3] bg-[color:var(--m-wiki-soft-bg)]">
-          <Image
-            src={resolveImageUrl(product)}
-            alt={product.name || product.id}
-            fill
-            sizes="100vw"
-            className="object-cover"
-          />
-        </div>
-        <div className="px-4 py-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full border border-white/10 bg-black/18 px-3 py-1 text-[11px] text-white/68">{item.category_label}</span>
-            {item.target_type_title ? (
-              <span className="m-wiki-pill m-wiki-pill-info rounded-full border px-3 py-1 text-[11px]">
-                {item.target_type_title}
-              </span>
-            ) : null}
-            {item.is_featured ? (
-              <span className="m-wiki-pill m-wiki-pill-good rounded-full border px-3 py-1 text-[11px]">
-                当前主推
-              </span>
-            ) : null}
+      {isRationaleMode ? (
+        <article className="m-wiki-card mt-4 rounded-[24px] border border-[#d5e4ff] bg-[linear-gradient(180deg,rgba(244,248,255,0.96)_0%,rgba(234,242,255,0.9)_100%)] px-4 py-4 text-[#183d76]">
+          <div className="flex items-start gap-3">
+            <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-[20px] border border-[#d5e4ff] bg-white/80">
+              <Image
+                src={resolveImageUrl(product)}
+                alt={product.name || product.id}
+                fill
+                sizes="96px"
+                className="object-cover"
+              />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full border border-[#c8dcff] bg-white/78 px-3 py-1 text-[11px] text-[#2e5ca9]">{item.category_label}</span>
+                {item.target_type_title ? (
+                  <span className="rounded-full border border-[#c8dcff] bg-[#eef5ff] px-3 py-1 text-[11px] text-[#2e5ca9]">
+                    {item.target_type_title}
+                  </span>
+                ) : null}
+                {item.is_featured ? (
+                  <span className="rounded-full border border-[#cde6d7] bg-[#eef8f2] px-3 py-1 text-[11px] text-[#2f6d49]">
+                    当前主推
+                  </span>
+                ) : null}
+              </div>
+              <h1 className="mt-3 text-[22px] leading-[1.28] font-semibold tracking-[-0.02em] text-[#163464]">
+                {product.name || "未命名产品"}
+              </h1>
+              <p className="mt-1 text-[13px] text-[#486aa4]">{product.brand || "品牌未识别"}</p>
+              <p className="mt-2 text-[13px] leading-[1.6] text-[#335caa]">
+                {product.one_sentence || "这款产品会作为本次推荐方案的补充说明。"}
+              </p>
+            </div>
           </div>
-          <h1 className="mt-3 text-[24px] leading-[1.24] font-semibold tracking-[-0.02em] text-white/92">
-            {product.name || "未命名产品"}
-          </h1>
-          <p className="mt-1 text-[14px] text-white/58">{product.brand || "品牌未识别"}</p>
-          <div className="mt-3">
-            <MobileEventBeacon
-              name="wiki_upload_cta_expose"
-              props={{
-                page: "wiki_product_detail",
-                route: `/m/wiki/product/${product.id}`,
-                source: analyticsSource,
-                category: product.category,
-                product_id: product.id,
-                target_path: "/m/me/use",
-              }}
-            />
+
+          <div className="mt-4 grid grid-cols-2 gap-2 text-[12px]">
+            <div className="rounded-[16px] border border-[#d5e4ff] bg-white/72 px-3 py-2">
+              <div className="text-[#5473aa]">映射状态</div>
+              <div className="mt-1 font-medium text-[#183d76]">{item.mapping_ready ? "已完成" : "未完成"}</div>
+            </div>
+            <div className="rounded-[16px] border border-[#d5e4ff] bg-white/72 px-3 py-2">
+              <div className="text-[#5473aa]">主类置信度</div>
+              <div className="mt-1 font-medium text-[#183d76]">{typeof item.primary_confidence === "number" ? `${item.primary_confidence}%` : "-"}</div>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-[16px] border border-[#d5e4ff] bg-white/72 px-3 py-3 text-[12px] leading-[1.6] text-[#345fa8]">
+            如果你还想继续确认，再看下面的增强分析和成分明细；结论动作已经放在上面的推荐依据卡里。
+          </div>
+
+          <MobileEventBeacon
+            name="wiki_upload_cta_expose"
+            props={{
+              page: "wiki_product_detail",
+              route: `/m/wiki/product/${product.id}`,
+              source: analyticsSource,
+              category: product.category,
+              product_id: product.id,
+              target_path: "/m/me/use",
+            }}
+          />
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <Link
+              href={`/product/${encodeURIComponent(product.id)}`}
+              className="inline-flex h-10 items-center rounded-full border border-[#0a84ff]/24 bg-white/72 px-4 text-[12px] font-semibold text-[#1e5eb5] active:bg-[#eef5ff]"
+            >
+              打开完整产品页
+            </Link>
             <MobileTrackedLink
               href={uploadCtaHref}
               eventName="wiki_upload_cta_click"
@@ -371,42 +400,96 @@ export default async function MobileWikiProductDetailPage({
                 result_cta: resultCta || undefined,
                 compare_id: compareOriginId || undefined,
               }}
-              className="inline-flex max-w-full items-center rounded-full border border-[color:var(--m-wiki-info-border)] bg-[color:var(--m-wiki-info-bg)] px-4 py-2 text-[12px] font-semibold leading-[1.45] text-[color:var(--m-wiki-info-text)] shadow-[0_8px_22px_rgba(36,80,163,0.08)] active:translate-y-[1px]"
+              className="inline-flex max-w-full items-center rounded-full border border-[#d5e4ff] bg-white/78 px-4 py-2 text-[12px] font-semibold leading-[1.45] text-[#2e5ca9] shadow-[0_8px_20px_rgba(36,80,163,0.08)] active:translate-y-[1px]"
             >
-              没有你的产品？点击上传一键分析
+              上传我的产品做分析
             </MobileTrackedLink>
           </div>
-          <p className="mt-3 text-[14px] leading-[1.55] text-white/68">
-            {product.one_sentence || "暂无一句话摘要。"}
-          </p>
-
-          <div className="mt-4 grid grid-cols-2 gap-2 text-[12px] text-white/56">
-            <div className="m-wiki-card-soft rounded-xl px-3 py-2">
-              <div>映射状态</div>
-              <div className="mt-1 font-medium text-white/78">{item.mapping_ready ? "已完成" : "未完成"}</div>
-            </div>
-            <div className="m-wiki-card-soft rounded-xl px-3 py-2">
-              <div>主类置信度</div>
-              <div className="mt-1 font-medium text-white/78">{typeof item.primary_confidence === "number" ? `${item.primary_confidence}%` : "-"}</div>
-            </div>
-            <div className="m-wiki-card-soft rounded-xl px-3 py-2">
-              <div>创建时间</div>
-              <div className="mt-1 font-medium text-white/78">{fmtTime(product.created_at)}</div>
-            </div>
-            <div className="m-wiki-card-soft rounded-xl px-3 py-2">
-              <div>产品 ID</div>
-              <div className="mt-1 line-clamp-1 font-medium text-white/78">{product.id}</div>
-            </div>
+        </article>
+      ) : (
+        <article className="m-wiki-card mt-3 overflow-hidden rounded-[26px]">
+          <div className="relative aspect-[4/3] bg-[color:var(--m-wiki-soft-bg)]">
+            <Image
+              src={resolveImageUrl(product)}
+              alt={product.name || product.id}
+              fill
+              sizes="100vw"
+              className="object-cover"
+            />
           </div>
+          <div className="px-4 py-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full border border-white/10 bg-black/18 px-3 py-1 text-[11px] text-white/68">{item.category_label}</span>
+              {item.target_type_title ? (
+                <span className="m-wiki-pill m-wiki-pill-info rounded-full border px-3 py-1 text-[11px]">
+                  {item.target_type_title}
+                </span>
+              ) : null}
+              {item.is_featured ? (
+                <span className="m-wiki-pill m-wiki-pill-good rounded-full border px-3 py-1 text-[11px]">
+                  当前主推
+                </span>
+              ) : null}
+            </div>
+            <h1 className="mt-3 text-[24px] leading-[1.24] font-semibold tracking-[-0.02em] text-white/92">
+              {product.name || "未命名产品"}
+            </h1>
+            <p className="mt-1 text-[14px] text-white/58">{product.brand || "品牌未识别"}</p>
+            <div className="mt-3">
+              <MobileEventBeacon
+                name="wiki_upload_cta_expose"
+                props={{
+                  page: "wiki_product_detail",
+                  route: `/m/wiki/product/${product.id}`,
+                  source: analyticsSource,
+                  category: product.category,
+                  product_id: product.id,
+                  target_path: "/m/me/use",
+                }}
+              />
+              <MobileTrackedLink
+                href={uploadCtaHref}
+                eventName="wiki_upload_cta_click"
+                data-analytics-id="wiki-detail:upload-cta"
+                data-analytics-dead-click-watch="true"
+                eventProps={{
+                  page: "wiki_product_detail",
+                  route: `/m/wiki/product/${product.id}`,
+                  source: analyticsSource,
+                  category: product.category,
+                  product_id: product.id,
+                  target_path: "/m/me/use",
+                  result_cta: resultCta || undefined,
+                  compare_id: compareOriginId || undefined,
+                }}
+                className="inline-flex max-w-full items-center rounded-full border border-[color:var(--m-wiki-info-border)] bg-[color:var(--m-wiki-info-bg)] px-4 py-2 text-[12px] font-semibold leading-[1.45] text-[color:var(--m-wiki-info-text)] shadow-[0_8px_22px_rgba(36,80,163,0.08)] active:translate-y-[1px]"
+              >
+                没有你的产品？点击上传一键分析
+              </MobileTrackedLink>
+            </div>
+            <p className="mt-3 text-[14px] leading-[1.55] text-white/68">
+              {product.one_sentence || "暂无一句话摘要。"}
+            </p>
 
-          {isRationaleMode ? (
-            <>
-              <div className="mt-4 rounded-[16px] border border-[#d5e4ff] bg-[#f4f8ff] px-3 py-2 text-[12px] leading-[1.55] text-[#345fa8]">
-                看完产品信息后，仍可直接做决定：先收下推荐，或回到换不换对比。
+            <div className="mt-4 grid grid-cols-2 gap-2 text-[12px] text-white/56">
+              <div className="m-wiki-card-soft rounded-xl px-3 py-2">
+                <div>映射状态</div>
+                <div className="mt-1 font-medium text-white/78">{item.mapping_ready ? "已完成" : "未完成"}</div>
               </div>
-              {rationaleDecisionActions}
-            </>
-          ) : (
+              <div className="m-wiki-card-soft rounded-xl px-3 py-2">
+                <div>主类置信度</div>
+                <div className="mt-1 font-medium text-white/78">{typeof item.primary_confidence === "number" ? `${item.primary_confidence}%` : "-"}</div>
+              </div>
+              <div className="m-wiki-card-soft rounded-xl px-3 py-2">
+                <div>创建时间</div>
+                <div className="mt-1 font-medium text-white/78">{fmtTime(product.created_at)}</div>
+              </div>
+              <div className="m-wiki-card-soft rounded-xl px-3 py-2">
+                <div>产品 ID</div>
+                <div className="mt-1 line-clamp-1 font-medium text-white/78">{product.id}</div>
+              </div>
+            </div>
+
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <AddToBagButton
                 productId={product.id}
@@ -419,12 +502,17 @@ export default async function MobileWikiProductDetailPage({
                 打开完整产品页
               </Link>
             </div>
-          )}
-        </div>
-      </article>
+          </div>
+        </article>
+      )}
 
       <article className="m-wiki-card mt-4 rounded-[24px] px-4 py-4">
-        <h2 className="text-[18px] font-semibold text-white/88">增强分析</h2>
+        <h2 className="text-[18px] font-semibold text-white/88">{isRationaleMode ? "更细的推荐依据" : "增强分析"}</h2>
+        {isRationaleMode ? (
+          <p className="mt-2 text-[12px] leading-[1.55] text-white/56">
+            上面已经给出推荐结论；下面这些内容只用于继续确认细节，不改变首屏裁决动作。
+          </p>
+        ) : null}
         {analysis ? (
           <div className="mt-3">
             <div className="flex flex-wrap items-center gap-2">
@@ -517,7 +605,7 @@ export default async function MobileWikiProductDetailPage({
       </article>
 
       <article className="m-wiki-card mt-4 rounded-[24px] px-4 py-4">
-        <h2 className="text-[18px] font-semibold text-white/88">成分列表</h2>
+        <h2 className="text-[18px] font-semibold text-white/88">{isRationaleMode ? "成分明细" : "成分列表"}</h2>
         {item.doc.ingredients.length === 0 ? (
           <p className="mt-2 text-[13px] text-white/58">无可用成分数据。</p>
         ) : (

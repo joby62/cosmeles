@@ -18,9 +18,8 @@ import {
   type DecisionResumeItem,
 } from "@/domain/mobile/progress/decisionResume";
 import {
-  buildDecisionProfileEntryHref,
-  DECISION_ENTRY_SOURCE,
-} from "@/features/mobile-decision/decisionEntryHref";
+  buildDecisionChooseCategoryStartHref,
+} from "@/features/mobile-decision/decisionFlowTruth";
 import type { MobileSelectionCategory } from "@/lib/api";
 import { trackMobileEvent } from "@/lib/mobileAnalytics";
 
@@ -38,7 +37,7 @@ function getResumeAction(item: DecisionResumeItem): string {
 export default function MobileChoosePage() {
   const categories = listDecisionCategories();
   const [resumeItem, setResumeItem] = useState<DecisionResumeItem | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState<MobileSelectionCategory>(
+  const [preferredCategory, setPreferredCategory] = useState<MobileSelectionCategory>(
     normalizeDecisionCategory(getDecisionCatalogPrimaryEntry()) || "shampoo",
   );
   const analyticsSource = "m_choose";
@@ -49,11 +48,11 @@ export default function MobileChoosePage() {
 
   useEffect(() => {
     const syncSelection = () => {
-      const preferredCategory = normalizeDecisionCategory(window.localStorage.getItem(DECISION_SELECTED_CATEGORY_STORAGE_KEY));
+      const nextPreferredCategory = normalizeDecisionCategory(window.localStorage.getItem(DECISION_SELECTED_CATEGORY_STORAGE_KEY));
       const latestResume = readDecisionResumeItem(window.localStorage);
       setResumeItem(latestResume);
-      setSelectedCategory(
-        preferredCategory ||
+      setPreferredCategory(
+        nextPreferredCategory ||
           latestResume?.category ||
           normalizeDecisionCategory(getDecisionCatalogPrimaryEntry()) ||
           "shampoo",
@@ -76,17 +75,6 @@ export default function MobileChoosePage() {
       source: analyticsSource,
     });
   }, []);
-
-  const handleSelectCategory = (category: MobileSelectionCategory) => {
-    setSelectedCategory(category);
-    window.localStorage.setItem(DECISION_SELECTED_CATEGORY_STORAGE_KEY, category);
-    void trackMobileEvent("choose_category_select", {
-      page: "mobile_choose",
-      route: "/m/choose",
-      source: analyticsSource,
-      category,
-    });
-  };
 
   return (
     <section className="relative overflow-hidden pb-6">
@@ -136,73 +124,60 @@ export default function MobileChoosePage() {
         <section className="grid gap-4">
           {categories.map((category) => {
             const presentation = getDecisionCategoryPresentation(category.key);
-            const active = selectedCategory === category.key;
-            const startPath = buildDecisionProfileEntryHref({
-              category: category.key,
-              source: DECISION_ENTRY_SOURCE.chooseStart,
-            });
+            const isPreferred = preferredCategory === category.key;
+            const startPath = buildDecisionChooseCategoryStartHref(category.key);
             return (
-              <article
+              <MobileTrackedLink
                 key={category.key}
+                href={startPath}
+                eventName="choose_category_start_click"
+                eventProps={{
+                  page: "mobile_choose",
+                  route: "/m/choose",
+                  source: analyticsSource,
+                  category: category.key,
+                  target_path: startPath,
+                }}
+                onClick={() => {
+                  window.localStorage.setItem(DECISION_SELECTED_CATEGORY_STORAGE_KEY, category.key);
+                  setPreferredCategory(category.key);
+                }}
                 className={`overflow-hidden rounded-[28px] border p-5 shadow-[0_20px_40px_rgba(15,29,53,0.08)] backdrop-blur-2xl transition-[transform,border-color,box-shadow] duration-200 ${
-                  active
+                  isPreferred
                     ? "border-[#0a84ff]/20 bg-[linear-gradient(180deg,rgba(10,132,255,0.10),rgba(255,255,255,0.88))] dark:border-[#78b8ff]/22 dark:bg-[linear-gradient(180deg,rgba(120,184,255,0.14),rgba(18,26,38,0.86))]"
                     : "border-black/8 bg-white/70 dark:border-white/10 dark:bg-[rgba(18,27,40,0.66)]"
                 }`}
               >
-                <button
-                  type="button"
-                  onClick={() => handleSelectCategory(category.key)}
-                  className="block w-full text-left"
-                  aria-pressed={active}
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="max-w-[15rem]">
-                      <div className="inline-flex items-center rounded-full border border-black/8 bg-white/72 px-3 py-1 text-[12px] font-medium text-black/50 dark:border-white/10 dark:bg-white/6 dark:text-white/52">
-                        {formatDecisionDurationSummary(category)}
-                      </div>
-                      <h2 className="mt-3 text-[24px] leading-[1.05] font-semibold tracking-[-0.035em] text-black/90 dark:text-white/94">
-                        {category.labelZh}
-                      </h2>
-                      <p className="mt-3 text-[15px] leading-[1.65] text-black/66 dark:text-white/68">{presentation.scene}</p>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="max-w-[15rem]">
+                    <div className="inline-flex items-center rounded-full border border-black/8 bg-white/72 px-3 py-1 text-[12px] font-medium text-black/50 dark:border-white/10 dark:bg-white/6 dark:text-white/52">
+                      {formatDecisionDurationSummary(category)}
                     </div>
-                    <div className="relative h-[96px] w-[112px] shrink-0 overflow-hidden rounded-[22px] bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.92),rgba(255,255,255,0.56)_65%,rgba(255,255,255,0.18))] dark:bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.22),rgba(255,255,255,0.08)_65%,rgba(255,255,255,0.02))]">
-                      <Image
-                        src={presentation.imageSrc}
-                        alt={category.labelZh}
-                        fill
-                        className="object-contain p-3"
-                        sizes="112px"
-                      />
-                    </div>
+                    <h2 className="mt-3 text-[24px] leading-[1.05] font-semibold tracking-[-0.035em] text-black/90 dark:text-white/94">
+                      {category.labelZh}
+                    </h2>
+                    <p className="mt-3 text-[15px] leading-[1.65] text-black/66 dark:text-white/68">{presentation.scene}</p>
                   </div>
-                </button>
+                  <div className="relative h-[96px] w-[112px] shrink-0 overflow-hidden rounded-[22px] bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.92),rgba(255,255,255,0.56)_65%,rgba(255,255,255,0.18))] dark:bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.22),rgba(255,255,255,0.08)_65%,rgba(255,255,255,0.02))]">
+                    <Image
+                      src={presentation.imageSrc}
+                      alt={category.labelZh}
+                      fill
+                      className="object-contain p-3"
+                      sizes="112px"
+                    />
+                  </div>
+                </div>
 
                 <div className="mt-5 flex items-center justify-between gap-4">
-                  <p className="text-[13px] text-black/46 dark:text-white/48">{active ? "当前选择" : "点卡片可切换当前选择"}</p>
-                  <MobileTrackedLink
-                    href={startPath}
-                    eventName="choose_start_click"
-                    eventProps={{
-                      page: "mobile_choose",
-                      route: "/m/choose",
-                      source: analyticsSource,
-                      category: category.key,
-                      target_path: startPath,
-                    }}
-                    onClick={() => {
-                      window.localStorage.setItem(DECISION_SELECTED_CATEGORY_STORAGE_KEY, category.key);
-                    }}
-                    className={`m-pressable inline-flex items-center justify-center rounded-full px-5 py-2.5 text-[14px] font-semibold ${
-                      active
-                        ? "bg-[#0a84ff] text-white shadow-[0_14px_28px_rgba(10,132,255,0.24)]"
-                        : "border border-black/8 bg-white/82 text-black/76 dark:border-white/10 dark:bg-white/8 dark:text-white/76"
-                    }`}
-                  >
-                    开始
-                  </MobileTrackedLink>
+                  <p className="text-[13px] text-black/46 dark:text-white/48">
+                    {isPreferred ? "优先从这类开始" : "点整卡直接进入第 1 题"}
+                  </p>
+                  <span className="inline-flex items-center justify-center rounded-full bg-[#0a84ff] px-5 py-2.5 text-[14px] font-semibold text-white shadow-[0_14px_28px_rgba(10,132,255,0.24)]">
+                    直接开始
+                  </span>
                 </div>
-              </article>
+              </MobileTrackedLink>
             );
           })}
         </section>

@@ -6,7 +6,7 @@ import { ANALYTICS_SECTIONS } from "@/lib/analyticsNav";
 
 export const metadata: Metadata = {
   title: "数据分析 · 予选",
-  description: "桌面端移动链路分析台，聚焦决策结果到达、结果动作、decision closure、utility 回环与流失反馈。",
+  description: "桌面端移动链路分析台，聚焦 phase-13 canonical first-run funnel、result closure、compare closure、utility 回环与流失反馈。",
 };
 
 const STRUCTURED_FIELDS = [
@@ -70,7 +70,9 @@ const EVENT_GROUPS = [
     status: "已接入",
     summary: "上传、选库、启动、阶段推进、失败、成功都已有结构化事件，不再只剩日志文本。",
     events: [
+      "compare_entry_view",
       "compare_upload_pick",
+      "compare_upload_start",
       "compare_upload_success",
       "compare_upload_fail",
       "compare_run_start",
@@ -81,41 +83,49 @@ const EVENT_GROUPS = [
     value: "能直接按 stage、error_code、http_status 看失败分布。",
   },
   {
-    title: "决策结果与 utility 回环",
+    title: "决策结果 canonical closure",
     status: "已接入",
     summary:
-      "现在能直接看决策结果有没有被到达、主 CTA 有没有被点击、结果后有没有进入 utility，以及 utility 有没有把用户送回决策链路；老用户首页 workspace 快捷动作也可作为 supporting context 观察。",
+      "现在决策结果后的主叙事已经切到 phase-13 canonical result events：结果到达、加袋闭环、进入 compare / rationale / retry / switch，以及 utility 回流；首页 workspace 快捷动作只保留为 supporting context。",
     events: [
       "result_view",
-      "result_primary_cta_click",
-      "result_secondary_loop_click",
+      "result_add_to_bag_click",
+      "result_compare_entry_click",
+      "result_rationale_entry_click",
+      "result_retry_same_category_click",
+      "result_switch_category_click",
       "utility_return_click",
       "home_workspace_quick_action_click",
       "bag_add_success",
     ],
-    value: "把‘拿到结果没有’‘结果后有没有继续’‘utility 有没有把人带回来’放进一套统一口径，并用 result_cta / action / target_path 观测 Phase 10 意图分流。",
+    value: "把‘拿到结果没有’‘结果后如何闭环’‘utility 有没有把人带回来’放进一套统一口径；legacy result 事件只保留为桥接，不再作为前端当前真相词表。",
   },
   {
-    title: "Decision Closure（Phase 12）",
+    title: "Compare / Rationale Closure（Phase 13 Canonical）",
     status: "已接入",
-    summary: "compare / rationale 不再只看阅读与跳转，而是要看能否回到明确决定：接受推荐或保留当前。",
+    summary: "compare / rationale 已经有自己的 canonical closure 词表，能区分阅读、比较、继续犹豫、接受推荐、保留当前与真正落地。",
     events: [
+      "compare_result_view",
       "compare_result_accept_recommendation",
       "compare_result_keep_current",
+      "compare_result_hold_current",
+      "compare_result_view_key_differences",
+      "compare_result_open_rationale",
       "compare_result_retry_current_product",
       "compare_result_switch_category_click",
+      "compare_result_accept_recommendation_land",
+      "compare_result_keep_current_land",
       "rationale_view",
       "rationale_to_bag_click",
       "rationale_to_compare_click",
     ],
-    value: "把“接受推荐”与“保留当前”都纳入 closure success，不再把 compare 当成信息黑洞。",
+    value: "把 compare 的过程动作和 closure 落地动作拆开看，compare_result_cta_* 退回兼容桥接层，不再承担当前语义。",
   },
   {
-    title: "对比结果阅读与落地",
+    title: "Compare Supporting Signals 与兼容桥接",
     status: "已接入",
-    summary: "对比结果页的阅读深度、停留、CTA 落地和后续动作继续保留，但退到 compare / utility 语境下解读。",
+    summary: "对比结果页的停留、滚动、旧 CTA 落地和反馈仍然保留，但现在只作为 compare supporting signals 或 compatibility bridge 来读。",
     events: [
-      "compare_result_view",
       "compare_result_leave",
       "scroll_depth",
       "compare_result_cta_click",
@@ -130,7 +140,7 @@ const EVENT_GROUPS = [
       "feedback_submit",
       "feedback_skip",
     ],
-    value: "继续回答 compare 结果页是否被阅读、点击和成功承接，但不再冒充决策结果主 KPI。",
+    value: "`compare_result_view` 已进入 canonical closure；`compare_result_cta_*` 继续服务旧看板兼容，但不再冒充主 KPI 或现行真相词表。",
   },
   {
     title: "误触、死点与停滞",
@@ -167,8 +177,8 @@ const ANALYTIC_QUESTIONS = [
   },
   {
     question: "进入 /m/choose 后，有多少会话开始答题？",
-    answer: "展示 choose_start_click_sessions 与 choose_start_rate_from_choose_view，不再用 compare 启动代替。",
-    signals: ["choose_view", "choose_start_click", "choose_start_rate_from_choose_view"],
+    answer: "展示 choose_start_click_sessions 与 choose_start_rate_from_choose_view，但当前真值来源是 canonical `choose_category_start_click`；旧 choose_start_click 只作桥接。",
+    signals: ["choose_category_start_click", "choose_start_click_sessions (compat summary key)", "choose_start_rate_from_choose_view"],
   },
   {
     question: "哪一道题流失最高？",
@@ -190,13 +200,17 @@ const ANALYTIC_QUESTIONS = [
   {
     question: "到达结果后有多少会话继续动作？",
     answer:
-      "拆开展示 result_primary_cta_click / result_secondary_loop_click / utility_return_click；并用 result_cta / action / target_path 解释动作语义，compare 事件只做 supporting context。",
+      "首屏按 phase-13 canonical 结果动作拆开展示：`result_add_to_bag_click`、compare / rationale / retry / switch 入口，以及 `utility_return_click`；兼容 summary key 继续保留，但不再把 legacy result 事件当成现行真相。",
     signals: [
-      "result_primary_cta_click",
-      "result_secondary_loop_click",
+      "result_add_to_bag_click",
+      "result_compare_entry_click",
+      "result_rationale_entry_click",
+      "result_retry_same_category_click",
+      "result_switch_category_click",
       "utility_return_click",
-      "home_workspace_quick_action_click (supporting only)",
-      "compare_result_view (supporting only)",
+      "result_primary_cta_click_sessions (compat summary key)",
+      "result_secondary_loop_click_sessions (compat summary key)",
+      "compare_result_view (compare closure canonical, first-screen supporting only)",
     ],
   },
 ] as const;
@@ -218,7 +232,7 @@ const FIRST_RELEASE_PANELS = [
   {
     title: "Overview",
     badge: "第一屏",
-    description: "给产品、增长、工程一个共同入口，先看结果到达率、结果主 CTA 点击率和 utility 回流率。",
+    description: "给产品、增长、工程一个共同入口，先看结果到达率、结果闭环动作和 utility 回流率。",
     outputs: ["核心趋势卡", "时间范围筛选", "category 分段", "结果与回流摘要"],
   },
   {
@@ -242,7 +256,7 @@ const FIRST_RELEASE_PANELS = [
   {
     title: "Experience Signals",
     badge: "体验信号",
-    description: "把决策结果动作、utility 回环、对比结果阅读深度、dead/rage/stall 和环境切片拉到一屏里看。",
+    description: "把 phase-13 canonical result closure、compare / rationale closure、对比结果阅读深度、dead/rage/stall 和环境切片拉到一屏里看。",
     outputs: ["列表 CTR", "结果回环动作", "CTA 落地率", "阅读深度", "误触与停滞目标", "环境分布"],
   },
   {
@@ -329,7 +343,7 @@ export default function AnalyticsPage() {
                 数据分析
               </h1>
               <p className="mt-4 max-w-[680px] text-[16px] leading-[1.72] text-black/64">
-                这是 desktop 端独立板块的第一版骨架。它不假装已经有完整 BI，而是把我们现在真实已经接上的行为、阶段错误、主观反馈与后续完全体信息架构直接摆到台面上。
+                这是 desktop 端独立板块的第一版骨架。它不假装已经有完整 BI，而是把我们现在真实已经接上的行为、阶段错误、主观反馈，以及 phase-13 canonical analytics truth 直接摆到台面上。
               </p>
             </div>
 

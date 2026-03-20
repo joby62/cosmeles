@@ -1,9 +1,26 @@
 {
   "schema_version": "mobile_analytics_p0_funnel.v1",
   "status": "owner_frozen",
-  "frozen_at": "2026-03-14",
-  "refreshed_at": "2026-03-18",
-  "owner_intent": "Freeze the Phase 5 P0 analytics summary contract and keep later live question-dropoff semantics aligned to the same first-screen keys.",
+  "frozen_at": "2026-03-20",
+  "refreshed_at": "2026-03-20",
+  "owner_intent": "Freeze the phase-13 first-run funnel and result-closure analytics truth while retaining legacy summary keys as compatibility bridges.",
+  "canonical_event_vocabulary": {
+    "first_run_funnel": [
+      "home_primary_cta_click",
+      "choose_category_start_click",
+      "questionnaire_view",
+      "questionnaire_completed",
+      "result_view"
+    ],
+    "result_closure": [
+      "result_add_to_bag_click",
+      "result_compare_entry_click",
+      "result_rationale_entry_click",
+      "result_retry_same_category_click",
+      "result_switch_category_click",
+      "utility_return_click"
+    ]
+  },
   "north_star": {
     "name": "decision_result_completion_rate",
     "description": "Share of decision-entry sessions that later reach result_view.",
@@ -20,7 +37,7 @@
     },
     {
       "id": "choose_to_start_rate",
-      "question": "进入 /m/choose 后，有多少会话开始答题？",
+      "question": "进入 /m/choose 后，有多少会话点击品类卡直接开始答题？",
       "primary_metric": "choose_start_click_sessions",
       "rate_metric": "choose_start_rate_from_choose_view"
     },
@@ -58,12 +75,17 @@
     "choose_view_sessions": {
       "event": "choose_view",
       "identity": "session_id",
-      "role": "p0_primary"
+      "role": "supporting_context"
     },
     "choose_start_click_sessions": {
-      "event": "choose_start_click",
+      "event": "choose_category_start_click",
       "identity": "session_id",
-      "role": "p0_primary"
+      "role": "p0_primary",
+      "compatibility_bridges": [
+        {
+          "event": "choose_start_click"
+        }
+      ]
     },
     "questionnaire_view_sessions": {
       "event": "questionnaire_view",
@@ -72,7 +94,10 @@
       "required_props": [
         "category",
         "step"
-      ]
+      ],
+      "required_prop_values": {
+        "step": 1
+      }
     },
     "question_answered_sessions": {
       "event": "question_answered",
@@ -94,14 +119,40 @@
       "role": "p0_primary"
     },
     "result_primary_cta_click_sessions": {
-      "event": "result_primary_cta_click",
+      "event": "result_add_to_bag_click",
       "identity": "session_id",
-      "role": "p0_primary"
+      "role": "p0_primary",
+      "compatibility_bridges": [
+        {
+          "event": "result_primary_cta_click",
+          "required_props": {
+            "result_cta": "bag_add"
+          }
+        }
+      ]
     },
     "result_secondary_loop_click_sessions": {
-      "event": "result_secondary_loop_click",
+      "events": [
+        "result_compare_entry_click",
+        "result_rationale_entry_click",
+        "result_retry_same_category_click",
+        "result_switch_category_click"
+      ],
       "identity": "session_id",
-      "role": "p0_supporting"
+      "role": "p0_supporting",
+      "compatibility_bridges": [
+        {
+          "event": "result_secondary_loop_click",
+          "allowed_prop_values": {
+            "result_cta": [
+              "compare",
+              "rationale",
+              "retry_same_category",
+              "switch_category"
+            ]
+          }
+        }
+      ]
     },
     "utility_return_click_sessions": {
       "event": "utility_return_click",
@@ -139,16 +190,24 @@
       "identity": "session_id"
     },
     {
-      "step_key": "choose_view",
-      "step_label": "进入 choose",
-      "event": "choose_view",
-      "identity": "session_id"
+      "step_key": "choose_category_start",
+      "step_label": "点击品类直接开始",
+      "event": "choose_category_start_click",
+      "identity": "session_id",
+      "compatibility_bridges": [
+        {
+          "event": "choose_start_click"
+        }
+      ]
     },
     {
-      "step_key": "choose_start",
-      "step_label": "开始答题",
-      "event": "choose_start_click",
-      "identity": "session_id"
+      "step_key": "questionnaire_step1_view",
+      "step_label": "进入第1题",
+      "event": "questionnaire_view",
+      "identity": "session_id",
+      "required_prop_values": {
+        "step": 1
+      }
     },
     {
       "step_key": "questionnaire_completed",
@@ -185,6 +244,10 @@
     "location_time_zone"
   ],
   "compatibility_context_only": [
+    "choose_view",
+    "choose_start_click",
+    "result_primary_cta_click",
+    "result_secondary_loop_click",
     "compare_result_view",
     "compare_result_cta_click",
     "compare_result_cta_land",
@@ -192,6 +255,9 @@
     "choose_resume_click"
   ],
   "forbidden_primary_kpi_inputs": [
+    "choose_start_click",
+    "result_primary_cta_click",
+    "result_secondary_loop_click",
     "profile_result_view",
     "compare_result_view"
   ],

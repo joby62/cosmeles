@@ -3,12 +3,15 @@ import AddToBagButton from "@/components/mobile/AddToBagButton";
 import MobileEventBeacon from "@/components/mobile/MobileEventBeacon";
 import MobilePageAnalytics from "@/components/mobile/MobilePageAnalytics";
 import MobileTrackedLink from "@/components/mobile/MobileTrackedLink";
+import DecisionResultCompareEntryLink from "@/features/mobile-decision/DecisionResultCompareEntryLink";
 import { appendMobileUtilityRouteState } from "@/features/mobile-utility/routeState";
 import {
+  fetchMobileUserProducts,
   MobileSelectionPublishedResult,
   MobileSelectionResultBlock,
   resolveImageUrl,
 } from "@/lib/api";
+import type { MobileSelectionCategory } from "@/lib/api";
 import type { MobileResultCta } from "@/lib/mobile/resultCta";
 import { describeMobileRouteFocus } from "@/lib/mobile/routeCopy";
 
@@ -42,13 +45,14 @@ type ResultReason = {
 };
 
 type ResultAction = {
+  eventName: string;
   resultCta: MobileResultCta;
   action: string;
   label: string;
   href: string;
 };
 
-export default function SelectionPublishedResultFlow({
+export default async function SelectionPublishedResultFlow({
   titlePrefix,
   emptyImageLabel,
   startHref,
@@ -81,6 +85,18 @@ export default function SelectionPublishedResultFlow({
   const taskSwitchActions = buildTaskSwitchActions(startHref);
   const generatedAt = formatGeneratedAt(result.meta?.generated_at);
   const product = result.recommended_product;
+  let currentUploadId: string | null = null;
+
+  try {
+    const currentProducts = await fetchMobileUserProducts({
+      category: result.category as MobileSelectionCategory,
+      limit: 6,
+    });
+    currentUploadId =
+      currentProducts.items.find((item) => normalizeText(item.source_upload_id))?.source_upload_id || null;
+  } catch {
+    currentUploadId = null;
+  }
 
   return (
     <section className="pb-14">
@@ -191,7 +207,7 @@ export default function SelectionPublishedResultFlow({
             productId={product.id}
             className="w-full"
             buttonClassName="m-pressable h-12 w-full rounded-full border-0 bg-[#0a84ff] px-5 text-[16px] font-semibold tracking-[-0.02em] text-white shadow-[0_14px_28px_rgba(10,132,255,0.24)] active:opacity-90"
-            clickEventName="result_primary_cta_click"
+            clickEventName="result_add_to_bag_click"
             clickEventProps={{
               page: analyticsContext.page,
               route: analyticsContext.route,
@@ -216,27 +232,46 @@ export default function SelectionPublishedResultFlow({
       <section className="mt-5 rounded-[28px] border border-black/8 bg-white/90 px-5 py-5 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
         <div className="text-[12px] font-semibold tracking-[0.06em] text-black/42">还想再确认</div>
         <div className="mt-4 grid gap-2.5">
-          {doubtResolutionActions.map((action) => (
-            <MobileTrackedLink
-              key={`${action.action}:${action.href}`}
-              href={action.href}
-              eventName="result_secondary_loop_click"
-              eventProps={{
-                page: analyticsContext.page,
-                route: analyticsContext.route,
-                source: analyticsContext.source,
-                category: result.category,
-                scenario_id: result.scenario_id,
-                result_cta: action.resultCta,
-                target_path: action.href,
-                action: action.action,
-              }}
-              className="m-pressable flex min-h-12 items-center justify-between rounded-[18px] border border-black/10 bg-white px-4 py-3 text-[14px] font-semibold text-black/78 active:bg-black/[0.03]"
-            >
-              <span>{action.label}</span>
-              <span className="text-black/34">→</span>
-            </MobileTrackedLink>
-          ))}
+          {doubtResolutionActions.map((action) =>
+            action.resultCta === "compare" ? (
+              <DecisionResultCompareEntryLink
+                key={`${action.action}:${action.href}`}
+                category={result.category as MobileSelectionCategory}
+                recommendationProductId={normalizeText(product.id) || null}
+                currentUploadId={currentUploadId}
+                fallbackHref={action.href}
+                resultHref={resultHref}
+                page={analyticsContext.page}
+                route={analyticsContext.route}
+                source={analyticsContext.source}
+                scenarioId={result.scenario_id}
+                analyticsId="result:cta:compare-entry"
+                className="m-pressable flex min-h-12 w-full items-center justify-between rounded-[18px] border border-black/10 bg-white px-4 py-3 text-[14px] font-semibold text-black/78 active:bg-black/[0.03] disabled:opacity-70"
+              >
+                {action.label}
+              </DecisionResultCompareEntryLink>
+            ) : (
+              <MobileTrackedLink
+                key={`${action.action}:${action.href}`}
+                href={action.href}
+                eventName={action.eventName}
+                eventProps={{
+                  page: analyticsContext.page,
+                  route: analyticsContext.route,
+                  source: analyticsContext.source,
+                  category: result.category,
+                  scenario_id: result.scenario_id,
+                  result_cta: action.resultCta,
+                  target_path: action.href,
+                  action: action.action,
+                }}
+                className="m-pressable flex min-h-12 items-center justify-between rounded-[18px] border border-black/10 bg-white px-4 py-3 text-[14px] font-semibold text-black/78 active:bg-black/[0.03]"
+              >
+                <span>{action.label}</span>
+                <span className="text-black/34">→</span>
+              </MobileTrackedLink>
+            ),
+          )}
         </div>
       </section>
 
@@ -247,7 +282,7 @@ export default function SelectionPublishedResultFlow({
             <MobileTrackedLink
               key={`${action.action}:${action.href}`}
               href={action.href}
-              eventName="result_secondary_loop_click"
+              eventName={action.eventName}
               eventProps={{
                 page: analyticsContext.page,
                 route: analyticsContext.route,
@@ -352,12 +387,14 @@ function buildDoubtResolutionActions(
   });
   return [
     {
+      eventName: "result_compare_entry_click",
       resultCta: "compare",
       action: "compare",
       label: "和我现在在用的比一下",
       href: compareHref,
     },
     {
+      eventName: "result_rationale_entry_click",
       resultCta: "rationale",
       action: "rationale",
       label: "看为什么推荐这款",
@@ -369,6 +406,7 @@ function buildDoubtResolutionActions(
 function buildTaskSwitchActions(startHref: string): ResultAction[] {
   return [
     {
+      eventName: "result_retry_same_category_click",
       resultCta: "retry_same_category",
       action: "retry_same_category",
       label: "重测这类",
@@ -377,6 +415,7 @@ function buildTaskSwitchActions(startHref: string): ResultAction[] {
       }),
     },
     {
+      eventName: "result_switch_category_click",
       resultCta: "switch_category",
       action: "switch_category",
       label: "测其他品类",

@@ -1922,8 +1922,14 @@ class MobileAnalyticsExperienceResponse(BaseModel):
     decision_result_secondary_loop_clicks: int = 0
     utility_return_clicks: int = 0
     home_workspace_quick_action_clicks: int = 0
+    compare_entry_views: int = 0
+    compare_upload_starts: int = 0
+    compare_upload_successes: int = 0
+    compare_upload_success_rate: float = 0.0
     compare_closure_accept_recommendation: int = 0
     compare_closure_keep_current: int = 0
+    compare_keep_current_my_use_clicks: int = 0
+    compare_keep_current_my_use_rate: float = 0.0
     rationale_view: int = 0
     rationale_to_bag_click: int = 0
     rationale_to_compare_click: int = 0
@@ -1944,6 +1950,13 @@ class MobileAnalyticsExperienceResponse(BaseModel):
     result_cta_clicks: List[MobileAnalyticsCountItem] = Field(default_factory=list)
     result_cta_followthrough: List[MobileAnalyticsCtaFollowthroughItem] = Field(default_factory=list)
     result_cta_completions: List[MobileAnalyticsCtaCompletionItem] = Field(default_factory=list)
+    compare_entry_result_ctas: List[MobileAnalyticsCountItem] = Field(default_factory=list)
+    compare_upload_start_result_ctas: List[MobileAnalyticsCountItem] = Field(default_factory=list)
+    compare_upload_success_result_ctas: List[MobileAnalyticsCountItem] = Field(default_factory=list)
+    compare_entry_route_contexts: List[MobileAnalyticsCountItem] = Field(default_factory=list)
+    compare_upload_start_route_contexts: List[MobileAnalyticsCountItem] = Field(default_factory=list)
+    compare_upload_success_route_contexts: List[MobileAnalyticsCountItem] = Field(default_factory=list)
+    compare_keep_current_target_paths: List[MobileAnalyticsCountItem] = Field(default_factory=list)
     result_secondary_loop_actions: List[MobileAnalyticsCountItem] = Field(default_factory=list)
     utility_return_actions: List[MobileAnalyticsCountItem] = Field(default_factory=list)
     result_primary_cta_result_ctas: List[MobileAnalyticsCountItem] = Field(default_factory=list)

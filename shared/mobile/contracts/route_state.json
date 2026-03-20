@@ -7,7 +7,12 @@
     "resume_token",
     "scenario_id",
     "result_cta",
-    "compare_id"
+    "compare_id",
+    "closure",
+    "decision",
+    "product_source",
+    "product_brand",
+    "product_name"
   ],
   "rules": [
     "return_to must point to a /m path",
@@ -17,8 +22,13 @@
     "category must be one of the shared decision catalog keys",
     "scenario_id is required on result-to-utility hops",
     "result_cta is required when a utility page is opened from the result page",
-    "phase-10 result_cta vocabulary is bag_add, compare, rationale, retry_same_category, or switch_category",
+    "result_cta vocabulary is bag_add, compare, rationale, retry_same_category, or switch_category",
     "compare_id is optional compare-result provenance and must be preserved across compare-origin utility hops",
+    "closure is only valid for compare-result -> /m/me/use completion handoff",
+    "decision is only valid when closure=keep_current and must be keep or hybrid",
+    "product_source is only valid on compare-result -> /m/me/use completion handoff and may be upload_new or history_product",
+    "product_brand and product_name are display hints for /m/me/use completion copy and must not drive routing",
+    "closure, decision, product_source, product_brand, and product_name must not be forwarded beyond the /m/me/use completion landing",
     "resume_token is only valid for questionnaire resume flows"
   ]
 }
