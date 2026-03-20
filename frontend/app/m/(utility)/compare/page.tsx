@@ -214,6 +214,7 @@ function MobileComparePageContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
+  const queryCategory = normalizeSelectionCategory(searchParams?.get("category"));
 
   const [step, setStep] = useState<CompareStep>(1);
   const [category, setCategory] = useState<MobileSelectionCategory>("shampoo");
@@ -298,7 +299,7 @@ function MobileComparePageContent() {
   const selectionShortfall = Math.max(0, 2 - totalSelectedCount);
   const utilityRouteState = useMemo(() => parseMobileUtilityRouteState(searchParams), [searchParams]);
   const analyticsSource = resolveMobileUtilitySource(utilityRouteState, "m_compare");
-  const landingCategory = normalizeSelectionCategory(searchParams?.get("category")) || category;
+  const landingCategory = queryCategory || category;
   const profileRefreshed = searchParams?.get("profile_refreshed") === "1";
   const fromLibrary = searchParams?.get(LIBRARY_RETURN_PARAM) === "1";
   const libraryPickedIds = useMemo(() => parsePickedProductIds(searchParams?.get(LIBRARY_PICK_PARAM)), [searchParams]);
@@ -714,24 +715,28 @@ function MobileComparePageContent() {
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const raw = new URLSearchParams(window.location.search).get("category");
-    const normalized = (raw || "").trim().toLowerCase() as MobileSelectionCategory;
-    if (CATEGORY_ORDER.includes(normalized)) setCategory(normalized);
-  }, []);
+    if (queryCategory) {
+      setCategory(queryCategory);
+    }
+  }, [queryCategory]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
       setRestoringSession(false);
       return;
     }
+    const incomingCategory = normalizeSelectionCategory(new URLSearchParams(window.location.search).get("category"));
     const activeRaw = window.localStorage.getItem(ACTIVE_COMPARE_STORAGE_KEY);
     let restoredActive = false;
 
-    if (activeRaw) {
+    if (activeRaw && !isResultCompareEntry) {
       try {
         const parsed = JSON.parse(activeRaw) as StoredActiveCompare;
         const compareId = String(parsed?.compare_id || "").trim();
-        if (compareId) {
+        const activeCategory = normalizeSelectionCategory(parsed?.category);
+        if (incomingCategory && activeCategory && activeCategory !== incomingCategory) {
+          restoredActive = false;
+        } else if (compareId) {
           setActiveCompareId(compareId);
           setShowGuide(false);
           restoredActive = true;
@@ -743,12 +748,16 @@ function MobileComparePageContent() {
       }
     }
 
-    if (!restoredActive) {
+    if (!restoredActive && !isResultCompareEntry) {
       const draftRaw = window.localStorage.getItem(ACTIVE_COMPARE_DRAFT_STORAGE_KEY);
       if (draftRaw) {
         try {
           const parsed = JSON.parse(draftRaw) as StoredCompareDraft;
           const draftCategory = normalizeSelectionCategory(parsed?.category);
+          if (incomingCategory && draftCategory && draftCategory !== incomingCategory) {
+            setRestoringSession(false);
+            return;
+          }
           const draftStepValue = Number(parsed?.step);
           const draftStep = Number.isFinite(draftStepValue)
             ? (Math.max(1, Math.min(TOTAL_STEPS, Math.round(draftStepValue))) as CompareStep)
@@ -777,7 +786,7 @@ function MobileComparePageContent() {
           setBrand(restoredDraft.brand);
           setName(restoredDraft.name);
           setUploadSectionExpanded(Boolean(restoredDraft.had_upload));
-          if (draftCategory) {
+          if (!incomingCategory && draftCategory) {
             setCategory(draftCategory);
           }
         } catch {
@@ -787,7 +796,7 @@ function MobileComparePageContent() {
     }
 
     setRestoringSession(false);
-  }, []);
+  }, [isResultCompareEntry]);
 
   useEffect(() => {
     if (!pendingDraft || bootstrapLoading) return;
@@ -1513,7 +1522,7 @@ function MobileComparePageContent() {
   }
 
   const primaryActionLabel = (() => {
-    if (step === 1) return "下一步";
+    if (step === 1) return queryCategory ? "开始" : "下一步";
     if (step === 2) return hasHistoryProfile ? "继续" : "去填写个人选项";
     if (step === 3) return totalSelectedCount < 2 ? "先选够 2 款产品" : "下一步";
     return "开始对比";
