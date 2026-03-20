@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { startTransition, useState } from "react";
 import {
   runMobileCompareJobStream,
+  resolveMobileSelection,
   type MobileSelectionCategory,
 } from "@/lib/api";
 import {
@@ -18,6 +19,7 @@ type Props = {
   currentUploadId: string | null;
   fallbackHref: string;
   resultHref: string;
+  selectionAnswers: Record<string, string>;
   page: string;
   route: string;
   source: string;
@@ -33,6 +35,7 @@ export default function DecisionResultCompareEntryLink({
   currentUploadId,
   fallbackHref,
   resultHref,
+  selectionAnswers,
   page,
   route,
   source,
@@ -64,15 +67,33 @@ export default function DecisionResultCompareEntryLink({
         if (isPending) return;
         markMobileTargetHandled(analyticsId);
         void trackMobileEvent("result_compare_entry_click", eventProps);
+        setIsPending(true);
+
+        try {
+          const normalizedAnswers = Object.fromEntries(
+            Object.entries(selectionAnswers || {})
+              .map(([key, value]) => [String(key || "").trim(), String(value || "").trim()])
+              .filter(([key, value]) => key && value),
+          );
+          if (Object.keys(normalizedAnswers).length > 0) {
+            await resolveMobileSelection({
+              category,
+              answers: normalizedAnswers,
+              reuse_existing: true,
+            });
+          }
+        } catch {
+          // Best-effort persistence only; compare flow itself should still stay reachable.
+        }
 
         if (!currentUploadId || !recommendationProductId) {
+          setIsPending(false);
           startTransition(() => {
             router.push(fallbackHref);
           });
           return;
         }
 
-        setIsPending(true);
         try {
           const compareResult = await runMobileCompareJobStream(
             {

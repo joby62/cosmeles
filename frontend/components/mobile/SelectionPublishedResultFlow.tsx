@@ -3,6 +3,7 @@ import AddToBagButton from "@/components/mobile/AddToBagButton";
 import MobileEventBeacon from "@/components/mobile/MobileEventBeacon";
 import MobilePageAnalytics from "@/components/mobile/MobilePageAnalytics";
 import MobileTrackedLink from "@/components/mobile/MobileTrackedLink";
+import SelectionResultSessionBootstrap from "@/components/mobile/SelectionResultSessionBootstrap";
 import DecisionResultCompareEntryLink from "@/features/mobile-decision/DecisionResultCompareEntryLink";
 import { appendMobileUtilityRouteState } from "@/features/mobile-utility/routeState";
 import {
@@ -22,6 +23,7 @@ type Props = {
   profileHref: string;
   resultHref: string;
   result: MobileSelectionPublishedResult;
+  selectionAnswers: Record<string, string>;
   analyticsContext: {
     page: string;
     route: string;
@@ -58,6 +60,7 @@ export default async function SelectionPublishedResultFlow({
   startHref,
   resultHref,
   result,
+  selectionAnswers,
   analyticsContext,
 }: Props) {
   const routeFocus = describeMobileRouteFocus(result.category, result.route.key);
@@ -100,6 +103,10 @@ export default async function SelectionPublishedResultFlow({
 
   return (
     <section className="pb-14">
+      <SelectionResultSessionBootstrap
+        category={result.category as MobileSelectionCategory}
+        answers={selectionAnswers}
+      />
       <MobilePageAnalytics
         page={analyticsContext.page}
         route={analyticsContext.route}
@@ -241,6 +248,7 @@ export default async function SelectionPublishedResultFlow({
                 currentUploadId={currentUploadId}
                 fallbackHref={action.href}
                 resultHref={resultHref}
+                selectionAnswers={selectionAnswers}
                 page={analyticsContext.page}
                 route={analyticsContext.route}
                 source={analyticsContext.source}

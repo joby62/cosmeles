@@ -80,6 +80,7 @@ export async function renderDecisionResultShell({
       profileHref={profileHref}
       resultHref={resultHref}
       result={result.item}
+      selectionAnswers={answers}
       analyticsContext={{
         page: "selection_result",
         route: `/m/${config.category}/result`,
