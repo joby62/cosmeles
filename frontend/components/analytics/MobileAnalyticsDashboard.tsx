@@ -254,6 +254,17 @@ function loopActionLabel(value?: string | null): string {
   }
 }
 
+function normalizedResultLoopActionKey(item: Pick<MobileAnalyticsSessionEventItem, "name" | "action" | "result_cta">): string | null {
+  const eventName = valueOrEmpty(item.name);
+  const actionKey = valueOrEmpty(item.action);
+  const resultCta = valueOrEmpty(item.result_cta);
+  if (eventName === "result_rationale_entry_click") return "rationale";
+  if (eventName === "result_secondary_loop_click" && resultCta === "rationale" && (!actionKey || actionKey === "wiki")) {
+    return "rationale";
+  }
+  return actionKey || null;
+}
+
 function rageTargetLabel(item: MobileAnalyticsRageClickTargetItem): string {
   const raw = valueOrEmpty(item.target_id) || "unknown";
   if (raw.startsWith("result:cta:")) {
@@ -423,7 +434,8 @@ function describeTimelineEvent(item: MobileAnalyticsSessionEventItem): SessionTi
   if (item.reason_label) pushUniqueLabel(meta, `反馈 ${feedbackReasonLabel(item.reason_label)}`);
   if (item.trigger_reason) pushUniqueLabel(meta, `触发 ${feedbackTriggerLabel(item.trigger_reason)}`);
   if (item.result_cta) pushUniqueLabel(meta, `意图 ${resultCtaLabel(item.result_cta)}`);
-  if (item.action) pushUniqueLabel(meta, `动作 ${loopActionLabel(item.action)}`);
+  const normalizedActionKey = normalizedResultLoopActionKey(item);
+  if (normalizedActionKey) pushUniqueLabel(meta, `动作 ${loopActionLabel(normalizedActionKey)}`);
   if (item.target_path) pushUniqueLabel(meta, `去向 ${item.target_path}`);
   if (hasLocationContext(item.location_label, item.location_time_zone)) {
     pushUniqueLabel(meta, buildLocationBadgeLabel(item.location_label, item.location_time_zone));
@@ -563,6 +575,17 @@ function describeTimelineEvent(item: MobileAnalyticsSessionEventItem): SessionTi
         meta,
         rawMeta,
       };
+    case "compare_entry_view":
+      return {
+        eventName,
+        phase: "action",
+        title: "进入 Compare 裁决入口",
+        flowLabel: "进入 Compare",
+        summary: "用户从结果链路进入 compare 裁决闭环。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
     case "compare_library_pick":
       return {
         eventName,
@@ -581,6 +604,17 @@ function describeTimelineEvent(item: MobileAnalyticsSessionEventItem): SessionTi
         title: "选择图片准备分析",
         flowLabel: "选择图片",
         summary: "用户开始走图片识别链路。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "compare_upload_start":
+      return {
+        eventName,
+        phase: "analysis",
+        title: "开始上传当前产品",
+        flowLabel: "开始上传",
+        summary: "compare 裁决流程已进入上传与识别准备阶段。",
         significant: true,
         meta,
         rawMeta,
@@ -649,9 +683,9 @@ function describeTimelineEvent(item: MobileAnalyticsSessionEventItem): SessionTi
       return {
         eventName,
         phase: "result",
-        title: "进入对比结果页（兼容）",
-        flowLabel: "进入结果页（兼容）",
-        summary: "legacy compare_result_view 事件，仅作为兼容上下文保留，主结果口径以 result_view 为准。",
+        title: "查看 Compare 结果",
+        flowLabel: "查看 Compare 结果",
+        summary: "用户已经到达 compare 裁决结果页；它是 compare closure 的 canonical 事件，但在第一屏 P0 里只作为 supporting context。",
         significant: true,
         meta,
         rawMeta,
@@ -671,9 +705,9 @@ function describeTimelineEvent(item: MobileAnalyticsSessionEventItem): SessionTi
       return {
         eventName,
         phase: "result",
-        title: "点击结果页后续动作",
-        flowLabel: "点击结果页 CTA",
-        summary: "用户开始顺着结果页的下一步建议继续操作。",
+        title: "Compare 兼容 CTA 点击",
+        flowLabel: "点击兼容 CTA",
+        summary: "legacy compare_result_cta_click 桥接事件，仅用于兼容 compare closure 的派生口径。",
         significant: true,
         meta,
         rawMeta,
@@ -682,9 +716,9 @@ function describeTimelineEvent(item: MobileAnalyticsSessionEventItem): SessionTi
       return {
         eventName,
         phase: "result",
-        title: "真正到达结果页 CTA 的目标页",
-        flowLabel: "到达 CTA 目标页",
-        summary: "说明 CTA 不只是被点击，而且成功落到了下游页面。",
+        title: "Compare 兼容 CTA 落地",
+        flowLabel: "兼容 CTA 落地",
+        summary: "legacy compare_result_cta_land 桥接事件，仅用于兼容已有 compare 落地率面板。",
         significant: true,
         meta,
         rawMeta,
@@ -711,6 +745,42 @@ function describeTimelineEvent(item: MobileAnalyticsSessionEventItem): SessionTi
         meta,
         rawMeta,
       };
+    case "compare_result_hold_current":
+      return {
+        eventName,
+        phase: "result",
+        title: "Compare：先保留当前方案",
+        flowLabel: "先保留当前",
+        summary: "用户暂不切换推荐品，先继续保留当前使用中的产品。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "compare_result_view_key_differences":
+      return {
+        eventName,
+        phase: "result",
+        title: "Compare：查看关键差异",
+        flowLabel: "查看关键差异",
+        summary: "用户还在消化两款产品差异，尚未直接收口。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "compare_result_open_rationale":
+      return {
+        eventName,
+        phase: "result",
+        title: "Compare：打开推荐依据",
+        flowLabel: "打开推荐依据",
+        summary:
+          valueOrEmpty(item.target_path)
+            ? `用户从 compare 结果继续查看推荐依据，目标 ${valueOrEmpty(item.target_path)}。`
+            : "用户从 compare 结果进入 rationale，继续确认推荐理由。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
     case "compare_result_retry_current_product":
       return {
         eventName,
@@ -729,6 +799,34 @@ function describeTimelineEvent(item: MobileAnalyticsSessionEventItem): SessionTi
         title: "Compare：切换到其他品类",
         flowLabel: "切换品类",
         summary: "用户从 compare 裁决切到新的决策任务。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "compare_result_accept_recommendation_land":
+      return {
+        eventName,
+        phase: "result",
+        title: "Compare：接受推荐并落地",
+        flowLabel: "推荐方案落地",
+        summary:
+          valueOrEmpty(item.target_path)
+            ? `推荐方案已经真正落到 ${valueOrEmpty(item.target_path)}。`
+            : "用户接受推荐后，已经成功落到了后续目标页。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "compare_result_keep_current_land":
+      return {
+        eventName,
+        phase: "result",
+        title: "Compare：保留当前并回写",
+        flowLabel: "保留当前并回写",
+        summary:
+          valueOrEmpty(item.target_path)
+            ? `当前产品状态已经回写到 ${valueOrEmpty(item.target_path)}。`
+            : "用户保留当前产品后，状态已经被成功回写。",
         significant: true,
         meta,
         rawMeta,
@@ -777,34 +875,106 @@ function describeTimelineEvent(item: MobileAnalyticsSessionEventItem): SessionTi
         meta,
         rawMeta,
       };
+    case "result_add_to_bag_click":
+      return {
+        eventName,
+        phase: "result",
+        title: "结果闭环：加入购物袋",
+        flowLabel: "结果加袋",
+        summary:
+          valueOrEmpty(item.target_path)
+            ? `用户沿着 canonical 结果闭环加袋，目标 ${valueOrEmpty(item.target_path)}。`
+            : "用户接受当前推荐，直接进入加袋闭环。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "result_compare_entry_click":
+      return {
+        eventName,
+        phase: "result",
+        title: "结果闭环：进入 Compare",
+        flowLabel: "进入 Compare",
+        summary:
+          valueOrEmpty(item.target_path)
+            ? `用户从结果页进入 compare 裁决，目标 ${valueOrEmpty(item.target_path)}。`
+            : "用户从结果页进入 compare 裁决路径。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "result_rationale_entry_click":
+      return {
+        eventName,
+        phase: "result",
+        title: "结果闭环：进入推荐依据",
+        flowLabel: "进入推荐依据",
+        summary:
+          valueOrEmpty(item.target_path)
+            ? `用户从结果页进入 rationale，目标 ${valueOrEmpty(item.target_path)}。`
+            : "用户从结果页进入推荐依据路径。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "result_retry_same_category_click":
+      return {
+        eventName,
+        phase: "action",
+        title: "结果闭环：重试同品类",
+        flowLabel: "重试同品类",
+        summary:
+          valueOrEmpty(item.target_path)
+            ? `用户决定重测当前品类，目标 ${valueOrEmpty(item.target_path)}。`
+            : "用户没有直接收口，转去重测当前品类。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
+    case "result_switch_category_click":
+      return {
+        eventName,
+        phase: "action",
+        title: "结果闭环：切换品类",
+        flowLabel: "切换品类",
+        summary:
+          valueOrEmpty(item.target_path)
+            ? `用户决定切到其他品类继续测配，目标 ${valueOrEmpty(item.target_path)}。`
+            : "用户从当前结果切到新的品类任务。",
+        significant: true,
+        meta,
+        rawMeta,
+      };
     case "result_primary_cta_click":
       return {
         eventName,
         phase: "result",
-        title: "点击结果主 CTA",
-        flowLabel: "点击结果主 CTA",
+        title: "结果加袋桥接（兼容）",
+        flowLabel: "结果加袋（兼容）",
         summary:
           item.result_cta || item.target_path
-            ? `用户按“${item.result_cta ? resultCtaLabel(item.result_cta) : "未标注"}”继续，目标 ${valueOrEmpty(item.target_path) || "未标注"}。`
-            : "用户接受结果页给出的主下一步，继续进入产品或承接页。",
+            ? `legacy result_primary_cta_click 桥接到 result_add_to_bag_click；意图 ${item.result_cta ? resultCtaLabel(item.result_cta) : "未标注"}，目标 ${valueOrEmpty(item.target_path) || "未标注"}。`
+            : "legacy result_primary_cta_click 兼容输入，当前 summary 会把它桥接到 result_add_to_bag_click。",
         significant: true,
         meta,
         rawMeta,
       };
-    case "result_secondary_loop_click":
+    case "result_secondary_loop_click": {
+      const legacyLoopActionKey = normalizedResultLoopActionKey(item);
       return {
         eventName,
         phase: "result",
-        title: "从结果进入 utility 回环",
-        flowLabel: "进入 utility 回环",
+        title: "结果次级入口桥接（兼容）",
+        flowLabel: "结果次级入口（兼容）",
         summary:
           item.action || item.result_cta || item.target_path
-            ? `动作 ${item.action ? loopActionLabel(item.action) : "未标注"}，意图 ${item.result_cta ? resultCtaLabel(item.result_cta) : "未标注"}，目标 ${valueOrEmpty(item.target_path) || "未标注"}。`
-            : "用户从测配结果页进入百科、对比或其他 utility 能力。",
+            ? `legacy result_secondary_loop_click 会按 result_cta 桥接到 canonical result entry；动作 ${legacyLoopActionKey ? loopActionLabel(legacyLoopActionKey) : "未标注"}，意图 ${item.result_cta ? resultCtaLabel(item.result_cta) : "未标注"}，目标 ${valueOrEmpty(item.target_path) || "未标注"}。`
+            : "legacy result_secondary_loop_click 兼容输入，当前会桥接到 compare / rationale / retry / switch 的 canonical result entry。",
         significant: true,
         meta,
         rawMeta,
       };
+    }
     case "utility_return_click":
       return {
         eventName,
@@ -1042,12 +1212,22 @@ function buildSessionTimelinePresentation(items: MobileAnalyticsSessionEventItem
       "compare_run_success",
       "compare_result_view",
       "result_view",
+      "result_add_to_bag_click",
+      "result_compare_entry_click",
+      "result_rationale_entry_click",
+      "result_retry_same_category_click",
+      "result_switch_category_click",
       "result_primary_cta_click",
       "result_secondary_loop_click",
       "utility_return_click",
       "bag_add_success",
       "compare_result_accept_recommendation",
       "compare_result_keep_current",
+      "compare_result_hold_current",
+      "compare_result_view_key_differences",
+      "compare_result_open_rationale",
+      "compare_result_accept_recommendation_land",
+      "compare_result_keep_current_land",
       "rationale_to_bag_click",
       "rationale_to_compare_click",
     ].includes(item.eventName),
@@ -1564,7 +1744,7 @@ export default function MobileAnalyticsDashboard() {
         <DashboardMetricCard
           title="Q2 choose 后开始答题"
           value={formatNumber(overview.data?.choose_start_click_sessions)}
-          detail={`choose 会话 ${formatNumber(overview.data?.choose_view_sessions)} · 转化 ${formatPercent(chooseStartRate)}`}
+          detail={`canonical choose_category_start_click · choose 会话 ${formatNumber(overview.data?.choose_view_sessions)} · 转化 ${formatPercent(chooseStartRate)}`}
           loading={overview.loading}
           error={overview.error}
           accent="amber"
@@ -1578,9 +1758,9 @@ export default function MobileAnalyticsDashboard() {
           accent="slate"
         />
         <DashboardMetricCard
-          title="Q5 结果后继续动作"
+          title="Q5 结果主闭环（加袋）"
           value={formatNumber(overview.data?.result_primary_cta_click_sessions)}
-          detail={`次级回环 ${formatNumber(overview.data?.result_secondary_loop_click_sessions)} · utility 回流 ${formatNumber(overview.data?.utility_return_click_sessions)}`}
+          detail={`次级入口 ${formatNumber(overview.data?.result_secondary_loop_click_sessions)} · utility 回流 ${formatNumber(overview.data?.utility_return_click_sessions)}`}
           loading={overview.loading}
           error={overview.error}
           accent="stone"
@@ -1605,7 +1785,7 @@ export default function MobileAnalyticsDashboard() {
                 ) : (
                   <span>`question_dropoff` 当前 blocked：{overview.data?.question_dropoff_reason || "暂无有效 step 数据。"}</span>
                 )}
-                <div className="mt-1">`compare_result_view` 仅保留在 supporting context，不进入第一屏主 KPI。</div>
+                <div className="mt-1">`compare_result_view` 是 compare closure canonical 事件，但在第一屏主 KPI 中只作为 supporting context。</div>
               </div>
               {funnel.data.steps.map((step) => (
                 <article key={step.step_key} className="rounded-[22px] border border-black/10 bg-[#f7f8fb] px-4 py-4">
@@ -1656,6 +1836,7 @@ export default function MobileAnalyticsDashboard() {
                     / {formatNumber(overview.data.choose_view_sessions)} · {formatPercent(chooseStartRate)}
                   </span>
                 </div>
+                <div className="mt-1 text-[12px] text-black/46">current truth：choose_category_start_click；旧 key 仅作兼容 summary shape</div>
               </article>
 
               {questionDropoffLive ? (
@@ -1700,15 +1881,15 @@ export default function MobileAnalyticsDashboard() {
               <article className="rounded-[18px] border border-black/10 bg-[#f7f8fb] px-4 py-4">
                 <div className="text-[13px] text-black/52">Q5 到达结果后继续动作</div>
                 <div className="mt-2 text-[20px] font-semibold tracking-[-0.02em] text-black/86">
-                  主 CTA {formatNumber(overview.data.result_primary_cta_click_sessions)}
+                  加袋闭环 {formatNumber(overview.data.result_primary_cta_click_sessions)}
                   <span className="ml-2 text-[13px] font-medium text-black/55">{formatPercent(resultPrimaryCtaRate)}</span>
                 </div>
                 <div className="mt-1 text-[12px] text-black/58">
-                  次级回环 {formatNumber(overview.data.result_secondary_loop_click_sessions)}（{formatPercent(resultLoopEntryRate)}） · utility 回流{" "}
+                  次级入口 {formatNumber(overview.data.result_secondary_loop_click_sessions)}（{formatPercent(resultLoopEntryRate)}） · utility 回流{" "}
                   {formatNumber(overview.data.utility_return_click_sessions)}（{formatPercent(utilityReturnRateFromLoop)}）
                 </div>
                 <div className="mt-2 text-[12px] text-black/46">
-                  supporting context：compare_result_view {formatNumber(overview.data.compare_result_view_sessions)}
+                  canonical result events 驱动 summary；compare_result_view {formatNumber(overview.data.compare_result_view_sessions)} 仅作 compare closure supporting context
                 </div>
               </article>
             </div>
@@ -1735,12 +1916,12 @@ export default function MobileAnalyticsDashboard() {
                 value={`${formatPercent(experience.data.wiki_ingredient_ctr)} · ${formatNumber(experience.data.wiki_ingredient_clicks)}/${formatNumber(experience.data.wiki_ingredient_list_views)}`}
               />
               <CompactStat
-                title="决策结果到达"
-                value={`${formatNumber(experience.data.decision_result_views)} · 主 CTA ${formatNumber(experience.data.decision_result_primary_cta_clicks)}`}
+                title="结果到达 / 加袋"
+                value={`${formatNumber(experience.data.decision_result_views)} · 加袋 ${formatNumber(experience.data.decision_result_primary_cta_clicks)}`}
               />
               <CompactStat
                 title="utility 回流"
-                value={`${formatNumber(experience.data.utility_return_clicks)} / ${formatNumber(experience.data.decision_result_secondary_loop_clicks)}`}
+                value={`${formatNumber(experience.data.utility_return_clicks)} / 次级入口 ${formatNumber(experience.data.decision_result_secondary_loop_clicks)}`}
               />
               <CompactStat
                 title="首页快捷动作"
@@ -1751,15 +1932,15 @@ export default function MobileAnalyticsDashboard() {
             <div className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
               <div className="space-y-5">
                 <div>
-                  <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-black/42">对比结果阅读（兼容上下文）</div>
+                  <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-black/42">Compare 结果阅读与停留</div>
                   <div className="grid gap-3 md:grid-cols-2">
                     <article className="rounded-[20px] border border-black/10 bg-[#f7f8fb] px-4 py-4">
-                      <div className="text-[12px] text-black/48">对比结果离开</div>
+                      <div className="text-[12px] text-black/48">Compare 结果访问</div>
                       <div className="mt-2 text-[24px] font-semibold tracking-[-0.03em] text-black/86">
-                        {formatNumber(experience.data.compare_result_leaves)}
+                        {formatNumber(experience.data.compare_result_views)}
                       </div>
                       <div className="mt-2 text-[12px] text-black/52">
-                        对比结果访问 {formatNumber(experience.data.compare_result_views)}
+                        离开 {formatNumber(experience.data.compare_result_leaves)} · compare_result_view 已进入 canonical closure
                       </div>
                     </article>
                     <article className="rounded-[20px] border border-black/10 bg-[#f7f8fb] px-4 py-4">
@@ -1775,14 +1956,17 @@ export default function MobileAnalyticsDashboard() {
                 </div>
 
                 <div>
-                  <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-black/42">Phase 10 意图观测（decision props）</div>
+                  <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.12em] text-black/42">Decision Result Canonical</div>
+                  <div className="mb-3 text-[12px] leading-[1.6] text-black/50">
+                    这里的结果动作已经按 phase-13 canonical result events 聚合；legacy `result_primary_cta_click` / `result_secondary_loop_click` 只作为桥接输入。
+                  </div>
                   <div className="grid gap-3 md:grid-cols-3">
                     <article className="rounded-[20px] border border-black/10 bg-[#f7f8fb] px-4 py-4">
-                      <div className="text-[12px] text-black/48">结果主 CTA（result_cta / target_path）</div>
+                      <div className="text-[12px] text-black/48">结果加袋闭环（result_add_to_bag_click）</div>
                       <div className="mt-2 text-[24px] font-semibold tracking-[-0.03em] text-black/86">
                         {formatNumber(experience.data.decision_result_primary_cta_clicks)}
                       </div>
-                      <div className="mt-3 text-[12px] text-black/48">意图分布</div>
+                      <div className="mt-3 text-[12px] text-black/48">闭环类型</div>
                       <div className="mt-2">
                         {renderCountList(experience.data.result_primary_cta_result_ctas, "emerald")}
                       </div>
@@ -1792,11 +1976,11 @@ export default function MobileAnalyticsDashboard() {
                       </div>
                     </article>
                     <article className="rounded-[20px] border border-black/10 bg-[#f7f8fb] px-4 py-4">
-                      <div className="text-[12px] text-black/48">从结果进入 utility（action / result_cta / target_path）</div>
+                      <div className="text-[12px] text-black/48">结果次级入口（compare / rationale / retry / switch）</div>
                       <div className="mt-2 text-[24px] font-semibold tracking-[-0.03em] text-black/86">
                         {formatNumber(experience.data.decision_result_secondary_loop_clicks)}
                       </div>
-                      <div className="mt-3 text-[12px] text-black/48">动作分布</div>
+                      <div className="mt-3 text-[12px] text-black/48">入口分布</div>
                       <div className="mt-3">
                         {renderCountList(
                           experience.data.result_secondary_loop_actions.map((item) => ({
@@ -1806,13 +1990,13 @@ export default function MobileAnalyticsDashboard() {
                           "amber",
                         )}
                       </div>
-                      <div className="mt-3 text-[12px] text-black/48">意图分布</div>
+                      <div className="mt-3 text-[12px] text-black/48">兼容映射标签</div>
                       <div className="mt-2">{renderCountList(experience.data.result_secondary_loop_result_ctas, "emerald")}</div>
                       <div className="mt-3 text-[12px] text-black/48">目标分布</div>
                       <div className="mt-2">{renderCountList(experience.data.result_secondary_loop_target_paths, "amber")}</div>
                     </article>
                     <article className="rounded-[20px] border border-black/10 bg-[#f7f8fb] px-4 py-4">
-                      <div className="text-[12px] text-black/48">从 utility 返回决策（action / result_cta / target_path）</div>
+                      <div className="text-[12px] text-black/48">从 utility 返回决策（utility_return_click）</div>
                       <div className="mt-2 text-[24px] font-semibold tracking-[-0.03em] text-black/86">
                         {formatNumber(experience.data.utility_return_clicks)}
                       </div>
@@ -1845,10 +2029,13 @@ export default function MobileAnalyticsDashboard() {
                 </div>
 
                 <div>
-                  <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-black/42">Phase 12 Decision Closure</div>
+                  <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.12em] text-black/42">Compare / Rationale Closure</div>
+                  <div className="mb-3 text-[12px] leading-[1.6] text-black/50">
+                    compare 与 rationale 已切到 phase-13 canonical closure 词表；compare_result_cta_* 只保留为兼容桥接。
+                  </div>
                   <div className="grid gap-3 md:grid-cols-2">
                     <article className="rounded-[20px] border border-black/10 bg-[#f7f8fb] px-4 py-4">
-                      <div className="text-[12px] text-black/48">Compare 裁决闭环</div>
+                      <div className="text-[12px] text-black/48">Compare canonical closure</div>
                       <div className="mt-2 text-[20px] font-semibold tracking-[-0.02em] text-black/86">
                         接受推荐 {formatNumber(experience.data.compare_closure_accept_recommendation)}
                       </div>
@@ -1858,7 +2045,7 @@ export default function MobileAnalyticsDashboard() {
                       <div className="mt-3">{renderCountList(experience.data.compare_closure_actions, "emerald")}</div>
                     </article>
                     <article className="rounded-[20px] border border-black/10 bg-[#f7f8fb] px-4 py-4">
-                      <div className="text-[12px] text-black/48">Rationale 回到决定</div>
+                      <div className="text-[12px] text-black/48">Rationale canonical closure</div>
                       <div className="mt-2 text-[20px] font-semibold tracking-[-0.02em] text-black/86">
                         去购物袋 {formatNumber(experience.data.rationale_to_bag_click)}
                       </div>
@@ -1871,7 +2058,8 @@ export default function MobileAnalyticsDashboard() {
                 </div>
 
                 <div>
-                  <div className="mb-3 text-[12px] font-semibold uppercase tracking-[0.12em] text-black/42">对比结果 CTA 落地（兼容上下文）</div>
+                  <div className="mb-1 text-[12px] font-semibold uppercase tracking-[0.12em] text-black/42">Compare CTA 落地桥接</div>
+                  <div className="mb-3 text-[12px] leading-[1.6] text-black/50">仅用于兼容已有 compare CTA 落地率视图，不代表当前 canonical compare closure 词表。</div>
                   {experience.data.result_cta_followthrough.length === 0 ? (
                     <EmptyHint label="当前筛选下还没有对比结果 CTA 落地数据。" />
                   ) : (

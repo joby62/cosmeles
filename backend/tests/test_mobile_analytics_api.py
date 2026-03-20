@@ -133,7 +133,7 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 owner_type="device",
                 owner_id="owner-alpha",
                 session_id="sess-1",
-                name="choose_start_click",
+                name="choose_category_start_click",
                 page="selection_choose",
                 route="/m/choose?category=shampoo",
                 source="m_choose",
@@ -244,6 +244,48 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 category="shampoo",
                 created_at="2026-03-12T01:00:05.000000Z",
                 props_json='{"browser_family":"safari","os_family":"ios","device_type":"phone","viewport_bucket":"md","network_type":"4g","lang":"zh-CN"}',
+            ),
+            MobileClientEvent(
+                event_id="evt-006c",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="compare_entry_view",
+                page="mobile_compare",
+                route="/m/compare?category=shampoo&source=selection_result&return_to=%2Fm%2Fshampoo%2Fresult&scenario_id=selres-shampoo-2026-03-03-1-abc123&result_cta=compare",
+                source="selection_result",
+                category="shampoo",
+                compare_id="cmp-1",
+                created_at="2026-03-12T01:00:05.200000Z",
+                props_json='{"result_cta":"compare"}',
+            ),
+            MobileClientEvent(
+                event_id="evt-006d",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="compare_upload_start",
+                page="mobile_compare",
+                route="/m/compare?category=shampoo&source=selection_result&return_to=%2Fm%2Fshampoo%2Fresult&scenario_id=selres-shampoo-2026-03-03-1-abc123&result_cta=compare",
+                source="selection_result",
+                category="shampoo",
+                compare_id="cmp-1",
+                created_at="2026-03-12T01:00:05.300000Z",
+                props_json='{"result_cta":"compare"}',
+            ),
+            MobileClientEvent(
+                event_id="evt-006e",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="compare_upload_success",
+                page="mobile_compare",
+                route="/m/compare?category=shampoo&source=selection_result&return_to=%2Fm%2Fshampoo%2Fresult&scenario_id=selres-shampoo-2026-03-03-1-abc123&result_cta=compare",
+                source="selection_result",
+                category="shampoo",
+                compare_id="cmp-1",
+                created_at="2026-03-12T01:00:05.400000Z",
+                props_json='{"result_cta":"compare","upload_id":"upload-1"}',
             ),
             MobileClientEvent(
                 event_id="evt-006b",
@@ -912,6 +954,20 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 props_json='{"cta":"recommendation_wiki"}',
             ),
             MobileClientEvent(
+                event_id="evt-036h0",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="compare_result_view_key_differences",
+                page="compare_result",
+                route="/m/compare/result/cmp-1",
+                source="m_compare_result",
+                category="shampoo",
+                compare_id="cmp-1",
+                created_at="2026-03-12T01:00:18.190500Z",
+                props_json="{}",
+            ),
+            MobileClientEvent(
                 event_id="evt-036ha",
                 owner_type="device",
                 owner_id="owner-alpha",
@@ -923,6 +979,20 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 category="shampoo",
                 compare_id="cmp-1",
                 created_at="2026-03-12T01:00:18.191000Z",
+                props_json='{"target_path":"/product/p-9"}',
+            ),
+            MobileClientEvent(
+                event_id="evt-036haa",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="compare_result_accept_recommendation_land",
+                page="product_showcase",
+                route="/product/p-9",
+                source="m_compare_result",
+                category="shampoo",
+                compare_id="cmp-1",
+                created_at="2026-03-12T01:00:18.191500Z",
                 props_json='{"target_path":"/product/p-9"}',
             ),
             MobileClientEvent(
@@ -938,6 +1008,48 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 compare_id="cmp-1",
                 created_at="2026-03-12T01:00:18.192000Z",
                 props_json='{"target_path":"/m/me/use?category=shampoo"}',
+            ),
+            MobileClientEvent(
+                event_id="evt-036hbc",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="compare_result_keep_current_land",
+                page="my_use",
+                route="/m/me/use?category=shampoo&closure=keep&decision=keep_current",
+                source="m_compare_result",
+                category="shampoo",
+                compare_id="cmp-1",
+                created_at="2026-03-12T01:00:18.192300Z",
+                props_json='{"target_path":"/m/me/use?category=shampoo"}',
+            ),
+            MobileClientEvent(
+                event_id="evt-036hba",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="compare_result_retry_current_product",
+                page="compare_result",
+                route="/m/compare/result/cmp-1",
+                source="m_compare_result",
+                category="shampoo",
+                compare_id="cmp-1",
+                created_at="2026-03-12T01:00:18.192500Z",
+                props_json='{"target_path":"/m/compare?category=shampoo"}',
+            ),
+            MobileClientEvent(
+                event_id="evt-036hbb",
+                owner_type="device",
+                owner_id="owner-alpha",
+                session_id="sess-1",
+                name="compare_result_switch_category_click",
+                page="compare_result",
+                route="/m/compare/result/cmp-1",
+                source="m_compare_result",
+                category="shampoo",
+                compare_id="cmp-1",
+                created_at="2026-03-12T01:00:18.192600Z",
+                props_json='{"target_path":"/m/choose"}',
             ),
             MobileClientEvent(
                 event_id="evt-036hc",
@@ -1002,26 +1114,26 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 owner_type="device",
                 owner_id="owner-alpha",
                 session_id="sess-1",
-                name="result_primary_cta_click",
+                name="result_add_to_bag_click",
                 page="selection_result",
                 route="/m/shampoo/result",
                 source="selection_result",
                 category="shampoo",
                 created_at="2026-03-12T01:00:18.210000Z",
-                props_json='{"scenario_id":"selres-shampoo-2026-03-03-1-abc123","result_cta":"bag_add","action":"bag_add","target_path":"/product/p-9"}',
+                props_json='{"scenario_id":"selres-shampoo-2026-03-03-1-abc123","target_path":"/product/p-9"}',
             ),
             MobileClientEvent(
                 event_id="evt-036k",
                 owner_type="device",
                 owner_id="owner-alpha",
                 session_id="sess-1",
-                name="result_secondary_loop_click",
+                name="result_rationale_entry_click",
                 page="selection_result",
                 route="/m/shampoo/result",
                 source="selection_result",
                 category="shampoo",
                 created_at="2026-03-12T01:00:18.220000Z",
-                props_json='{"scenario_id":"selres-shampoo-2026-03-03-1-abc123","result_cta":"rationale","target_path":"/m/wiki/shampoo","action":"wiki"}',
+                props_json='{"scenario_id":"selres-shampoo-2026-03-03-1-abc123","target_path":"/m/wiki/shampoo"}',
             ),
             MobileClientEvent(
                 event_id="evt-036l",
@@ -1074,7 +1186,7 @@ def mobile_analytics_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
                 source="selection_result",
                 category="shampoo",
                 created_at="2026-03-13T01:00:18.220000Z",
-                props_json='{"scenario_id":"selres-shampoo-2026-03-04-2-def456","result_cta":"rationale","target_path":"/m/wiki/shampoo","action":"wiki"}',
+                props_json='{"scenario_id":"selres-shampoo-2026-03-04-2-def456","result_cta":"rationale","target_path":"/m/wiki/shampoo","action":"rationale"}',
             ),
             MobileClientEvent(
                 event_id="evt-036p",
@@ -1214,11 +1326,11 @@ def test_mobile_analytics_overview_and_funnel(mobile_analytics_client: TestClien
     assert funnel.status_code == 200
     steps = {item["step_key"]: item for item in funnel.json()["steps"]}
     assert steps["home_primary_cta"]["count"] == 3
-    assert steps["choose_view"]["count"] == 3
-    assert steps["choose_start"]["count"] == 2
+    assert steps["choose_category_start"]["count"] == 2
+    assert steps["questionnaire_step1_view"]["count"] == 2
     assert steps["questionnaire_completed"]["count"] == 1
     assert steps["result_view"]["count"] == 1
-    assert steps["choose_start"]["from_prev_rate"] == 0.6667
+    assert steps["choose_category_start"]["from_prev_rate"] == 0.6667
     assert steps["result_view"]["from_first_rate"] == 0.3333
 
 
@@ -1327,11 +1439,21 @@ def test_mobile_analytics_errors_feedback_and_sessions(mobile_analytics_client: 
     assert sessions_payload["total"] >= 1
     assert sessions_payload["items"][0]["latest_location_label"] == "31.230, 121.470 · 约1.2km"
     assert sessions_payload["items"][0]["latest_location_time_zone"] == "Asia/Shanghai"
+    assert any(item["name"] == "compare_entry_view" for item in sessions_payload["timeline"])
+    assert any(item["name"] == "compare_upload_start" for item in sessions_payload["timeline"])
+    assert any(item["name"] == "compare_upload_success" for item in sessions_payload["timeline"])
     assert any(item["name"] == "compare_run_success" for item in sessions_payload["timeline"])
     assert any(item["name"] == "compare_result_view" for item in sessions_payload["timeline"])
     assert any(item["name"] == "compare_result_accept_recommendation" for item in sessions_payload["timeline"])
     assert any(item["name"] == "compare_result_keep_current" for item in sessions_payload["timeline"])
+    assert any(item["name"] == "compare_result_view_key_differences" for item in sessions_payload["timeline"])
+    assert any(item["name"] == "compare_result_accept_recommendation_land" for item in sessions_payload["timeline"])
+    assert any(item["name"] == "compare_result_keep_current_land" for item in sessions_payload["timeline"])
+    assert any(item["name"] == "compare_result_retry_current_product" for item in sessions_payload["timeline"])
+    assert any(item["name"] == "compare_result_switch_category_click" for item in sessions_payload["timeline"])
+    assert any(item["name"] == "rationale_view" for item in sessions_payload["timeline"])
     assert any(item["name"] == "rationale_to_bag_click" for item in sessions_payload["timeline"])
+    assert any(item["name"] == "rationale_to_compare_click" for item in sessions_payload["timeline"])
     assert any(item["name"] == "utility_return_click" for item in sessions_payload["timeline"])
     assert any(item["location_label"] == "31.230, 121.470 · 约1.2km" for item in sessions_payload["timeline"])
     utility_return = next(item for item in sessions_payload["timeline"] if item["name"] == "utility_return_click")
@@ -1360,8 +1482,14 @@ def test_mobile_analytics_experience(mobile_analytics_client: TestClient):
     assert payload["decision_result_secondary_loop_clicks"] == 1
     assert payload["utility_return_clicks"] == 1
     assert payload["home_workspace_quick_action_clicks"] == 1
+    assert payload["compare_entry_views"] == 1
+    assert payload["compare_upload_starts"] == 1
+    assert payload["compare_upload_successes"] == 1
+    assert payload["compare_upload_success_rate"] == 1.0
     assert payload["compare_closure_accept_recommendation"] == 1
     assert payload["compare_closure_keep_current"] == 1
+    assert payload["compare_keep_current_my_use_clicks"] == 1
+    assert payload["compare_keep_current_my_use_rate"] == 1.0
     assert payload["rationale_view"] == 1
     assert payload["rationale_to_bag_click"] == 1
     assert payload["rationale_to_compare_click"] == 1
@@ -1408,8 +1536,23 @@ def test_mobile_analytics_experience(mobile_analytics_client: TestClient):
     assert completions[("recommendation_product", "bag_add_success")]["completions"] == 1
     assert completions[("recommendation_wiki", "result_view")]["completions"] == 1
     assert completions[("recommendation_wiki", "result_view")]["completion_rate_from_land"] == 1.0
+    compare_entry_result_ctas = {item["key"]: item["count"] for item in payload["compare_entry_result_ctas"]}
+    assert compare_entry_result_ctas["compare"] == 1
+    compare_upload_start_result_ctas = {item["key"]: item["count"] for item in payload["compare_upload_start_result_ctas"]}
+    assert compare_upload_start_result_ctas["compare"] == 1
+    compare_upload_success_result_ctas = {item["key"]: item["count"] for item in payload["compare_upload_success_result_ctas"]}
+    assert compare_upload_success_result_ctas["compare"] == 1
+    compare_entry_contexts = {item["key"]: item["count"] for item in payload["compare_entry_route_contexts"]}
+    assert compare_entry_contexts["return_to+scenario_id+result_cta+compare_id"] == 1
+    compare_upload_start_contexts = {item["key"]: item["count"] for item in payload["compare_upload_start_route_contexts"]}
+    assert compare_upload_start_contexts["return_to+scenario_id+result_cta+compare_id"] == 1
+    compare_upload_success_contexts = {item["key"]: item["count"] for item in payload["compare_upload_success_route_contexts"]}
+    assert compare_upload_success_contexts["return_to+scenario_id+result_cta+compare_id"] == 1
+    keep_current_target_paths = {item["key"]: item["count"] for item in payload["compare_keep_current_target_paths"]}
+    assert keep_current_target_paths["/m/me/use?category=shampoo"] == 1
     secondary_actions = {item["key"]: item["count"] for item in payload["result_secondary_loop_actions"]}
-    assert secondary_actions["wiki"] == 1
+    assert secondary_actions["rationale"] == 1
+    assert "wiki" not in secondary_actions
     utility_returns = {item["key"]: item["count"] for item in payload["utility_return_actions"]}
     assert utility_returns["wiki_return"] == 1
     primary_result_ctas = {item["key"]: item["count"] for item in payload["result_primary_cta_result_ctas"]}
@@ -1429,6 +1572,12 @@ def test_mobile_analytics_experience(mobile_analytics_client: TestClient):
     compare_closure_actions = {item["key"]: item["count"] for item in payload["compare_closure_actions"]}
     assert compare_closure_actions["accept_recommendation"] == 1
     assert compare_closure_actions["keep_current"] == 1
+    assert compare_closure_actions["open_rationale"] == 1
+    assert compare_closure_actions["view_key_differences"] == 1
+    assert compare_closure_actions["retry_current_product"] == 1
+    assert compare_closure_actions["switch_category"] == 1
+    assert compare_closure_actions["accept_recommendation_land"] == 1
+    assert compare_closure_actions["keep_current_land"] == 1
     rationale_closure_actions = {item["key"]: item["count"] for item in payload["rationale_closure_actions"]}
     assert rationale_closure_actions["view"] == 1
     assert rationale_closure_actions["to_bag"] == 1

@@ -1,14 +1,117 @@
 {
   "schema_version": "mobile_analytics_events.v1",
+  "status": "owner_frozen",
+  "frozen_at": "2026-03-20",
+  "owner_freeze_file": "docs/initiatives/mobile/architecture/mobile-first-run-and-compare-closure-rollout.md",
+  "first_run_funnel_semantics": {
+    "canonical_primary_events": [
+      "home_primary_cta_click",
+      "choose_category_start_click",
+      "questionnaire_view",
+      "questionnaire_completed",
+      "result_view"
+    ],
+    "questionnaire_entry_rule": {
+      "event": "questionnaire_view",
+      "required_props": {
+        "step": 1
+      }
+    },
+    "compatibility_only_events": [
+      "choose_start_click"
+    ],
+    "legacy_bridge_rules": [
+      {
+        "legacy_event": "choose_start_click",
+        "canonical_event": "choose_category_start_click"
+      }
+    ]
+  },
   "decision_result_semantics": {
-    "primary_events": [
+    "canonical_primary_events": [
       "result_view",
+      "result_add_to_bag_click",
+      "result_compare_entry_click",
+      "result_rationale_entry_click",
+      "result_retry_same_category_click",
+      "result_switch_category_click"
+    ],
+    "utility_loop_event": "utility_return_click",
+    "compatibility_only_events": [
       "result_primary_cta_click",
       "result_secondary_loop_click"
     ],
-    "utility_loop_event": "utility_return_click",
+    "legacy_bridge_by_result_cta": {
+      "bag_add": "result_add_to_bag_click",
+      "compare": "result_compare_entry_click",
+      "rationale": "result_rationale_entry_click",
+      "retry_same_category": "result_retry_same_category_click",
+      "switch_category": "result_switch_category_click"
+    },
     "legacy_aliases_removed": [
       "profile_result_view"
+    ]
+  },
+  "compare_closure_semantics": {
+    "canonical_primary_events": [
+      "compare_entry_view",
+      "compare_upload_start",
+      "compare_upload_success",
+      "compare_result_view",
+      "compare_result_accept_recommendation",
+      "compare_result_keep_current",
+      "compare_result_hold_current",
+      "compare_result_view_key_differences",
+      "compare_result_open_rationale",
+      "compare_result_retry_current_product",
+      "compare_result_switch_category_click",
+      "compare_result_accept_recommendation_land",
+      "compare_result_keep_current_land"
+    ],
+    "compatibility_only_events": [
+      "compare_result_cta_click",
+      "compare_result_cta_land"
+    ],
+    "legacy_bridge_rules": [
+      {
+        "legacy_event": "compare_result_cta_click",
+        "required_props": {
+          "cta": "recommendation_wiki"
+        },
+        "canonical_event": "compare_result_open_rationale"
+      },
+      {
+        "legacy_event": "compare_result_cta_land",
+        "required_props": {
+          "cta": "recommendation_product"
+        },
+        "canonical_event": "compare_result_accept_recommendation_land"
+      }
+    ],
+    "keep_current_writeback": {
+      "event": "compare_result_keep_current_land",
+      "target_path": "/m/me/use",
+      "required_query_keys": [
+        "closure",
+        "decision"
+      ],
+      "optional_query_keys": [
+        "product_brand",
+        "product_name",
+        "product_source",
+        "source",
+        "return_to",
+        "scenario_id",
+        "result_cta",
+        "compare_id"
+      ]
+    }
+  },
+  "rationale_semantics": {
+    "canonical_primary_events": [
+      "rationale_view",
+      "rationale_to_bag_click",
+      "rationale_to_compare_click"
     ]
   },
   "events": {
@@ -33,8 +136,13 @@
     "choose_category_select": {
       "required_props": ["page", "route", "source", "category"]
     },
-    "choose_start_click": {
+    "choose_category_start_click": {
       "required_props": ["page", "route", "source", "category", "target_path"]
+    },
+    "choose_start_click": {
+      "required_props": ["page", "route", "source", "category", "target_path"],
+      "status": "compatibility_only",
+      "canonical_event": "choose_category_start_click"
     },
     "choose_resume_click": {
       "required_props": ["page", "route", "source", "category", "target_path"]
@@ -51,23 +159,58 @@
     "result_view": {
       "required_props": ["page", "route", "source", "category", "scenario_id"]
     },
+    "result_add_to_bag_click": {
+      "required_props": ["page", "route", "source", "category", "scenario_id", "target_path"],
+      "optional_props": ["from_compare_id"]
+    },
+    "result_compare_entry_click": {
+      "required_props": ["page", "route", "source", "category", "scenario_id", "target_path"],
+      "optional_props": ["from_compare_id"]
+    },
+    "result_rationale_entry_click": {
+      "required_props": ["page", "route", "source", "category", "scenario_id", "target_path"],
+      "optional_props": ["from_compare_id"]
+    },
+    "result_retry_same_category_click": {
+      "required_props": ["page", "route", "source", "category", "scenario_id", "target_path"],
+      "optional_props": ["from_compare_id"]
+    },
+    "result_switch_category_click": {
+      "required_props": ["page", "route", "source", "category", "scenario_id", "target_path"],
+      "optional_props": ["from_compare_id"]
+    },
     "result_primary_cta_click": {
-      "required_props": ["page", "route", "source", "category", "scenario_id", "result_cta", "target_path"]
+      "required_props": ["page", "route", "source", "category", "scenario_id", "result_cta", "target_path"],
+      "status": "compatibility_only",
+      "canonical_event": "result_add_to_bag_click"
     },
     "result_secondary_loop_click": {
-      "required_props": ["page", "route", "source", "category", "scenario_id", "result_cta", "target_path", "action"]
+      "required_props": ["page", "route", "source", "category", "scenario_id", "result_cta", "target_path", "action"],
+      "status": "compatibility_only",
+      "canonical_event_from_result_cta": {
+        "compare": "result_compare_entry_click",
+        "rationale": "result_rationale_entry_click",
+        "retry_same_category": "result_retry_same_category_click",
+        "switch_category": "result_switch_category_click"
+      }
     },
     "utility_return_click": {
       "required_props": ["page", "route", "source", "category", "scenario_id", "result_cta", "target_path", "action"]
     },
     "compare_entry_view": {
-      "required_props": ["page", "route", "source", "category"]
+      "required_props": ["page", "route", "source", "category"],
+      "optional_props": ["return_to", "scenario_id", "result_cta", "compare_id"]
     },
     "compare_upload_start": {
-      "required_props": ["page", "route", "source", "category"]
+      "required_props": ["page", "route", "source", "category"],
+      "optional_props": ["return_to", "scenario_id", "result_cta", "compare_id"]
     },
     "compare_upload_success": {
-      "required_props": ["page", "route", "source", "category"]
+      "required_props": ["page", "route", "source", "category"],
+      "optional_props": ["return_to", "scenario_id", "result_cta", "compare_id", "upload_id"]
+    },
+    "compare_result_view": {
+      "required_props": ["page", "route", "source", "category", "compare_id"]
     },
     "compare_result_accept_recommendation": {
       "required_props": ["page", "route", "source", "category", "compare_id", "target_path"]
@@ -75,11 +218,35 @@
     "compare_result_keep_current": {
       "required_props": ["page", "route", "source", "category", "compare_id", "target_path"]
     },
+    "compare_result_hold_current": {
+      "required_props": ["page", "route", "source", "category", "compare_id"]
+    },
+    "compare_result_view_key_differences": {
+      "required_props": ["page", "route", "source", "category", "compare_id"]
+    },
+    "compare_result_open_rationale": {
+      "required_props": ["page", "route", "source", "category", "compare_id", "target_path"]
+    },
     "compare_result_retry_current_product": {
       "required_props": ["page", "route", "source", "category", "compare_id", "target_path"]
     },
     "compare_result_switch_category_click": {
       "required_props": ["page", "route", "source", "category", "compare_id", "target_path"]
+    },
+    "compare_result_accept_recommendation_land": {
+      "required_props": ["page", "route", "source", "category", "compare_id", "target_path"]
+    },
+    "compare_result_keep_current_land": {
+      "required_props": ["page", "route", "source", "category", "compare_id", "target_path"]
+    },
+    "compare_result_cta_click": {
+      "required_props": ["page", "route", "source", "category", "compare_id", "cta"],
+      "status": "compatibility_only"
+    },
+    "compare_result_cta_land": {
+      "required_props": ["page", "route", "source", "category", "compare_id", "cta"],
+      "optional_props": ["from_compare_id"],
+      "status": "compatibility_only"
     },
     "rationale_view": {
       "required_props": ["page", "route", "source", "category", "product_id", "result_cta"]

@@ -4,16 +4,19 @@ import { useEffect, useMemo, useState } from "react";
 import MobilePageAnalytics from "@/components/mobile/MobilePageAnalytics";
 import MobileTrackedLink from "@/components/mobile/MobileTrackedLink";
 import {
-  appendSourceToPath,
   readDecisionResumeItem,
   type DecisionResumeItem,
 } from "@/domain/mobile/progress/decisionResume";
+import {
+  buildDecisionCompareEntryHref,
+  buildDecisionHomePrimaryHref,
+  resolveDecisionHomePrimaryFlow,
+} from "@/features/mobile-decision/decisionFlowTruth";
 import { fetchMobileUserProducts, type MobileSelectionCategory } from "@/lib/api";
 import { trackMobileEvent } from "@/lib/mobileAnalytics";
 
 const TRUST_POINTS = ["约 30-45 秒", "直接给结果和理由", "少靠猜，少踩坑"] as const;
-const HOME_PRIMARY_TARGET = "/m/choose?source=home_primary_cta";
-const HOME_WEAK_TARGET = "/m/wiki?source=home_weak_entry";
+const HOME_PRIMARY_TARGET = buildDecisionHomePrimaryHref();
 
 type HomeWorkspaceAction = {
   label: string;
@@ -34,46 +37,42 @@ function getResumeActionLabel(item: DecisionResumeItem): string {
   return item.kind === "draft" ? "继续上次进度" : "回看上次结果";
 }
 
-function resolveCompareHref(category: MobileSelectionCategory | null): string {
-  if (!category) return "/m/compare";
-  return `/m/compare?category=${encodeURIComponent(category)}`;
-}
-
 export default function MobileDecisionHomePage() {
   const [resumeItem, setResumeItem] = useState<DecisionResumeItem | null>(null);
   const [inUseCategory, setInUseCategory] = useState<MobileSelectionCategory | null>(null);
   const [revealed, setRevealed] = useState(false);
   const analyticsSource = "m_home";
-  const resumeTargetPath = useMemo(
-    () => (resumeItem ? appendSourceToPath(resumeItem.targetPath, "home_resume") : null),
-    [resumeItem],
-  );
   const compareInUsePath = useMemo(
-    () => resolveCompareHref(inUseCategory),
+    () => buildDecisionCompareEntryHref(inUseCategory),
     [inUseCategory],
   );
-  const isReturningUser = Boolean(resumeItem || inUseCategory);
+  const workspacePrimaryFlow = useMemo(
+    () => resolveDecisionHomePrimaryFlow({ resumeItem, inUseCategory }),
+    [inUseCategory, resumeItem],
+  );
+  const isReturningUser = Boolean(workspacePrimaryFlow || inUseCategory);
   const workspacePrimaryAction = useMemo<HomeWorkspaceAction | null>(() => {
-    if (resumeItem && resumeTargetPath) {
+    if (!workspacePrimaryFlow) return null;
+    if (workspacePrimaryFlow.kind === "resume_profile" || workspacePrimaryFlow.kind === "reopen_result") {
       return {
-        label: getResumeActionLabel(resumeItem),
-        description: getResumeTitle(resumeItem),
-        href: resumeTargetPath,
+        label: getResumeActionLabel(workspacePrimaryFlow.resumeItem),
+        description: getResumeTitle(workspacePrimaryFlow.resumeItem),
+        href: workspacePrimaryFlow.href,
         eventName: "home_resume_click",
-        action: resumeItem.kind === "draft" ? "resume" : "review_result",
+        action: workspacePrimaryFlow.kind === "resume_profile" ? "resume" : "review_result",
       };
     }
-    if (inUseCategory) {
+    if (workspacePrimaryFlow.kind === "in_use_compare") {
       return {
         label: "和当前在用做对比",
         description: "已检测到在用品记录，直接带入对比并判断是否值得继续用。",
-        href: compareInUsePath,
+        href: workspacePrimaryFlow.href,
         eventName: "home_workspace_quick_action_click",
         action: "in_use_compare",
       };
     }
     return null;
-  }, [compareInUsePath, inUseCategory, resumeItem, resumeTargetPath]);
+  }, [workspacePrimaryFlow]);
   const workspaceQuickActions = useMemo(
     () => [
       { label: "测新的", href: "/m/choose", action: "new_test" as const },
@@ -268,20 +267,6 @@ export default function MobileDecisionHomePage() {
                 </p>
               </div>
 
-              <MobileTrackedLink
-                href={HOME_WEAK_TARGET}
-                eventName="home_weak_entry_click"
-                eventProps={{
-                  page: "mobile_home",
-                  route: "/m",
-                  source: analyticsSource,
-                  target_path: HOME_WEAK_TARGET,
-                }}
-                className="m-pressable inline-flex items-center justify-between rounded-[24px] border border-black/8 bg-white/60 px-5 py-4 text-[15px] font-medium text-black/72 shadow-[0_18px_36px_rgba(15,29,53,0.06)] backdrop-blur-2xl dark:border-white/10 dark:bg-white/6 dark:text-white/72 dark:shadow-[0_20px_42px_rgba(0,0,0,0.22)]"
-              >
-                <span>先查产品或成分</span>
-                <span className="text-[16px] text-black/36 dark:text-white/38">→</span>
-              </MobileTrackedLink>
             </>
           ) : (
             <div className="rounded-[28px] border border-black/8 bg-white/64 p-5 shadow-[0_18px_36px_rgba(15,29,53,0.06)] backdrop-blur-2xl dark:border-white/10 dark:bg-[rgba(18,27,40,0.62)] dark:shadow-[0_20px_42px_rgba(0,0,0,0.24)]">
