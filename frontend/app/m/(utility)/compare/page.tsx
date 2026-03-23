@@ -246,6 +246,7 @@ function MobileComparePageContent() {
   const [pendingLibrarySelection, setPendingLibrarySelection] = useState<string[] | null>(null);
   const [uploadSectionExpanded, setUploadSectionExpanded] = useState(false);
   const [needsUploadReattach, setNeedsUploadReattach] = useState(false);
+  const [resultCompareEntryStage, setResultCompareEntryStage] = useState<"intro" | "selection">("selection");
   const [chromeVisible, setChromeVisible] = useState(true);
   const [chromeYielded, setChromeYielded] = useState(false);
   const [feedbackPrompt, setFeedbackPrompt] = useState<CompareFeedbackPrompt | null>(null);
@@ -255,6 +256,7 @@ function MobileComparePageContent() {
   const lastLandingSignatureRef = useRef<string>("");
   const closureEntryBootstrappedRef = useRef(false);
   const closureEntryTrackedRef = useRef(false);
+  const resultCompareRecommendationSeededRef = useRef(false);
 
   const recommendationReady = Boolean(bootstrap?.recommendation?.exists);
   const hasHistoryProfile = Boolean(bootstrap?.profile?.has_history_profile);
@@ -282,6 +284,11 @@ function MobileComparePageContent() {
     [priorityLibraryItems, standardLibraryItems],
   );
   const selectedSet = useMemo(() => new Set(selectedProductIds), [selectedProductIds]);
+  const recommendationLibraryItem = useMemo(
+    () => orderedLibraryItems.find((item) => item.isRecommendation) || null,
+    [orderedLibraryItems],
+  );
+  const hasRecommendationSelected = recommendationLibraryItem ? selectedSet.has(recommendationLibraryItem.productId) : false;
   const productTitleById = useMemo(() => {
     const out = new Map<string, string>();
     for (const item of orderedLibraryItems) {
@@ -410,6 +417,7 @@ function MobileComparePageContent() {
 
     setShowGuide(false);
     setStep(3);
+    setResultCompareEntryStage("selection");
     setPendingLibrarySelection(libraryPickedIds);
     setSelectionNotice(
       libraryPickedIds.length > 0
@@ -425,29 +433,60 @@ function MobileComparePageContent() {
   }, [fromLibrary, libraryPickedIds, pathname, router, searchParams]);
 
   useEffect(() => {
-    if (!isResultCompareEntry) return;
+    if (!isResultCompareEntry) {
+      closureEntryBootstrappedRef.current = false;
+      resultCompareRecommendationSeededRef.current = false;
+      setResultCompareEntryStage("selection");
+      return;
+    }
     if (closureEntryBootstrappedRef.current) return;
     if (restoringSession) return;
     if (activeCompareId || activeSession || pendingDraft) {
       closureEntryBootstrappedRef.current = true;
+      setResultCompareEntryStage("selection");
       return;
     }
     closureEntryBootstrappedRef.current = true;
+    resultCompareRecommendationSeededRef.current = false;
     setShowGuide(false);
     setStep((prev) => (prev < 3 ? 3 : prev));
-    setUploadSectionExpanded(true);
-    if (!hasUploadSignal && selectedProductIds.length === 0) {
-      setSelectionNotice("先上传现在在用的产品，再进入这次换不换裁决。");
-    }
+    setUploadSectionExpanded(false);
+    setResultCompareEntryStage("intro");
+    setSelectionNotice("“与你更匹配”已默认勾选；上传当前在用品可跳过。");
   }, [
     activeCompareId,
     activeSession,
-    hasUploadSignal,
     isResultCompareEntry,
     pendingDraft,
     restoringSession,
-    selectedProductIds.length,
   ]);
+
+  useEffect(() => {
+    if (!isResultCompareEntry || step !== 3 || resultCompareEntryStage !== "intro") return;
+    if (bootstrapLoading) return;
+    if (resultCompareRecommendationSeededRef.current) return;
+
+    const recommendationProductId =
+      recommendationLibraryItem?.productId ||
+      asTrimmedString(bootstrap?.product_library?.recommendation_product_id);
+
+    if (!recommendationProductId || !availableProductIdSet.has(recommendationProductId)) {
+      setResultCompareEntryStage("selection");
+      return;
+    }
+
+    resultCompareRecommendationSeededRef.current = true;
+    setSelectedProductIds((prev) => (prev.length === 0 ? [recommendationProductId] : prev));
+  }, [
+    availableProductIdSet,
+    bootstrap?.product_library?.recommendation_product_id,
+    bootstrapLoading,
+    isResultCompareEntry,
+    recommendationLibraryItem?.productId,
+    resultCompareEntryStage,
+    step,
+  ]);
+
   useEffect(() => {
     if (!isResultCompareEntry) return;
     if (closureEntryTrackedRef.current) return;
@@ -510,13 +549,27 @@ function MobileComparePageContent() {
   }, [category, selectedProductIds, utilityRouteState]);
 
   const selectionHeroTitle =
-    recommendationReady && priorityLibraryItems.length > 0 ? "先从更贴近你的几款开始" : "先从下面挑 2 款开始";
+    isResultCompareEntry && (hasRecommendationSelected || hasUploadSignal)
+      ? totalSelectedCount >= 2
+        ? "起点已经带上，可继续或再补 1 款候选"
+        : "再补 1 款候选，就能进入这次裁决"
+      : recommendationReady && priorityLibraryItems.length > 0
+        ? "先从更贴近你的几款开始"
+        : "先从下面挑 2 款开始";
 
-  const selectionHeroNote = hasUploadSignal
-    ? "你正在用的产品会一起参与判断，底部会持续显示已选状态。"
-    : recommendationReady && priorityLibraryItems.length > 0
-      ? "更贴近你已有结论的产品已经排在前面；想判断现在这瓶该不该继续用，再把它加进来。"
-      : "先选 2 款做第一轮判断；想判断现在这瓶该不该继续用，再把它加进来。";
+  const selectionHeroNote = isResultCompareEntry
+    ? hasUploadSignal
+      ? hasRecommendationSelected
+        ? "“与你更匹配”和你现在在用的产品都会一起参与判断，底部会持续显示已选状态。"
+        : "你现在在用的产品已经带上了，再补 1 款候选就能进入裁决。"
+      : hasRecommendationSelected
+        ? "“与你更匹配”已经先带上了；如果想判断现在这瓶该不该继续用，也可以再把它加进来。"
+        : "你可以先从产品库补 2 款候选；上传现在在用的产品仍然是可选增强。"
+    : hasUploadSignal
+      ? "你正在用的产品会一起参与判断，底部会持续显示已选状态。"
+      : recommendationReady && priorityLibraryItems.length > 0
+        ? "更贴近你已有结论的产品已经排在前面；想判断现在这瓶该不该继续用，再把它加进来。"
+        : "先选 2 款做第一轮判断；想判断现在这瓶该不该继续用，再把它加进来。";
 
   const uploadSectionSummary = hasUpload
     ? "已加入你正在用的产品。"
@@ -530,11 +583,7 @@ function MobileComparePageContent() {
       : selectionShortfall === 1
         ? "再选 1 款即可继续"
         : "先选 2 款对比产品";
-  const isResultCompareUploadGate =
-    isResultCompareEntry &&
-    step === 3 &&
-    !hasUploadSignal &&
-    selectedProductIds.length === 0;
+  const isResultCompareIntro = isResultCompareEntry && step === 3 && resultCompareEntryStage === "intro";
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -721,6 +770,11 @@ function MobileComparePageContent() {
   }, [queryCategory]);
 
   useEffect(() => {
+    if (!isResultCompareEntry) return;
+    resultCompareRecommendationSeededRef.current = false;
+  }, [category, isResultCompareEntry]);
+
+  useEffect(() => {
     if (typeof window === "undefined") {
       setRestoringSession(false);
       return;
@@ -824,6 +878,7 @@ function MobileComparePageContent() {
       setNeedsUploadReattach(true);
       setUploadSectionExpanded(true);
     }
+    setResultCompareEntryStage("selection");
     setPendingDraft(null);
   }, [bootstrapLoading, category, pendingDraft]);
 
@@ -838,6 +893,7 @@ function MobileComparePageContent() {
     setSelectedProductIds(normalized);
     setStep(3);
     setShowGuide(false);
+    setResultCompareEntryStage("selection");
 
     if (pendingLibrarySelection.length > 0 && normalized.length === 0) {
       setSelectionNotice("带回的产品当前不可用，请重新选择。");
@@ -1086,18 +1142,21 @@ function MobileComparePageContent() {
     setPairProgress(null);
     setSelectionNotice(null);
     setLastProgressUpdateAt(null);
-    setStep(1);
-    setShowGuide(true);
+    setStep(isResultCompareEntry ? 3 : 1);
+    setShowGuide(!isResultCompareEntry);
     setSelectedProductIds([]);
     setFile(null);
     setBrand("");
     setName("");
     setUploadSectionExpanded(false);
     setNeedsUploadReattach(false);
+    setResultCompareEntryStage(isResultCompareEntry ? "intro" : "selection");
+    closureEntryBootstrappedRef.current = false;
+    resultCompareRecommendationSeededRef.current = false;
     clearActiveCompare();
     clearCompareDraft();
     void safeTrack("compare_reset_to_intro", { category });
-  }, [category, clearActiveCompare, clearCompareDraft]);
+  }, [category, clearActiveCompare, clearCompareDraft, isResultCompareEntry]);
 
   const pulseSelectionHaptic = useCallback(() => {
     if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
@@ -1500,6 +1559,19 @@ function MobileComparePageContent() {
     setStep((prev) => (prev >= TOTAL_STEPS ? (TOTAL_STEPS as CompareStep) : ((prev + 1) as CompareStep)));
   }
 
+  function enterResultCompareSelectionStage() {
+    setResultCompareEntryStage("selection");
+    setSelectionNotice(
+      hasUploadSignal
+        ? hasRecommendationSelected
+          ? "已带上与你更匹配和在用品，可继续或再补 1 款候选。"
+          : "已带上在用品，再从产品库补 1~2 款候选。"
+        : hasRecommendationSelected
+          ? "已跳过上传；“与你更匹配”会先一起参与判断，再补 1 款候选即可。"
+          : "已跳过上传；先从产品库选 2 款候选。"
+    );
+  }
+
   async function handlePrimaryAction() {
     if (step === 1) {
       goNextStep();
@@ -1715,52 +1787,73 @@ function MobileComparePageContent() {
       />
     );
 
-    if (isResultCompareUploadGate) {
+    if (isResultCompareIntro) {
       stepBody = (
         <div>
-          <h2 className="text-[26px] leading-[1.18] font-semibold tracking-[-0.02em] text-black/90">先上传你现在在用的产品</h2>
-          <p className="mt-2 text-[14px] leading-[1.6] text-black/62">只做这一步，就能进入“值不值得换”的裁决对比。</p>
+          <h2 className="text-[26px] leading-[1.18] font-semibold tracking-[-0.02em] text-black/90">先把这次对比的起点定好</h2>
+          <p className="mt-2 text-[14px] leading-[1.6] text-black/62">
+            “与你更匹配”已经先帮你勾上；上传你现在在用的产品是可选的，也可以先跳过。
+          </p>
           {selectionNotice ? (
             <div className="mt-2 rounded-xl border border-[#ffd596]/70 bg-[#fff6e6] px-3 py-2 text-[12px] text-[#8b5a12] dark:border-[#c99345]/58 dark:bg-[#4f391b]/60 dark:text-[#ffdca3]">
               {selectionNotice}
             </div>
           ) : null}
           {uploadInputControl}
-          <div className="mt-5 rounded-[24px] border border-[#cfe2ff] bg-[linear-gradient(180deg,#f7faff_0%,#eef5ff_100%)] px-4 py-4 shadow-[0_10px_24px_rgba(36,80,163,0.08)]">
-            <div className="text-[11px] font-semibold tracking-[0.04em] text-[#3b67b6]">结果闭环承接</div>
-            <div className="mt-2 text-[17px] font-semibold leading-[1.45] text-[#1c3f87]">先补你现在在用的这一瓶</div>
-            <p className="mt-2 text-[13px] leading-[1.6] text-[#335caa]">
-              上传后再选 1~2 款候选，就会给出“继续用 / 换掉 / 先保留”的明确结论。
-            </p>
-            <div className="mt-4 flex gap-3 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-              <UploadProductCard
-                selected={hasUpload}
-                disabled={running}
-                needsReattach={needsUploadReattach}
-                fileName={file?.name || ""}
-                fileSize={file?.size || 0}
-                previewUrl={uploadPreviewUrl}
-                onPick={openUploadPicker}
-              />
-            </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={openUploadPicker}
-                disabled={running}
-                className="inline-flex h-10 items-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-5 text-[14px] font-semibold text-white shadow-[0_10px_24px_rgba(0,113,227,0.26)] disabled:opacity-45"
-              >
-                上传现在在用的产品
-              </button>
+          <div className="mt-5 space-y-4">
+            {recommendationLibraryItem ? (
+              <CompareProductRail title="这款先帮你带上" note="默认已勾选；如果你不想把它带进裁决，也可以取消。">
+                <ProductLibraryCard
+                  item={recommendationLibraryItem}
+                  selected={hasRecommendationSelected}
+                  disabled={running}
+                  blocked={false}
+                  onPress={() => {
+                    toggleSelected(recommendationLibraryItem.productId);
+                    void safeTrack("compare_library_pick", {
+                      category,
+                      product_id: recommendationLibraryItem.productId,
+                      is_recommendation: true,
+                      is_most_used: recommendationLibraryItem.isMostUsed,
+                      selected: !hasRecommendationSelected,
+                    });
+                  }}
+                />
+              </CompareProductRail>
+            ) : (
+              <div className="rounded-[22px] border border-[#cfe2ff] bg-[linear-gradient(180deg,#f7faff_0%,#eef5ff_100%)] px-4 py-4 text-[13px] leading-[1.65] text-[#335caa] shadow-[0_10px_24px_rgba(36,80,163,0.08)]">
+                当前还没拿到“与你更匹配”的候选，你也可以先跳过这一步，直接去产品库选候选。
+              </div>
+            )}
+
+            <div className="rounded-[24px] border border-[#cfe2ff] bg-[linear-gradient(180deg,#f7faff_0%,#eef5ff_100%)] px-4 py-4 shadow-[0_10px_24px_rgba(36,80,163,0.08)]">
+              <div className="text-[11px] font-semibold tracking-[0.04em] text-[#3b67b6]">可选增强</div>
+              <div className="mt-2 text-[17px] font-semibold leading-[1.45] text-[#1c3f87]">把你现在在用的产品也带进来</div>
+              <p className="mt-2 text-[13px] leading-[1.6] text-[#335caa]">
+                上传可跳过；如果带上它，后面会直接判断“继续用 / 换掉 / 先保留”。
+              </p>
+              <div className="mt-4">{uploadDisclosure}</div>
             </div>
           </div>
         </div>
       );
     } else {
+      const selectionStepTitle =
+        isResultCompareEntry && (hasRecommendationSelected || hasUploadSignal)
+          ? totalSelectedCount >= 2
+            ? "已带上起点，可继续或再补 1 款候选"
+            : "再补 1 款对比产品"
+          : "先选 2 款对比产品";
+      const selectionStepNote =
+        isResultCompareEntry && (hasRecommendationSelected || hasUploadSignal)
+          ? hasUploadSignal
+            ? "你现在在用的产品也会一起参与判断；还想多看一款，也可以继续补。"
+            : "“与你更匹配”会先参与判断；再补 1 款候选，就能进入这次裁决。"
+          : "想判断“现在这瓶还值不值得继续用”，再把你正在用的产品加进来。";
       stepBody = (
         <div>
-          <h2 className="text-[26px] leading-[1.18] font-semibold tracking-[-0.02em] text-black/90">先选 2 款对比产品</h2>
-          <p className="mt-2 text-[14px] leading-[1.6] text-black/62">想判断“现在这瓶还值不值得继续用”，再把你正在用的产品加进来。</p>
+          <h2 className="text-[26px] leading-[1.18] font-semibold tracking-[-0.02em] text-black/90">{selectionStepTitle}</h2>
+          <p className="mt-2 text-[14px] leading-[1.6] text-black/62">{selectionStepNote}</p>
 
           <div className="m-compare-selection-hero mt-5">
             <div className="flex items-start justify-between gap-3">
@@ -1952,7 +2045,7 @@ function MobileComparePageContent() {
   const headerActions = (
     <div className="flex items-center gap-2">
       {returnActionButton}
-      {isResultCompareUploadGate ? null : historyButton}
+      {historyButton}
     </div>
   );
 
@@ -2183,15 +2276,22 @@ function MobileComparePageContent() {
       <div className="mt-4 rounded-[26px] border border-black/10 bg-white p-4">{stepBody}</div>
 
       {step === 3 ? (
-        isResultCompareUploadGate ? (
-          <div className="mt-4">
+        isResultCompareIntro ? (
+          <div className="mt-4 flex items-center gap-2">
             <button
               type="button"
-              onClick={openUploadPicker}
-              disabled={running}
-              className="inline-flex h-11 w-full items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-5 text-[15px] font-semibold text-white shadow-[0_10px_24px_rgba(0,113,227,0.28)] disabled:opacity-45"
+              onClick={goPrevStep}
+              className="inline-flex h-11 items-center justify-center rounded-full border border-black/12 bg-white px-4 text-[14px] font-medium text-black/72 active:bg-black/[0.03]"
             >
-              上传现在在用的产品
+              上一步
+            </button>
+            <button
+              type="button"
+              onClick={enterResultCompareSelectionStage}
+              disabled={running}
+              className="inline-flex h-11 flex-1 items-center justify-center rounded-full bg-[linear-gradient(180deg,#2997ff_0%,#0071e3_100%)] px-5 text-[15px] font-semibold text-white shadow-[0_10px_24px_rgba(0,113,227,0.28)] disabled:opacity-45"
+            >
+              {hasUploadSignal ? "继续去选候选" : "跳过上传，去选候选"}
             </button>
           </div>
         ) : (
