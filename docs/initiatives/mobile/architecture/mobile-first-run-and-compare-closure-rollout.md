@@ -1,3 +1,28 @@
+---
+doc_id: mobile-first-run-and-compare-closure-rollout
+title: Mobile First-Run And Compare Closure Rollout
+doc_type: rollout
+initiative: mobile
+workstream: architecture
+owner: architecture-owner
+status: in_execution
+priority: p0
+created_at: 2026-03-19
+updated_at: 2026-03-24
+phase: phase-13
+started_at: 2026-03-19
+frozen_at: 2026-03-20
+supersedes: mobile-result-decision-closure-rollout
+related_docs:
+  - mobile-first-run-funnel-execution-spec-v1
+  - mobile-result-decision-closure-spec-v1
+  - mobile-compare-result-page-spec-v1
+related_assignments:
+  - phase-13-worker-a
+  - phase-13-worker-b
+  - phase-13-worker-c
+---
+
 # Mobile First-Run And Compare Closure Rollout
 
 ## 1. 文档定位

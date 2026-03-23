@@ -1,3 +1,27 @@
+---
+doc_id: mobile-first-run-funnel-execution-spec-v1
+title: Mobile First-Run Funnel Execution Spec v1
+doc_type: spec
+initiative: mobile
+workstream: product
+owner: product-owner
+status: in_execution
+priority: p0
+created_at: 2026-03-19
+updated_at: 2026-03-24
+phase: phase-13
+started_at: 2026-03-19
+frozen_at: 2026-03-19
+related_docs:
+  - mobile-decision-prd-v1
+  - mobile-result-decision-closure-spec-v1
+  - mobile-compare-result-page-spec-v1
+  - mobile-first-run-and-compare-closure-rollout
+related_assignments:
+  - phase-13-worker-a
+  - phase-13-worker-b
+  - phase-13-worker-c
+---
 # Mobile First-Run Funnel Execution Spec v1
 
 ## 1. 文档信息
