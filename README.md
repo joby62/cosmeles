@@ -1,20 +1,52 @@
 # 予选（MatchUp）
 
-浴室里的最终答案。  
-省下挑花眼的时间，只留最合适的一件。
+更快选到适合自己的护理方案。
 
-## 项目定位
-- 产品类型：洗护用品决策工具（不是展示型官网）
-- 决策原则：`One Answer Policy`（每个品类只给一个最终推荐）
-- 交互原则：路径清晰、一屏一事、强引导、弱干扰
-- 端侧策略：`Desktop 冻结`，`Mobile (/m) 持续迭代`
+## 当前产品判断
+- 产品定义：个护决策工具，不是百科站、对比站，也不是展示型官网。
+- 核心承诺：回答少量问题，直接得到更适合自己的护理方向和产品结果。
+- 主链路：`/m` -> `/m/choose` -> `/m/[category]/profile` -> `/m/[category]/result`
+- 北极星：首访用户从进入主链路到到达结果页的完成率。
+- 辅链定位：`/m/wiki`、`/m/compare`、`/m/me` 保留，但不抢首访入口，不承担首屏主叙事。
+- Desktop 定位：内部工作台与分析台，不承担用户首叙事。
+- 内容供给：全场景结果内容继续保留在供给层，但前台必须表现得像一个窄、快、稳的决策工具。
+
+## 文档导航
+- 产品 PRD：[docs/initiatives/mobile/product/mobile-decision-prd-v1.md](docs/initiatives/mobile/product/mobile-decision-prd-v1.md)
+- 结果页与回流 PRD：[docs/initiatives/mobile/product/mobile-result-intent-routing-prd-v1.md](docs/initiatives/mobile/product/mobile-result-intent-routing-prd-v1.md)
+- 首访 funnel spec：[docs/initiatives/mobile/product/mobile-first-run-funnel-execution-spec-v1.md](docs/initiatives/mobile/product/mobile-first-run-funnel-execution-spec-v1.md)
+- compare / closure spec：[docs/initiatives/mobile/product/mobile-result-decision-closure-spec-v1.md](docs/initiatives/mobile/product/mobile-result-decision-closure-spec-v1.md)
+- compare result spec：[docs/initiatives/mobile/product/mobile-compare-result-page-spec-v1.md](docs/initiatives/mobile/product/mobile-compare-result-page-spec-v1.md)
+- 当前架构基线：[docs/initiatives/mobile/architecture/mobile-architecture-v2.md](docs/initiatives/mobile/architecture/mobile-architecture-v2.md)
+- 当前架构 playbook：[docs/initiatives/mobile/architecture/mobile-refactor-playbook.md](docs/initiatives/mobile/architecture/mobile-refactor-playbook.md)
+- 运行时升级方案：[docs/initiatives/mobile/architecture/mobile-runtime-infrastructure-upgrade-plan-v1.md](docs/initiatives/mobile/architecture/mobile-runtime-infrastructure-upgrade-plan-v1.md)
+- 前端说明：[frontend/README.md](frontend/README.md)
+- 后端说明：[backend/README.md](backend/README.md)
+- 文档索引：[docs/README.md](docs/README.md)
+- workflow 索引：[docs/workflow/README.md](docs/workflow/README.md)
+- initiatives 索引：[docs/initiatives/README.md](docs/initiatives/README.md)
+- 当前文档面板：
+  - [docs/initiatives/NOW.md](docs/initiatives/NOW.md)
+  - [docs/initiatives/DOC_INDEX.md](docs/initiatives/DOC_INDEX.md)
+  - [docs/initiatives/TIMELINE.md](docs/initiatives/TIMELINE.md)
+- 运维手册：[docs/workflow/operations/operations-runbook.md](docs/workflow/operations/operations-runbook.md)
 
 ## 目录结构
 ```text
-backend/                  FastAPI + SQLite + 文件存储
-frontend/                 Next.js App Router（desktop + mobile 双栈）
-deploy/nginx/             历史 nginx 反向代理配置
-docs/OPERATIONS_RUNBOOK.md  运维手册（Caddy / Docker / 502 排障）
+backend/                                          FastAPI + SQLite + 文件存储
+frontend/                                         Next.js App Router（mobile 用户前台 + desktop 内部台）
+deploy/nginx/                                     历史 nginx 反向代理配置
+docs/README.md                                    docs 总索引与归档规则
+docs/workflow/README.md                           workflow 规则、团队 prompt 与启动入口
+docs/initiatives/README.md                        initiatives 输出文档与归档入口
+docs/initiatives/mobile/product/                  mobile 产品 PRD
+docs/initiatives/mobile/architecture/             mobile 架构与收口文档
+docs/initiatives/mobile/reviews/                  mobile initiative review 输出
+docs/initiatives/mobile/records/                  mobile initiative milestone 记录
+docs/initiatives/mobile/archive/                  mobile initiative 历史快照
+docs/workflow/teams/engineering/mobile-architecture/       微软架构师与 workers 的 handoff / assignments
+docs/workflow/startup-prompts/                    owner / worker 新对话框启动 prompt
+docs/workflow/operations/                                  运维与工具说明
 ```
 
 ## 开发与部署模式
@@ -71,22 +103,39 @@ npm run dev
 ```
 
 ## Mobile IA（当前主线）
-- `/m`：默认重定向到 `/m/choose`
-- `/m/wiki`：成份百科（按类目查看成分作用）
-- `/m/choose`：开始选择（品类入口）
-- `/m/shampoo/start`
-- `/m/shampoo/profile`
-- `/m/shampoo/resolve`
-- `/m/shampoo/result`
-- `/m/bodywash/*`、`/m/conditioner/*`、`/m/lotion/*`、`/m/cleanser/*`
-- `/m/me`：我的（记录已完成挑选与结果卡）
 
-说明：桌面端页面保留，不再作为主要迭代对象。
+### P0：决策主链路
+- `/m`：决策首页，只讲一件事，只推一个主 CTA
+- `/m/choose`：品类选择与进度恢复
+- `/m/shampoo/profile`、`/m/bodywash/profile`、`/m/conditioner/profile`、`/m/lotion/profile`、`/m/cleanser/profile`
+- `/m/shampoo/result`、`/m/bodywash/result`、`/m/conditioner/result`、`/m/lotion/result`、`/m/cleanser/result`
 
-## 文档导航
-- 总运维手册：[docs/OPERATIONS_RUNBOOK.md](docs/OPERATIONS_RUNBOOK.md)
-- 前端说明：[frontend/README.md](frontend/README.md)
-- 后端说明：[backend/README.md](backend/README.md)
+### P1：实用辅链
+- `/m/wiki`：产品/成分查询与补充阅读
+- `/m/compare`：横向对比
+- `/m/bag`：购物袋
+- `/m/me`：历史、在用与返回入口
+
+说明：
+- 首访叙事只围绕 P0。
+- P1 保留，但以下沉入口、底部导航和结果页回环为主，不抢首屏解释权。
+
+## 当前度量优先级
+- P0：`/m` 主 CTA 点击率
+- P0：`/m/choose` 到答题开始率
+- P0：问答完成率
+- P0：结果页到达率
+- P0：结果页 CTA 点击率
+- P1：wiki / compare / me 的承接与回流
+
+## 文档治理规则
+- `docs/workflow/` 只放规则、handoff、startup、assignment、ops。
+- `docs/initiatives/` 只放 PRD、spec、architecture、rollout、review、record、archive。
+- 当前 initiative 真相以显式 `status` 为准，不靠文件时间猜优先级。
+- 查当前状态，先看：
+  - `docs/initiatives/NOW.md`
+  - `docs/initiatives/DOC_INDEX.md`
+  - `docs/initiatives/TIMELINE.md`
 
 ## 上传解析（当前）
 - `/upload` 走后端 `/api/upload`
@@ -95,21 +144,15 @@ npm run dev
 - 若要前端分步展示，可走：`/api/upload/stage1` -> `/api/upload/stage2`
 - 可定期调用清理接口：`POST /api/maintenance/cleanup-doubao?days=14`
 
-## 服务器重启后快速恢复（必看）
+## 服务器重启后快速恢复
 以下命令在服务器执行（`~/cosmeles`）：
 
 ### A. 生产恢复（推荐）
 ```bash
 cd ~/cosmeles
 git pull origin main
-
-# 启动前后端 prod
 docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
-
-# 重启 caddy（若你用 docker 跑 caddy）
 docker restart caddy
-
-# 验证
 curl -I http://127.0.0.1:5001
 curl -I http://127.0.0.1:8000/healthz
 curl -I https://yuexuan.xyz
@@ -119,16 +162,13 @@ curl -I https://yuexuan.xyz
 ```bash
 cd ~/cosmeles
 git pull origin main
-
 docker compose -f docker-compose.dev.yml down --remove-orphans
 docker compose -f docker-compose.dev.yml up -d --build --remove-orphans
-
-# 验证
 curl -I http://127.0.0.1:5001
 curl -I http://127.0.0.1:8000/healthz
 ```
 
 ### C. 常见故障一句话判断
 - `5001 能开，8000 不通`：后端没起来。
-- 域名 502/503：优先检查 caddy upstream 与前端容器状态。
+- 域名 502/503：优先检查 Caddy upstream 与前端容器状态。
 - `port is already allocated`：端口被旧容器占用，先 `down --remove-orphans`。

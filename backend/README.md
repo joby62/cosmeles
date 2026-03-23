@@ -18,6 +18,25 @@
 - SQLAlchemy + SQLite
 - 文件存储（`storage/`）
 
+## 文档入口
+- 当前架构真相：
+  - `/Users/lijiabo/Documents/New project/docs/initiatives/mobile/architecture/mobile-architecture-v2.md`
+  - `/Users/lijiabo/Documents/New project/docs/initiatives/mobile/architecture/mobile-refactor-playbook.md`
+  - `/Users/lijiabo/Documents/New project/docs/initiatives/mobile/architecture/mobile-runtime-infrastructure-upgrade-plan-v1.md`
+- 当前产品与执行真相：
+  - `/Users/lijiabo/Documents/New project/docs/initiatives/mobile/product/mobile-decision-prd-v1.md`
+  - `/Users/lijiabo/Documents/New project/docs/initiatives/mobile/product/mobile-result-intent-routing-prd-v1.md`
+  - `/Users/lijiabo/Documents/New project/docs/initiatives/mobile/product/mobile-result-decision-closure-spec-v1.md`
+  - `/Users/lijiabo/Documents/New project/docs/initiatives/mobile/product/mobile-first-run-funnel-execution-spec-v1.md`
+- 当前 initiative 面板：
+  - `/Users/lijiabo/Documents/New project/docs/initiatives/NOW.md`
+  - `/Users/lijiabo/Documents/New project/docs/initiatives/DOC_INDEX.md`
+  - `/Users/lijiabo/Documents/New project/docs/initiatives/TIMELINE.md`
+
+说明：
+- 这个 README 解释当前后端实现和运行方式。
+- 如果 README 和 governed initiative doc 冲突，以 initiative doc 为准。
+
 ## 运行方式
 ### 本地开发
 ```bash
