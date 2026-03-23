@@ -31,6 +31,7 @@ This folder contains the mobile initiative's active docs plus dated archive snap
 - current closure execution freeze: `architecture/mobile-first-run-and-compare-closure-rollout.md`
 - current architecture baseline: `architecture/mobile-architecture-v2.md`
 - current architecture playbook: `architecture/mobile-refactor-playbook.md`
+- current runtime upgrade roadmap: `architecture/mobile-runtime-infrastructure-upgrade-plan-v1.md`
 - initiative currentness surfaces:
   - `/Users/lijiabo/Documents/New project/docs/initiatives/NOW.md`
   - `/Users/lijiabo/Documents/New project/docs/initiatives/DOC_INDEX.md`
