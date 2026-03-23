@@ -109,10 +109,10 @@ frontend/legacy/mobile/
 - Current architecture and migration rules live in:
   - this file
   - [`./mobile-refactor-playbook.md`](./mobile-refactor-playbook.md)
-  - [`./mobile-branch-convergence-checklist.md`](./mobile-branch-convergence-checklist.md)
+  - [`./mobile-first-run-and-compare-closure-rollout.md`](./mobile-first-run-and-compare-closure-rollout.md)
   - [`./mobile-runtime-infrastructure-upgrade-plan-v1.md`](./mobile-runtime-infrastructure-upgrade-plan-v1.md)
 - Team-owned prompts and assignments live under:
-  - [`../../../teams/engineering/mobile-architecture/`](../../../teams/engineering/mobile-architecture/)
+  - [`../../../workflow/teams/engineering/mobile-architecture/`](../../../workflow/teams/engineering/mobile-architecture/)
 - Historical snapshots live under:
   - [`../archive/`](../archive/)
 
