@@ -20,6 +20,8 @@ Do not replace it with "go read that file".
 11. /Users/lijiabo/Documents/New project/docs/initiatives/mobile/README.md
 12. /Users/lijiabo/Documents/New project/docs/initiatives/mobile/product/mobile-decision-prd-v1.md
 13. /Users/lijiabo/Documents/New project/docs/initiatives/mobile/architecture/mobile-refactor-playbook.md
+14. /Users/lijiabo/Documents/New project/docs/initiatives/mobile/architecture/mobile-architecture-v2.md
+15. /Users/lijiabo/Documents/New project/docs/initiatives/mobile/architecture/mobile-runtime-infrastructure-upgrade-plan-v1.md
 
 读完后你的第一条回复不要开始写代码，先只输出：
 1. 你对当前项目局面的判断
