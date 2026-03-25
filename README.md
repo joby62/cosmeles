@@ -2,173 +2,195 @@
 
 更快选到适合自己的护理方案。
 
-## 当前产品判断
-- 产品定义：个护决策工具，不是百科站、对比站，也不是展示型官网。
-- 核心承诺：回答少量问题，直接得到更适合自己的护理方向和产品结果。
-- 主链路：`/m` -> `/m/choose` -> `/m/[category]/profile` -> `/m/[category]/result`
-- 北极星：首访用户从进入主链路到到达结果页的完成率。
-- 辅链定位：`/m/wiki`、`/m/compare`、`/m/me` 保留，但不抢首访入口，不承担首屏主叙事。
-- Desktop 定位：内部工作台与分析台，不承担用户首叙事。
-- 内容供给：全场景结果内容继续保留在供给层，但前台必须表现得像一个窄、快、稳的决策工具。
+## 当前仓库状态
+
+- 产品定位没有变：
+  - 个护决策工具，不是百科站、对比站，也不是展示型官网
+  - 主链路：`/m -> /m/choose -> /m/[category]/profile -> /m/[category]/result`
+- 运行时大阶段已经完成：
+  - `runtime-phase-0` 到 `runtime-phase-6` 已在仓库、`main`、`origin/main` 全部收口
+  - 固定 rollout 顺序已冻结为：`worker -> db -> api -> web`
+- 当前推荐生产基线：
+  - 单台低配机器先跑 `single_node`
+  - 真正需要扩容时，第一步优先拆 `worker`
 
 ## 文档导航
-- 产品 PRD：[docs/initiatives/mobile/product/mobile-decision-prd-v1.md](docs/initiatives/mobile/product/mobile-decision-prd-v1.md)
-- 结果页与回流 PRD：[docs/initiatives/mobile/product/mobile-result-intent-routing-prd-v1.md](docs/initiatives/mobile/product/mobile-result-intent-routing-prd-v1.md)
-- 首访 funnel spec：[docs/initiatives/mobile/product/mobile-first-run-funnel-execution-spec-v1.md](docs/initiatives/mobile/product/mobile-first-run-funnel-execution-spec-v1.md)
-- compare / closure spec：[docs/initiatives/mobile/product/mobile-result-decision-closure-spec-v1.md](docs/initiatives/mobile/product/mobile-result-decision-closure-spec-v1.md)
-- compare result spec：[docs/initiatives/mobile/product/mobile-compare-result-page-spec-v1.md](docs/initiatives/mobile/product/mobile-compare-result-page-spec-v1.md)
-- 当前架构基线：[docs/initiatives/mobile/architecture/mobile-architecture-v2.md](docs/initiatives/mobile/architecture/mobile-architecture-v2.md)
-- 当前架构 playbook：[docs/initiatives/mobile/architecture/mobile-refactor-playbook.md](docs/initiatives/mobile/architecture/mobile-refactor-playbook.md)
-- 运行时升级方案：[docs/initiatives/mobile/architecture/mobile-runtime-infrastructure-upgrade-plan-v1.md](docs/initiatives/mobile/architecture/mobile-runtime-infrastructure-upgrade-plan-v1.md)
-- 前端说明：[frontend/README.md](frontend/README.md)
-- 后端说明：[backend/README.md](backend/README.md)
-- 文档索引：[docs/README.md](docs/README.md)
-- workflow 索引：[docs/workflow/README.md](docs/workflow/README.md)
-- initiatives 索引：[docs/initiatives/README.md](docs/initiatives/README.md)
+
+- 产品 PRD：[docs/initiatives/mobile/product/mobile-decision-prd-v1.md](/Users/lijiabo/Documents/New%20project/docs/initiatives/mobile/product/mobile-decision-prd-v1.md)
+- 结果页与回流 PRD：[docs/initiatives/mobile/product/mobile-result-intent-routing-prd-v1.md](/Users/lijiabo/Documents/New%20project/docs/initiatives/mobile/product/mobile-result-intent-routing-prd-v1.md)
+- 首访 funnel spec：[docs/initiatives/mobile/product/mobile-first-run-funnel-execution-spec-v1.md](/Users/lijiabo/Documents/New%20project/docs/initiatives/mobile/product/mobile-first-run-funnel-execution-spec-v1.md)
+- compare / closure spec：[docs/initiatives/mobile/product/mobile-result-decision-closure-spec-v1.md](/Users/lijiabo/Documents/New%20project/docs/initiatives/mobile/product/mobile-result-decision-closure-spec-v1.md)
+- compare result spec：[docs/initiatives/mobile/product/mobile-compare-result-page-spec-v1.md](/Users/lijiabo/Documents/New%20project/docs/initiatives/mobile/product/mobile-compare-result-page-spec-v1.md)
+- 当前架构基线：[docs/initiatives/mobile/architecture/mobile-architecture-v2.md](/Users/lijiabo/Documents/New%20project/docs/initiatives/mobile/architecture/mobile-architecture-v2.md)
+- 已完成的运行时路线图：[docs/initiatives/mobile/architecture/mobile-runtime-infrastructure-upgrade-plan-v1.md](/Users/lijiabo/Documents/New%20project/docs/initiatives/mobile/architecture/mobile-runtime-infrastructure-upgrade-plan-v1.md)
+- 运行时收官摘要：[docs/initiatives/mobile/records/mobile-runtime-roadmap-closure-summary-v1.md](/Users/lijiabo/Documents/New%20project/docs/initiatives/mobile/records/mobile-runtime-roadmap-closure-summary-v1.md)
+- 完整部署与扩容手册：[docs/workflow/operations/README.md](/Users/lijiabo/Documents/New%20project/docs/workflow/operations/README.md)
+- 日常运维速查：[docs/workflow/operations/operations-runbook.md](/Users/lijiabo/Documents/New%20project/docs/workflow/operations/operations-runbook.md)
+- 前端说明：[frontend/README.md](/Users/lijiabo/Documents/New%20project/frontend/README.md)
+- 后端说明：[backend/README.md](/Users/lijiabo/Documents/New%20project/backend/README.md)
+- 文档索引：[docs/README.md](/Users/lijiabo/Documents/New%20project/docs/README.md)
+- workflow 索引：[docs/workflow/README.md](/Users/lijiabo/Documents/New%20project/docs/workflow/README.md)
+- initiatives 索引：[docs/initiatives/README.md](/Users/lijiabo/Documents/New%20project/docs/initiatives/README.md)
 - 当前文档面板：
-  - [docs/initiatives/NOW.md](docs/initiatives/NOW.md)
-  - [docs/initiatives/DOC_INDEX.md](docs/initiatives/DOC_INDEX.md)
-  - [docs/initiatives/TIMELINE.md](docs/initiatives/TIMELINE.md)
-- 运维手册：[docs/workflow/operations/operations-runbook.md](docs/workflow/operations/operations-runbook.md)
+  - [docs/initiatives/NOW.md](/Users/lijiabo/Documents/New%20project/docs/initiatives/NOW.md)
+  - [docs/initiatives/DOC_INDEX.md](/Users/lijiabo/Documents/New%20project/docs/initiatives/DOC_INDEX.md)
+  - [docs/initiatives/TIMELINE.md](/Users/lijiabo/Documents/New%20project/docs/initiatives/TIMELINE.md)
 
 ## 目录结构
+
 ```text
-backend/                                          FastAPI + SQLite + 文件存储
-frontend/                                         Next.js App Router（mobile 用户前台 + desktop 内部台）
-deploy/nginx/                                     历史 nginx 反向代理配置
-docs/README.md                                    docs 总索引与归档规则
-docs/workflow/README.md                           workflow 规则、团队 prompt 与启动入口
-docs/initiatives/README.md                        initiatives 输出文档与归档入口
-docs/initiatives/mobile/product/                  mobile 产品 PRD
-docs/initiatives/mobile/architecture/             mobile 架构与收口文档
-docs/initiatives/mobile/reviews/                  mobile initiative review 输出
-docs/initiatives/mobile/records/                  mobile initiative milestone 记录
-docs/initiatives/mobile/archive/                  mobile initiative 历史快照
-docs/workflow/teams/engineering/mobile-architecture/       微软架构师与 workers 的 handoff / assignments
-docs/workflow/startup-prompts/                    owner / worker 新对话框启动 prompt
-docs/workflow/operations/                                  运维与工具说明
+backend/                                          FastAPI runtime（api/worker image + runtime profiles）
+frontend/                                         Next.js App Router（mobile 前台 + desktop 内部台）
+deploy/nginx/                                     历史 nginx 配置，仅作旧资料
+docs/workflow/operations/README.md                当前完整部署与扩容手册
+docs/workflow/operations/operations-runbook.md    日常运维速查
+docs/initiatives/mobile/product/                  mobile 产品 PRD / spec
+docs/initiatives/mobile/architecture/             mobile 架构与运行时真相
+docs/initiatives/mobile/reviews/                  mobile acceptance / review
+docs/initiatives/mobile/records/                  mobile milestone / closure 记录
+docs/initiatives/mobile/archive/                  mobile 历史快照
+docs/workflow/teams/engineering/mobile-architecture/  owner + worker handoff / assignment
+docs/workflow/startup-prompts/                    新对话启动 prompt
 ```
 
-## 开发与部署模式
+## 这次大阶段更新后必须重查的配置
 
-### 1) 前端开发模式（热更新）
-使用 `docker-compose.dev.yml`：
-- 容器：`backend-dev` + `frontend-dev`
-- 端口：
-  - `5001 -> frontend-dev:3000`
-  - `8000 -> backend-dev:8000`
-- 说明：前后端都支持热更新（`next dev` + `uvicorn --reload`）
-- Doubao：默认 `DOUBAO_MODE=real`（需配置 `backend/.env.local` 的 `DOUBAO_API_KEY`）
+如果你继续跑现在的项目，至少要重新看这几类配置：
 
-```bash
-docker compose -f docker-compose.dev.yml up -d --build --remove-orphans
-```
+1. `backend/.env.local`
+   - 这里只放密钥和后端私有配置
+   - 重点看：`ARK_API_KEY` / `DOUBAO_API_KEY`
 
-### 2) 线上生产模式（当前推荐）
-使用 `docker-compose.prod.yml`：
-- 容器：`cosmeles-backend` + `cosmeles-frontend`
-- 端口：`5001 -> 3000`
-- 本机后端健康检查：`127.0.0.1:8000`
-- 反代：Caddy -> `172.17.0.1:5001`（当 Caddy 在 Docker 内）
-- Doubao：默认 `DOUBAO_MODE=real`（建议在部署环境注入 `DOUBAO_API_KEY`）
+2. 根目录 runtime profile env
+   - 当前单机：`/.env.single-node.example`
+   - 同机 rehearsal：`/.env.split-runtime.example`
+   - 未来多机：`/.env.multi-node.example`
+   - 重点看：`DEPLOY_PROFILE`、`DATABASE_URL`、`REDIS_URL`、`API_*_ORIGIN`、`ASSET_*`、`BACKEND_HOST/BACKEND_PORT`、`ROLLOUT_*`
 
-```bash
-docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
-```
+3. `docker-compose.prod.yml`
+   - 现在生产栈不是旧的双容器说明了，而是围绕 `postgres / backend / worker / frontend`
+   - frontend 已经改成 profile-aware `BACKEND_HOST/BACKEND_PORT/INTERNAL_API_BASE`
 
-### 3) 历史全栈模式（backend + frontend + nginx）
-使用 `docker-compose.yml`：
-- 对外端口：`5000`（nginx）
-- 本机后端健康检查：`127.0.0.1:8000`
-- 适合本地联调
+4. 反向代理与域名
+   - 当前单机可以继续只反代 frontend
+   - 一旦进入 `split_runtime` / `multi_node`，就要明确 `www`、`api`、`assets` 的域名职责
 
-```bash
-docker compose up -d --build --remove-orphans
-```
+5. PostgreSQL / Redis / 对象存储
+   - 单机低成本基线可以继续保守
+   - 真要多机，必须先把共享 PostgreSQL 和共享 Redis 的地址、权限、连通性定下来
 
-## 本地开发（不走 Docker）
+## 本地开发
 
 ### Backend
+
 ```bash
 cd backend
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 ### Frontend
+
 ```bash
 cd frontend
 npm ci
 npm run dev
 ```
 
+### Docker 开发模式
+
+```bash
+docker compose -f docker-compose.dev.yml up -d --build --remove-orphans
+```
+
+## 当前生产部署建议（你现在这台 2c4g 机器）
+
+当前最稳妥的建议不是直接上多机，而是：
+
+1. 继续用单机 profile 跑
+2. 把 `web / api / worker / postgres` 都放在同一台机器
+3. 先把配置和运维动作标准化
+4. 真有资源瓶颈时，再按固定顺序拆机
+
+完整步骤直接看：
+- [docs/workflow/operations/README.md](/Users/lijiabo/Documents/New%20project/docs/workflow/operations/README.md)
+
+最短启动命令是：
+
+```bash
+cp .env.single-node.example .env.runtime
+cp backend/.env.local.example backend/.env.local
+
+docker compose --env-file .env.runtime -f docker-compose.prod.yml up -d --build postgres backend worker frontend
+```
+
+启动后最少检查：
+
+```bash
+docker compose -f docker-compose.prod.yml ps
+curl -sS http://127.0.0.1:8000/healthz
+curl -sS http://127.0.0.1:8000/readyz
+curl -sS -I http://127.0.0.1:5001
+```
+
+## 未来多机扩容，哪一步效益最高
+
+效益最高的第一步是：先拆 `worker`。
+
+原因很简单：
+
+- 当前最容易拖慢用户请求的不是 web，而是 compare / upload / result build 这类后台任务
+- 把 `worker` 从 API 所在机器先拿出去，能最快减少前台请求和后台任务抢 CPU / IO
+- 这一步对用户流量入口影响最小，回滚也最容易
+
+但要注意一个前提：
+
+- 你不能在 `SQLite + 本地锁` 模式下直接拆 worker
+- 真要跨机器，至少要让 worker 和 api 看到同一份 PostgreSQL 真相
+- Redis 也要变成共享服务，不能继续依赖每台机器自己的本地缓存/锁
+
+所以未来扩容的固定顺序仍然是：
+
+1. `worker`
+2. `db`
+3. `api`
+4. `web`
+
+详细 step-by-step 也在：
+- [docs/workflow/operations/README.md](/Users/lijiabo/Documents/New%20project/docs/workflow/operations/README.md)
+
 ## Mobile IA（当前主线）
 
 ### P0：决策主链路
-- `/m`：决策首页，只讲一件事，只推一个主 CTA
-- `/m/choose`：品类选择与进度恢复
-- `/m/shampoo/profile`、`/m/bodywash/profile`、`/m/conditioner/profile`、`/m/lotion/profile`、`/m/cleanser/profile`
-- `/m/shampoo/result`、`/m/bodywash/result`、`/m/conditioner/result`、`/m/lotion/result`、`/m/cleanser/result`
+
+- `/m`
+- `/m/choose`
+- `/m/shampoo/profile`
+- `/m/bodywash/profile`
+- `/m/conditioner/profile`
+- `/m/lotion/profile`
+- `/m/cleanser/profile`
+- `/m/shampoo/result`
+- `/m/bodywash/result`
+- `/m/conditioner/result`
+- `/m/lotion/result`
+- `/m/cleanser/result`
 
 ### P1：实用辅链
-- `/m/wiki`：产品/成分查询与补充阅读
-- `/m/compare`：横向对比
-- `/m/bag`：购物袋
-- `/m/me`：历史、在用与返回入口
 
-说明：
-- 首访叙事只围绕 P0。
-- P1 保留，但以下沉入口、底部导航和结果页回环为主，不抢首屏解释权。
-
-## 当前度量优先级
-- P0：`/m` 主 CTA 点击率
-- P0：`/m/choose` 到答题开始率
-- P0：问答完成率
-- P0：结果页到达率
-- P0：结果页 CTA 点击率
-- P1：wiki / compare / me 的承接与回流
+- `/m/wiki`
+- `/m/compare`
+- `/m/bag`
+- `/m/me`
 
 ## 文档治理规则
-- `docs/workflow/` 只放规则、handoff、startup、assignment、ops。
-- `docs/initiatives/` 只放 PRD、spec、architecture、rollout、review、record、archive。
-- 当前 initiative 真相以显式 `status` 为准，不靠文件时间猜优先级。
-- 查当前状态，先看：
-  - `docs/initiatives/NOW.md`
-  - `docs/initiatives/DOC_INDEX.md`
-  - `docs/initiatives/TIMELINE.md`
 
-## 上传解析（当前）
-- `/upload` 走后端 `/api/upload`
-- 豆包链路：`mini(看图提字)` -> `lite(基于文本结构化 JSON)`
-- 两阶段原始输出会落盘到 `backend/storage/doubao_runs/`，并回传到前端上传页展示
-- 若要前端分步展示，可走：`/api/upload/stage1` -> `/api/upload/stage2`
-- 可定期调用清理接口：`POST /api/maintenance/cleanup-doubao?days=14`
-
-## 服务器重启后快速恢复
-以下命令在服务器执行（`~/cosmeles`）：
-
-### A. 生产恢复（推荐）
-```bash
-cd ~/cosmeles
-git pull origin main
-docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
-docker restart caddy
-curl -I http://127.0.0.1:5001
-curl -I http://127.0.0.1:8000/healthz
-curl -I https://yuexuan.xyz
-```
-
-### B. 开发热更新恢复（dev）
-```bash
-cd ~/cosmeles
-git pull origin main
-docker compose -f docker-compose.dev.yml down --remove-orphans
-docker compose -f docker-compose.dev.yml up -d --build --remove-orphans
-curl -I http://127.0.0.1:5001
-curl -I http://127.0.0.1:8000/healthz
-```
-
-### C. 常见故障一句话判断
-- `5001 能开，8000 不通`：后端没起来。
-- 域名 502/503：优先检查 Caddy upstream 与前端容器状态。
-- `port is already allocated`：端口被旧容器占用，先 `down --remove-orphans`。
+- `docs/workflow/` 只放规则、handoff、startup、assignment、ops
+- `docs/initiatives/` 只放 PRD、spec、architecture、rollout、review、record、archive
+- 当前 initiative 真相以显式 `status` 为准，不靠文件时间猜优先级
+- 查当前状态先看：
+  - [docs/initiatives/NOW.md](/Users/lijiabo/Documents/New%20project/docs/initiatives/NOW.md)
+  - [docs/initiatives/DOC_INDEX.md](/Users/lijiabo/Documents/New%20project/docs/initiatives/DOC_INDEX.md)
+  - [docs/initiatives/TIMELINE.md](/Users/lijiabo/Documents/New%20project/docs/initiatives/TIMELINE.md)

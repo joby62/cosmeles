@@ -1,44 +1,78 @@
 # Backend（FastAPI）
 
-## 当前后端能力（完整清单）
-- 健康检查与就绪检查（`/healthz`, `/readyz`）
-- 产品上传入库（图片、JSON、豆包分析模式）
-- 豆包双阶段识别（默认 mini 图像识别 -> mini 结构化 JSON）
-- 豆包高级文本能力（默认 pro：成分解释/图文一致性/重合检测）
-- 产品列表查询（支持分类/关键词/分页）
-- 产品详情读取（返回完整产品 JSON）
-- 产品编辑（分类、品牌、名称、一句话、标签）
-- 产品删除（同步删除索引 + JSON + 图片）
-- 分类统计（每个品类产品数量）
-- 静态图片服务（`/images/*`）
-- OpenAPI 文档（`/docs`, `/openapi.json`）
+## 当前后端定位
 
-## 技术栈
+- 同一套后端镜像同时支持 `api` 和 `worker` 两种运行角色
+- 当前 runtime profile 支持：
+  - `single_node`
+  - `split_runtime`
+  - `multi_node`
+- 健康检查和就绪检查已经暴露 runtime contract：
+  - `GET /healthz`
+  - `GET /readyz`
+
+如果 README 和 governed initiative doc 冲突，以 initiative doc 为准：
+
+- [mobile-architecture-v2.md](/Users/lijiabo/Documents/New%20project/docs/initiatives/mobile/architecture/mobile-architecture-v2.md)
+- [mobile-runtime-infrastructure-upgrade-plan-v1.md](/Users/lijiabo/Documents/New%20project/docs/initiatives/mobile/architecture/mobile-runtime-infrastructure-upgrade-plan-v1.md)
+- [mobile-runtime-roadmap-closure-summary-v1.md](/Users/lijiabo/Documents/New%20project/docs/initiatives/mobile/records/mobile-runtime-roadmap-closure-summary-v1.md)
+
+## 当前后端能力
+
+- 产品上传与入库
+- 豆包双阶段识别与 AI job 流式接口
+- mobile 决策、compare、history、result 相关 API
+- 后台任务执行：
+  - upload ingest
+  - mobile compare
+  - product workbench / result build
+- selection result PostgreSQL payload 单真相
+- runtime health / readiness / rollout observability
+
+完整 HTTP 细节以 `/docs` 和代码为准。
+
+## 当前技术栈
+
 - FastAPI
-- SQLAlchemy + SQLite
-- 文件存储（`storage/`）
+- SQLAlchemy
+- SQLite / PostgreSQL runtime switch
+- 本地文件存储 / object-storage contract
+- Redis contract（lock / cache only）
+- worker poller + DB-backed job truth
 
-## 文档入口
-- 当前架构真相：
-  - `/Users/lijiabo/Documents/New project/docs/initiatives/mobile/architecture/mobile-architecture-v2.md`
-  - `/Users/lijiabo/Documents/New project/docs/initiatives/mobile/architecture/mobile-refactor-playbook.md`
-  - `/Users/lijiabo/Documents/New project/docs/initiatives/mobile/architecture/mobile-runtime-infrastructure-upgrade-plan-v1.md`
-- 当前产品与执行真相：
-  - `/Users/lijiabo/Documents/New project/docs/initiatives/mobile/product/mobile-decision-prd-v1.md`
-  - `/Users/lijiabo/Documents/New project/docs/initiatives/mobile/product/mobile-result-intent-routing-prd-v1.md`
-  - `/Users/lijiabo/Documents/New project/docs/initiatives/mobile/product/mobile-result-decision-closure-spec-v1.md`
-  - `/Users/lijiabo/Documents/New project/docs/initiatives/mobile/product/mobile-first-run-funnel-execution-spec-v1.md`
-- 当前 initiative 面板：
-  - `/Users/lijiabo/Documents/New project/docs/initiatives/NOW.md`
-  - `/Users/lijiabo/Documents/New project/docs/initiatives/DOC_INDEX.md`
-  - `/Users/lijiabo/Documents/New project/docs/initiatives/TIMELINE.md`
+## 当前 runtime profile 语义
 
-说明：
-- 这个 README 解释当前后端实现和运行方式。
-- 如果 README 和 governed initiative doc 冲突，以 initiative doc 为准。
+### `single_node`
 
-## 运行方式
+- 适合当前低成本单机
+- 默认仍允许：
+  - SQLite
+  - local storage
+  - local queue
+  - local lock
+  - no cache
+
+### `split_runtime`
+
+- 适合同机 rehearsal，或者已经准备共享依赖时的拆分过渡态
+- 语义目标：
+  - PostgreSQL payload truth
+  - object storage contract
+  - Redis lock/cache contract
+  - worker 轮询执行后台任务
+
+### `multi_node`
+
+- 适合真正多机
+- 要求：
+  - `DATABASE_URL` 必须指向所有节点都能访问的 PostgreSQL
+  - `REDIS_URL` 必须指向共享 Redis
+  - `API_INTERNAL_ORIGIN` / `BACKEND_HOST` 必须改成真实内网地址或私有 DNS
+
+## 启动方式
+
 ### 本地开发
+
 ```bash
 cd backend
 python3 -m venv .venv
@@ -47,192 +81,114 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### Docker
+### Compose 运行（推荐）
+
+当前推荐不要单独 `docker run backend`，而是用根目录 compose + env profile：
+
+```bash
+cp /Users/lijiabo/Documents/New\ project/.env.single-node.example /Users/lijiabo/Documents/New\ project/.env.runtime
+cp /Users/lijiabo/Documents/New\ project/backend/.env.local.example /Users/lijiabo/Documents/New\ project/backend/.env.local
+
+cd /Users/lijiabo/Documents/New\ project
+docker compose --env-file .env.runtime -f docker-compose.prod.yml up -d --build postgres backend worker frontend
+```
+
+### 仅调试镜像
+
 ```bash
 docker build -t cosmeles-backend ./backend
 docker run --rm -p 8000:8000 -v $(pwd)/backend/storage:/app/storage cosmeles-backend
 ```
 
-## 目录结构
+这只适合镜像级调试，不是当前推荐生产方式。
+
+## 关键目录
+
 ```text
-app/main.py              FastAPI 入口
-app/routes/              API 路由（products / ingest）
-app/services/            解析、豆包客户端、存储工具
-app/db/                  模型、session、初始化
-app/scripts/reindex.py   批量重建 products 索引
-storage/                 图片、产品 JSON、SQLite 数据库
-sample_data/             示例数据
+app/main.py                           FastAPI 入口、healthz/readyz、worker daemon 启动
+app/routes/                           API 路由
+app/platform/                         runtime storage / queue / lock / cache / repository adapters
+app/services/runtime_topology.py      profile + role 下的调度语义
+app/services/runtime_worker.py        worker poller
+app/services/runtime_rollout.py       phase-20 rollout contract
+app/db/                               模型、session、初始化
+storage/                              本地图片、SQLite、临时产物、开发期文件
+user_storage/                         用户文件本地挂载目录
+tests/                                backend 回归与 runtime contract 测试
 ```
 
-## 路由与功能说明
-### 1) 系统与文档
-- `GET /healthz`
-  - 功能：存活检查（进程是否在）
-  - 返回：`{"status":"ok","service":"backend","env":"dev"}`
-- `GET /readyz`
-  - 功能：就绪检查（数据库可连接 + storage 可写）
-  - 成功：`200 {"status":"ready"}`
-  - 失败：`503`
-- `GET /docs`
-  - 功能：Swagger UI 文档
-- `GET /openapi.json`
-  - 功能：OpenAPI 规范 JSON
+## 健康检查与运行时可观测性
 
-### 2) 产品查询
-- `GET /api/products`
-  - 功能：返回产品卡片列表
-  - 参数：`category?`, `q?`, `offset=0`, `limit=100`
-- `GET /api/products/page`
-  - 功能：返回带分页元数据的列表
-  - 参数：`category?`, `q?`, `offset=0`, `limit=30`
-  - 返回：`{ items: ProductCard[], meta: { total, offset, limit } }`
-- `GET /api/categories/counts`
-  - 功能：返回各分类数量
-  - 返回：`[{ "category":"shampoo", "count": 12 }, ...]`
-- `GET /api/products/{product_id}`
-  - 功能：返回完整产品 JSON（成分、summary、evidence）
-  - 异常：产品不存在或 json 文件丢失返回 `404`
+### `GET /healthz`
 
-### 3) 产品维护
-- `PATCH /api/products/{product_id}`
-  - 功能：更新索引信息，并回写对应 JSON
-  - Body(JSON)：`category?`, `brand?`, `name?`, `one_sentence?`, `tags?`
-- `DELETE /api/products/{product_id}`
-  - 功能：删除产品索引，并删除对应 json/image 文件
-  - 返回：`{"id":"...","status":"deleted","removed_files":2}`
+- 永远返回进程存活状态
+- 额外带上 runtime profile 摘要：
+  - `deploy_profile`
+  - `runtime_role`
+  - `backends.database/storage/selection_results/queue/lock/cache`
+  - `rollout_contract`
+  - `topology.worker_state`
 
-### 4) 上传入库
-- `POST /api/upload`（推荐）
-- `POST /api/ingest`（兼容旧入口）
-  - 功能：接收上传并落库到 `storage + sqlite`
-  - 默认来源：`source=doubao`（优先走图片识别）
-  - 表单字段：
-    - `image` 或 `file`（二选一，图片文件）
-    - `meta_json` 或 `payload_json`（二选一，产品 JSON 字符串）
-    - `category/brand/name`（可选，覆盖 JSON 同名字段）
-    - `source`（可选：`manual | doubao | auto`）
-  - 行为：
-    - 仅图片：走豆包双阶段识别生成结构化 JSON
-    - 仅 JSON：直接入库
-    - 图片+JSON：JSON 为主，图片用于展示与证据
-  - 上传限制：
-    - `image/*` 才允许
-    - 最大文件大小：`MAX_UPLOAD_BYTES`（默认 8MB）
-    - Doubao 图片格式建议：`jpg/png/webp/gif`（`heic/heif` 不支持）
-  - Doubao 双阶段（`source=doubao`）：
-    - Stage-1 (vision): 默认 `doubao-seed-2-0-mini-260215`，读取图片提取包装文字/成分原文
-    - Stage-2 (struct): 默认 `doubao-seed-2-0-mini-260215`，输入 stage-1 文本输出 JSON
-  - Doubao 高级文本能力：
-    - 默认 `doubao-seed-2-0-pro-260215`（成分解释、图文一致性、产品重合检测）
-  - 本地落盘：
-    - `storage/doubao_runs/{product_id}/stage1_vision.json`
-    - `storage/doubao_runs/{product_id}/stage2_struct.json`
-    - 路径也会写入产品 JSON 的 `evidence.doubao_artifacts`
+### `GET /readyz`
 
-### 4.1) 分步上传（用于前端先展示 stage1，再展示 stage2）
-- `POST /api/upload/stage1`
-  - 功能：上传图片并执行 mini 识别
-  - 返回：`trace_id`、`doubao.vision_text`、阶段1落盘路径
-- `POST /api/upload/stage2`
-  - 功能：基于 `trace_id` 读取阶段1文本，执行结构化并最终入库
-  - 返回：最终产品入库结果 + 两阶段落盘路径
-- `POST /api/upload/stage1/stream`
-  - 功能：同 stage1，但以 `text/event-stream` 持续返回进度和增量文本
-- `POST /api/upload/stage2/stream`
-  - 功能：同 stage2，但以 `text/event-stream` 持续返回进度和增量文本
+- 检查：
+  - 数据库可连接
+  - storage 可初始化
+- 注意：
+  - `readyz` 不直接验证 Redis 连通性
+  - 真要切到多机，仍必须做真实 compare / upload / worker smoke
 
-### 4.2) AI 通用流式接口
-- `POST /api/ai/jobs/stream`
-  - 功能：创建并执行 AI Job，SSE 返回 `job_created/progress/result/done` 事件
-  - 适用：成分解释、图文一致性、重合检测、后续能力扩展
+## 当前最重要的配置文件
 
-### 4.1) Doubao 产物清理
-- `POST /api/maintenance/cleanup-doubao?days=14`
-  - 功能：删除 `storage/doubao_runs` 下超过 N 天的中间产物文件
-  - 参数：`days`（1~3650）
-  - 返回：删除文件数/目录数
+### 1. `backend/.env.local`
 
-### 5) 静态资源
-- `GET /images/{filename}`
-  - 功能：读取 `storage/images` 下图片
-  - 用法：前端产品图直接使用该路径
+只放密钥和后端私有配置：
 
-## 配置（`app/settings.py`）
-- `APP_ENV`：环境标识，默认 `dev`
-- `CORS_ORIGINS`：允许来源列表（逗号分隔）
-- `STORAGE_DIR`：默认 `backend/storage`
-- `DATABASE_URL`：默认 SQLite 文件（`backend/storage/app.db`）
-- `DOUBAO_MODE`：`real | sample/mock`（默认 `real`）
-- `ARK_API_KEY` / `DOUBAO_API_KEY` / `DOUBAO_ENDPOINT` / `DOUBAO_MODEL`
-- `DOUBAO_VISION_MODEL`：第一阶段图像识别模型（默认 mini）
-- `DOUBAO_STRUCT_MODEL`：第二阶段结构化模型（默认 mini）
-- `DOUBAO_PRO_MODEL`：高级文本能力默认模型（默认 pro）
-- `DOUBAO_ADVANCED_TEXT_MODEL`：显式覆盖高级文本能力模型（留空则回落 `DOUBAO_PRO_MODEL`）
-- `DOUBAO_TIMEOUT_SECONDS`：默认 `180`
-- `DOUBAO_MAX_RETRIES`：豆包请求自动重试次数，默认 `2`
-- `DOUBAO_RETRY_BACKOFF_SECONDS`：重试退避基数秒，默认 `1.5`
-- `DOUBAO_ARTIFACT_TTL_DAYS`：清理默认保留天数，默认 `14`
-- `AI_MODEL_PRICING_PER_MTOKEN_JSON`：按 token 成本估算配置（元/百万tokens）
-- `AI_COST_PER_RUN_BY_MODEL_JSON`：按任务固定成本兜底（当上游未返回 usage 时使用）
-- `MAX_UPLOAD_BYTES`：上传图片大小限制，默认 `8388608`
+- `ARK_API_KEY` / `DOUBAO_API_KEY`
+- `DOUBAO_*`
+- 可选地理逆解析配置
 
-可通过 `.env` 注入，未使用字段会被忽略。
+### 2. 根目录 runtime env
 
-### 豆包配置文件（推荐）
-1. 复制模板：
+这些决定后端真正跑在哪个 runtime profile：
+
+- [/.env.single-node.example](/Users/lijiabo/Documents/New%20project/.env.single-node.example)
+- [/.env.split-runtime.example](/Users/lijiabo/Documents/New%20project/.env.split-runtime.example)
+- [/.env.multi-node.example](/Users/lijiabo/Documents/New%20project/.env.multi-node.example)
+
+重点变量：
+
+- `DEPLOY_PROFILE`
+- `RUNTIME_ROLE`
+- `DATABASE_URL`
+- `REDIS_URL`
+- `STORAGE_BACKEND`
+- `SELECTION_RESULT_REPOSITORY_BACKEND`
+- `LOCK_BACKEND`
+- `CACHE_BACKEND`
+- `API_PUBLIC_ORIGIN`
+- `API_INTERNAL_ORIGIN`
+- `ASSET_PUBLIC_ORIGIN`
+- `ROLLOUT_*`
+
+## 常用命令
+
 ```bash
-cp backend/.env.local.example backend/.env.local
-```
-2. 在 `backend/.env.local` 填入 `ARK_API_KEY`（或 `DOUBAO_API_KEY`）
-3. 该文件已被 `.gitignore` 忽略，不会提交到仓库
-
-### `DOUBAO_MODE` 说明
-- `real`：调用豆包 Ark 在线分析（生产推荐）
-- `mock` 或 `sample`：读取本地 `sample_data/product_sample.json`，不调用豆包（离线调试用）
-
-### Doubao 常见报错排查
-- 报错 `Missing API key`：
-  - 检查是否创建了 `backend/.env.local`
-  - 检查 `ARK_API_KEY=...`（或 `DOUBAO_API_KEY=...`）是否已填写
-  - 检查容器环境变量是否覆盖为空值
-- 报错 `Invalid DOUBAO_MODE`：
-  - 仅支持 `real` / `mock` / `sample`
-- 报错 `Doubao request failed`：
-  - 通常是网络不可达、超时或上游接口异常，先重试并检查服务器外网连通性
-
-## 存储与持久化
-- 图片：`storage/images/`
-- 产品 JSON：`storage/products/`
-- Doubao 中间产物：`storage/doubao_runs/`
-- 数据库：`storage/app.db`
-
-线上请保证 `backend/storage` 做 volume 挂载与备份。
-
-## 常用维护命令
-- 批量重建索引：
-```bash
-cd backend
-python -m app.scripts.reindex
-```
-
-- 查询健康状态：
-```bash
+# 健康状态
 curl -s http://127.0.0.1:8000/healthz
 curl -s http://127.0.0.1:8000/readyz
+
+# 全量回归
+cd /Users/lijiabo/Documents/New\ project
+PYTHONPATH='/Users/lijiabo/Documents/New project:/Users/lijiabo/Documents/New project/backend' conda run -n cosmeles python3 -m pytest -q backend/tests
+
+# 只看 runtime contract 相关测试
+cd /Users/lijiabo/Documents/New\ project
+PYTHONPATH='/Users/lijiabo/Documents/New project:/Users/lijiabo/Documents/New project/backend' conda run -n cosmeles python3 -m pytest -q backend/tests/test_runtime_platform_adapters.py backend/tests/test_runtime_health_contract.py
 ```
 
-- 查询某品类产品：
-```bash
-curl -s "http://127.0.0.1:8000/api/products?category=shampoo&limit=20"
-```
+## 进一步部署说明
 
-- 清理过期 Doubao 中间产物：
-```bash
-curl -X POST "http://127.0.0.1:8000/api/maintenance/cleanup-doubao?days=14"
-```
+完整部署、扩容、回滚顺序请直接看：
 
-- 脚本方式清理：
-```bash
-cd backend
-python -m app.scripts.cleanup_doubao_artifacts --days 14
-```
+- [docs/workflow/operations/README.md](/Users/lijiabo/Documents/New%20project/docs/workflow/operations/README.md)

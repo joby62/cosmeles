@@ -35,3 +35,5 @@ Those belong under `docs/initiatives/`.
 - teams: `/Users/lijiabo/Documents/New project/docs/workflow/teams/`
 - startup prompts: `/Users/lijiabo/Documents/New project/docs/workflow/startup-prompts/`
 - operations: `/Users/lijiabo/Documents/New project/docs/workflow/operations/`
+- full deployment guide: `/Users/lijiabo/Documents/New project/docs/workflow/operations/README.md`
+- day-2 ops runbook: `/Users/lijiabo/Documents/New project/docs/workflow/operations/operations-runbook.md`

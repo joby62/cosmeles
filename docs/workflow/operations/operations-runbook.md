@@ -1,224 +1,85 @@
-# 予选（MatchUp）运维操作手册
+# 予选（MatchUp）运维速查
 
-这份手册用于固定日常操作，避免每次重新排查。
+这份文件只保留 day-2 运维动作。
 
-## 1. 三套 compose 的用途
+完整部署、配置重查、单机到多机的 step-by-step，请先看：
 
-- `docker-compose.dev.yml`
-  - 用途：开发热更新（前后端一起）
-  - 容器：`backend-dev` + `frontend-dev`
-  - 端口：`5001 -> 3000`、`8000 -> 8000`
-  - 启动：`docker compose -f docker-compose.dev.yml up -d --build --remove-orphans`
+- [docs/workflow/operations/README.md](/Users/lijiabo/Documents/New%20project/docs/workflow/operations/README.md)
 
-- `docker-compose.prod.yml`
-  - 用途：生产构建（前后端）
-  - 容器：`cosmeles-backend` + `cosmeles-frontend`
-  - 端口：`5001 -> 3000`
-  - 启动：`docker compose -f docker-compose.prod.yml up -d --build --remove-orphans`
+## 1. 当前推荐运行方式
 
-- `docker-compose.yml`
-  - 用途：全栈方案（backend + frontend + nginx）
-  - 入口端口：`5000`（nginx）
-  - 启动：`docker compose up -d --build --remove-orphans`
-
-## 2. 当前推荐线上方案（Caddy + prod compose）
-
-当前你线上是：`Caddy` 反代 `cosmeles-frontend(prod)`，`cosmeles-backend` 在同一 compose 网络内供前端调用。
-
-### 2.1 启动前端容器
-
-在项目目录 `~/cosmeles`：
+- 当前低成本线上基线：`single_node`
+- 当前推荐启动命令：
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d --build
+cd ~/cosmeles
+docker compose --env-file .env.runtime -f docker-compose.prod.yml up -d --build postgres backend worker frontend
 ```
 
-健康检查：
+## 2. 常用检查
 
 ```bash
-curl -I http://127.0.0.1:5001
-curl -I http://127.0.0.1:8000/healthz
-```
-
-返回 `HTTP/1.1 200` 说明前端容器正常。
-
-### 2.2 Caddy 反代配置
-
-关键点：
-- 如果 `caddy` 跑在 Docker 容器里，`127.0.0.1` 指向 caddy 容器自身，不能指向宿主机 frontend。
-- 你的环境中应使用 Docker 网关地址：`172.17.0.1:5001`。
-
-Caddyfile 示例：
-
-```caddy
-yuexuan.xyz {
-    reverse_proxy 172.17.0.1:5001
-}
-```
-
-重启 caddy：
-
-```bash
-docker restart caddy
-docker logs --tail 100 caddy
-```
-
-域名检查：
-
-```bash
-curl -I https://yuexuan.xyz
-```
-
-返回 `HTTP/2 200` 为正常。
-
-## 2.3 Caddy upstream 快速切换（prod / dev）
-当 caddy 运行在 Docker 容器时，建议统一反代宿主机网关地址：
-
-### 生产模式（默认）
-```caddy
-yuexuan.xyz {
-    reverse_proxy 172.17.0.1:5001
-}
-```
-
-### 开发模式（临时联调）
-`dev` 与 `prod` 前端都在 `5001`，所以通常不需要改端口。  
-如果你改了 dev 前端端口（例如 5002），改成：
-```caddy
-yuexuan.xyz {
-    reverse_proxy 172.17.0.1:5002
-}
-```
-
-应用配置：
-```bash
-docker restart caddy
-docker logs --tail 100 caddy
-curl -I https://yuexuan.xyz
-```
-
-## 3. 常用命令清单
-
-### 3.1 查看状态与日志
-
-```bash
-# prod 前后端
+cd ~/cosmeles
 docker compose -f docker-compose.prod.yml ps
-docker compose -f docker-compose.prod.yml logs --tail=200 backend frontend
-
-# caddy
-docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Ports}}"
-docker logs --tail 200 caddy
+curl -sS http://127.0.0.1:8000/healthz
+curl -sS http://127.0.0.1:8000/readyz
+curl -sS -I http://127.0.0.1:5001
 ```
 
-### 3.2 重建与重启
+## 3. 常用日志
 
 ```bash
-# 重建 prod（前后端）
-docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
-
-# 只重启前端容器
-docker restart cosmeles-frontend
-
-# 只重启后端容器
-docker restart cosmeles-backend
-
-# 重启 caddy
-docker restart caddy
+cd ~/cosmeles
+docker compose -f docker-compose.prod.yml logs --tail=200 postgres backend worker frontend
 ```
 
-### 3.3 清理孤儿容器告警
-
-看到 `Found orphan containers` 时：
-
-```bash
-docker compose -f docker-compose.prod.yml up -d --remove-orphans
-```
-
-## 4. 502 快速排障（固定顺序）
-
-1. 先看前后端是否活着：
-
-```bash
-curl -I http://127.0.0.1:5001
-curl -I http://127.0.0.1:8000/healthz
-```
-
-2. 从 caddy 容器内看 upstream 是否可达：
-
-```bash
-docker exec -it caddy sh -lc 'curl -I http://172.17.0.1:5001'
-```
-
-3. 看 caddy 日志有没有连错端口（如 `127.0.0.1:5000 refused`）：
-
-```bash
-docker logs --tail 200 caddy
-```
-
-4. 修正 Caddyfile 后重启 caddy：
-
-```bash
-docker restart caddy
-```
-
-5. 最后验证域名：
-
-```bash
-curl -I https://yuexuan.xyz
-```
-
-## 5. 日常发布流程（你当前流程）
-
-本地改代码后：
-
-```bash
-git add .
-git commit -m "feat: ..."
-git push origin main
-```
-
-服务器上：
+## 4. 发布更新
 
 ```bash
 cd ~/cosmeles
 git pull origin main
-docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
-docker restart caddy
-curl -I https://yuexuan.xyz
+docker compose --env-file .env.runtime -f docker-compose.prod.yml up -d --build postgres backend worker frontend
 ```
 
-## 5.1 服务器重启后固定恢复流程
+## 5. 服务器重启后恢复
 
-### 生产恢复（建议）
 ```bash
 cd ~/cosmeles
 git pull origin main
-docker compose -f docker-compose.prod.yml up -d --build --remove-orphans
-docker restart caddy
+docker compose --env-file .env.runtime -f docker-compose.prod.yml up -d --build postgres backend worker frontend
 
 # 自检
-curl -I http://127.0.0.1:5001
-curl -I http://127.0.0.1:8000/healthz
-curl -I https://yuexuan.xyz
+docker compose -f docker-compose.prod.yml ps
+curl -sS http://127.0.0.1:8000/healthz
+curl -sS http://127.0.0.1:8000/readyz
+curl -sS -I http://127.0.0.1:5001
 ```
 
-### 开发恢复（热更新）
+## 6. 502 / 503 排障顺序
+
+1. 先看 frontend 是否通：
+
 ```bash
-cd ~/cosmeles
-git pull origin main
-docker compose -f docker-compose.dev.yml down --remove-orphans
-docker compose -f docker-compose.dev.yml up -d --build --remove-orphans
-
-# 自检
-curl -I http://127.0.0.1:5001
-curl -I http://127.0.0.1:8000/healthz
+curl -sS -I http://127.0.0.1:5001
 ```
 
-## 6. 常见坑位
+2. 再看 backend 是否通：
 
-- `sudo nginx ...`：你现在不用 nginx，别再走这条命令。
-- `sudo systemctl reload caddy`：仅在 systemd 管理 caddy 时可用；你当前是 Docker 容器，不适用。
-- caddy 容器内反代 `127.0.0.1:5001`：会 502（指向容器自己）。
-- `docker-compose.yml` 和 `docker-compose.prod.yml` 混用：容易端口/架构错位，线上统一使用 `docker-compose.prod.yml`。
-- 前端页面正常但上传报错：先查 `curl -I http://127.0.0.1:8000/healthz`，通常是后端没起来。
+```bash
+curl -sS http://127.0.0.1:8000/healthz
+curl -sS http://127.0.0.1:8000/readyz
+```
+
+3. 再看容器状态：
+
+```bash
+docker compose -f docker-compose.prod.yml ps
+docker compose -f docker-compose.prod.yml logs --tail=200 backend worker frontend
+```
+
+## 7. 一个重要提醒
+
+- `readyz` 只检查数据库和 storage
+- 它不直接证明 Redis、worker poller、compare/upload/job smoke 都是通的
+- 真改了 `split_runtime` / `multi_node` 配置后，还要做真实业务 smoke
+- 如果 Caddy 跑在 Docker 容器里，upstream 不能写 `127.0.0.1`，要写宿主机网关，例如 `172.17.0.1:5001`

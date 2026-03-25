@@ -49,6 +49,8 @@
 
 - workflow index: `/Users/lijiabo/Documents/New project/docs/workflow/README.md`
 - initiatives index: `/Users/lijiabo/Documents/New project/docs/initiatives/README.md`
+- deployment and scale guide: `/Users/lijiabo/Documents/New project/docs/workflow/operations/README.md`
+- day-2 ops runbook: `/Users/lijiabo/Documents/New project/docs/workflow/operations/operations-runbook.md`
 - initiative currentness surfaces:
   - `/Users/lijiabo/Documents/New project/docs/initiatives/NOW.md`
   - `/Users/lijiabo/Documents/New project/docs/initiatives/DOC_INDEX.md`
