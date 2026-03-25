@@ -1,4 +1,5 @@
 # backend/app/main.py
+from contextlib import asynccontextmanager
 import os
 import mimetypes
 
@@ -24,7 +25,23 @@ from app.settings import settings
 from app.services.runtime_topology import api_routes_enabled, should_initialize_runtime_schema
 from app.services.runtime_worker import start_runtime_worker_daemon
 
-app = FastAPI(title="Shampoo Picker API", version="0.1.0")
+
+def _startup_init_db() -> None:
+    if should_initialize_runtime_schema():
+        init_db()
+    assert_phase_23_pg_only_truth_contract()
+    assert_phase_24_mobile_state_pg_only_truth_contract()
+    assert_phase_25_sqlite_closure_contract()
+    start_runtime_worker_daemon()
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    _startup_init_db()
+    yield
+
+
+app = FastAPI(title="Shampoo Picker API", version="0.1.0", lifespan=lifespan)
 
 # Ensure uncommon image mime types are recognized in both StaticFiles and data-url generation.
 mimetypes.add_type("image/heic", ".heic")
@@ -40,17 +57,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Init DB (create tables) on startup
-@app.on_event("startup")
-def _startup_init_db() -> None:
-    if should_initialize_runtime_schema():
-        init_db()
-    assert_phase_23_pg_only_truth_contract()
-    assert_phase_24_mobile_state_pg_only_truth_contract()
-    assert_phase_25_sqlite_closure_contract()
-    start_runtime_worker_daemon()
-
 
 # routes
 if api_routes_enabled():
