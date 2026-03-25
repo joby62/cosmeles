@@ -275,6 +275,7 @@ export function useProductWorkbenchJobs<
       setJobsLoading(true);
       try {
         const rows = await serviceRef.current.listJobs({ limit: listLimit, offset: 0 });
+        setErrorMessage(null);
         setJobs(rows);
         if (!activeJobIdRef.current) {
           const running = rows.find((item) => shouldKeepActiveJobRef.current(item));
@@ -330,6 +331,7 @@ export function useProductWorkbenchJobs<
       try {
         const job = await serviceRef.current.fetchJob(activeJobId);
         if (cancelled) return;
+        setErrorMessage(null);
         setActiveJob(job);
         const parsed = parseResultRef.current(job);
         applyParsedResult(job, parsed);

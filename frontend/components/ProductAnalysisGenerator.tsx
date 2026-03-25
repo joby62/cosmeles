@@ -146,6 +146,7 @@ export default function ProductAnalysisGenerator({
         category: selectedCategory === "all" ? undefined : selectedCategory,
       });
       setIndexItems(resp.items || []);
+      setErrorMessage(null);
     } catch (err) {
       if (!options?.silent) {
         setErrorMessage(formatErrorDetail(err));

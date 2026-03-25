@@ -1857,6 +1857,36 @@ function getBaseForFetch(): string {
   return normalizeOrigin(process.env.INTERNAL_API_BASE) || normalizeOrigin(process.env.API_INTERNAL_ORIGIN) || "http://nginx";
 }
 
+function buildFetchUrl(path: string, base: string): string {
+  return base ? new URL(path, base).toString() : path;
+}
+
+function isNetworkFetchError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const message = String(error.message || "").trim();
+  if (error instanceof TypeError && /fetch/i.test(message)) return true;
+  if (/networkerror|load failed|failed to fetch|fetch failed/i.test(message)) return true;
+  return false;
+}
+
+async function fetchWithApiFallback(path: string, init: RequestInit): Promise<Response> {
+  const base = getBaseForFetch();
+  const url = buildFetchUrl(path, base);
+
+  try {
+    return await fetch(url, init);
+  } catch (error) {
+    const shouldRetryWithSameOrigin =
+      typeof window !== "undefined" &&
+      Boolean(base) &&
+      url !== path &&
+      path.startsWith("/") &&
+      isNetworkFetchError(error);
+    if (!shouldRetryWithSameOrigin) throw error;
+    return fetch(path, init);
+  }
+}
+
 function parseFilenameFromDisposition(disposition: string | null): string | null {
   const raw = String(disposition || "").trim();
   if (!raw) return null;
@@ -1931,7 +1961,6 @@ function resolveApiFetchCacheOptions(
 }
 
 async function apiFetch<T>(path: string, init?: ApiFetchInit): Promise<T> {
-  const base = getBaseForFetch();
   const method = String(init?.method || "GET");
   const includeOwnerHeaders = init?.includeOwnerHeaders ?? true;
   const forwarded = includeOwnerHeaders ? await getForwardedServerHeaders() : {};
@@ -1943,8 +1972,6 @@ async function apiFetch<T>(path: string, init?: ApiFetchInit): Promise<T> {
   delete (requestInit as RequestInit & { revalidateSeconds?: unknown }).revalidateSeconds;
   const cacheOptions = resolveApiFetchCacheOptions(method, cacheProfile, revalidateSeconds);
 
-  // path 统一要求以 / 开头
-  const url = base ? new URL(path, base).toString() : path;
   const headers = new Headers({
     "content-type": "application/json",
     ...forwarded,
@@ -1954,7 +1981,7 @@ async function apiFetch<T>(path: string, init?: ApiFetchInit): Promise<T> {
     headers.set(key, value);
   });
 
-  const res = await fetch(url, {
+  const res = await fetchWithApiFallback(path, {
     ...requestInit,
     ...cacheOptions,
     credentials: "include",
@@ -2722,10 +2749,8 @@ export async function downloadAllProductImagesZip(): Promise<{
   filename: string;
   image_count: number;
 }> {
-  const base = getBaseForFetch();
   const path = "/api/maintenance/storage/images/download";
-  const url = base ? new URL(path, base).toString() : path;
-  const res = await fetch(url, {
+  const res = await fetchWithApiFallback(path, {
     method: "GET",
     cache: "no-store",
     credentials: "include",
@@ -3077,15 +3102,14 @@ export async function uploadMobileCompareCurrentProduct(input: {
   brand?: string;
   name?: string;
 }): Promise<MobileCompareUploadResponse> {
-  const base = getBaseForFetch();
-  const url = base ? new URL("/api/mobile/compare/current-product/upload", base).toString() : "/api/mobile/compare/current-product/upload";
+  const path = "/api/mobile/compare/current-product/upload";
   const fd = new FormData();
   fd.append("category", input.category);
   fd.append("image", input.image);
   if (input.brand) fd.append("brand", input.brand);
   if (input.name) fd.append("name", input.name);
 
-  const res = await fetch(url, {
+  const res = await fetchWithApiFallback(path, {
     method: "POST",
     body: fd,
     credentials: "include",
@@ -3298,8 +3322,7 @@ export type UploadIngestJobCancelResponse = {
 
 // 上传入口（MVP）：支持 image + metaJson，后续直接对接豆包比对流
 export async function ingestProduct(input: IngestInput): Promise<IngestResult> {
-  const base = getBaseForFetch();
-  const url = base ? new URL("/api/upload", base).toString() : "/api/upload";
+  const path = "/api/upload";
 
   const fd = new FormData();
   if (input.image) fd.append("image", input.image);
@@ -3311,7 +3334,7 @@ export async function ingestProduct(input: IngestInput): Promise<IngestResult> {
   if (input.stage1ModelTier) fd.append("stage1_model_tier", input.stage1ModelTier);
   if (input.stage2ModelTier) fd.append("stage2_model_tier", input.stage2ModelTier);
 
-  const res = await fetch(url, { method: "POST", body: fd });
+  const res = await fetchWithApiFallback(path, { method: "POST", body: fd });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`INGEST ${res.status}: ${text}`);
@@ -3322,8 +3345,7 @@ export async function ingestProduct(input: IngestInput): Promise<IngestResult> {
 export async function ingestProductStage1(
   input: Pick<IngestInput, "image" | "category" | "brand" | "name"> & { modelTier?: "mini" | "lite" | "pro" },
 ): Promise<IngestStage1Result> {
-  const base = getBaseForFetch();
-  const url = base ? new URL("/api/upload/stage1", base).toString() : "/api/upload/stage1";
+  const path = "/api/upload/stage1";
   const fd = new FormData();
   if (input.image) fd.append("image", input.image);
   if (input.category) fd.append("category", input.category);
@@ -3331,7 +3353,7 @@ export async function ingestProductStage1(
   if (input.name) fd.append("name", input.name);
   if (input.modelTier) fd.append("model_tier", input.modelTier);
 
-  const res = await fetch(url, { method: "POST", body: fd });
+  const res = await fetchWithApiFallback(path, { method: "POST", body: fd });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`STAGE1 ${res.status}: ${text}`);
@@ -3355,14 +3377,13 @@ export async function ingestProductStage1Stream(
 export async function ingestProductStage1Supplement(
   input: { traceId: string; image: File; modelTier?: "mini" | "lite" | "pro" },
 ): Promise<IngestStage1Result> {
-  const base = getBaseForFetch();
-  const url = base ? new URL("/api/upload/stage1/supplement", base).toString() : "/api/upload/stage1/supplement";
+  const path = "/api/upload/stage1/supplement";
   const fd = new FormData();
   fd.append("trace_id", input.traceId);
   fd.append("image", input.image);
   if (input.modelTier) fd.append("model_tier", input.modelTier);
 
-  const res = await fetch(url, { method: "POST", body: fd });
+  const res = await fetchWithApiFallback(path, { method: "POST", body: fd });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`STAGE1_SUPPLEMENT ${res.status}: ${text}`);
@@ -3384,8 +3405,7 @@ export async function ingestProductStage1SupplementStream(
 export async function ingestProductStage2(
   input: Pick<IngestInput, "category" | "brand" | "name"> & { traceId: string; modelTier?: "mini" | "lite" | "pro" },
 ): Promise<IngestResult> {
-  const base = getBaseForFetch();
-  const url = base ? new URL("/api/upload/stage2", base).toString() : "/api/upload/stage2";
+  const path = "/api/upload/stage2";
   const fd = new FormData();
   fd.append("trace_id", input.traceId);
   if (input.category) fd.append("category", input.category);
@@ -3393,7 +3413,7 @@ export async function ingestProductStage2(
   if (input.name) fd.append("name", input.name);
   if (input.modelTier) fd.append("model_tier", input.modelTier);
 
-  const res = await fetch(url, { method: "POST", body: fd });
+  const res = await fetchWithApiFallback(path, { method: "POST", body: fd });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`STAGE2 ${res.status}: ${text}`);
@@ -3423,8 +3443,7 @@ export async function createUploadIngestJob(input: {
   stage1ModelTier?: "mini" | "lite" | "pro";
   stage2ModelTier?: "mini" | "lite" | "pro";
 }): Promise<UploadIngestJob> {
-  const base = getBaseForFetch();
-  const url = base ? new URL("/api/upload/jobs", base).toString() : "/api/upload/jobs";
+  const path = "/api/upload/jobs";
   const fd = new FormData();
   fd.append("image", input.image);
   if (input.supplementImage) fd.append("supplement_image", input.supplementImage);
@@ -3433,7 +3452,7 @@ export async function createUploadIngestJob(input: {
   if (input.name) fd.append("name", input.name);
   if (input.stage1ModelTier) fd.append("stage1_model_tier", input.stage1ModelTier);
   if (input.stage2ModelTier) fd.append("stage2_model_tier", input.stage2ModelTier);
-  const res = await fetch(url, { method: "POST", body: fd, credentials: "include", cache: "no-store" });
+  const res = await fetchWithApiFallback(path, { method: "POST", body: fd, credentials: "include", cache: "no-store" });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`UPLOAD_JOB_CREATE ${res.status}: ${text}`);
@@ -3486,14 +3505,13 @@ export async function resumeUploadIngestJob(input: {
 }): Promise<UploadIngestJob> {
   const value = input.jobId.trim();
   if (!value) throw new Error("jobId is required.");
-  const base = getBaseForFetch();
-  const url = base ? new URL(`/api/upload/jobs/${encodeURIComponent(value)}/resume`, base).toString() : `/api/upload/jobs/${encodeURIComponent(value)}/resume`;
+  const path = `/api/upload/jobs/${encodeURIComponent(value)}/resume`;
   const fd = new FormData();
   if (input.image) fd.append("image", input.image);
   if (input.category) fd.append("category", input.category);
   if (input.brand) fd.append("brand", input.brand);
   if (input.name) fd.append("name", input.name);
-  const res = await fetch(url, { method: "POST", body: fd, credentials: "include", cache: "no-store" });
+  const res = await fetchWithApiFallback(path, { method: "POST", body: fd, credentials: "include", cache: "no-store" });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`UPLOAD_JOB_RESUME ${res.status}: ${text}`);
@@ -3512,9 +3530,7 @@ async function postSSE<T>(
   init: RequestInit,
   onEvent: (event: SSEEvent) => void,
 ): Promise<T> {
-  const base = getBaseForFetch();
   const forwarded = await getForwardedServerHeaders();
-  const url = base ? new URL(path, base).toString() : path;
   const headers = new Headers({
     ...forwarded,
     accept: "text/event-stream",
@@ -3523,7 +3539,7 @@ async function postSSE<T>(
   initHeaders.forEach((value, key) => {
     headers.set(key, value);
   });
-  const res = await fetch(url, {
+  const res = await fetchWithApiFallback(path, {
     ...init,
     headers,
     credentials: "include",
