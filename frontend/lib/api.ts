@@ -1776,7 +1776,32 @@ function normalizeOrigin(value?: string | null): string {
 }
 
 function isLoopbackHostname(hostname: string): boolean {
-  return hostname === "127.0.0.1" || hostname === "localhost";
+  return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
+}
+
+function isPrivateIpv4Hostname(hostname: string): boolean {
+  const match = hostname.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (!match) return false;
+  const a = Number(match[1]);
+  const b = Number(match[2]);
+  if (a === 10) return true;
+  if (a === 127) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true;
+  return false;
+}
+
+function isWildcardOrInternalHostname(hostname: string): boolean {
+  const normalized = String(hostname || "").trim().toLowerCase();
+  if (!normalized) return false;
+  if (normalized === "0.0.0.0") return true;
+  if (isLoopbackHostname(normalized)) return true;
+  if (isPrivateIpv4Hostname(normalized)) return true;
+  if (!normalized.includes(".")) return true;
+  if (normalized.endsWith(".internal") || normalized.endsWith(".local")) return true;
+  return false;
 }
 
 function resolveBrowserOrigin(candidate: string): string {
@@ -1786,13 +1811,23 @@ function resolveBrowserOrigin(candidate: string): string {
   try {
     const url = new URL(normalized);
     const currentHost = window.location.hostname;
-    const isRemotePage = !isLoopbackHostname(currentHost);
-    if (isLoopbackHostname(url.hostname) && isRemotePage) {
-      url.hostname = currentHost;
-    }
-    if (window.location.protocol === "https:" && url.protocol === "http:") {
+    const currentProtocol = window.location.protocol;
+    const isRemotePage = !isWildcardOrInternalHostname(currentHost);
+    const candidateHost = String(url.hostname || "").trim().toLowerCase();
+
+    if (currentProtocol === "https:" && url.protocol === "http:") {
       return "";
     }
+
+    if (
+      isRemotePage &&
+      candidateHost &&
+      candidateHost !== currentHost &&
+      isWildcardOrInternalHostname(candidateHost)
+    ) {
+      return "";
+    }
+
     return url.toString().replace(/\/$/, "");
   } catch {
     if (window.location.protocol === "https:" && normalized.startsWith("http://")) {

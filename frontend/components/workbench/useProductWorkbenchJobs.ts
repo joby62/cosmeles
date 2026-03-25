@@ -541,6 +541,9 @@ export function useProductWorkbenchJobs<
 }
 
 export function formatErrorDetail(err: unknown): string {
+  if (err instanceof TypeError && /fetch/i.test(err.message || "")) {
+    return "网络请求失败：浏览器未连到 API。请检查当前域名下的 /api 代理、NEXT_PUBLIC_API_BASE 配置，以及 frontend 是否已按最新配置重建。";
+  }
   if (err instanceof Error && err.message) return err.message;
   if (typeof err === "string") return err;
   try {

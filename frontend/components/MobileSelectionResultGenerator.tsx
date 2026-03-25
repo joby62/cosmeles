@@ -182,6 +182,11 @@ export default function MobileSelectionResultGenerator({
       </div>
 
       <div className="mt-3 text-[12px] text-black/64">{formatJobHint(activeJob)}</div>
+      {!activeRunning && supportedProducts.length === 0 ? (
+        <div className="mt-2 text-[13px] text-[#9a3412]">
+          当前没有可生成测评结果场景的支持产品，所以任务按钮会保持禁用。请先完成产品上传，并确认产品品类属于洗发水、沐浴露、护发素、润肤露或洗面奶。
+        </div>
+      ) : null}
       {errorMessage ? <div className="mt-2 text-[13px] text-[#b42318]">{errorMessage}</div> : null}
 
       <ProductWorkbenchJobConsole

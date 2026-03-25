@@ -280,6 +280,11 @@ export default function ProductAnalysisGenerator({
       </div>
 
       <div className="mt-3 text-[12px] text-black/64">{formatJobHint(activeJob)}</div>
+      {!activeRunning && supportedProducts.length === 0 ? (
+        <div className="mt-2 text-[13px] text-[#9a3412]">
+          当前没有可做增强分析的支持产品，所以任务按钮会保持禁用。请先完成上传，或检查产品是否已经进入支持品类集合。
+        </div>
+      ) : null}
       {errorMessage ? <div className="mt-2 text-[13px] text-[#b42318]">{errorMessage}</div> : null}
 
       <ProductWorkbenchJobConsole

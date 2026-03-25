@@ -190,6 +190,11 @@ export default function ProductRouteMappingGenerator({
       </div>
 
       <div className="mt-3 text-[12px] text-black/64">{formatJobHint(activeJob)}</div>
+      {!activeRunning && supportedProducts.length === 0 ? (
+        <div className="mt-2 text-[13px] text-[#9a3412]">
+          当前没有可做类型映射的支持产品，所以任务按钮会保持禁用。请先在上传台导入产品，并确认品类属于洗发水、沐浴露、护发素、润肤露或洗面奶。
+        </div>
+      ) : null}
       {errorMessage ? <div className="mt-2 text-[13px] text-[#b42318]">{errorMessage}</div> : null}
 
       <ProductWorkbenchJobConsole
