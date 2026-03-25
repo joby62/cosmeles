@@ -1,0 +1,13 @@
+# Track the empty runtime skeleton, but ignore local data files.
+*
+!.gitignore
+!images/
+!products/
+!doubao_runs/
+!tmp_uploads/
+!ingredients/
+!route_mappings/
+!product_profiles/
+!selection_results/
+!postgres/
+!postgres-dev/

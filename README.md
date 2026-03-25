@@ -79,6 +79,11 @@ docs/workflow/startup-prompts/                    新对话启动 prompt
    - 单机低成本基线可以继续保守
    - 真要多机，必须先把共享 PostgreSQL 和共享 Redis 的地址、权限、连通性定下来
 
+6. 本地 storage / user_storage
+   - 这两棵目录现在仍然有效，不是废弃目录
+   - Git 只保留空目录骨架，运行时文件不会随仓库分发
+   - 如果你是从旧项目目录迁移到新 clone，要把旧的 `backend/storage` 和 `backend/user_storage` 数据手动拷回来
+
 ## 本地开发
 
 ### Backend

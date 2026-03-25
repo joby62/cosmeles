@@ -1,0 +1,5 @@
+# Keep the image runtime directories, ignore generated assets.
+*
+!.gitignore
+!jpg/
+!webp/

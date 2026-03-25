@@ -1,0 +1,6 @@
+# Keep selection-result artifact directories, ignore local files.
+*
+!.gitignore
+!published/
+!published_versions/
+!raw/

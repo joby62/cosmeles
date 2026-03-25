@@ -1,0 +1,10 @@
+# Track the empty runtime skeleton, but ignore local user data.
+*
+!.gitignore
+!images/
+!uploads/
+!products/
+!route_mappings/
+!product_profiles/
+!doubao_runs/
+!compare_results/

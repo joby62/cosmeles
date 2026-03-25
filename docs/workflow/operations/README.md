@@ -182,6 +182,44 @@ cp .env.single-node.example .env.runtime
 - `BACKEND_HOST=backend`
 - `BACKEND_PORT=8000`
 
+### 3.5.1 首次 clone 后的本地数据目录
+
+仓库现在会自带空的运行时目录骨架：
+
+- `backend/storage/`
+- `backend/user_storage/`
+
+这些目录本身会出现在第一次 clone 中，但里面的运行时数据仍被 `.gitignore` 忽略，不会随 Git 下发。
+
+在没有接入真正对象存储上传后端之前，这两棵目录仍然是 live local path。尤其下面这些内容还依赖本地文件：
+
+- `backend/storage/images/`
+- `backend/storage/doubao_runs/`
+- `backend/storage/tmp_uploads/`
+- `backend/user_storage/uploads/`
+- `backend/user_storage/images/`
+- `backend/user_storage/doubao_runs/`
+
+注意：
+
+- `selection result` 的结构化在线真相已经是 PostgreSQL payload，不再以本地 artifact 为在线主读源
+- 但图片、豆包运行痕迹、用户上传文件仍可能在本地目录里
+
+如果你像现在这样把旧项目重命名为 `legacy`，再重新 clone 新项目，首次启动前建议先把旧数据迁回来：
+
+```bash
+cd ~
+cp -R cosmeles_legacy/backend/storage/* cosmeles/backend/storage/
+cp -R cosmeles_legacy/backend/user_storage/* cosmeles/backend/user_storage/
+```
+
+如果你只想迁最关键的数据，至少先迁：
+
+- `backend/storage/images/`
+- `backend/storage/doubao_runs/`
+- `backend/user_storage/`
+- 以及你还需要的 `backend/storage/app.db`
+
 如果你要开 admin console，再额外加入：
 
 ```bash

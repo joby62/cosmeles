@@ -6,11 +6,6 @@ backend/.venv
 *.py[cod]
 *.pyo
 *.pyd
-backend/storage/app.db
-backend/storage/postgres/
-backend/storage/images/
-backend/storage/products/
-backend/storage/doubao_runs/
 
 # Node
 frontend/node_modules

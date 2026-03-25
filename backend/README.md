@@ -40,6 +40,20 @@
 - Redis contract（lock / cache only）
 - worker poller + DB-backed job truth
 
+## 本地 storage 现在是否还有效
+
+有效，而且现在仍然是 live runtime path，不是历史遗留摆设。
+
+- `backend/storage/`
+  - 仍承载本地图片、`doubao_runs`、临时上传、开发期 SQLite fallback、PostgreSQL volume 挂载目录
+- `backend/user_storage/`
+  - 仍承载用户图片、上传文件、用户侧 `doubao_runs`、compare 结果等本地文件
+- 例外：
+  - `selection result` 的结构化在线真相已经切到 PostgreSQL payload
+  - object storage / CDN 目前只冻结了 URL contract，还没有把后端本地写入完全替换成真正对象存储后端
+
+现在仓库会跟踪 `storage/` 和 `user_storage/` 的空目录骨架，并用目录内 `.gitignore` 忽略运行时内容。第一次 clone 会看到正确目录结构，但不会带上你的线上数据。
+
 ## 当前 runtime profile 语义
 
 ### `single_node`
@@ -92,6 +106,20 @@ cp /Users/lijiabo/Documents/New\ project/backend/.env.local.example /Users/lijia
 cd /Users/lijiabo/Documents/New\ project
 docker compose --env-file .env.runtime -f docker-compose.prod.yml up -d --build postgres backend worker frontend
 ```
+
+如果你是从旧机器上的 `legacy` 目录迁移到新 clone，想保留已有本地文件，需要在首次启动前把下面两棵目录拷回新项目：
+
+```bash
+cp -R ~/cosmeles_legacy/backend/storage/* ~/cosmeles/backend/storage/
+cp -R ~/cosmeles_legacy/backend/user_storage/* ~/cosmeles/backend/user_storage/
+```
+
+至少要确认这些内容是否需要迁移：
+
+- `backend/storage/images/`
+- `backend/storage/doubao_runs/`
+- `backend/storage/app.db`（如果你还依赖旧 SQLite 数据）
+- `backend/user_storage/`
 
 ### 仅调试镜像
 
