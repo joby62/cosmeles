@@ -4,6 +4,7 @@ import {
   isAdminProtectedPath,
   isValidAdminConsoleSession,
 } from "@/lib/adminAuth";
+import { buildExternalUrl } from "@/lib/requestOrigin";
 
 const MOBILE_DEVICE_COOKIE = "mx_device_id";
 const MOBILE_DEVICE_HEADER = "x-mobile-device-id";
@@ -59,7 +60,7 @@ function redirectToAdminAuth(req: NextRequest): NextResponse {
   params.set("returnTo", returnTo);
   return withDeviceIdentity(
     req,
-    NextResponse.redirect(buildPath("/auth", `?${params.toString()}`), 302),
+    NextResponse.redirect(buildExternalUrl(req, buildPath("/auth", `?${params.toString()}`)), 302),
   );
 }
 
@@ -102,7 +103,7 @@ export async function proxy(req: NextRequest) {
   }
 
   const targetPath = pathname === "/" ? "/m" : `/m${pathname}`;
-  return withDeviceIdentity(req, NextResponse.redirect(buildPath(targetPath, search), 302));
+  return withDeviceIdentity(req, NextResponse.redirect(buildExternalUrl(req, buildPath(targetPath, search)), 302));
 }
 
 export const config = {

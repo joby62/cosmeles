@@ -1,8 +1,9 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { ADMIN_CONSOLE_COOKIE_NAME } from "@/lib/adminAuth";
+import { buildExternalUrl } from "@/lib/requestOrigin";
 
-export async function POST() {
-  const res = NextResponse.redirect("/auth", 303);
+export async function POST(req: NextRequest) {
+  const res = NextResponse.redirect(buildExternalUrl(req, "/auth"), 303);
   res.cookies.set({
     name: ADMIN_CONSOLE_COOKIE_NAME,
     value: "",

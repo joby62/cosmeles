@@ -6,6 +6,7 @@ import {
   getConfiguredAdminConsoleSessionToken,
   normalizeAdminReturnTo,
 } from "@/lib/adminAuth";
+import { buildExternalUrl } from "@/lib/requestOrigin";
 
 function formValue(formData: FormData, key: string): string {
   const value = formData.get(key);
@@ -23,13 +24,13 @@ function buildRelativePath(pathname: string, params?: URLSearchParams): string {
   return `${pathname}${query ? `?${query}` : ""}`;
 }
 
-function redirectToAuth(errorCode: string, returnTo: string): NextResponse {
+function redirectToAuth(req: NextRequest, errorCode: string, returnTo: string): NextResponse {
   const params = new URLSearchParams();
   params.set("error", errorCode);
   if (returnTo) {
     params.set("returnTo", returnTo);
   }
-  return NextResponse.redirect(buildRelativePath("/auth", params), 303);
+  return NextResponse.redirect(buildExternalUrl(req, buildRelativePath("/auth", params)), 303);
 }
 
 export async function POST(req: NextRequest) {
@@ -38,24 +39,24 @@ export async function POST(req: NextRequest) {
   const returnTo = normalizeAdminReturnTo(formValue(formData, "returnTo"));
 
   if (!password) {
-    return redirectToAuth("missing-password", returnTo);
+    return redirectToAuth(req, "missing-password", returnTo);
   }
 
   const configuredPassword = getAdminConsolePassword();
   if (!configuredPassword) {
-    return redirectToAuth("config-missing", returnTo);
+    return redirectToAuth(req, "config-missing", returnTo);
   }
 
   if (password !== configuredPassword) {
-    return redirectToAuth("invalid-password", returnTo);
+    return redirectToAuth(req, "invalid-password", returnTo);
   }
 
   const token = await getConfiguredAdminConsoleSessionToken();
   if (!token) {
-    return redirectToAuth("config-missing", returnTo);
+    return redirectToAuth(req, "config-missing", returnTo);
   }
 
-  const res = NextResponse.redirect(returnTo, 303);
+  const res = NextResponse.redirect(buildExternalUrl(req, returnTo), 303);
   res.cookies.set({
     name: ADMIN_CONSOLE_COOKIE_NAME,
     value: token,
