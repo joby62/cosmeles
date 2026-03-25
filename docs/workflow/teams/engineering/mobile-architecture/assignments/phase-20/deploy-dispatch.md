@@ -165,6 +165,13 @@ owner 结论：
 - runtime 7-phase 路线在仓库与本地 deploy gate 层面视为完成。
 - 目标环境的灰度与回滚仍然是后续运维动作，但不再构成 source-repo blocker。
 
+## Final Owner Closeout - 2026-03-25
+
+- runtime 路线收口已并入 `main`：
+  - merge commit = `f1272ba`
+- `main` 已推送到 `origin/main`，当前 phase-20 不再作为 active workflow object。
+- 若后续继续做运行时演进，必须新开 phase 和新的 dispatch bundle；禁止复用本 dispatch。
+
 ## Worker A
 
 长期 handoff：

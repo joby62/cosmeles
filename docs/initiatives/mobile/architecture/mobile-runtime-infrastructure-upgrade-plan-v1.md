@@ -5,7 +5,7 @@ doc_type: architecture
 initiative: mobile
 workstream: architecture
 owner: architecture-owner
-status: active
+status: completed
 priority: p0
 created_at: 2026-03-20
 updated_at: 2026-03-25
@@ -32,29 +32,22 @@ related_docs:
 - 当前 workflow 执行映射：
   - `none`
 - 当前目标：
-  - runtime 7-phase 路线已完成仓库内与本地 deploy gate 收口
+  - runtime 7-phase 路线已完成仓库内、`main` 分支与远端 `origin/main` 的收口
   - 保持 `worker -> db -> api -> web` 的固定拆机顺序作为 frozen rollout contract
-  - 后续目标环境灰度/回滚演练不再作为新的 runtime phase 处理
+  - 后续目标环境灰度/回滚演练作为运维动作处理，不复用当前 runtime phase
 - 当前 integration 状态：
   - `runtime-phase-0 / phase-14` 已完成真实 `docker compose` smoke，并通过 deploy gate
   - `runtime-phase-1 / phase-15` 已完成真实单机四模块 smoke，并通过 owner integration gate
   - `runtime-phase-2 / phase-16` 已完成 object-storage contract、asset-domain wiring、profile-ready env/compose 补强，并通过 owner integration gate
   - `runtime-phase-3 / phase-17` 已完成 selection-result PostgreSQL 单真相切换，并通过 owner follow-up integration gate
   - `runtime-phase-4 / phase-18` 已完成 compare / upload / result-build 的 job + worker execution truth 收口，并通过 owner follow-up integration gate
+  - `runtime-phase-5 / phase-19` 已完成 external PostgreSQL / Redis capability boundary、downgrade、profile config-switch 收口，并通过 owner follow-up integration gate
+  - `runtime-phase-6 / phase-20` 已完成 rollout contract、多机 wiring 与真实 split-runtime deploy gate 收口，并通过 owner follow-up integration gate
   - backend 全量 `pytest backend/tests` 为绿色
   - frontend `tsc` 与 `build` 为绿色
   - `single_node / split_runtime / multi_node` 三套 `docker compose config` 已可展开
-  - `phase-15` record / review 已落盘
-  - `phase-16` record / review 已落盘
-  - `phase-17` record / review 已落盘
-  - `phase-18` record / review 已落盘
-  - `phase-19` record / review 已落盘
-  - `phase-20` record / review 已落盘
-  - `phase-20` dispatch 已落盘，多机拆分执行轮已正式启动
-  - `phase-20` first owner gate 已完成首轮复核：
-    - Worker B rollout truth = `green`
-    - Worker A acceptance = `green`
-    - Worker C follow-up smoke = `green`
+  - `phase-14` 到 `phase-20` 的 record / review 已全部落盘
+  - `phase-20` dispatch 已完成，不再作为 active workflow object
   - owner 抽检：
     - `backend/tests/test_runtime_platform_adapters.py` + `backend/tests/test_runtime_health_contract.py` = `30 passed`
     - `pytest backend/tests` = `173 passed`
@@ -69,8 +62,11 @@ related_docs:
       - `healthz` = `200`
       - `readyz` = `200`
       - frontend entry = `200`
+  - `main` 已合并 runtime 路线收口提交：
+    - merge commit = `f1272ba`
+    - 已推送到 `origin/main`
 - 当前未越过的 gate：
-  - 仓库内无未越过 gate；目标环境灰度/回滚演练属于后续 ops 执行，不再阻塞当前路线图闭环
+  - 仓库与主分支维度无未越过 gate；目标环境灰度/回滚演练属于后续 ops 执行，不再阻塞当前路线图闭环
 - 当前 owner 判断：
   - `runtime-phase-0 / phase-14` 已达到 deploy gate `green`
   - `runtime-phase-1 / phase-15` 已达到 integration gate `green`
@@ -80,7 +76,7 @@ related_docs:
   - `runtime-phase-5 / phase-19` 已达到 follow-up integration gate `green`
   - external PG / Redis capability boundary、pool、downgrade、profile config-switch 已冻结完成
   - `runtime-phase-6 / phase-20` 已达到 deploy gate `green`
-  - runtime 7-phase 路线在 source-repo 维度已闭环完成
+  - runtime 7-phase 路线在 source-repo、`main` 分支与远端主线维度已闭环完成
   - 后续若要继续做运行时演进，必须新开 phase，不复用 `phase-20`
 
 ## 2. 当前仓库暴露出的核心问题
