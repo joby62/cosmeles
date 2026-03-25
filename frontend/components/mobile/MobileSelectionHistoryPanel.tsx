@@ -17,14 +17,7 @@ import {
   appendMobileUtilityRouteState,
   type MobileUtilityRouteState,
 } from "@/features/mobile-utility/routeState";
-import {
-  describeDecisionContinuationAction,
-  describeDecisionContinuationSurface,
-} from "@/features/mobile-utility/decisionContinuationCopy";
-import {
-  MOBILE_UTILITY_CONTINUATION_SURFACE,
-  useMobileUtilitySurfaceContinuationLinks,
-} from "@/features/mobile-utility/useMobileUtilityContinuationLinks";
+import { describeDecisionContinuationSurface } from "@/features/mobile-utility/decisionContinuationCopy";
 import { describeMobileRouteFocus, getMobileCategoryLabel } from "@/lib/mobile/routeCopy";
 
 const SWIPE_ACTION_WIDTH = 84;
@@ -110,6 +103,22 @@ type Props = {
   routeState?: MobileUtilityRouteState | null;
 };
 
+function buildSelectionHistoryResultHref(
+  entry: MobileSelectionResolveResponse,
+  routeState: MobileUtilityRouteState | null,
+): string | null {
+  const params = new URLSearchParams();
+  for (const choice of entry.choices) {
+    const key = String(choice.key || "").trim();
+    const value = String(choice.value || "").trim();
+    if (!key || !value) continue;
+    params.set(key, value);
+  }
+  const query = params.toString();
+  if (!query) return null;
+  return appendMobileUtilityRouteState(`/m/${entry.category}/result?${query}`, routeState);
+}
+
 export default function MobileSelectionHistoryPanel({ routeState = null }: Props) {
   const [entries, setEntries] = useState<MobileSelectionResolveResponse[]>([]);
   const [loading, setLoading] = useState(true);
@@ -130,10 +139,6 @@ export default function MobileSelectionHistoryPanel({ routeState = null }: Props
   const [cleanupLoading, setCleanupLoading] = useState(false);
   const [cleanupApplying, setCleanupApplying] = useState(false);
   const dragRef = useRef<DragState | null>(null);
-  const continuationLinks = useMobileUtilitySurfaceContinuationLinks({
-    routeState,
-    surface: MOBILE_UTILITY_CONTINUATION_SURFACE.meHistorySelection,
-  });
 
   const load = useCallback(async () => {
     try {
@@ -498,7 +503,7 @@ export default function MobileSelectionHistoryPanel({ routeState = null }: Props
             const product = entry.recommended_product;
             const categoryLabel = getMobileCategoryLabel(entry.category);
             const routeFocus = describeMobileRouteFocus(entry.category, entry.route.key);
-            const continuation = continuationLinks.resolveByCategory(entry.category);
+            const resultHref = buildSelectionHistoryResultHref(entry, routeState);
             const checked = selectedIds.includes(entry.session_id);
             const offset = rowOffset(entry.session_id);
             const showingAction = openRowId === entry.session_id && !selectionMode;
@@ -631,12 +636,14 @@ export default function MobileSelectionHistoryPanel({ routeState = null }: Props
 
                   {!selectionMode && (
                     <div className="mt-4 flex flex-wrap gap-2">
-                      <Link
-                        href={continuation.href}
-                        className="inline-flex h-9 items-center rounded-full border border-[#0071e3]/28 bg-[#0071e3]/10 px-4 text-[13px] font-semibold text-[#005fbf] active:bg-[#0071e3]/15"
-                      >
-                        {describeDecisionContinuationAction(continuation.action)}
-                      </Link>
+                      {resultHref ? (
+                        <Link
+                          href={resultHref}
+                          className="inline-flex h-9 items-center rounded-full border border-[#0071e3]/28 bg-[#0071e3]/10 px-4 text-[13px] font-semibold text-[#005fbf] active:bg-[#0071e3]/15"
+                        >
+                          查看本次结果
+                        </Link>
+                      ) : null}
                       <Link
                         href={appendMobileUtilityRouteState(entry.links.product, routeState)}
                         className="inline-flex h-9 items-center rounded-full border border-black/15 px-4 text-[13px] font-medium text-black/78 active:bg-black/[0.03]"

@@ -28,12 +28,18 @@ export default function MeDecisionResumeCard({ routeState }: Props) {
     if (!target) return "";
     return appendMobileUtilityRouteState(target.href, routeState, { includeSource: false });
   }, [routeState, target]);
+  const heading = useMemo(() => {
+    if (!target) return "";
+    if (target.action === "resume_profile") return "未完成答题";
+    if (target.action === "reopen_result") return "最近完成结果";
+    return "继续选择";
+  }, [target]);
 
   if (!target || !resumeHref) return null;
 
   return (
     <article className="rounded-[24px] border border-[#cfe2ff] bg-[linear-gradient(180deg,#f7faff_0%,#eef5ff_100%)] px-4 py-4 text-[#2450a3] shadow-[0_10px_24px_rgba(36,80,163,0.08)]">
-      <p className="text-[11px] font-semibold tracking-[0.04em] text-[#3b67b6]">决策续接</p>
+      <p className="text-[11px] font-semibold tracking-[0.04em] text-[#3b67b6]">{heading}</p>
       <p className="mt-2 text-[15px] font-semibold leading-[1.5]">{target.titleZh}</p>
       <p className="mt-1 text-[12px] text-[#4469ab]">{target.descriptionZh}</p>
       <div className="mt-3">

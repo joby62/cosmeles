@@ -148,11 +148,11 @@ export function readDecisionContinuationTarget(
       titleZh:
         action === "resume_profile"
           ? `继续 ${resumeItem.labelZh} 问答`
-          : `回到 ${resumeItem.labelZh} 最近结果`,
+          : `查看 ${resumeItem.labelZh} 最近结果`,
       descriptionZh:
         action === "resume_profile"
           ? `已完成 ${resumeItem.answeredCount}/${resumeItem.totalSteps} 步，继续即可。`
-          : "可直接打开最近一次结果，继续下一步操作。",
+          : "这条记录已完成，可直接回看结果或继续查看产品。",
     };
   }
 

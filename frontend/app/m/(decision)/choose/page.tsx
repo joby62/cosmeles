@@ -27,11 +27,15 @@ function getResumeCopy(item: DecisionResumeItem): string {
   if (item.kind === "draft") {
     return `你上次做到 ${item.labelZh} 第 ${item.answeredCount}/${item.totalSteps} 步，继续即可。`;
   }
-  return `你上次看过 ${item.labelZh} 结果，如果状态没变，可以直接回看。`;
+  return `你上次已经完成 ${item.labelZh} 测配，如果状态没变，可以直接回看结果。`;
 }
 
 function getResumeAction(item: DecisionResumeItem): string {
-  return item.kind === "draft" ? "继续进度" : "回看结果";
+  return item.kind === "draft" ? "继续答题" : "查看结果";
+}
+
+function getResumeEyebrow(item: DecisionResumeItem): string {
+  return item.kind === "draft" ? "继续未完成答题" : "最近完成结果";
 }
 
 export default function MobileChoosePage() {
@@ -100,7 +104,7 @@ export default function MobileChoosePage() {
           <section className="rounded-[24px] border border-[#0a84ff]/16 bg-[linear-gradient(180deg,rgba(10,132,255,0.10),rgba(255,255,255,0.84))] p-5 shadow-[0_18px_38px_rgba(10,132,255,0.10)] backdrop-blur-2xl dark:border-[#78b8ff]/18 dark:bg-[linear-gradient(180deg,rgba(120,184,255,0.14),rgba(18,26,38,0.86))]">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-[12px] font-semibold tracking-[0.06em] text-[#0a84ff] dark:text-[#9ed0ff]">恢复上次进度</p>
+                <p className="text-[12px] font-semibold tracking-[0.06em] text-[#0a84ff] dark:text-[#9ed0ff]">{getResumeEyebrow(resumeItem)}</p>
                 <p className="mt-2 text-[15px] leading-[1.6] text-black/76 dark:text-white/78">{getResumeCopy(resumeItem)}</p>
               </div>
               <MobileTrackedLink

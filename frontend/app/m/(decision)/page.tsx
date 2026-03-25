@@ -19,8 +19,10 @@ const TRUST_POINTS = ["约 30-45 秒", "直接给结果和理由", "少靠猜，
 const HOME_PRIMARY_TARGET = buildDecisionHomePrimaryHref();
 
 type HomeWorkspaceAction = {
+  eyebrow: string;
   label: string;
   description: string;
+  ctaText: string;
   href: string;
   eventName: "home_resume_click" | "home_workspace_quick_action_click";
   action?: "resume" | "review_result" | "in_use_compare";
@@ -30,11 +32,15 @@ function getResumeTitle(item: DecisionResumeItem): string {
   if (item.kind === "draft") {
     return `你上次做到 ${item.labelZh} 第 ${item.answeredCount}/${item.totalSteps} 步，继续即可。`;
   }
-  return `你上次拿到的是 ${item.labelZh} 结果，可以直接回看。`;
+  return `你上次已经完成 ${item.labelZh} 测配，这条记录应作为历史结果回看。`;
 }
 
 function getResumeActionLabel(item: DecisionResumeItem): string {
-  return item.kind === "draft" ? "继续上次进度" : "回看上次结果";
+  return item.kind === "draft" ? "继续未完成答题" : "查看最近结果";
+}
+
+function getResumeEyebrow(item: DecisionResumeItem): string {
+  return item.kind === "draft" ? "未完成答题" : "最近完成结果";
 }
 
 export default function MobileDecisionHomePage() {
@@ -55,8 +61,10 @@ export default function MobileDecisionHomePage() {
     if (!workspacePrimaryFlow) return null;
     if (workspacePrimaryFlow.kind === "resume_profile" || workspacePrimaryFlow.kind === "reopen_result") {
       return {
+        eyebrow: getResumeEyebrow(workspacePrimaryFlow.resumeItem),
         label: getResumeActionLabel(workspacePrimaryFlow.resumeItem),
         description: getResumeTitle(workspacePrimaryFlow.resumeItem),
+        ctaText: workspacePrimaryFlow.kind === "resume_profile" ? "继续" : "回看",
         href: workspacePrimaryFlow.href,
         eventName: "home_resume_click",
         action: workspacePrimaryFlow.kind === "resume_profile" ? "resume" : "review_result",
@@ -64,8 +72,10 @@ export default function MobileDecisionHomePage() {
     }
     if (workspacePrimaryFlow.kind === "in_use_compare") {
       return {
+        eyebrow: "在用品对比",
         label: "和当前在用做对比",
         description: "已检测到在用品记录，直接带入对比并判断是否值得继续用。",
+        ctaText: "前往",
         href: workspacePrimaryFlow.href,
         eventName: "home_workspace_quick_action_click",
         action: "in_use_compare",
@@ -219,14 +229,17 @@ export default function MobileDecisionHomePage() {
                 className="m-pressable inline-flex min-h-14 items-center justify-between gap-4 rounded-[24px] border border-black/8 bg-white/70 px-5 py-4 text-left shadow-[0_20px_40px_rgba(15,29,53,0.06)] dark:border-white/10 dark:bg-white/6 dark:shadow-[0_20px_44px_rgba(0,0,0,0.22)]"
               >
                 <span>
-                  <span className="block text-[14px] font-semibold tracking-[-0.01em] text-black/82 dark:text-white/86">
+                  <span className="block text-[11px] font-semibold tracking-[0.05em] text-[#0a84ff] dark:text-[#9ed0ff]">
+                    {workspacePrimaryAction.eyebrow}
+                  </span>
+                  <span className="mt-1 block text-[14px] font-semibold tracking-[-0.01em] text-black/82 dark:text-white/86">
                     {workspacePrimaryAction.label}
                   </span>
                   <span className="mt-1 block text-[13px] leading-[1.55] text-black/58 dark:text-white/60">
                     {workspacePrimaryAction.description}
                   </span>
                 </span>
-                <span className="text-[15px] font-semibold text-[#0a84ff] dark:text-[#9ed0ff]">继续</span>
+                <span className="text-[15px] font-semibold text-[#0a84ff] dark:text-[#9ed0ff]">{workspacePrimaryAction.ctaText}</span>
               </MobileTrackedLink>
             ) : null}
 
