@@ -18,6 +18,7 @@ related_docs:
 related_assignments:
   - phase-13-worker-c
 ---
+
 # Mobile Compare Result Page Spec v1
 
 ## 1. 文档信息

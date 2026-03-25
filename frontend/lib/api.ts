@@ -1771,38 +1771,55 @@ export type MobileCompareHistoryCleanupDeleteResponse = MobileCompareHistoryClea
   removed_dirs: number;
 };
 
-function getBaseForFetch(): string {
-  // 在浏览器里优先直连后端，避免 /api 重写层在 multipart 上传时吞掉真实错误。
-  if (typeof window !== "undefined") {
-    const pageProtocol = window.location.protocol;
-    const isHttpsPage = pageProtocol === "https:";
-    const direct = process.env.NEXT_PUBLIC_API_BASE?.trim();
+function normalizeOrigin(value?: string | null): string {
+  return String(value || "").trim().replace(/\/$/, "");
+}
 
-    // HTTPS 页面下强制走同源，避免 Mixed Content（https 页面请求 http://...）
-    // 生产域名场景应由 Next rewrite/Caddy 转发到后端，而不是浏览器直连 :8000。
-    if (isHttpsPage) return "";
+function isLoopbackHostname(hostname: string): boolean {
+  return hostname === "127.0.0.1" || hostname === "localhost";
+}
 
-    if (direct) {
-      try {
-        const url = new URL(direct);
-        const currentHost = window.location.hostname;
-        const isLoopback = url.hostname === "127.0.0.1" || url.hostname === "localhost";
-        const isRemotePage = currentHost !== "127.0.0.1" && currentHost !== "localhost";
-        // 页面运行在远端 IP/域名时，避免把请求打到本机 loopback 导致 CORS 失败。
-        if (isLoopback && isRemotePage) {
-          url.hostname = currentHost;
-        }
-        return url.toString().replace(/\/$/, "");
-      } catch {
-        return direct.replace(/\/$/, "");
-      }
+function resolveBrowserOrigin(candidate: string): string {
+  const normalized = normalizeOrigin(candidate);
+  if (!normalized) return "";
+
+  try {
+    const url = new URL(normalized);
+    const currentHost = window.location.hostname;
+    const isRemotePage = !isLoopbackHostname(currentHost);
+    if (isLoopbackHostname(url.hostname) && isRemotePage) {
+      url.hostname = currentHost;
     }
-    return "";
+    if (window.location.protocol === "https:" && url.protocol === "http:") {
+      return "";
+    }
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    if (window.location.protocol === "https:" && normalized.startsWith("http://")) {
+      return "";
+    }
+    return normalized;
+  }
+}
+
+function getAssetBaseForPublicUrls(): string {
+  if (typeof window !== "undefined") {
+    return resolveBrowserOrigin(process.env.NEXT_PUBLIC_ASSET_BASE || "");
+  }
+  return normalizeOrigin(process.env.ASSET_PUBLIC_ORIGIN) || normalizeOrigin(process.env.NEXT_PUBLIC_ASSET_BASE);
+}
+
+function joinPublicOrigin(base: string, path: string): string {
+  const normalizedPath = normalizePublicImagePath(path);
+  return base ? `${base}${normalizedPath}` : normalizedPath;
+}
+
+function getBaseForFetch(): string {
+  if (typeof window !== "undefined") {
+    return resolveBrowserOrigin(process.env.NEXT_PUBLIC_API_BASE || "");
   }
 
-  // 在 Next Server/SSR 里：Node fetch 需要绝对 URL
-  // 走 nginx 容器名（docker compose 内部 DNS）
-  return process.env.INTERNAL_API_BASE || "http://nginx";
+  return normalizeOrigin(process.env.INTERNAL_API_BASE) || normalizeOrigin(process.env.API_INTERNAL_ORIGIN) || "http://nginx";
 }
 
 function parseFilenameFromDisposition(disposition: string | null): string | null {
@@ -3135,12 +3152,16 @@ function normalizePublicImagePath(path: string): string {
 // 图片 URL：统一返回浏览器可访问地址（优先同域相对路径）
 export function resolveImageUrl(product: Product): string {
   const p = product.image_url || `/images/${product.id}.png`;
-  return normalizePublicImagePath(p);
+  return joinPublicOrigin(getAssetBaseForPublicUrls(), p);
 }
 
 export function resolveStoredImageUrl(imagePath?: string | null): string | null {
   if (!imagePath) return null;
-  return normalizePublicImagePath(imagePath);
+  return joinPublicOrigin(getAssetBaseForPublicUrls(), imagePath);
+}
+
+export function resolveDefaultProductImageUrl(productId: string): string {
+  return joinPublicOrigin(getAssetBaseForPublicUrls(), `/images/${productId}.png`);
 }
 
 export type IngestInput = {

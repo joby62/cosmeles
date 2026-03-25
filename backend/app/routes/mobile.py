@@ -1,23 +1,23 @@
 import hashlib
 import json
-import queue
-import threading
 import re
+import time
 from datetime import datetime
 from collections import defaultdict
 from itertools import combinations
 from pathlib import Path
 from typing import Any, Callable, Literal
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import inspect, select, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.ai.errors import AIServiceError
 from app.ai.orchestrator import run_capability_now
-from app.constants import VALID_CATEGORIES, ROUTE_MAPPING_SUPPORTED_CATEGORIES
+from app.constants import MOBILE_RULES_VERSION, VALID_CATEGORIES, ROUTE_MAPPING_SUPPORTED_CATEGORIES
 from app.db.models import (
     IngredientLibraryAlias,
     IngredientLibraryIndex,
@@ -34,7 +34,9 @@ from app.db.models import (
     UserProduct,
     UserUploadAsset,
 )
-from app.db.session import get_db
+from app.db.session import SessionLocal, get_db
+from app.platform.storage_backend import get_runtime_storage
+from app.platform.task_queue import get_runtime_task_queue
 from app.schemas import (
     MobileCompareBatchDeleteRequest,
     MobileCompareBatchDeleteResponse,
@@ -115,6 +117,16 @@ from app.schemas import (
     ProductAnalysisStoredResult,
 )
 from app.routes.mobile_selection import (
+    BODYWASH_MATRIX_MODEL,
+    BODYWASH_ROUTE_TITLES,
+    CLEANSER_MATRIX_MODEL,
+    CLEANSER_ROUTE_TITLES,
+    CONDITIONER_MATRIX_MODEL,
+    CONDITIONER_ROUTE_TITLES,
+    LOTION_MATRIX_MODEL,
+    LOTION_ROUTE_TITLES,
+    SHAMPOO_MATRIX_MODEL,
+    SHAMPOO_ROUTE_TITLES,
     _latest_selection_session,
     _normalize_answers,
     _resolve_selection,
@@ -141,24 +153,24 @@ from app.services.parser import normalize_doc
 from app.services.storage import (
     copy_user_image_to_product,
     exists_rel_path,
-    load_json,
     new_id,
     now_iso,
     preferred_image_rel_path,
     product_analysis_rel_path,
     remove_rel_dir,
     save_doubao_artifact,
-    save_json_at,
     save_user_product_json,
     save_user_upload_bundle,
 )
 from app.settings import settings
+from app.services.runtime_topology import should_inline_dispatch_compare_job
 
 router = APIRouter(prefix="/api/mobile", tags=["mobile"])
 router.include_router(selection_router)
 
 MOBILE_COMPARE_VERSION = "2026-03-03.3"
 MOBILE_COMPARE_HEARTBEAT_SECONDS = 2
+MOBILE_COMPARE_STATUS_POLL_SECONDS = 0.2
 MOBILE_COMPARE_SESSION_STAGE = "mobile_compare_session"
 MOBILE_COMPARE_RESULT_STAGE = "mobile_compare_result"
 MOBILE_COMPARE_STAGE_META: dict[str, str] = {
@@ -366,7 +378,7 @@ def get_mobile_wiki_product_detail(
     json_path = str(row.json_path or "").strip()
 
     try:
-        raw_doc = load_json(json_path)
+        raw_doc = get_runtime_storage().load_json(json_path)
         preferred_image_rel = preferred_image_rel_path(str(row.image_path or "").strip())
         normalized_doc = normalize_doc(
             raw_doc,
@@ -437,7 +449,7 @@ def get_mobile_wiki_product_analysis(
     storage_path = _mobile_wiki_product_analysis_storage_path(row=product_row, analysis=rec)
 
     try:
-        raw_doc = load_json(storage_path)
+        raw_doc = get_runtime_storage().load_json(storage_path)
         item = ProductAnalysisStoredResult.model_validate(
             {
                 **raw_doc,
@@ -785,7 +797,7 @@ async def upload_mobile_compare_current_product(
         "created_at": created_at,
         "updated_at": created_at,
     }
-    save_json_at(stored["meta_path"], payload)
+    get_runtime_storage().save_json(stored["meta_path"], payload)
 
     upload_row = UserUploadAsset(
         upload_id=upload_id,
@@ -843,43 +855,10 @@ def run_mobile_compare_job_stream(
     category_hint = str(payload.category or "").strip().lower() or "unknown"
     targets_snapshot = _build_compare_targets_snapshot(payload.targets)
     compare_id = new_id()
-    events: queue.Queue[tuple[str, dict[str, Any]] | None] = queue.Queue()
     SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=db.get_bind())
-
-    def emit(event: str, data: dict[str, Any], *, db_session: Session) -> None:
-        if event == "progress":
-            percent_raw = data.get("percent")
-            pair_index_raw = data.get("pair_index")
-            pair_total_raw = data.get("pair_total")
-            try:
-                percent_value = int(percent_raw) if percent_raw is not None else 0
-            except Exception:
-                percent_value = 0
-            try:
-                pair_index_value = int(pair_index_raw) if pair_index_raw is not None else None
-            except Exception:
-                pair_index_value = None
-            try:
-                pair_total_value = int(pair_total_raw) if pair_total_raw is not None else None
-            except Exception:
-                pair_total_value = None
-            _upsert_mobile_compare_session(
-                compare_id=compare_id,
-                owner_type=owner_type,
-                owner_id=owner_id,
-                category=category_hint,
-                db=db_session,
-                patch={
-                    "status": "done" if str(data.get("stage") or "") == "done" else "running",
-                    "stage": str(data.get("stage") or "").strip() or None,
-                    "stage_label": str(data.get("stage_label") or "").strip() or None,
-                    "message": str(data.get("message") or "").strip() or None,
-                    "percent": percent_value,
-                    "pair_index": pair_index_value,
-                    "pair_total": pair_total_value,
-                },
-            )
-        events.put((event, data))
+    _ensure_mobile_compare_index_tables(db)
+    dispatch_mode = "inline_local_queue" if should_inline_dispatch_compare_job() else "worker_poller"
+    job_payload = payload.model_dump(mode="json")
 
     _upsert_mobile_compare_session(
         compare_id=compare_id,
@@ -889,161 +868,34 @@ def run_mobile_compare_job_stream(
         db=db,
         patch={
             "status": "running",
-            "stage": "prepare",
-            "stage_label": MOBILE_COMPARE_STAGE_META.get("prepare"),
-            "message": "任务已提交，正在准备分析。",
-            "percent": 2,
+            "stage": "queued",
+            "stage_label": "等待执行",
+            "message": "任务已创建，等待 worker 执行。",
+            "percent": 0,
             "targets_snapshot": targets_snapshot,
+            "job_payload": job_payload,
+            "execution_backend": dispatch_mode,
+            "job_version": "mobile_compare_job.v1",
         },
     )
-    emit(
-        "accepted",
-        {
-            "status": "accepted",
-            "trace_id": compare_id,
-            "compare_id": compare_id,
-            "category": category_hint,
-            "stage": "prepare",
-            "stage_label": MOBILE_COMPARE_STAGE_META.get("prepare"),
-            "message": "任务已提交，正在准备分析。",
-            "percent": 2,
-            "ts": now_iso(),
-        },
-        db_session=db,
+    _submit_mobile_compare_job(
+        bind=db.get_bind(),
+        compare_id=compare_id,
+        payload=job_payload,
+        owner_type=owner_type,
+        owner_id=owner_id,
+        category=category_hint,
     )
-
-    def worker() -> None:
-        local_db = SessionMaker()
-        try:
-            result = _run_mobile_compare_job(
-                compare_id=compare_id,
-                payload=payload,
-                owner_type=owner_type,
-                owner_id=owner_id,
-                db=local_db,
-                event_callback=lambda event, data: emit(event, data, db_session=local_db),
-            )
-            _upsert_mobile_compare_session(
-                compare_id=compare_id,
-                owner_type=owner_type,
-                owner_id=owner_id,
-                category=result.category,
-                db=local_db,
-                patch={
-                    "status": "done",
-                    "stage": "done",
-                    "stage_label": MOBILE_COMPARE_STAGE_META.get("done"),
-                    "message": "对比已完成。",
-                    "percent": 100,
-                    "pair_index": None,
-                    "pair_total": None,
-                    "error": None,
-                    "result": {
-                        "decision": result.verdict.decision,
-                        "headline": result.verdict.headline,
-                        "confidence": float(result.verdict.confidence or 0.0),
-                        "created_at": result.created_at,
-                    },
-                },
-            )
-            emit("result", result.model_dump(), db_session=local_db)
-        except HTTPException as e:
-            err_payload = _enrich_compare_error_payload(
-                _compare_error_payload_from_http_exception(e),
-                compare_id=compare_id,
-                db=local_db,
-            )
-            _upsert_mobile_compare_session(
-                compare_id=compare_id,
-                owner_type=owner_type,
-                owner_id=owner_id,
-                category=category_hint,
-                db=local_db,
-                patch={
-                    "status": "failed",
-                    "message": str(err_payload.get("detail") or "对比任务失败。"),
-                    "error": err_payload,
-                },
-            )
-            emit("error", err_payload, db_session=local_db)
-        except AIServiceError as e:
-            err_payload = _enrich_compare_error_payload(
-                {
-                    "code": e.code,
-                    "detail": e.message,
-                    "http_status": e.http_status,
-                    "retryable": e.http_status >= 500,
-                },
-                compare_id=compare_id,
-                db=local_db,
-            )
-            _upsert_mobile_compare_session(
-                compare_id=compare_id,
-                owner_type=owner_type,
-                owner_id=owner_id,
-                category=category_hint,
-                db=local_db,
-                patch={
-                    "status": "failed",
-                    "message": str(err_payload.get("detail") or "对比任务失败。"),
-                    "error": err_payload,
-                },
-            )
-            emit("error", err_payload, db_session=local_db)
-        except Exception as e:  # pragma: no cover
-            err_payload = _enrich_compare_error_payload(
-                {
-                    "code": "COMPARE_INTERNAL_ERROR",
-                    "detail": str(e),
-                    "http_status": 500,
-                    "retryable": True,
-                },
-                compare_id=compare_id,
-                db=local_db,
-            )
-            _upsert_mobile_compare_session(
-                compare_id=compare_id,
-                owner_type=owner_type,
-                owner_id=owner_id,
-                category=category_hint,
-                db=local_db,
-                patch={
-                    "status": "failed",
-                    "message": str(err_payload.get("detail") or "对比任务失败。"),
-                    "error": err_payload,
-                },
-            )
-            emit("error", err_payload, db_session=local_db)
-        finally:
-            emit("done", {"status": "done"}, db_session=local_db)
-            events.put(None)
-            local_db.close()
-
-    threading.Thread(target=worker, daemon=True).start()
-
-    def event_iter():
-        while True:
-            try:
-                item = events.get(timeout=MOBILE_COMPARE_HEARTBEAT_SECONDS)
-            except queue.Empty:
-                yield _to_sse(
-                    "heartbeat",
-                    {
-                        "status": "running",
-                        "stage": "pair_compare",
-                        "stage_label": MOBILE_COMPARE_STAGE_META.get("pair_compare"),
-                        "message": "系统仍在分析中，请稍候。",
-                        "ts": now_iso(),
-                    },
-                )
-                continue
-            if item is None:
-                break
-            event, payload_data = item
-            yield _to_sse(event, payload_data)
 
     stream = StreamingResponse(
-        event_iter(),
+        _compare_session_sse_iter(
+            compare_id=compare_id,
+            owner_type=owner_type,
+            owner_id=owner_id,
+            category=category_hint,
+            session_maker=SessionMaker,
+            dispatch_mode=dispatch_mode,
+        ),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache, no-transform",
@@ -1271,14 +1123,13 @@ def get_mobile_compare_result(
     response: Response,
 ):
     owner_type, owner_id, owner_cookie_new = _resolve_owner(request)
-    rel_path = f"doubao_runs/{compare_id}/{MOBILE_COMPARE_RESULT_STAGE}.json"
-    if not exists_rel_path(rel_path):
+    result_payload = _load_mobile_compare_result_payload(
+        compare_id=compare_id,
+        owner_type=owner_type,
+        owner_id=owner_id,
+    )
+    if result_payload is None:
         raise HTTPException(status_code=404, detail="Compare result not found.")
-
-    payload = load_json(rel_path)
-    if str(payload.get("owner_type") or "") != owner_type or str(payload.get("owner_id") or "") != owner_id:
-        raise HTTPException(status_code=404, detail="Compare result not found.")
-    result_payload = payload.get("result")
     if not isinstance(result_payload, dict):
         raise HTTPException(status_code=500, detail="Compare result payload is invalid.")
     result = MobileCompareResultResponse.model_validate(result_payload)
@@ -2069,7 +1920,7 @@ def _resolve_user_product_doc(
             upload_row.updated_at = now
             db.add(upload_row)
         db.commit()
-        return load_json(json_path)
+        return get_runtime_storage().load_json(json_path)
 
     upload_id = str(row.source_upload_id or "").strip()
     if not upload_id:
@@ -2365,7 +2216,7 @@ def _load_mobile_compare_upload_meta(
         if upload_row is not None:
             meta_path = str(upload_row.meta_path or "").strip()
             if meta_path and exists_rel_path(meta_path):
-                payload = load_json(meta_path)
+                payload = get_runtime_storage().load_json(meta_path)
                 if str(payload.get("owner_type") or "") == owner_type and str(payload.get("owner_id") or "") == owner_id:
                     return payload
 
@@ -2380,7 +2231,7 @@ def _load_mobile_compare_upload_meta(
                 "trace_id": trace_id,
             },
         )
-    payload = load_json(rel_path)
+    payload = get_runtime_storage().load_json(rel_path)
     if str(payload.get("owner_type") or "") != owner_type or str(payload.get("owner_id") or "") != owner_id:
         raise HTTPException(
             status_code=404,
@@ -2432,7 +2283,7 @@ def _load_product_doc_payload_by_id(
                 "trace_id": trace_id,
             },
         )
-    return load_json(rec.json_path)
+    return get_runtime_storage().load_json(rec.json_path)
 
 
 def _emit_mobile_compare_ai_event(
@@ -2531,7 +2382,7 @@ def _safe_load_json_dict(rel_path: str) -> dict[str, Any] | None:
     if not exists_rel_path(rel_path):
         return None
     try:
-        payload = load_json(rel_path)
+        payload = get_runtime_storage().load_json(rel_path)
     except Exception:
         return None
     if not isinstance(payload, dict):
@@ -2569,6 +2420,26 @@ def _ensure_mobile_compare_index_tables(db: Session) -> None:
     bind = db.get_bind()
     MobileCompareSessionIndex.__table__.create(bind=bind, checkfirst=True)
     MobileCompareUsageStat.__table__.create(bind=bind, checkfirst=True)
+    inspector = inspect(bind)
+    if "mobile_compare_session_index" not in inspector.get_table_names():
+        return
+    columns = {item["name"] for item in inspector.get_columns("mobile_compare_session_index")}
+    statements: list[str] = []
+    if "job_version" not in columns:
+        statements.append("ALTER TABLE mobile_compare_session_index ADD COLUMN job_version VARCHAR(32)")
+    if "execution_backend" not in columns:
+        statements.append("ALTER TABLE mobile_compare_session_index ADD COLUMN execution_backend VARCHAR(32)")
+    if "job_payload_json" not in columns:
+        statements.append("ALTER TABLE mobile_compare_session_index ADD COLUMN job_payload_json TEXT")
+    indexes = [
+        "CREATE INDEX IF NOT EXISTS ix_mobile_compare_session_execution_scope "
+        "ON mobile_compare_session_index (status, stage, updated_at)",
+    ]
+    with bind.begin() as conn:
+        for stmt in statements:
+            conn.execute(text(stmt))
+        for stmt in indexes:
+            conn.execute(text(stmt))
 
 
 def _coerce_mobile_compare_session_index_payload(
@@ -2624,8 +2495,13 @@ def _coerce_mobile_compare_session_index_payload(
         "percent": percent,
         "pair_index": pair_index,
         "pair_total": pair_total,
+        "job_version": str(payload.get("job_version") or "").strip() or None,
+        "execution_backend": str(payload.get("execution_backend") or "").strip() or None,
     }
 
+    job_payload_value = payload.get("job_payload")
+    if isinstance(job_payload_value, dict):
+        out["job_payload"] = job_payload_value
     result_value = payload.get("result")
     error_value = payload.get("error")
     if isinstance(result_value, dict):
@@ -2667,6 +2543,9 @@ def _coerce_mobile_compare_session_index_payload_from_result(
         "percent": fallback.percent,
         "pair_index": fallback.pair_index,
         "pair_total": fallback.pair_total,
+        "job_version": None,
+        "execution_backend": None,
+        "job_payload": None,
         "result": fallback.result.model_dump() if fallback.result else None,
         "error": fallback.error.model_dump() if fallback.error else None,
     }
@@ -2762,6 +2641,437 @@ def _backfill_mobile_compare_session_index_from_storage(
     return stats
 
 
+def _load_mobile_compare_result_payload(
+    *,
+    compare_id: str,
+    owner_type: str,
+    owner_id: str,
+) -> dict[str, Any] | None:
+    rel_path = _mobile_compare_result_rel_path(compare_id)
+    if not exists_rel_path(rel_path):
+        return None
+    payload = get_runtime_storage().load_json(rel_path)
+    if str(payload.get("owner_type") or "") != owner_type or str(payload.get("owner_id") or "") != owner_id:
+        return None
+    result_payload = payload.get("result")
+    if not isinstance(result_payload, dict):
+        return None
+    return result_payload
+
+
+def _compare_session_signature(session: MobileCompareSessionResponse) -> tuple[Any, ...]:
+    return (
+        str(session.status or ""),
+        str(session.stage or ""),
+        str(session.stage_label or ""),
+        str(session.message or ""),
+        int(session.percent or 0),
+        session.pair_index,
+        session.pair_total,
+        str(session.updated_at or ""),
+        (session.error.code if session.error else None),
+        (session.result.created_at if session.result else None),
+    )
+
+
+def _compare_progress_payload(session: MobileCompareSessionResponse) -> dict[str, Any]:
+    return {
+        "status": str(session.status or "running"),
+        "trace_id": session.compare_id,
+        "compare_id": session.compare_id,
+        "category": session.category,
+        "stage": str(session.stage or "").strip() or "pair_compare",
+        "stage_label": str(session.stage_label or "").strip() or MOBILE_COMPARE_STAGE_META.get("pair_compare"),
+        "message": str(session.message or "").strip() or "系统仍在分析中，请稍候。",
+        "percent": int(session.percent or 0),
+        "pair_index": session.pair_index,
+        "pair_total": session.pair_total,
+        "ts": now_iso(),
+    }
+
+
+def _compare_session_sse_iter(
+    *,
+    compare_id: str,
+    owner_type: str,
+    owner_id: str,
+    category: str,
+    session_maker: sessionmaker,
+    dispatch_mode: str,
+):
+    accepted_payload = {
+        "status": "accepted",
+        "trace_id": compare_id,
+        "compare_id": compare_id,
+        "category": category,
+        "stage": "queued",
+        "stage_label": "等待执行",
+        "message": "任务已创建，等待 worker 执行。",
+        "percent": 0,
+        "dispatch_mode": dispatch_mode,
+        "ts": now_iso(),
+    }
+    yield _to_sse("accepted", accepted_payload)
+
+    last_signature: tuple[Any, ...] | None = None
+    last_heartbeat = time.monotonic()
+    while True:
+        read_db = session_maker()
+        try:
+            session = _get_mobile_compare_session_record(
+                db=read_db,
+                compare_id=compare_id,
+                owner_type=owner_type,
+                owner_id=owner_id,
+            )
+        finally:
+            read_db.close()
+
+        if session is None:
+            yield _to_sse(
+                "error",
+                {
+                    "code": "COMPARE_SESSION_NOT_FOUND",
+                    "detail": f"compare session '{compare_id}' not found.",
+                    "http_status": 404,
+                    "retryable": False,
+                    "stage": "lookup",
+                    "stage_label": "读取任务状态",
+                },
+            )
+            yield _to_sse("done", {"status": "done"})
+            break
+
+        signature = _compare_session_signature(session)
+        if signature != last_signature:
+            last_signature = signature
+            if session.status == "failed":
+                if session.error is not None:
+                    yield _to_sse("error", session.error.model_dump(mode="json"))
+                else:
+                    yield _to_sse(
+                        "error",
+                        {
+                            "code": "COMPARE_FAILED",
+                            "detail": str(session.message or "对比任务失败。"),
+                            "http_status": 500,
+                            "retryable": True,
+                            "stage": str(session.stage or "").strip() or "unknown",
+                            "stage_label": str(session.stage_label or "").strip() or None,
+                        },
+                    )
+                yield _to_sse("done", {"status": "done"})
+                break
+            if session.status == "done":
+                result_payload = _load_mobile_compare_result_payload(
+                    compare_id=compare_id,
+                    owner_type=owner_type,
+                    owner_id=owner_id,
+                )
+                if result_payload is not None:
+                    yield _to_sse("result", result_payload)
+                yield _to_sse("done", {"status": "done"})
+                break
+            yield _to_sse("progress", _compare_progress_payload(session))
+
+        now_mono = time.monotonic()
+        if now_mono - last_heartbeat >= MOBILE_COMPARE_HEARTBEAT_SECONDS:
+            yield _to_sse(
+                "heartbeat",
+                {
+                    "status": "running",
+                    "stage": str(session.stage or "").strip() or "pair_compare",
+                    "stage_label": str(session.stage_label or "").strip() or MOBILE_COMPARE_STAGE_META.get("pair_compare"),
+                    "message": "系统仍在分析中，请稍候。",
+                    "ts": now_iso(),
+                },
+            )
+            last_heartbeat = now_mono
+        time.sleep(MOBILE_COMPARE_STATUS_POLL_SECONDS)
+
+
+def _submit_mobile_compare_job(
+    *,
+    bind: Any,
+    compare_id: str,
+    payload: dict[str, Any],
+    owner_type: str,
+    owner_id: str,
+    category: str,
+) -> None:
+    dispatch_mode = "inline_local_queue" if should_inline_dispatch_compare_job() else "worker_poller"
+    if dispatch_mode != "inline_local_queue":
+        return
+
+    def worker() -> None:
+        local_db = Session(bind=bind)
+        try:
+            _run_mobile_compare_session_job(
+                compare_id=compare_id,
+                payload=payload,
+                owner_type=owner_type,
+                owner_id=owner_id,
+                category_hint=category,
+                db=local_db,
+            )
+        finally:
+            local_db.close()
+
+    try:
+        get_runtime_task_queue().submit_compare_job(worker, task_name=f"mobile-compare-job-{compare_id}")
+    except Exception as e:  # pragma: no cover
+        local_db = Session(bind=bind)
+        try:
+            err_payload = {
+                "code": "COMPARE_DISPATCH_FAILED",
+                "detail": f"[stage=compare_job_dispatch] queue submit failed: {e}",
+                "http_status": 500,
+                "retryable": True,
+                "stage": "dispatch",
+                "stage_label": "提交任务",
+            }
+            _upsert_mobile_compare_session(
+                compare_id=compare_id,
+                owner_type=owner_type,
+                owner_id=owner_id,
+                category=category,
+                db=local_db,
+                patch={
+                    "status": "failed",
+                    "stage": "failed",
+                    "stage_label": "提交失败",
+                    "message": str(err_payload["detail"]),
+                    "error": err_payload,
+                },
+            )
+        finally:
+            local_db.close()
+
+
+def _run_mobile_compare_session_job(
+    *,
+    compare_id: str,
+    payload: dict[str, Any],
+    owner_type: str,
+    owner_id: str,
+    category_hint: str,
+    db: Session,
+) -> None:
+    request_payload = MobileCompareJobRequest.model_validate(payload)
+    _upsert_mobile_compare_session(
+        compare_id=compare_id,
+        owner_type=owner_type,
+        owner_id=owner_id,
+        category=category_hint,
+        db=db,
+        patch={
+            "status": "running",
+            "stage": "prepare",
+            "stage_label": MOBILE_COMPARE_STAGE_META.get("prepare"),
+            "message": "任务已开始执行。",
+            "percent": 2,
+        },
+    )
+
+    def emit_progress(_event: str, data: dict[str, Any]) -> None:
+        if _event != "progress":
+            return
+        percent_raw = data.get("percent")
+        pair_index_raw = data.get("pair_index")
+        pair_total_raw = data.get("pair_total")
+        try:
+            percent_value = int(percent_raw) if percent_raw is not None else 0
+        except Exception:
+            percent_value = 0
+        try:
+            pair_index_value = int(pair_index_raw) if pair_index_raw is not None else None
+        except Exception:
+            pair_index_value = None
+        try:
+            pair_total_value = int(pair_total_raw) if pair_total_raw is not None else None
+        except Exception:
+            pair_total_value = None
+        _upsert_mobile_compare_session(
+            compare_id=compare_id,
+            owner_type=owner_type,
+            owner_id=owner_id,
+            category=category_hint,
+            db=db,
+            patch={
+                "status": "running",
+                "stage": str(data.get("stage") or "").strip() or None,
+                "stage_label": str(data.get("stage_label") or "").strip() or None,
+                "message": str(data.get("message") or "").strip() or None,
+                "percent": percent_value,
+                "pair_index": pair_index_value,
+                "pair_total": pair_total_value,
+            },
+        )
+
+    try:
+        result = _run_mobile_compare_job(
+            compare_id=compare_id,
+            payload=request_payload,
+            owner_type=owner_type,
+            owner_id=owner_id,
+            db=db,
+            event_callback=emit_progress,
+        )
+        _upsert_mobile_compare_session(
+            compare_id=compare_id,
+            owner_type=owner_type,
+            owner_id=owner_id,
+            category=result.category,
+            db=db,
+            patch={
+                "status": "done",
+                "stage": "done",
+                "stage_label": MOBILE_COMPARE_STAGE_META.get("done"),
+                "message": "对比已完成。",
+                "percent": 100,
+                "pair_index": None,
+                "pair_total": None,
+                "error": None,
+                "result": {
+                    "decision": result.verdict.decision,
+                    "headline": result.verdict.headline,
+                    "confidence": float(result.verdict.confidence or 0.0),
+                    "created_at": result.created_at,
+                },
+            },
+        )
+    except HTTPException as e:
+        err_payload = _enrich_compare_error_payload(
+            _compare_error_payload_from_http_exception(e),
+            compare_id=compare_id,
+            db=db,
+        )
+        _upsert_mobile_compare_session(
+            compare_id=compare_id,
+            owner_type=owner_type,
+            owner_id=owner_id,
+            category=category_hint,
+            db=db,
+            patch={
+                "status": "failed",
+                "stage": "failed",
+                "stage_label": "执行失败",
+                "message": str(err_payload.get("detail") or "对比任务失败。"),
+                "error": err_payload,
+            },
+        )
+    except AIServiceError as e:
+        err_payload = _enrich_compare_error_payload(
+            {
+                "code": e.code,
+                "detail": e.message,
+                "http_status": e.http_status,
+                "retryable": e.http_status >= 500,
+            },
+            compare_id=compare_id,
+            db=db,
+        )
+        _upsert_mobile_compare_session(
+            compare_id=compare_id,
+            owner_type=owner_type,
+            owner_id=owner_id,
+            category=category_hint,
+            db=db,
+            patch={
+                "status": "failed",
+                "stage": "failed",
+                "stage_label": "执行失败",
+                "message": str(err_payload.get("detail") or "对比任务失败。"),
+                "error": err_payload,
+            },
+        )
+    except Exception as e:  # pragma: no cover
+        err_payload = _enrich_compare_error_payload(
+            {
+                "code": "COMPARE_INTERNAL_ERROR",
+                "detail": str(e),
+                "http_status": 500,
+                "retryable": True,
+            },
+            compare_id=compare_id,
+            db=db,
+        )
+        _upsert_mobile_compare_session(
+            compare_id=compare_id,
+            owner_type=owner_type,
+            owner_id=owner_id,
+            category=category_hint,
+            db=db,
+            patch={
+                "status": "failed",
+                "stage": "failed",
+                "stage_label": "执行失败",
+                "message": str(err_payload.get("detail") or "对比任务失败。"),
+                "error": err_payload,
+            },
+        )
+
+
+def run_mobile_compare_worker_once() -> bool:
+    db = SessionLocal()
+    try:
+        row = (
+            db.execute(
+                select(MobileCompareSessionIndex)
+                .where(MobileCompareSessionIndex.status == "running")
+                .where(MobileCompareSessionIndex.stage == "queued")
+                .order_by(MobileCompareSessionIndex.updated_at.asc())
+                .limit(1)
+            )
+            .scalars()
+            .first()
+        )
+        if row is None:
+            return False
+        payload_obj: dict[str, Any] | None = None
+        if row.job_payload_json:
+            try:
+                parsed = json.loads(row.job_payload_json)
+                if isinstance(parsed, dict):
+                    payload_obj = parsed
+            except Exception:
+                payload_obj = None
+        if payload_obj is None:
+            _upsert_mobile_compare_session(
+                compare_id=str(row.compare_id),
+                owner_type=str(row.owner_type),
+                owner_id=str(row.owner_id),
+                category=str(row.category or "unknown"),
+                db=db,
+                patch={
+                    "status": "failed",
+                    "stage": "failed",
+                    "stage_label": "执行失败",
+                    "message": "compare job payload missing.",
+                    "error": {
+                        "code": "COMPARE_JOB_PAYLOAD_MISSING",
+                        "detail": "compare job payload missing.",
+                        "http_status": 500,
+                        "retryable": False,
+                        "stage": "prepare",
+                        "stage_label": MOBILE_COMPARE_STAGE_META.get("prepare"),
+                    },
+                },
+            )
+            return True
+        _run_mobile_compare_session_job(
+            compare_id=str(row.compare_id),
+            payload=payload_obj,
+            owner_type=str(row.owner_type),
+            owner_id=str(row.owner_id),
+            category_hint=str(row.category or "unknown"),
+            db=db,
+        )
+        return True
+    finally:
+        db.close()
+
+
 def _upsert_mobile_compare_session(
     *,
     compare_id: str,
@@ -2807,6 +3117,9 @@ def _upsert_mobile_compare_session(
         "pair_index": patch.get("pair_index", existing_payload.get("pair_index")),
         "pair_total": patch.get("pair_total", existing_payload.get("pair_total")),
         "targets_snapshot": patch.get("targets_snapshot", existing_payload.get("targets_snapshot", [])),
+        "job_version": patch.get("job_version", existing_payload.get("job_version")),
+        "execution_backend": patch.get("execution_backend", existing_payload.get("execution_backend")),
+        "job_payload": patch.get("job_payload", existing_payload.get("job_payload")),
         "result": patch.get("result", existing_payload.get("result")),
         "error": patch.get("error", existing_payload.get("error")),
     }
@@ -2816,6 +3129,8 @@ def _upsert_mobile_compare_session(
         merged["error"] = None
     if patch.get("targets_snapshot") is None and "targets_snapshot" in patch:
         merged["targets_snapshot"] = []
+    if patch.get("job_payload") is None and "job_payload" in patch:
+        merged["job_payload"] = None
 
     save_doubao_artifact(compare_id, MOBILE_COMPARE_SESSION_STAGE, merged)
     _upsert_mobile_compare_session_index(db=db, payload=merged)
@@ -2969,12 +3284,16 @@ def _upsert_mobile_compare_session_index(*, db: Session, payload: dict[str, Any]
 
     result_json: str | None = None
     error_json: str | None = None
+    job_payload_json: str | None = None
     result_value = payload.get("result")
     error_value = payload.get("error")
+    job_payload_value = payload.get("job_payload")
     if isinstance(result_value, dict):
         result_json = json.dumps(result_value, ensure_ascii=False)
     if isinstance(error_value, dict):
         error_json = json.dumps(error_value, ensure_ascii=False)
+    if isinstance(job_payload_value, dict):
+        job_payload_json = json.dumps(job_payload_value, ensure_ascii=False)
 
     row.owner_type = owner_type
     row.owner_id = owner_id
@@ -2986,6 +3305,9 @@ def _upsert_mobile_compare_session_index(*, db: Session, payload: dict[str, Any]
     row.percent = max(0, min(100, int(percent)))
     row.pair_index = pair_index
     row.pair_total = pair_total
+    row.job_version = str(payload.get("job_version") or "").strip() or None
+    row.execution_backend = str(payload.get("execution_backend") or "").strip() or None
+    row.job_payload_json = job_payload_json
     row.result_json = result_json
     row.error_json = error_json
     row.created_at = str(payload.get("created_at") or row.created_at or now_iso())
@@ -3009,7 +3331,16 @@ def _session_payload_from_index_row(row: MobileCompareSessionIndex) -> dict[str,
         "percent": int(row.percent or 0),
         "pair_index": row.pair_index,
         "pair_total": row.pair_total,
+        "job_version": row.job_version,
+        "execution_backend": row.execution_backend,
     }
+    if row.job_payload_json:
+        try:
+            parsed = json.loads(row.job_payload_json)
+            if isinstance(parsed, dict):
+                payload["job_payload"] = parsed
+        except Exception:
+            pass
     if row.result_json:
         try:
             parsed = json.loads(row.result_json)
@@ -4133,7 +4464,7 @@ def _mobile_event_detail(props: dict[str, Any]) -> str | None:
 
 def _row_to_mobile_user_product_item(row: UserProduct) -> MobileUserProductItem:
     preferred_image_rel = preferred_image_rel_path(str(row.image_path or "").strip())
-    image_url = f"/{preferred_image_rel.lstrip('/')}" if preferred_image_rel else None
+    image_url = get_runtime_storage().public_url(preferred_image_rel) if preferred_image_rel else None
     return MobileUserProductItem(
         user_product_id=str(row.user_product_id),
         category=str(row.category),

@@ -140,7 +140,8 @@ def test_ingredient_library_background_job_live_text_merges_model_delta(test_cli
 
     done = _wait_for_job_status(client, job_id=job_id, expected={"done"})
     assert "live_text" in done
-    assert "模型输出流 | ing-1 | Niacinamide" in str(done["live_text"])
+    assert "模型输出（response.output_text）" in str(done["live_text"])
+    assert "Niacinamide / ing-1" in str(done["live_text"])
     assert "已完成 | 成分库生成完成" in str(done["live_text"])
 
 

@@ -22,6 +22,7 @@ related_assignments:
   - phase-13-worker-b
   - phase-13-worker-c
 ---
+
 # Mobile First-Run Funnel Execution Spec v1
 
 ## 1. 文档信息

@@ -85,22 +85,27 @@ selection_router = APIRouter(tags=["mobile"])
 
 _SHAMPOO_SHARED_CONFIG = load_mobile_decision_category_config("shampoo")
 SHAMPOO_ROUTE_TITLES = dict(_SHAMPOO_SHARED_CONFIG.route_titles)
+SHAMPOO_MATRIX_MODEL = dict(_SHAMPOO_SHARED_CONFIG.matrix)
 SHAMPOO_MATRIX_CONFIG = compile_matrix_config(_SHAMPOO_SHARED_CONFIG.matrix)
 
 _BODYWASH_SHARED_CONFIG = load_mobile_decision_category_config("bodywash")
 BODYWASH_ROUTE_TITLES = dict(_BODYWASH_SHARED_CONFIG.route_titles)
+BODYWASH_MATRIX_MODEL = dict(_BODYWASH_SHARED_CONFIG.matrix)
 BODYWASH_MATRIX_CONFIG = compile_matrix_config(_BODYWASH_SHARED_CONFIG.matrix)
 
 _CONDITIONER_SHARED_CONFIG = load_mobile_decision_category_config("conditioner")
 CONDITIONER_ROUTE_TITLES = dict(_CONDITIONER_SHARED_CONFIG.route_titles)
+CONDITIONER_MATRIX_MODEL = dict(_CONDITIONER_SHARED_CONFIG.matrix)
 CONDITIONER_MATRIX_CONFIG = compile_matrix_config(_CONDITIONER_SHARED_CONFIG.matrix)
 
 _LOTION_SHARED_CONFIG = load_mobile_decision_category_config("lotion")
 LOTION_ROUTE_TITLES = dict(_LOTION_SHARED_CONFIG.route_titles)
+LOTION_MATRIX_MODEL = dict(_LOTION_SHARED_CONFIG.matrix)
 LOTION_MATRIX_CONFIG = compile_matrix_config(_LOTION_SHARED_CONFIG.matrix)
 
 _CLEANSER_SHARED_CONFIG = load_mobile_decision_category_config("cleanser")
 CLEANSER_ROUTE_TITLES = dict(_CLEANSER_SHARED_CONFIG.route_titles)
+CLEANSER_MATRIX_MODEL = dict(_CLEANSER_SHARED_CONFIG.matrix)
 CLEANSER_MATRIX_CONFIG = compile_matrix_config(_CLEANSER_SHARED_CONFIG.matrix)
 
 

@@ -25,6 +25,7 @@ related_assignments:
   - phase-13-worker-b
   - phase-13-worker-c
 ---
+
 # Mobile Result Decision Closure Spec v1
 
 ## 1. 文档信息

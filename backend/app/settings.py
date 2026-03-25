@@ -9,13 +9,38 @@ DEFAULT_USER_STORAGE_DIR = BACKEND_DIR / "user_storage"
 class Settings(BaseSettings):
     # === 基础环境 ===
     app_env: str = "dev"
+    deploy_profile: str = "single_node"
+    runtime_role: str = "api"
     cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5000,http://127.0.0.1:5000,http://localhost:5001,http://127.0.0.1:5001"
     # 通用跨域兜底：允许任意域名/IP 的开发前端端口（3000/5000/5001）
     cors_origin_regex: str = r"^https?://[a-zA-Z0-9.\-]+(?::(3000|5000|5001))$"
+    api_public_origin: str = ""
+    api_internal_origin: str = ""
+    asset_public_origin: str = ""
+    cookie_domain: str = ""
 
     # === 存储路径（绝对路径，关键）===
     storage_dir: str = str(DEFAULT_STORAGE_DIR)
     user_storage_dir: str = str(DEFAULT_USER_STORAGE_DIR)
+    storage_backend: str = "local_fs"
+    selection_result_repository_backend: str = "postgres_payload"
+    queue_backend: str = "local"
+    lock_backend: str = "local"
+    cache_backend: str = "none"
+    redis_url: str = ""
+    redis_namespace: str = "mobile-runtime"
+    redis_connect_timeout_seconds: float = 1.0
+    redis_socket_timeout_seconds: float = 1.0
+    lock_downgrade_to_local_on_error: bool = True
+    cache_downgrade_to_none_on_error: bool = True
+    asset_object_key_prefix: str = "mobile"
+    asset_private_prefixes_csv: str = (
+        "user-images/,user-uploads/,user-products/,"
+        "user-route-mappings/,user-product-profiles/,user-doubao-runs/,user-compare-results/"
+    )
+    asset_signed_url_ttl_seconds: int = 900
+    asset_signing_secret: str = ""
+    asset_signed_url_enforced: bool = False
 
     # === 数据库 ===
     # SQLite 文件将位于 backend/storage/app.db
@@ -26,6 +51,12 @@ class Settings(BaseSettings):
     db_pool_timeout_seconds: int = 30
     db_pool_recycle_seconds: int = 1800
     db_pool_pre_ping: bool = True
+    db_downgrade_to_sqlite_on_error: bool = True
+    db_downgrade_sqlite_url: str = f"sqlite:///{(DEFAULT_STORAGE_DIR / 'app.db').as_posix()}"
+    rollout_step: str = "worker"
+    rollout_target_step: str = "web"
+    rollout_rollback_enabled: bool = True
+    rollout_consistency_enforced: bool = True
 
     # === 豆包配置 ===
     doubao_mode: str = "real"  # sample/mock | real
@@ -58,6 +89,10 @@ class Settings(BaseSettings):
     max_upload_bytes: int = 8 * 1024 * 1024  # 8MB
     # 上传分析后台任务并发上限（2C4G 推荐 2）
     upload_ingest_max_concurrency: int = 2
+    # 移动端对比任务并发上限（2C4G 推荐 1）
+    compare_job_max_concurrency: int = 1
+    # worker 轮询 queued upload 任务的间隔（秒）
+    worker_poll_interval_seconds: float = 1.0
     # 产品工作台后台任务并发上限（2C4G 推荐 1）
     product_workbench_max_concurrency: int = 1
 

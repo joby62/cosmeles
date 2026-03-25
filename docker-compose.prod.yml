@@ -1,4 +1,22 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cosmeles-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cosmeles}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - ./backend/storage/postgres:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-cosmeles}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   backend:
     build:
       context: .
@@ -9,13 +27,40 @@ services:
       - ./backend/.env.local
     environment:
       APP_ENV: prod
+      DEPLOY_PROFILE: ${DEPLOY_PROFILE:-single_node}
+      RUNTIME_ROLE: api
       STORAGE_DIR: /app/storage
-      DATABASE_URL: sqlite:////app/storage/app.db
-      DB_POOL_SIZE: "8"
-      DB_MAX_OVERFLOW: "4"
-      DB_POOL_TIMEOUT_SECONDS: "30"
-      DB_POOL_RECYCLE_SECONDS: "1800"
-      DB_POOL_PRE_PING: "true"
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-local_fs}
+      SELECTION_RESULT_REPOSITORY_BACKEND: ${SELECTION_RESULT_REPOSITORY_BACKEND:-postgres_payload}
+      QUEUE_BACKEND: ${QUEUE_BACKEND:-local}
+      LOCK_BACKEND: ${LOCK_BACKEND:-local}
+      CACHE_BACKEND: ${CACHE_BACKEND:-none}
+      REDIS_URL: ${REDIS_URL:-}
+      REDIS_NAMESPACE: ${REDIS_NAMESPACE:-mobile-runtime}
+      REDIS_CONNECT_TIMEOUT_SECONDS: ${REDIS_CONNECT_TIMEOUT_SECONDS:-1.0}
+      REDIS_SOCKET_TIMEOUT_SECONDS: ${REDIS_SOCKET_TIMEOUT_SECONDS:-1.0}
+      LOCK_DOWNGRADE_TO_LOCAL_ON_ERROR: ${LOCK_DOWNGRADE_TO_LOCAL_ON_ERROR:-true}
+      CACHE_DOWNGRADE_TO_NONE_ON_ERROR: ${CACHE_DOWNGRADE_TO_NONE_ON_ERROR:-true}
+      COMPARE_JOB_MAX_CONCURRENCY: ${COMPARE_JOB_MAX_CONCURRENCY:-1}
+      DATABASE_URL: ${DATABASE_URL:-sqlite:////app/storage/app.db}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-8}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-4}
+      DB_POOL_TIMEOUT_SECONDS: ${DB_POOL_TIMEOUT_SECONDS:-30}
+      DB_POOL_RECYCLE_SECONDS: ${DB_POOL_RECYCLE_SECONDS:-1800}
+      DB_POOL_PRE_PING: ${DB_POOL_PRE_PING:-true}
+      DB_DOWNGRADE_TO_SQLITE_ON_ERROR: ${DB_DOWNGRADE_TO_SQLITE_ON_ERROR:-true}
+      DB_DOWNGRADE_SQLITE_URL: ${DB_DOWNGRADE_SQLITE_URL:-sqlite:////app/storage/app.db}
+      ROLLOUT_STEP: ${ROLLOUT_STEP:-worker}
+      ROLLOUT_TARGET_STEP: ${ROLLOUT_TARGET_STEP:-web}
+      ROLLOUT_ROLLBACK_ENABLED: ${ROLLOUT_ROLLBACK_ENABLED:-true}
+      ROLLOUT_CONSISTENCY_ENFORCED: ${ROLLOUT_CONSISTENCY_ENFORCED:-true}
+      API_PUBLIC_ORIGIN: ${API_PUBLIC_ORIGIN:-}
+      API_INTERNAL_ORIGIN: ${API_INTERNAL_ORIGIN:-http://backend:8000}
+      ASSET_PUBLIC_ORIGIN: ${ASSET_PUBLIC_ORIGIN:-}
+      ASSET_OBJECT_KEY_PREFIX: ${ASSET_OBJECT_KEY_PREFIX:-mobile-v2}
+      ASSET_SIGNED_URL_TTL_SECONDS: ${ASSET_SIGNED_URL_TTL_SECONDS:-300}
+      ASSET_SIGNED_URL_ENFORCED: ${ASSET_SIGNED_URL_ENFORCED:-false}
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
       UPLOAD_INGEST_MAX_CONCURRENCY: "2"
       DOUBAO_MODE: real
       DOUBAO_PRO_MODEL: doubao-seed-2-0-pro-260215
@@ -25,23 +70,114 @@ services:
       AI_MODEL_PRICING_PER_MTOKEN_JSON: '{"doubao-seed-2-0-pro-260215":{"input":3.2,"output":16,"cache_hit":0.64},"doubao-seed-2-0-lite-260215":{"input":0.6,"output":3.6,"cache_hit":0.12},"doubao-seed-2-0-mini-260215":{"input":0.2,"output":2.0,"cache_hit":0.04}}'
     volumes:
       - ./backend/storage:/app/storage
+      - ./backend/user_storage:/app/user_storage
     ports:
       - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2).getcode()==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks:
+      default:
+        aliases:
+          - api
+          - api-internal
+
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: cosmeles-worker
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env.local
+    environment:
+      APP_ENV: prod
+      DEPLOY_PROFILE: ${DEPLOY_PROFILE:-single_node}
+      RUNTIME_ROLE: worker
+      STORAGE_DIR: /app/storage
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-local_fs}
+      SELECTION_RESULT_REPOSITORY_BACKEND: ${SELECTION_RESULT_REPOSITORY_BACKEND:-postgres_payload}
+      QUEUE_BACKEND: ${QUEUE_BACKEND:-local}
+      LOCK_BACKEND: ${LOCK_BACKEND:-local}
+      CACHE_BACKEND: ${CACHE_BACKEND:-none}
+      REDIS_URL: ${REDIS_URL:-}
+      REDIS_NAMESPACE: ${REDIS_NAMESPACE:-mobile-runtime}
+      REDIS_CONNECT_TIMEOUT_SECONDS: ${REDIS_CONNECT_TIMEOUT_SECONDS:-1.0}
+      REDIS_SOCKET_TIMEOUT_SECONDS: ${REDIS_SOCKET_TIMEOUT_SECONDS:-1.0}
+      LOCK_DOWNGRADE_TO_LOCAL_ON_ERROR: ${LOCK_DOWNGRADE_TO_LOCAL_ON_ERROR:-true}
+      CACHE_DOWNGRADE_TO_NONE_ON_ERROR: ${CACHE_DOWNGRADE_TO_NONE_ON_ERROR:-true}
+      COMPARE_JOB_MAX_CONCURRENCY: ${COMPARE_JOB_MAX_CONCURRENCY:-1}
+      DATABASE_URL: ${DATABASE_URL:-sqlite:////app/storage/app.db}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-8}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-4}
+      DB_POOL_TIMEOUT_SECONDS: ${DB_POOL_TIMEOUT_SECONDS:-30}
+      DB_POOL_RECYCLE_SECONDS: ${DB_POOL_RECYCLE_SECONDS:-1800}
+      DB_POOL_PRE_PING: ${DB_POOL_PRE_PING:-true}
+      DB_DOWNGRADE_TO_SQLITE_ON_ERROR: ${DB_DOWNGRADE_TO_SQLITE_ON_ERROR:-true}
+      DB_DOWNGRADE_SQLITE_URL: ${DB_DOWNGRADE_SQLITE_URL:-sqlite:////app/storage/app.db}
+      ROLLOUT_STEP: ${ROLLOUT_STEP:-worker}
+      ROLLOUT_TARGET_STEP: ${ROLLOUT_TARGET_STEP:-web}
+      ROLLOUT_ROLLBACK_ENABLED: ${ROLLOUT_ROLLBACK_ENABLED:-true}
+      ROLLOUT_CONSISTENCY_ENFORCED: ${ROLLOUT_CONSISTENCY_ENFORCED:-true}
+      API_PUBLIC_ORIGIN: ${API_PUBLIC_ORIGIN:-}
+      API_INTERNAL_ORIGIN: ${API_INTERNAL_ORIGIN:-http://backend:8000}
+      ASSET_PUBLIC_ORIGIN: ${ASSET_PUBLIC_ORIGIN:-}
+      ASSET_OBJECT_KEY_PREFIX: ${ASSET_OBJECT_KEY_PREFIX:-mobile-v2}
+      ASSET_SIGNED_URL_TTL_SECONDS: ${ASSET_SIGNED_URL_TTL_SECONDS:-300}
+      ASSET_SIGNED_URL_ENFORCED: ${ASSET_SIGNED_URL_ENFORCED:-false}
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
+      UPLOAD_INGEST_MAX_CONCURRENCY: "2"
+      DOUBAO_MODE: real
+      DOUBAO_PRO_MODEL: doubao-seed-2-0-pro-260215
+      DOUBAO_TIMEOUT_SECONDS: "180"
+      DOUBAO_MAX_RETRIES: "2"
+      DOUBAO_RETRY_BACKOFF_SECONDS: "1.5"
+      AI_MODEL_PRICING_PER_MTOKEN_JSON: '{"doubao-seed-2-0-pro-260215":{"input":3.2,"output":16,"cache_hit":0.64},"doubao-seed-2-0-lite-260215":{"input":0.6,"output":3.6,"cache_hit":0.12},"doubao-seed-2-0-mini-260215":{"input":0.2,"output":2.0,"cache_hit":0.04}}'
+    volumes:
+      - ./backend/storage:/app/storage
+      - ./backend/user_storage:/app/user_storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=2).getcode()==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile.prod
       args:
-        BACKEND_HOST: backend
-        BACKEND_PORT: "8000"
+        BACKEND_HOST: ${BACKEND_HOST:-backend}
+        BACKEND_PORT: ${BACKEND_PORT:-8000}
+        INTERNAL_API_BASE: ${INTERNAL_API_BASE:-http://backend:8000}
+        API_INTERNAL_ORIGIN: ${API_INTERNAL_ORIGIN:-http://backend:8000}
+        ASSET_PUBLIC_ORIGIN: ${ASSET_PUBLIC_ORIGIN:-}
+        NEXT_PUBLIC_RUNTIME_PROFILE: ${NEXT_PUBLIC_RUNTIME_PROFILE:-single_node}
+        NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-}
+        NEXT_PUBLIC_ASSET_BASE: ${NEXT_PUBLIC_ASSET_BASE:-}
+        NEXT_COMPRESS: ${NEXT_COMPRESS:-false}
     container_name: cosmeles-frontend
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      BACKEND_HOST: backend
-      BACKEND_PORT: "8000"
-      INTERNAL_API_BASE: http://backend:8000
+      DEPLOY_PROFILE: ${DEPLOY_PROFILE:-single_node}
+      BACKEND_HOST: ${BACKEND_HOST:-backend}
+      BACKEND_PORT: ${BACKEND_PORT:-8000}
+      INTERNAL_API_BASE: ${INTERNAL_API_BASE:-http://backend:8000}
+      API_INTERNAL_ORIGIN: ${API_INTERNAL_ORIGIN:-http://backend:8000}
+      ASSET_PUBLIC_ORIGIN: ${ASSET_PUBLIC_ORIGIN:-}
+      NEXT_PUBLIC_RUNTIME_PROFILE: ${NEXT_PUBLIC_RUNTIME_PROFILE:-single_node}
+      NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-}
+      NEXT_PUBLIC_ASSET_BASE: ${NEXT_PUBLIC_ASSET_BASE:-}
+      NEXT_COMPRESS: ${NEXT_COMPRESS:-false}
       GIT_REPO_DIR: /repo
       ADMIN_CONSOLE_PASSWORD: ${ADMIN_CONSOLE_PASSWORD:-}
       ADMIN_CONSOLE_SESSION_SALT: ${ADMIN_CONSOLE_SESSION_SALT:-cosmeles-admin}
@@ -50,4 +186,5 @@ services:
     ports:
       - "5001:3000"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
