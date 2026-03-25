@@ -2653,7 +2653,7 @@ def create_product_dedup_job(payload: ProductDedupSuggestRequest, db: Session = 
         db=db,
         job_type="dedup_suggest",
         params=payload.model_dump(),
-        queued_message=f"任务已创建，等待执行（并发上限 {PRODUCT_WORKBENCH_MAX_CONCURRENCY}）。",
+        queued_message=_product_workbench_queue_message(action="任务已创建"),
     )
 
 
@@ -3285,7 +3285,7 @@ def create_product_route_mapping_job(payload: ProductRouteMappingBuildRequest, d
         db=db,
         job_type="route_mapping_build",
         params=payload.model_dump(),
-        queued_message=f"任务已创建，等待执行（并发上限 {PRODUCT_WORKBENCH_MAX_CONCURRENCY}）。",
+        queued_message=_product_workbench_queue_message(action="任务已创建"),
     )
 
 
@@ -3417,7 +3417,7 @@ def create_product_analysis_job(payload: ProductAnalysisBuildRequest, db: Sessio
         db=db,
         job_type="product_analysis_build",
         params=payload.model_dump(),
-        queued_message=f"任务已创建，等待执行（并发上限 {PRODUCT_WORKBENCH_MAX_CONCURRENCY}）。",
+        queued_message=_product_workbench_queue_message(action="任务已创建"),
     )
 
 
@@ -3520,7 +3520,7 @@ def create_mobile_selection_result_job(
         db=db,
         job_type="selection_result_build",
         params=payload.model_dump(),
-        queued_message=f"任务已创建，等待执行（并发上限 {PRODUCT_WORKBENCH_MAX_CONCURRENCY}）。",
+        queued_message=_product_workbench_queue_message(action="任务已创建"),
     )
 
 
@@ -5653,6 +5653,12 @@ def _product_workbench_live_text_from_json(raw: str | None) -> str | None:
     return _stream_live_text_from_json(raw)
 
 
+def _product_workbench_queue_message(*, action: str) -> str:
+    if should_inline_dispatch_product_workbench_job():
+        return f"{action}，等待执行（本地并发上限 {PRODUCT_WORKBENCH_MAX_CONCURRENCY}）。"
+    return f"{action}，等待 worker 执行。"
+
+
 def _ensure_product_workbench_job_table(db: Session) -> None:
     bind = db.get_bind()
     ProductWorkbenchJob.__table__.create(bind=bind, checkfirst=True)
@@ -5823,7 +5829,7 @@ def _retry_product_workbench_job(
     rec.status = "queued"
     rec.stage = "queued"
     rec.stage_label = _product_workbench_stage_label(job_type=normalized_job_type, stage="queued")
-    rec.message = f"重试任务已入队，等待执行（并发上限 {PRODUCT_WORKBENCH_MAX_CONCURRENCY}）。"
+    rec.message = _product_workbench_queue_message(action="重试任务已入队")
     rec.percent = 0
     rec.current_index = None
     rec.current_total = None

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Any
+from typing import Any, Callable
 
 from sqlalchemy import select
 
@@ -45,23 +45,27 @@ def run_upload_ingest_worker_once() -> bool:
         )
         if rec is None:
             return False
-        _run_upload_ingest_job(job_id=str(rec.job_id), db=db, resume=bool(rec.resume_requested))
+        _run_upload_ingest_job(job_id=str(rec.job_id), db=db, resume=bool(getattr(rec, "resume_requested", False)))
         return True
     finally:
         db.close()
 
 
+def _run_worker_poller_once(label: str, poller: Callable[[], bool]) -> bool:
+    try:
+        return bool(poller())
+    except Exception as exc:  # pragma: no cover - defensive guard for long-running loop.
+        logger.exception("runtime worker %s poller failed: %s", label, exc)
+        return False
+
+
 def _worker_loop(stop_event: threading.Event) -> None:
     poll_interval = _worker_poll_interval_seconds()
     while not stop_event.is_set():
-        try:
-            processed_upload = run_upload_ingest_worker_once()
-            processed_compare = run_mobile_compare_worker_once()
-            processed_workbench = run_product_workbench_worker_once()
-            processed = bool(processed_upload or processed_compare or processed_workbench)
-        except Exception as exc:  # pragma: no cover - defensive guard for long-running loop.
-            logger.exception("runtime worker loop failed: %s", exc)
-            processed = False
+        processed_upload = _run_worker_poller_once("upload_ingest", run_upload_ingest_worker_once)
+        processed_compare = _run_worker_poller_once("mobile_compare", run_mobile_compare_worker_once)
+        processed_workbench = _run_worker_poller_once("product_workbench", run_product_workbench_worker_once)
+        processed = bool(processed_upload or processed_compare or processed_workbench)
         wait_seconds = 0.1 if processed else poll_interval
         stop_event.wait(wait_seconds)
 

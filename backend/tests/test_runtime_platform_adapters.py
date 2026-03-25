@@ -1,6 +1,8 @@
 import threading
 
 import pytest
+from sqlalchemy import create_engine, inspect as sa_inspect, text
+from sqlalchemy.orm import sessionmaker
 
 from app.platform.cache_backend import get_runtime_cache_backend
 from app.platform.lock_backend import get_runtime_lock_backend
@@ -14,6 +16,7 @@ from app.routes import products as products_routes
 from app.platform.storage_backend import get_runtime_storage
 from app.platform.task_queue import get_runtime_task_queue
 from app.settings import settings
+from app.services import runtime_worker
 from app.services.runtime_topology import (
     should_inline_dispatch_product_workbench_job,
     should_initialize_runtime_schema,
@@ -322,6 +325,102 @@ def test_runtime_profile_exposes_worker_topology(monkeypatch) -> None:
     assert profile["topology"]["upload_ingest_dispatch_mode"] == "worker_poller"
     assert profile["topology"]["compare_dispatch_mode"] == "worker_poller"
     assert profile["topology"]["product_workbench_dispatch_mode"] == "worker_poller"
+
+
+def test_upload_ingest_ensure_table_adds_resume_requested_for_legacy_schema(tmp_path) -> None:
+    db_path = tmp_path / "legacy-upload.db"
+    engine = create_engine(
+        f"sqlite:///{db_path}",
+        connect_args={"check_same_thread": False},
+    )
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                """
+                CREATE TABLE upload_ingest_jobs (
+                    job_id TEXT PRIMARY KEY,
+                    status TEXT,
+                    stage TEXT,
+                    stage_label TEXT,
+                    message TEXT,
+                    percent INTEGER,
+                    file_name TEXT,
+                    source_content_type TEXT,
+                    temp_upload_path TEXT,
+                    supplement_temp_upload_path TEXT,
+                    image_path TEXT,
+                    image_paths_json TEXT,
+                    category_override TEXT,
+                    brand_override TEXT,
+                    name_override TEXT,
+                    stage1_model_tier TEXT,
+                    stage2_model_tier TEXT,
+                    stage1_text TEXT,
+                    stage2_text TEXT,
+                    missing_fields_json TEXT,
+                    required_view TEXT,
+                    models_json TEXT,
+                    artifacts_json TEXT,
+                    cancel_requested BOOLEAN,
+                    result_json TEXT,
+                    error_json TEXT,
+                    created_at TEXT,
+                    updated_at TEXT,
+                    started_at TEXT,
+                    finished_at TEXT
+                )
+                """
+            )
+        )
+
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    db = SessionLocal()
+    try:
+        ingest_routes._ensure_upload_ingest_job_table(db)
+    finally:
+        db.close()
+
+    columns = {item["name"] for item in sa_inspect(engine).get_columns("upload_ingest_jobs")}
+    engine.dispose()
+
+    assert "resume_requested" in columns
+    assert "stage1_reasoning_text" in columns
+    assert "stage2_reasoning_text" in columns
+
+
+def test_worker_loop_keeps_other_pollers_alive_when_upload_poller_fails(monkeypatch) -> None:
+    calls: list[str] = []
+
+    def fail_upload() -> bool:
+        calls.append("upload")
+        raise RuntimeError("upload poller boom")
+
+    def ok_compare() -> bool:
+        calls.append("compare")
+        return False
+
+    def ok_workbench() -> bool:
+        calls.append("workbench")
+        return False
+
+    class _StopAfterOneTick:
+        def __init__(self) -> None:
+            self._set = False
+
+        def is_set(self) -> bool:
+            return self._set
+
+        def wait(self, _seconds: float) -> bool:
+            self._set = True
+            return False
+
+    monkeypatch.setattr(runtime_worker, "run_upload_ingest_worker_once", fail_upload)
+    monkeypatch.setattr(runtime_worker, "run_mobile_compare_worker_once", ok_compare)
+    monkeypatch.setattr(runtime_worker, "run_product_workbench_worker_once", ok_workbench)
+
+    runtime_worker._worker_loop(_StopAfterOneTick())
+
+    assert calls == ["upload", "compare", "workbench"]
 
 
 @pytest.mark.parametrize("deploy_profile", ["split_runtime", "multi_node"])

@@ -646,10 +646,7 @@ async def create_upload_ingest_job(
         status="queued",
         stage="queued",
         stage_label=_upload_ingest_job_stage_label("queued"),
-        message=(
-            f"任务已入队，等待执行（并发上限 {UPLOAD_INGEST_MAX_CONCURRENCY}）。"
-            + ("（双图同品）" if supplement_temp_rel else "")
-        ),
+        message=_upload_ingest_queue_message(action="任务已入队", supplement=bool(supplement_temp_rel)),
         percent=3,
         file_name=str(upload.filename or "").strip() or "upload.img",
         source_content_type=str(upload.content_type or "").strip() or None,
@@ -671,6 +668,7 @@ async def create_upload_ingest_job(
         models_json=None,
         artifacts_json=None,
         cancel_requested=False,
+        resume_requested=False,
         result_json=None,
         error_json=None,
         created_at=now,
@@ -771,9 +769,10 @@ def retry_upload_ingest_job(job_id: str, db: Session = Depends(get_db)):
     rec.status = "queued"
     rec.stage = "queued"
     rec.stage_label = _upload_ingest_job_stage_label("queued")
-    rec.message = f"重试任务已入队，等待执行（并发上限 {UPLOAD_INGEST_MAX_CONCURRENCY}）。"
+    rec.message = _upload_ingest_queue_message(action="重试任务已入队")
     rec.percent = 3
     rec.cancel_requested = False
+    rec.resume_requested = False
     rec.stage1_text = None
     rec.stage1_reasoning_text = None
     rec.stage2_text = None
@@ -914,9 +913,10 @@ async def resume_upload_ingest_job(
     rec.status = "queued"
     rec.stage = "queued"
     rec.stage_label = _upload_ingest_job_stage_label("queued")
-    rec.message = f"继续任务已入队，等待执行（并发上限 {UPLOAD_INGEST_MAX_CONCURRENCY}）。"
+    rec.message = _upload_ingest_queue_message(action="继续任务已入队")
     rec.percent = max(45, int(rec.percent or 0))
     rec.cancel_requested = False
+    rec.resume_requested = True
     rec.error_json = None
     rec.started_at = None
     rec.finished_at = None
@@ -1168,12 +1168,24 @@ class UploadIngestJobCancelledError(RuntimeError):
     pass
 
 
+def _upload_ingest_queue_message(*, action: str, supplement: bool = False) -> str:
+    if should_inline_dispatch_upload_job():
+        message = f"{action}，等待执行（本地并发上限 {UPLOAD_INGEST_MAX_CONCURRENCY}）。"
+    else:
+        message = f"{action}，等待 worker 执行。"
+    if supplement:
+        message += "（双图同品）"
+    return message
+
+
 def _ensure_upload_ingest_job_table(db: Session) -> None:
     bind = db.get_bind()
     UploadIngestJob.__table__.create(bind=bind, checkfirst=True)
     inspector = sa_inspect(bind)
     columns = {item["name"] for item in inspector.get_columns("upload_ingest_jobs")}
     statements: list[str] = []
+    if "resume_requested" not in columns:
+        statements.append("ALTER TABLE upload_ingest_jobs ADD COLUMN resume_requested BOOLEAN NOT NULL DEFAULT false")
     if "stage1_reasoning_text" not in columns:
         statements.append("ALTER TABLE upload_ingest_jobs ADD COLUMN stage1_reasoning_text TEXT")
     if "stage2_reasoning_text" not in columns:
@@ -1229,6 +1241,7 @@ def _run_upload_ingest_job(*, job_id: str, db: Session, resume: bool) -> None:
             rec.stage_label = _upload_ingest_job_stage_label("uploading")
             rec.message = "任务开始执行。"
             rec.percent = max(8, int(rec.percent or 0))
+        rec.resume_requested = False
         rec.updated_at = now
         db.add(rec)
         db.commit()

@@ -235,6 +235,7 @@ class UploadIngestJob(Base):
     artifacts_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    resume_requested: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
