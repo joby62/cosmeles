@@ -31,6 +31,8 @@ This folder contains the mobile initiative's live truth, milestone history, and 
   - `architecture/mobile-first-run-and-compare-closure-rollout.md`
 - current architecture baseline:
   - `architecture/mobile-architecture-v2.md`
+- parked traffic-relief backlog:
+  - `architecture/mobile-traffic-relief-roadmap-v1.md`
 - completed PostgreSQL migration truth:
   - `architecture/mobile-postgresql-full-migration-plan-v1.md`
 - completed runtime roadmap:
@@ -59,6 +61,7 @@ This folder contains the mobile initiative's live truth, milestone history, and 
 - `postgresql-phase-3 / phase-24` is now completed historical mobile-state table-group migration work.
 - `postgresql-phase-4 / phase-25` is now completed historical SQLite-closure work.
 - There is no active PostgreSQL migration round at the moment.
+- Traffic-relief / CDN / object-storage stop-bleed work is currently parked as a `draft` roadmap and has not been re-activated into a live phase.
 - Runtime work remains closed as its own route; PostgreSQL full migration is governed by a new initiative truth and new dispatch bundle instead of reusing `phase-20`.
 
 ## Current Archive Roots
