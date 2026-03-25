@@ -8,7 +8,7 @@ owner: architecture-owner
 status: frozen
 priority: p0
 created_at: 2026-03-19
-updated_at: 2026-03-24
+updated_at: 2026-03-25
 frozen_at: 2026-03-19
 related_docs:
   - mobile-decision-prd-v1
@@ -43,6 +43,21 @@ related_docs:
 - The result page must preserve one strong conversion action plus secondary compare, rationale, and task-switch routes.
 - Frontend and backend must not maintain separate sources of truth for questionnaire semantics.
 - Route state and analytics semantics must be centrally owned; pages may not invent ad hoc query or event vocabulary.
+
+## Runtime Baseline Reference
+- As of `2026-03-24`, the live runtime baseline from `runtime-phase-1 / phase-15` is a single-node modular topology:
+  - `web`
+  - `api`
+  - `worker`
+  - `postgres`
+- `api` owns HTTP / SSE serving.
+- `worker` owns background polling / execution and must not mount API routes.
+- As of `runtime-phase-2 / phase-16`, split-runtime and multi-node profiles now promote asset delivery through the object-storage contract plus asset-domain wiring; `single_node` keeps a low-cost local fallback profile.
+- As of `runtime-phase-3 / phase-17`, selection-result online truth is frozen as PostgreSQL payload; artifact files remain publish/archive copies only and are no longer valid online read fallback.
+- As of `runtime-phase-4 / phase-18`, compare / upload / result-build execution truth is frozen behind job records plus worker execution; runtime profile and queue contract now expose product-workbench dispatch alongside compare and upload.
+- As of `runtime-phase-5 / phase-19`, external PostgreSQL / Redis capability boundaries are frozen: database remains the only structured truth, Redis is limited to lock/cache semantics, and profile switching now keeps `single_node` fallback while allowing `split_runtime / multi_node` to switch by config only.
+- As of `runtime-phase-6 / phase-20`, rollout order is frozen as `worker -> db -> api -> web`; split-runtime deploy gate is green with healthy backend/worker/postgres plus `healthz/readyz`, and frontend profile wiring no longer hides single-node host assumptions.
+- Object storage, CDN, and `www / api / assets` separation remain governed by `mobile-runtime-infrastructure-upgrade-plan-v1`, not by page-local rewrites.
 
 ## System Layers
 - `shared/mobile/decision/*`

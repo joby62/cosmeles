@@ -71,10 +71,49 @@ def _ensure_mobile_selection_result_schema() -> None:
     statements: list[str] = []
     if "fingerprint" not in columns:
         statements.append("ALTER TABLE mobile_selection_result_index ADD COLUMN fingerprint VARCHAR(64)")
+    if "published_payload_json" not in columns:
+        statements.append("ALTER TABLE mobile_selection_result_index ADD COLUMN published_payload_json TEXT")
+    if "fixed_contract_json" not in columns:
+        statements.append("ALTER TABLE mobile_selection_result_index ADD COLUMN fixed_contract_json TEXT")
+    if "artifact_manifest_json" not in columns:
+        statements.append("ALTER TABLE mobile_selection_result_index ADD COLUMN artifact_manifest_json TEXT")
+    if "payload_backend" not in columns:
+        statements.append(
+            "ALTER TABLE mobile_selection_result_index "
+            "ADD COLUMN payload_backend VARCHAR(32) NOT NULL DEFAULT 'postgres_payload'"
+        )
 
     indexes = [
         "CREATE INDEX IF NOT EXISTS ix_mobile_selection_result_index_fingerprint "
         "ON mobile_selection_result_index (fingerprint)",
+        "CREATE INDEX IF NOT EXISTS ix_mobile_selection_result_index_payload_backend "
+        "ON mobile_selection_result_index (payload_backend)",
+    ]
+
+    with engine.begin() as conn:
+        for stmt in statements:
+            conn.execute(text(stmt))
+        for stmt in indexes:
+            conn.execute(text(stmt))
+
+
+def _ensure_mobile_compare_session_schema() -> None:
+    inspector = inspect(engine)
+    if "mobile_compare_session_index" not in inspector.get_table_names():
+        return
+
+    columns = {item["name"] for item in inspector.get_columns("mobile_compare_session_index")}
+    statements: list[str] = []
+    if "job_version" not in columns:
+        statements.append("ALTER TABLE mobile_compare_session_index ADD COLUMN job_version VARCHAR(32)")
+    if "execution_backend" not in columns:
+        statements.append("ALTER TABLE mobile_compare_session_index ADD COLUMN execution_backend VARCHAR(32)")
+    if "job_payload_json" not in columns:
+        statements.append("ALTER TABLE mobile_compare_session_index ADD COLUMN job_payload_json TEXT")
+
+    indexes = [
+        "CREATE INDEX IF NOT EXISTS ix_mobile_compare_session_execution_scope "
+        "ON mobile_compare_session_index (status, stage, updated_at)",
     ]
 
     with engine.begin() as conn:
@@ -113,6 +152,7 @@ def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     _ensure_mobile_selection_schema()
     _ensure_mobile_selection_result_schema()
+    _ensure_mobile_compare_session_schema()
 
 
 def main() -> None:

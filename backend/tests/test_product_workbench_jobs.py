@@ -1,11 +1,13 @@
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
+from app.db.session import get_db
 from app.routes import products as products_routes
 
 
 def _install_noop_submit(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(products_routes, "_submit_product_workbench_job", lambda **_: None)
-
 
 def test_route_mapping_workbench_job_create_list_cancel(test_client, monkeypatch: pytest.MonkeyPatch):
     client, _ = test_client
@@ -81,6 +83,145 @@ def test_selection_result_workbench_job_create_cancel_and_retry(test_client, mon
     retried_job = retried.json()
     assert retried_job["status"] == "queued"
     assert retried_job["job_type"] == "selection_result_build"
+
+
+def test_selection_result_workbench_job_orphan_running_is_failed_and_can_retry(
+    test_client,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    client, _ = test_client
+    _install_noop_submit(monkeypatch)
+
+    created = client.post(
+        "/api/products/selection-results/jobs",
+        json={"category": "shampoo", "force_regenerate": True},
+    )
+    assert created.status_code == 200
+    job_id = created.json()["job_id"]
+    db_gen = client.app.dependency_overrides[get_db]()
+    db = next(db_gen)
+    try:
+        rec = db.get(products_routes.ProductWorkbenchJob, job_id)
+        assert rec is not None
+        rec.status = "running"
+        rec.stage = "selection_result_build_model_run"
+        rec.stage_label = products_routes._product_workbench_stage_label(
+            job_type="selection_result_build",
+            stage="selection_result_build_model_run",
+        )
+        rec.message = "fake running"
+        rec.percent = 37
+        rec.updated_at = products_routes.now_iso()
+        if not str(rec.started_at or "").strip():
+            rec.started_at = rec.updated_at
+        db.add(rec)
+        db.commit()
+    finally:
+        db_gen.close()
+
+    monkeypatch.setattr(
+        products_routes,
+        "PRODUCT_WORKBENCH_JOB_PROCESS_STARTED_AT",
+        datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+
+    failed = client.get(f"/api/products/selection-results/jobs/{job_id}")
+    assert failed.status_code == 200
+    failed_body = failed.json()
+    assert failed_body["status"] == "failed"
+    assert failed_body["error"] is not None
+    assert failed_body["error"]["code"] == "product_workbench_job_orphaned"
+
+    retried = client.post(f"/api/products/selection-results/jobs/{job_id}/retry")
+    assert retried.status_code == 200
+    retry_body = retried.json()
+    assert retry_body["status"] == "queued"
+    assert retry_body["job_type"] == "selection_result_build"
+
+
+def test_selection_result_workbench_job_orphan_cancelling_is_auto_cancelled(
+    test_client,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    client, _ = test_client
+    _install_noop_submit(monkeypatch)
+
+    created = client.post(
+        "/api/products/selection-results/jobs",
+        json={"category": "shampoo", "force_regenerate": True},
+    )
+    assert created.status_code == 200
+    job_id = created.json()["job_id"]
+    db_gen = client.app.dependency_overrides[get_db]()
+    db = next(db_gen)
+    try:
+        rec = db.get(products_routes.ProductWorkbenchJob, job_id)
+        assert rec is not None
+        rec.status = "running"
+        rec.stage = "selection_result_build_model_run"
+        rec.stage_label = products_routes._product_workbench_stage_label(
+            job_type="selection_result_build",
+            stage="selection_result_build_model_run",
+        )
+        rec.message = "fake running"
+        rec.percent = 51
+        rec.updated_at = products_routes.now_iso()
+        if not str(rec.started_at or "").strip():
+            rec.started_at = rec.updated_at
+        db.add(rec)
+        db.commit()
+    finally:
+        db_gen.close()
+
+    cancelled = client.post(f"/api/products/selection-results/jobs/{job_id}/cancel")
+    assert cancelled.status_code == 200
+    assert cancelled.json()["job"]["status"] == "cancelling"
+
+    monkeypatch.setattr(
+        products_routes,
+        "PRODUCT_WORKBENCH_JOB_PROCESS_STARTED_AT",
+        datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+
+    reconciled = client.get(f"/api/products/selection-results/jobs/{job_id}")
+    assert reconciled.status_code == 200
+    row = reconciled.json()
+    assert row["status"] == "cancelled"
+    assert row["error"] is None
+
+
+def test_selection_result_workbench_job_orphan_queued_is_failed_and_retryable(
+    test_client,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    client, _ = test_client
+    _install_noop_submit(monkeypatch)
+
+    created = client.post(
+        "/api/products/selection-results/jobs",
+        json={"category": "shampoo", "force_regenerate": True},
+    )
+    assert created.status_code == 200
+    job_id = created.json()["job_id"]
+
+    monkeypatch.setattr(
+        products_routes,
+        "PRODUCT_WORKBENCH_JOB_PROCESS_STARTED_AT",
+        datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+
+    failed = client.get(f"/api/products/selection-results/jobs/{job_id}")
+    assert failed.status_code == 200
+    failed_body = failed.json()
+    assert failed_body["status"] == "failed"
+    assert failed_body["error"] is not None
+    assert failed_body["error"]["code"] == "product_workbench_job_orphaned"
+
+    retried = client.post(f"/api/products/selection-results/jobs/{job_id}/retry")
+    assert retried.status_code == 200
+    retry_body = retried.json()
+    assert retry_body["status"] == "queued"
+    assert retry_body["job_type"] == "selection_result_build"
 
 
 def test_product_analysis_workbench_job_create_cancel_and_retry(test_client, monkeypatch: pytest.MonkeyPatch):

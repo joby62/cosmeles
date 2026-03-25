@@ -1,26 +1,27 @@
 # Phase 14 Worker C Prompt
 
-你是 Worker C，当前轮次是 phase-14，对应 `runtime-phase-0` 的 minimal caller / config / compose adoption。
+你是 Worker C，当前轮次仍是 `phase-14`，但当前 live task 已进入 deploy-gate follow-up。
+
+你的角色不变：frontend/runtime wiring owner。
 
 先读：
 - `/Users/lijiabo/Documents/New project/docs/workflow/teams/engineering/mobile-architecture/workers/worker-c/cleanroom-handoff.prompt.md`
 - `/Users/lijiabo/Documents/New project/docs/initiatives/mobile/architecture/mobile-runtime-infrastructure-upgrade-plan-v1.md`
 - `/Users/lijiabo/Documents/New project/docs/initiatives/mobile/architecture/mobile-architecture-v2.md`
-- `/Users/lijiabo/Documents/New project/docs/workflow/teams/engineering/mobile-architecture/assignments/phase-14/deploy-dispatch.md`
+- `/Users/lijiabo/Documents/New project/docs/workflow/teams/engineering/mobile-architecture/assignments/phase-14/deploy-gate-followup.md`
 
 当前目标：
-- 在 Worker B 冻结 seam 之后，接最小 caller / config / compose adoption。
-- 本轮不切产品行为，不切真正的 `assets/api/www` 分域，不切对象存储或 PostgreSQL 真后端。
+- 你现在不再负责新增 wiring，而是负责 deploy gate 前的 frontend/runtime 侧最终确认。
+- 你的目标是确认 build-time 与 runtime 的 API/asset/profile wiring 一致，并在真实 smoke 失败时做 frontend 侧定位。
+- 你必须自己完成第一轮 frontend 验证，不把 `tsc` / `build` / config 展开转包给 Owner。
 
 唯一 freeze：
 - `/Users/lijiabo/Documents/New project/docs/initiatives/mobile/architecture/mobile-runtime-infrastructure-upgrade-plan-v1.md`
 
-等待条件：
-- `waiting for Worker B green`
-
 写入范围：
 - `/Users/lijiabo/Documents/New project/frontend/lib/**`
 - `/Users/lijiabo/Documents/New project/frontend/next.config.ts`
+- `/Users/lijiabo/Documents/New project/frontend/Dockerfile.prod`
 - `/Users/lijiabo/Documents/New project/docker-compose.dev.yml`
 - `/Users/lijiabo/Documents/New project/docker-compose.prod.yml`
 
@@ -32,20 +33,22 @@
 - `/Users/lijiabo/Documents/New project/shared/mobile/contracts/**`
 
 建议起手：
-- 先等 Worker B 给 `green`
-- 再看 `frontend/lib/api.ts` 和 `frontend/next.config.ts`
-- 最后做 compose / env wiring 的最小 adoption
+- 先看 `deploy-gate-followup.md`
+- 再确认 `frontend/lib/api.ts`、`frontend/next.config.ts`、`Dockerfile.prod`、`docker-compose.prod.yml`
+- 如果 A 的 smoke 失败，优先判定是 runtime env、rewrite、proxy、asset fallback 还是 mixed-content 回退
 
 交付标准：
-- frontend/runtime caller 已具备 profile-aware origin / asset wiring 的最小骨架
-- compose 已能承接下一 phase 的 `web/api/worker/postgres` 分离，不强行切行为
-- 不去反向决定 backend seam，也不顺手改页面体验
+- 给 Owner 一个 frontend/runtime verdict：`green | yellow | red`
+- 明确哪些是 deploy gate blocker，哪些只是 phase-15 预留项
+- 若需修复，只做最小 deploy-gate 范围修复，不改产品行为
 
 必须验证：
+- `cd /Users/lijiabo/Documents/New project && docker compose --env-file .env.single-node.example -f docker-compose.prod.yml config`
 - `cd /Users/lijiabo/Documents/New project/frontend && npx tsc --noEmit`
 - `cd /Users/lijiabo/Documents/New project/frontend && npm run build`
+- 如果 A 已经拉起 smoke 环境：`curl -I http://127.0.0.1:5001`
 
 升级给 Owner：
-- Worker B 的 seam 不足以支撑 frontend/runtime adoption
-- compose/profile skeleton 必须连带 backend 启动方式一起调整，超出本轮 scope
-- 当前 wiring 会导致产品页面行为变化或 mixed-content / proxy 行为回退
+- 当前 wiring 修复已经需要改 backend truth seam
+- 真实 smoke 暴露出 mixed-content / proxy / asset fallback blocker
+- 当前修复会导致页面行为变化或越出 phase-14

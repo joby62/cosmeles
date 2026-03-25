@@ -1,10 +1,17 @@
 import hashlib
+import json
 from typing import Any
 
 from sqlalchemy import inspect, select, text
 from sqlalchemy.orm import Session
 
 from app.db.models import MobileSelectionResultIndex, ProductAnalysisIndex
+from app.platform.lock_backend import get_runtime_lock_backend
+from app.platform.selection_result_repository import (
+    SelectionResultArtifactPaths,
+    get_selection_result_repository,
+)
+from app.platform.storage_backend import get_runtime_storage
 from app.schemas import (
     MobileSelectionLinks,
     MobileSelectionResultContractV3,
@@ -25,9 +32,7 @@ from app.schemas import (
     ProductCard,
 )
 from app.services.storage import (
-    load_json,
     now_iso,
-    save_json_at,
     selection_result_published_rel_path,
     selection_result_published_version_rel_path,
     selection_result_raw_version_rel_path,
@@ -58,9 +63,22 @@ def ensure_mobile_selection_result_index_table(db: Session) -> None:
     statements: list[str] = []
     if "fingerprint" not in columns:
         statements.append("ALTER TABLE mobile_selection_result_index ADD COLUMN fingerprint VARCHAR(64)")
+    if "published_payload_json" not in columns:
+        statements.append("ALTER TABLE mobile_selection_result_index ADD COLUMN published_payload_json TEXT")
+    if "fixed_contract_json" not in columns:
+        statements.append("ALTER TABLE mobile_selection_result_index ADD COLUMN fixed_contract_json TEXT")
+    if "artifact_manifest_json" not in columns:
+        statements.append("ALTER TABLE mobile_selection_result_index ADD COLUMN artifact_manifest_json TEXT")
+    if "payload_backend" not in columns:
+        statements.append(
+            "ALTER TABLE mobile_selection_result_index "
+            "ADD COLUMN payload_backend VARCHAR(32) NOT NULL DEFAULT 'postgres_payload'"
+        )
     indexes = [
         "CREATE INDEX IF NOT EXISTS ix_mobile_selection_result_index_fingerprint "
         "ON mobile_selection_result_index (fingerprint)",
+        "CREATE INDEX IF NOT EXISTS ix_mobile_selection_result_index_payload_backend "
+        "ON mobile_selection_result_index (payload_backend)",
     ]
     with bind.begin() as conn:
         for stmt in statements:
@@ -153,21 +171,44 @@ def publish_mobile_selection_result(
     contract_v3 = build_mobile_selection_result_contract_v3(published)
 
     raw_storage_path = None
+    normalized_raw_payload = None
     if raw_payload is not None:
         normalized_raw_payload = dict(raw_payload)
-        normalized_raw_payload["selection_result_v3_contract"] = contract_v3.model_dump(mode="json")
         raw_storage_path = selection_result_raw_version_rel_path(
             category=category,
             rules_version=rules_version,
             answers_hash=answers_hash,
             version_id=version_id,
         )
-        save_json_at(raw_storage_path, normalized_raw_payload)
         published.meta.raw_storage_path = raw_storage_path
 
     doc = published.model_dump(mode="json")
-    save_json_at(published_version_path, doc)
-    save_json_at(storage_path, doc)
+    if normalized_raw_payload is not None:
+        normalized_raw_payload["selection_result_v3_contract"] = contract_v3.model_dump(mode="json")
+
+    artifact_paths = SelectionResultArtifactPaths(
+        latest_path=storage_path,
+        version_path=published_version_path,
+        raw_path=raw_storage_path,
+    )
+    runtime_storage = get_runtime_storage()
+    artifact_manifest = {
+        "strategy": "artifact_copy_only",
+        "storage_backend": runtime_storage.backend_name,
+        "latest_path": storage_path,
+        "version_path": published_version_path,
+        "raw_path": raw_storage_path,
+        "latest_object_key": runtime_storage.object_key(storage_path),
+        "version_object_key": runtime_storage.object_key(published_version_path),
+        "raw_object_key": runtime_storage.object_key(raw_storage_path),
+    }
+    repository = get_selection_result_repository()
+    with get_runtime_lock_backend().named(f"selection-result:{scenario_id}"):
+        repository.persist(
+            paths=artifact_paths,
+            published_doc=doc,
+            raw_doc=normalized_raw_payload,
+        )
 
     rec = db.get(MobileSelectionResultIndex, scenario_id)
     if rec is None:
@@ -198,6 +239,10 @@ def publish_mobile_selection_result(
     rec.raw_storage_path = raw_storage_path
     rec.storage_path = storage_path
     rec.published_version_path = published_version_path
+    rec.published_payload_json = json.dumps(doc, ensure_ascii=False)
+    rec.fixed_contract_json = json.dumps(contract_v3.model_dump(mode="json"), ensure_ascii=False)
+    rec.artifact_manifest_json = json.dumps(artifact_manifest, ensure_ascii=False)
+    rec.payload_backend = "postgres_payload"
     rec.refresh_reason = refresh_reason.strip() or None
     rec.product_analysis_fingerprint = _product_analysis_fingerprint(db=db, product_id=rec.recommended_product_id)
     rec.error_json = None
@@ -251,20 +296,17 @@ def load_mobile_selection_result(
             ),
         )
 
-    storage_path = str(rec.storage_path or "").strip() or selection_result_published_rel_path(
-        category=category,
-        rules_version=rules_version,
-        answers_hash=answers_hash,
-    )
-    try:
-        raw_doc = load_json(storage_path)
-    except Exception as exc:
+    raw_doc = _parse_json_object(str(rec.published_payload_json or "").strip())
+    if raw_doc is None:
         raise MobileSelectionResultLookupError(
-            code="SELECTION_RESULT_PUBLISHED_FILE_MISSING",
-            http_status=500,
-            stage="selection_result_storage",
-            detail=f"Failed to load published selection result from '{storage_path}': {exc}",
-        ) from exc
+            code="SELECTION_RESULT_PAYLOAD_MISSING",
+            http_status=409,
+            stage="selection_result_payload",
+            detail=(
+                "Selection result payload is missing in PostgreSQL index row. "
+                f"scenario_id='{rec.scenario_id}', category='{category}', answers_hash='{answers_hash}'."
+            ),
+        )
 
     try:
         item = MobileSelectionPublishedResult.model_validate(raw_doc)
@@ -542,6 +584,18 @@ def _non_empty_token(value: str, *, field_name: str) -> str:
     if not token:
         raise ValueError(f"{field_name} cannot be empty.")
     return token
+
+
+def _parse_json_object(value: str) -> dict[str, Any] | None:
+    if not value:
+        return None
+    try:
+        parsed = json.loads(value)
+    except Exception:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    return parsed
 
 
 def _ensure_unique(values: list[str], *, field_name: str) -> None:

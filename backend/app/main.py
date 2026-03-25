@@ -9,11 +9,15 @@ from sqlalchemy import text
 
 from app.db.init_db import init_db
 from app.db.session import engine
+from app.platform.runtime_profile import describe_runtime_profile
+from app.platform.storage_backend import get_runtime_storage
 from app.routes.ai import router as ai_router
 from app.routes.ingest import router as ingest_router
 from app.routes.mobile import router as mobile_router
 from app.routes.products import router as products_router
 from app.settings import settings
+from app.services.runtime_topology import api_routes_enabled
+from app.services.runtime_worker import start_runtime_worker_daemon
 
 app = FastAPI(title="Shampoo Picker API", version="0.1.0")
 
@@ -36,17 +40,27 @@ app.add_middleware(
 @app.on_event("startup")
 def _startup_init_db() -> None:
     init_db()
+    start_runtime_worker_daemon()
 
 
 # routes
-app.include_router(ingest_router)
-app.include_router(products_router)
-app.include_router(ai_router)
-app.include_router(mobile_router)
+if api_routes_enabled():
+    app.include_router(ingest_router)
+    app.include_router(products_router)
+    app.include_router(ai_router)
+    app.include_router(mobile_router)
 
 @app.get("/healthz")
 def healthz():
-    return {"status": "ok", "service": "backend", "env": settings.app_env}
+    try:
+        runtime = describe_runtime_profile()
+    except Exception as exc:  # pragma: no cover - surface misconfiguration without failing health route itself.
+        runtime = {
+            "deploy_profile": str(settings.deploy_profile or "single_node").strip() or "single_node",
+            "runtime_role": str(settings.runtime_role or "api").strip() or "api",
+            "error": str(exc),
+        }
+    return {"status": "ok", "service": "backend", "env": settings.app_env, "runtime": runtime}
 
 @app.get("/readyz")
 def readyz():
@@ -57,20 +71,20 @@ def readyz():
         raise HTTPException(status_code=503, detail=f"Database not ready: {e}") from e
 
     try:
-        os.makedirs(settings.storage_dir, exist_ok=True)
-        os.makedirs(settings.user_storage_dir, exist_ok=True)
+        get_runtime_storage().ensure_dirs()
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Storage not ready: {e}") from e
 
-    return {"status": "ready"}
+    return {"status": "ready", "runtime": describe_runtime_profile()}
 
-# static files: always mount /images so route is stable even on first boot
-os.makedirs(settings.storage_dir, exist_ok=True)
-images_dir = os.path.join(settings.storage_dir, "images")
-os.makedirs(images_dir, exist_ok=True)
-app.mount("/images", StaticFiles(directory=images_dir), name="images")
+if api_routes_enabled():
+    # static files: always mount /images so route is stable even on first boot
+    os.makedirs(settings.storage_dir, exist_ok=True)
+    images_dir = os.path.join(settings.storage_dir, "images")
+    os.makedirs(images_dir, exist_ok=True)
+    app.mount("/images", StaticFiles(directory=images_dir), name="images")
 
-os.makedirs(settings.user_storage_dir, exist_ok=True)
-user_images_dir = os.path.join(settings.user_storage_dir, "images")
-os.makedirs(user_images_dir, exist_ok=True)
-app.mount("/user-images", StaticFiles(directory=user_images_dir), name="user-images")
+    os.makedirs(settings.user_storage_dir, exist_ok=True)
+    user_images_dir = os.path.join(settings.user_storage_dir, "images")
+    os.makedirs(user_images_dir, exist_ok=True)
+    app.mount("/user-images", StaticFiles(directory=user_images_dir), name="user-images")

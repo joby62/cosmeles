@@ -150,6 +150,15 @@ The following items must be explicitly frozen before worker implementation:
 
 `Architecture Owner` splits work by module or layer, never by vague effort buckets.
 
+In this repo's default relay mode:
+- `Architecture Owner` is the direct manager of delivery workers
+- the user or coordinator may relay the prompts
+- the relay does not replace owner decomposition, sequencing, or gate authority
+- if a relay is used, the `Architecture Owner` must provide:
+  - prompt file paths
+  - fixed send order
+  - paste-ready worker messages
+
 Good split:
 - worker A owns shared contracts
 - worker B owns page shell
@@ -172,6 +181,11 @@ Each checkpoint must answer:
 - `green`: on track
 - `yellow`: risk exists, decision needed soon
 - `red`: blocked by upstream ambiguity or dependency
+
+If workers are being coordinated through a relay, the `Architecture Owner` must also do three explicit things:
+- restate the send order
+- give copyable text for each worker
+- define the owner gate that will be applied after worker replies
 
 ### 6. Acceptance Order
 

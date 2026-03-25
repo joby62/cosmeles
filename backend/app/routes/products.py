@@ -8,7 +8,6 @@ import zipfile
 import unicodedata
 from urllib.parse import parse_qs, urlsplit
 from functools import lru_cache
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from collections import Counter, defaultdict
@@ -30,7 +29,7 @@ from app.constants import (
     ROUTE_MAPPING_SUPPORTED_CATEGORIES,
 )
 from app.domain.mobile.decision import load_mobile_decision_category_config
-from app.db.session import get_db
+from app.db.session import get_db, SessionLocal
 from app.db.models import (
     ProductIndex,
     IngredientLibraryIndex,
@@ -46,6 +45,7 @@ from app.db.models import (
     MobileCompareUsageStat,
     MobileClientEvent,
 )
+from app.platform.task_queue import get_runtime_task_queue
 from app.settings import settings
 from app.services.storage import (
     load_json,
@@ -67,6 +67,7 @@ from app.services.storage import (
     save_product_analysis,
     product_analysis_rel_path,
 )
+from app.services.runtime_topology import should_inline_dispatch_product_workbench_job
 from app.services.mobile_selection_result_builder import (
     SelectionResultBuildCancelledError,
     build_mobile_selection_results,
@@ -168,10 +169,6 @@ INGREDIENT_BUILD_JOB_HEARTBEAT_SECONDS = 2
 INGREDIENT_BUILD_JOB_STALE_SECONDS = max(60 * 30, INGREDIENT_BUILD_JOB_HEARTBEAT_SECONDS * 300)
 INGREDIENT_BUILD_JOB_PROCESS_STARTED_AT = datetime.now(timezone.utc)
 PRODUCT_WORKBENCH_MAX_CONCURRENCY = max(1, min(2, int(getattr(settings, "product_workbench_max_concurrency", 1))))
-PRODUCT_WORKBENCH_EXECUTOR = ThreadPoolExecutor(
-    max_workers=PRODUCT_WORKBENCH_MAX_CONCURRENCY,
-    thread_name_prefix="product-workbench-job",
-)
 PRODUCT_WORKBENCH_JOB_HEARTBEAT_SECONDS = 2
 PRODUCT_WORKBENCH_JOB_STALE_SECONDS = max(60 * 30, PRODUCT_WORKBENCH_JOB_HEARTBEAT_SECONDS * 300)
 PRODUCT_WORKBENCH_JOB_PROCESS_STARTED_AT = datetime.now(timezone.utc)
@@ -5849,6 +5846,10 @@ def _retry_product_workbench_job(
 
 
 def _submit_product_workbench_job(*, bind: Any, job_id: str) -> None:
+    if not should_inline_dispatch_product_workbench_job():
+        # split/multi profile: API only queues jobs in DB; dedicated worker process pulls and executes.
+        return
+
     SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=bind)
 
     def worker() -> None:
@@ -5859,15 +5860,37 @@ def _submit_product_workbench_job(*, bind: Any, job_id: str) -> None:
             local_db.close()
 
     try:
-        PRODUCT_WORKBENCH_EXECUTOR.submit(worker)
+        get_runtime_task_queue().submit_product_workbench_job(worker, task_name=f"product-workbench-job-{job_id}")
     except Exception as e:
         _mark_product_workbench_job_failed(
             job_id=job_id,
             bind=bind,
             code="product_workbench_dispatch_failed",
-            detail=f"[stage=product_workbench_dispatch] executor submit failed: {e}",
+            detail=f"[stage=product_workbench_dispatch] queue submit failed: {e}",
             http_status=500,
         )
+
+
+def run_product_workbench_worker_once() -> bool:
+    db = SessionLocal()
+    try:
+        _ensure_product_workbench_job_table(db)
+        rec = (
+            db.execute(
+                select(ProductWorkbenchJob)
+                .where(ProductWorkbenchJob.status == "queued")
+                .order_by(ProductWorkbenchJob.updated_at.asc())
+                .limit(1)
+            )
+            .scalars()
+            .first()
+        )
+        if rec is None:
+            return False
+        _run_product_workbench_job(job_id=str(rec.job_id), db=db)
+        return True
+    finally:
+        db.close()
 
 
 def _run_product_workbench_job(*, job_id: str, db: Session) -> None:

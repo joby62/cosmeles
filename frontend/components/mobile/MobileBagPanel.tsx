@@ -3,7 +3,13 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { deleteMobileBagItem, fetchMobileBagItems, resolveImageUrl, type MobileBagItem } from "@/lib/api";
+import {
+  deleteMobileBagItem,
+  fetchMobileBagItems,
+  resolveDefaultProductImageUrl,
+  resolveImageUrl,
+  type MobileBagItem,
+} from "@/lib/api";
 import {
   appendMobileUtilityRouteState,
   type MobileUtilityRouteState,
@@ -106,7 +112,7 @@ export default function MobileBagPanel({ routeState = null }: Props) {
                       href={appendMobileUtilityRouteState(`/m/wiki/product/${encodeURIComponent(p.id)}`, routeState)}
                       className="relative h-[84px] w-[84px] shrink-0 overflow-hidden rounded-xl bg-[#f4f5f9]"
                     >
-                      <Image src={p.image_url ? resolveImageUrl(p) : `/images/${p.id}.png`} alt={p.name || p.id} fill sizes="84px" className="object-cover" />
+                      <Image src={p.image_url ? resolveImageUrl(p) : resolveDefaultProductImageUrl(p.id)} alt={p.name || p.id} fill sizes="84px" className="object-cover" />
                     </Link>
 
                     <div className="min-w-0 flex-1">

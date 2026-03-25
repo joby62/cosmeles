@@ -1,10 +1,8 @@
 import json
 import inspect
 import queue
-import threading
 import re
 import mimetypes
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException, Query
@@ -17,18 +15,19 @@ from app.ai.errors import AIServiceError
 from app.constants import VALID_CATEGORIES, VALID_SOURCES
 from app.db.session import get_db
 from app.db.models import ProductIndex, UploadIngestJob
+from app.platform.storage_backend import get_runtime_storage
+from app.platform.task_queue import get_runtime_task_queue
+from app.services.runtime_topology import should_inline_dispatch_upload_job
 from app.services.storage import (
     cleanup_doubao_artifacts,
     convert_temp_upload_to_storage_image,
     exists_rel_path,
-    load_json,
     move_image_to_category,
     new_id,
     now_iso,
     save_doubao_artifact,
     save_image,
     save_product_json,
-    read_rel_bytes,
     remove_rel_path,
     save_temp_upload_image,
 )
@@ -46,10 +45,6 @@ MODEL_TIER_OPTIONS = {"mini", "lite", "pro"}
 UPLOAD_INGEST_JOB_STALE_SECONDS = 60 * 30
 UPLOAD_INGEST_JOB_PROCESS_STARTED_AT = datetime.now(timezone.utc)
 UPLOAD_INGEST_MAX_CONCURRENCY = max(1, min(8, int(settings.upload_ingest_max_concurrency)))
-UPLOAD_INGEST_EXECUTOR = ThreadPoolExecutor(
-    max_workers=UPLOAD_INGEST_MAX_CONCURRENCY,
-    thread_name_prefix="upload-ingest",
-)
 
 @router.post("/ingest")
 @router.post("/upload")
@@ -413,7 +408,7 @@ async def ingest_stage1_stream(
             emit("done", {"status": "done"})
             events.put(None)
 
-    threading.Thread(target=worker, daemon=True).start()
+    get_runtime_task_queue().start_stream_task(worker, task_name=f"upload-stage1-stream-{trace_id}")
 
     return StreamingResponse(
         _sse_iter(events),
@@ -509,7 +504,7 @@ async def ingest_stage1_supplement_stream(
             emit("done", {"status": "done"})
             events.put(None)
 
-    threading.Thread(target=worker, daemon=True).start()
+    get_runtime_task_queue().start_stream_task(worker, task_name=f"upload-stage1-supplement-{tid}")
     return StreamingResponse(
         _sse_iter(events),
         media_type="text/event-stream",
@@ -565,7 +560,7 @@ def ingest_stage2_stream(
             events.put(None)
             local_db.close()
 
-    threading.Thread(target=worker, daemon=True).start()
+    get_runtime_task_queue().start_stream_task(worker, task_name=f"upload-stage2-stream-{tid}")
 
     return StreamingResponse(
         _sse_iter(events),
@@ -823,7 +818,7 @@ def preview_upload_ingest_job_image(
         raise HTTPException(status_code=404, detail=f"[stage=upload_job_preview] {normalized_slot} temp image missing: {rel_path}")
 
     try:
-        payload = read_rel_bytes(rel_path)
+        payload = get_runtime_storage().read_bytes(rel_path)
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -879,7 +874,7 @@ async def resume_upload_ingest_job(
     if upload is not None:
         context_rel = f"doubao_runs/{rec.job_id}/stage1_context.json"
         if exists_rel_path(context_rel):
-            context = load_json(context_rel)
+            context = get_runtime_storage().load_json(context_rel)
             context_paths = context.get("image_paths")
             if isinstance(context_paths, list):
                 existing_paths = [str(item or "").strip() for item in context_paths if str(item or "").strip()]
@@ -954,7 +949,7 @@ def _run_stage1_supplement(
     if exists_rel_path(f"products/{trace_id}.json"):
         raise HTTPException(status_code=409, detail="This trace_id has already been finalized.")
 
-    context = load_json(context_rel)
+    context = get_runtime_storage().load_json(context_rel)
     primary_image_path = str(context.get("image_path") or "").strip()
     if not primary_image_path:
         raise HTTPException(status_code=400, detail="Invalid stage1 context: missing image_path.")
@@ -1054,7 +1049,7 @@ def _finalize_stage2(
     if not exists_rel_path(context_rel):
         raise HTTPException(status_code=404, detail="Stage1 context not found. Please run /api/upload/stage1 first.")
 
-    context = load_json(context_rel)
+    context = get_runtime_storage().load_json(context_rel)
     image_rel = context.get("image_path")
     if not image_rel:
         raise HTTPException(status_code=400, detail="Invalid stage1 context: missing image_path.")
@@ -1190,6 +1185,10 @@ def _ensure_upload_ingest_job_table(db: Session) -> None:
 
 
 def _submit_upload_ingest_job(*, bind: Any, job_id: str, resume: bool) -> None:
+    if not should_inline_dispatch_upload_job():
+        # phase-15 split/multi profile: API only queues jobs in DB; dedicated worker process pulls and executes.
+        return
+
     SessionMaker = sessionmaker(autocommit=False, autoflush=False, bind=bind)
 
     def worker() -> None:
@@ -1200,13 +1199,13 @@ def _submit_upload_ingest_job(*, bind: Any, job_id: str, resume: bool) -> None:
             local_db.close()
 
     try:
-        UPLOAD_INGEST_EXECUTOR.submit(worker)
+        get_runtime_task_queue().submit_upload_job(worker, task_name=f"upload-job-{job_id}")
     except Exception as e:
         _mark_upload_ingest_job_failed(
             job_id=job_id,
             bind=bind,
             code="upload_ingest_dispatch_failed",
-            detail=f"[stage=upload_job_dispatch] executor submit failed: {e}",
+            detail=f"[stage=upload_job_dispatch] queue submit failed: {e}",
             http_status=500,
         )
 
@@ -1364,7 +1363,7 @@ def _resume_upload_ingest_job_flow(*, db: Session, rec: UploadIngestJob) -> None
     context_rel = f"doubao_runs/{job_id}/stage1_context.json"
     if not exists_rel_path(context_rel):
         raise HTTPException(status_code=404, detail="Stage1 context not found for resume.")
-    context = load_json(context_rel)
+    context = get_runtime_storage().load_json(context_rel)
     image_path = str(context.get("image_path") or "").strip()
     if not image_path:
         raise HTTPException(status_code=422, detail="Invalid stage1 context: missing image_path.")
