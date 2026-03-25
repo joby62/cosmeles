@@ -31,6 +31,8 @@ This folder contains the mobile initiative's live truth, milestone history, and 
   - `architecture/mobile-first-run-and-compare-closure-rollout.md`
 - current architecture baseline:
   - `architecture/mobile-architecture-v2.md`
+- completed PostgreSQL migration truth:
+  - `architecture/mobile-postgresql-full-migration-plan-v1.md`
 - completed runtime roadmap:
   - `architecture/mobile-runtime-infrastructure-upgrade-plan-v1.md`
 - runtime roadmap final closure summary:
@@ -50,9 +52,14 @@ This folder contains the mobile initiative's live truth, milestone history, and 
 
 ## Current Interpretation
 
-- No runtime phase is active right now.
-- `phase-14` through `phase-20` are complete historical execution rounds.
-- Future runtime changes must open a new phase and new dispatch bundle instead of reusing `phase-20`.
+- `phase-14` through `phase-20` are complete historical runtime execution rounds.
+- `postgresql-phase-0 / phase-21` is now completed historical preparation work.
+- `postgresql-phase-1 / phase-22` is now completed historical production-default contract work.
+- `postgresql-phase-2 / phase-23` is now completed historical high-concurrency table-group migration work.
+- `postgresql-phase-3 / phase-24` is now completed historical mobile-state table-group migration work.
+- `postgresql-phase-4 / phase-25` is now completed historical SQLite-closure work.
+- There is no active PostgreSQL migration round at the moment.
+- Runtime work remains closed as its own route; PostgreSQL full migration is governed by a new initiative truth and new dispatch bundle instead of reusing `phase-20`.
 
 ## Current Archive Roots
 

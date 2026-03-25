@@ -3,9 +3,21 @@ import os
 
 from sqlalchemy import inspect, text
 
-from app.db.models import Base
+from app.db.models import (
+    POSTGRESQL_PHASE_24,
+    POSTGRESQL_PHASE_25,
+    MOBILE_USER_STATE_STRUCTURED_TABLES,
+    Base,
+)
 from app.db.session import engine
 from app.settings import settings
+
+
+SCHEMA_PATCHERS: tuple[str, ...] = (
+    "mobile_selection_sessions",
+    "mobile_selection_result_index",
+    "mobile_compare_session_index",
+)
 
 
 def _ensure_mobile_selection_schema() -> None:
@@ -125,7 +137,7 @@ def _ensure_mobile_compare_session_schema() -> None:
 
 def init_db() -> None:
     """
-    Ensure storage dirs exist and create SQLite tables (idempotent).
+    Ensure storage dirs exist and create DB tables on the active engine (idempotent).
     """
     os.makedirs(settings.storage_dir, exist_ok=True)
     os.makedirs(settings.user_storage_dir, exist_ok=True)
@@ -153,6 +165,37 @@ def init_db() -> None:
     _ensure_mobile_selection_schema()
     _ensure_mobile_selection_result_schema()
     _ensure_mobile_compare_session_schema()
+
+
+def describe_init_db_contract() -> dict:
+    active_engine_driver = str(getattr(getattr(engine, "url", None), "drivername", "unknown") or "unknown")
+    active_engine_driver = active_engine_driver.split("+", 1)[0] or "unknown"
+    return {
+        "phase": POSTGRESQL_PHASE_24,
+        "bootstrap": {
+            "storage_dirs_ensured": True,
+            "metadata_create_all_bind": "active_engine",
+            "active_engine_driver": active_engine_driver,
+            "schema_patchers": list(SCHEMA_PATCHERS),
+        },
+        "phase_24_target": {
+            "phase": POSTGRESQL_PHASE_24,
+            "bootstrap_engine_driver": "postgresql",
+            "metadata_create_all_contract": "unchanged",
+            "schema_patchers_contract": "unchanged",
+            "pg_only_online_truth_table_group": list(MOBILE_USER_STATE_STRUCTURED_TABLES),
+        },
+        "phase_24_scope": {
+            "pg_only_online_truth_cutover": "completed",
+            "phase_25_locked_phase": POSTGRESQL_PHASE_25,
+        },
+        "phase_25_scope": {
+            "sqlite_closure_truth": "in_execution",
+            "production_profile_no_sqlite_online_truth": True,
+            "single_node_profile_role": "dev_or_emergency_fallback",
+            "startup_and_readyz_phase_gate_required": True,
+        },
+    }
 
 
 def main() -> None:

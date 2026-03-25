@@ -8,7 +8,12 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
 from app.db.init_db import init_db
-from app.db.session import engine
+from app.db.session import (
+    assert_phase_23_pg_only_truth_contract,
+    assert_phase_24_mobile_state_pg_only_truth_contract,
+    assert_phase_25_sqlite_closure_contract,
+    engine,
+)
 from app.platform.runtime_profile import describe_runtime_profile
 from app.platform.storage_backend import get_runtime_storage
 from app.routes.ai import router as ai_router
@@ -41,6 +46,9 @@ app.add_middleware(
 def _startup_init_db() -> None:
     if should_initialize_runtime_schema():
         init_db()
+    assert_phase_23_pg_only_truth_contract()
+    assert_phase_24_mobile_state_pg_only_truth_contract()
+    assert_phase_25_sqlite_closure_contract()
     start_runtime_worker_daemon()
 
 
@@ -75,6 +83,13 @@ def readyz():
         get_runtime_storage().ensure_dirs()
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Storage not ready: {e}") from e
+
+    try:
+        assert_phase_23_pg_only_truth_contract()
+        assert_phase_24_mobile_state_pg_only_truth_contract()
+        assert_phase_25_sqlite_closure_contract()
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"PostgreSQL phase contract not ready: {e}") from e
 
     return {"status": "ready", "runtime": describe_runtime_profile()}
 

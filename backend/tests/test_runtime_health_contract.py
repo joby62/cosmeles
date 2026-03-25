@@ -263,6 +263,8 @@ def test_env_skeleton_runtime_profile_contract_is_self_consistent(profile: str, 
         assert env_values["STORAGE_BACKEND"] != "local_fs"
     assert env_values["SELECTION_RESULT_REPOSITORY_BACKEND"] == "postgres_payload"
     assert env_values["QUEUE_BACKEND"] == "local"
+    expected_db_scheme = "sqlite:///" if profile == "single_node" else "postgresql+psycopg://"
+    assert env_values["DATABASE_URL"].startswith(expected_db_scheme)
     assert int(env_values["DB_POOL_SIZE"]) > 0
     assert int(env_values["DB_MAX_OVERFLOW"]) >= 0
     assert int(env_values["DB_POOL_TIMEOUT_SECONDS"]) > 0

@@ -14,6 +14,7 @@ related_docs:
   - mobile-decision-prd-v1
   - mobile-refactor-playbook
   - mobile-runtime-infrastructure-upgrade-plan-v1
+  - mobile-postgresql-full-migration-plan-v1
 ---
 
 # Mobile Architecture V2
@@ -57,6 +58,14 @@ related_docs:
 - As of `runtime-phase-4 / phase-18`, compare / upload / result-build execution truth is frozen behind job records plus worker execution; runtime profile and queue contract now expose product-workbench dispatch alongside compare and upload.
 - As of `runtime-phase-5 / phase-19`, external PostgreSQL / Redis capability boundaries are frozen: database remains the only structured truth, Redis is limited to lock/cache semantics, and profile switching now keeps `single_node` fallback while allowing `split_runtime / multi_node` to switch by config only.
 - As of `runtime-phase-6 / phase-20`, rollout order is frozen as `worker -> db -> api -> web`; split-runtime deploy gate is green with healthy backend/worker/postgres plus `healthz/readyz`, and frontend profile wiring no longer hides single-node host assumptions.
+- As of `postgresql-phase-1 / phase-22`, the production-default structured database contract is frozen:
+  - `split_runtime / multi_node` default to PostgreSQL
+  - `single_node` remains `dev_or_emergency_fallback`
+  - runtime profile exposes the PostgreSQL migration boundary, default-engine contract, and init-bootstrap contract as first-class observability facts
+- As of `postgresql-phase-2 / phase-23`, the high-concurrency backend/product/workbench/job/AI/index table group is frozen behind PostgreSQL-only online truth, and runtime/startup readiness now enforce that boundary for production profiles.
+- As of `postgresql-phase-3 / phase-24`, the mobile state / user-state table group is also frozen behind PostgreSQL-only online truth, and production profiles no longer treat SQLite or artifact/file state as a valid online fallback for those flows.
+- As of `postgresql-phase-4 / phase-25`, SQLite closure is complete: production profiles do not permit SQLite online structured truth or implicit SQLite downgrade, while `single_node` remains explicit `dev_or_emergency_fallback`.
+- Follow-on structured data consolidation after the closed runtime roadmap is governed by `mobile-postgresql-full-migration-plan-v1`; it does not reopen the completed runtime-phase-0 to runtime-phase-6 sequence.
 - Object storage, CDN, and `www / api / assets` separation remain governed by `mobile-runtime-infrastructure-upgrade-plan-v1`, not by page-local rewrites.
 
 ## System Layers
@@ -126,6 +135,7 @@ frontend/legacy/mobile/
   - [`./mobile-refactor-playbook.md`](./mobile-refactor-playbook.md)
   - [`./mobile-first-run-and-compare-closure-rollout.md`](./mobile-first-run-and-compare-closure-rollout.md)
   - [`./mobile-runtime-infrastructure-upgrade-plan-v1.md`](./mobile-runtime-infrastructure-upgrade-plan-v1.md)
+  - [`./mobile-postgresql-full-migration-plan-v1.md`](./mobile-postgresql-full-migration-plan-v1.md)
 - Team-owned prompts and assignments live under:
   - [`../../../workflow/teams/engineering/mobile-architecture/`](../../../workflow/teams/engineering/mobile-architecture/)
 - Historical snapshots live under:

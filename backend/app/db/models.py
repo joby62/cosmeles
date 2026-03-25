@@ -4,6 +4,88 @@ from sqlalchemy import Boolean, Integer, String, Text, Index
 class Base(DeclarativeBase):
     pass
 
+
+POSTGRESQL_PHASE_21 = "postgresql-phase-0"
+POSTGRESQL_PHASE_22 = "postgresql-phase-1"
+POSTGRESQL_PHASE_23 = "postgresql-phase-2"
+POSTGRESQL_PHASE_24 = "postgresql-phase-3"
+POSTGRESQL_PHASE_25 = "postgresql-phase-4"
+
+SELECTION_RESULT_PG_SINGLE_TRUTH_TABLES: tuple[str, ...] = (
+    "mobile_selection_result_index",
+)
+
+PRODUCT_WORKBENCH_STRUCTURED_TABLES: tuple[str, ...] = (
+    "products",
+    "ingredient_library_index",
+    "ingredient_library_alias_index",
+    "ingredient_library_redirects",
+    "ingredient_library_build_jobs",
+    "upload_ingest_jobs",
+    "product_workbench_jobs",
+    "ai_jobs",
+    "ai_runs",
+    "product_route_mapping_index",
+    "product_analysis_index",
+    "product_featured_slots",
+)
+
+MOBILE_USER_STATE_STRUCTURED_TABLES: tuple[str, ...] = (
+    "mobile_selection_sessions",
+    "mobile_compare_session_index",
+    "mobile_compare_usage_stats",
+    "mobile_bag_items",
+    "mobile_client_events",
+    "user_upload_assets",
+    "user_products",
+)
+
+PHASE_21_REMAINING_SQLITE_STRUCTURED_TABLES: tuple[str, ...] = (
+    *PRODUCT_WORKBENCH_STRUCTURED_TABLES,
+    *MOBILE_USER_STATE_STRUCTURED_TABLES,
+)
+
+
+def describe_postgresql_migration_boundary() -> dict:
+    return {
+        "phase": POSTGRESQL_PHASE_24,
+        "target_structured_truth_driver": "postgresql",
+        "phase_23_truth_status": "completed",
+        "phase_24_truth_status": "completed",
+        "phase_25_truth_status": "in_execution",
+        "phase_25_truth_scope": "sqlite_closure",
+        "production_profile_sqlite_online_truth_allowed": False,
+        "single_node_profile_role": "dev_or_emergency_fallback",
+        "selection_result_pg_single_truth_tables": list(SELECTION_RESULT_PG_SINGLE_TRUTH_TABLES),
+        "phase_21_remaining_sqlite_structured_tables": list(PHASE_21_REMAINING_SQLITE_STRUCTURED_TABLES),
+        "phase_21_remaining_sqlite_table_count": len(PHASE_21_REMAINING_SQLITE_STRUCTURED_TABLES),
+        "phase_23_pg_only_online_truth_tables": list(PRODUCT_WORKBENCH_STRUCTURED_TABLES),
+        "phase_23_pg_only_online_truth_table_count": len(PRODUCT_WORKBENCH_STRUCTURED_TABLES),
+        "phase_24_pg_only_online_truth_tables": list(MOBILE_USER_STATE_STRUCTURED_TABLES),
+        "phase_24_pg_only_online_truth_table_count": len(MOBILE_USER_STATE_STRUCTURED_TABLES),
+        "phase_25_locked_scope": "sqlite_closure",
+        "phase_25_locked_phase": POSTGRESQL_PHASE_25,
+        "migration_groups": {
+            POSTGRESQL_PHASE_23: {
+                "focus": "product_workbench_and_backend_jobs",
+                "tables": list(PRODUCT_WORKBENCH_STRUCTURED_TABLES),
+            },
+            POSTGRESQL_PHASE_24: {
+                "focus": "mobile_session_history_bag_events_user_assets",
+                "tables": list(MOBILE_USER_STATE_STRUCTURED_TABLES),
+            },
+        },
+        "phase_22_first_cutover_target": {
+            "phase": POSTGRESQL_PHASE_22,
+            "scope": [
+                "database_url_default_contract",
+                "engine_pool_contract",
+                "sessionmaker_binding_contract",
+                "init_db_bootstrap_contract",
+            ],
+        },
+    }
+
 class ProductIndex(Base):
     __tablename__ = "products"
 

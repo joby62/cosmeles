@@ -1849,12 +1849,36 @@ function joinPublicOrigin(base: string, path: string): string {
   return base ? `${base}${normalizedPath}` : normalizedPath;
 }
 
+function resolveServerApiOrigin(): string {
+  const internalOrigin = normalizeOrigin(process.env.INTERNAL_API_BASE) || normalizeOrigin(process.env.API_INTERNAL_ORIGIN);
+  if (internalOrigin) return internalOrigin;
+
+  const backendHost = String(process.env.BACKEND_HOST || "").trim();
+  const backendPort = String(process.env.BACKEND_PORT || "").trim() || "8000";
+  if (backendHost) {
+    if (/^https?:\/\//i.test(backendHost)) {
+      try {
+        const url = new URL(backendHost);
+        if (!url.port) url.port = backendPort;
+        return url.toString().replace(/\/$/, "");
+      } catch {
+        return normalizeOrigin(backendHost);
+      }
+    }
+
+    const withPort = /:\d+$/.test(backendHost) ? backendHost : `${backendHost}:${backendPort}`;
+    return `http://${withPort}`;
+  }
+
+  return "http://127.0.0.1:8000";
+}
+
 function getBaseForFetch(): string {
   if (typeof window !== "undefined") {
     return resolveBrowserOrigin(process.env.NEXT_PUBLIC_API_BASE || "");
   }
 
-  return normalizeOrigin(process.env.INTERNAL_API_BASE) || normalizeOrigin(process.env.API_INTERNAL_ORIGIN) || "http://nginx";
+  return resolveServerApiOrigin();
 }
 
 function buildFetchUrl(path: string, base: string): string {

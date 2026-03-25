@@ -5,6 +5,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 BACKEND_DIR = Path(__file__).resolve().parents[1]  # backend/
 DEFAULT_STORAGE_DIR = BACKEND_DIR / "storage"
 DEFAULT_USER_STORAGE_DIR = BACKEND_DIR / "user_storage"
+DEFAULT_SQLITE_DATABASE_URL = f"sqlite:///{(DEFAULT_STORAGE_DIR / 'app.db').as_posix()}"
+DEFAULT_POSTGRESQL_DATABASE_URL = "postgresql+psycopg://postgres:postgres@postgres:5432/cosmeles"
 
 class Settings(BaseSettings):
     # === 基础环境 ===
@@ -43,16 +45,24 @@ class Settings(BaseSettings):
     asset_signed_url_enforced: bool = False
 
     # === 数据库 ===
-    # SQLite 文件将位于 backend/storage/app.db
-    database_url: str = f"sqlite:///{(DEFAULT_STORAGE_DIR / 'app.db').as_posix()}"
+    # 允许留空，实际默认值由 deploy profile 决定：
+    # - single_node: dev_or_emergency_fallback（可显式使用 sqlite）
+    # - split_runtime / multi_node: postgresql production default
+    database_url: str = ""
+    database_url_sqlite_fallback: str = DEFAULT_SQLITE_DATABASE_URL
+    database_url_postgresql_default: str = DEFAULT_POSTGRESQL_DATABASE_URL
+    database_production_profiles_csv: str = "split_runtime,multi_node"
     # 连接池（仅对非 sqlite 生效）
     db_pool_size: int = 8
     db_max_overflow: int = 4
     db_pool_timeout_seconds: int = 30
     db_pool_recycle_seconds: int = 1800
     db_pool_pre_ping: bool = True
+    # phase-25 contract：
+    # - single_node 保留 dev/emergency fallback 语义
+    # - production profile 强制关闭 sqlite downgrade（即使存在 env override）
     db_downgrade_to_sqlite_on_error: bool = True
-    db_downgrade_sqlite_url: str = f"sqlite:///{(DEFAULT_STORAGE_DIR / 'app.db').as_posix()}"
+    db_downgrade_sqlite_url: str = DEFAULT_SQLITE_DATABASE_URL
     rollout_step: str = "worker"
     rollout_target_step: str = "web"
     rollout_rollback_enabled: bool = True

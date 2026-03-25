@@ -205,6 +205,61 @@ def test_runtime_profile_selection_result_contract_is_self_consistent_across_pro
     assert profile["storage_contract"]["backend"] == storage_backend
 
 
+@pytest.mark.parametrize("deploy_profile", ["single_node", "split_runtime", "multi_node"])
+def test_rollout_contract_is_consistent_across_profiles_in_empty_state(
+    monkeypatch: pytest.MonkeyPatch,
+    deploy_profile: str,
+) -> None:
+    monkeypatch.setattr(settings, "deploy_profile", deploy_profile)
+    monkeypatch.setattr(settings, "runtime_role", "api")
+    monkeypatch.setattr(settings, "storage_backend", "local_fs")
+    monkeypatch.setattr(settings, "selection_result_repository_backend", "postgres_payload")
+    monkeypatch.setattr(settings, "queue_backend", "local")
+    monkeypatch.setattr(settings, "lock_backend", "local")
+    monkeypatch.setattr(settings, "cache_backend", "none")
+    monkeypatch.setattr(settings, "rollout_step", "worker")
+    monkeypatch.setattr(settings, "rollout_target_step", "web")
+    monkeypatch.setattr(settings, "rollout_rollback_enabled", True)
+    monkeypatch.setattr(settings, "rollout_consistency_enforced", True)
+    _clear_runtime_adapter_caches()
+
+    profile = describe_runtime_profile()
+    rollout = profile["rollout_contract"]
+
+    assert profile["deploy_profile"] == deploy_profile
+    assert rollout["phase"] == "runtime-phase-6"
+    assert rollout["fixed_order_csv"] == "worker->db->api->web"
+    assert rollout["current_step"] == "worker"
+    assert rollout["target_step"] == "web"
+    assert rollout["transition"]["forward_only"] is True
+    assert rollout["transition"]["next_allowed_step"] == "db"
+    assert rollout["rollback"]["enabled"] is True
+    assert rollout["consistency"]["enforced"] is True
+    assert rollout["consistency"]["redis_truth"] == "lock_cache_only"
+    assert rollout["consistency"]["job_execution_truth"] == "worker"
+
+
+def test_rollout_contract_invalid_steps_fall_back_to_bootstrap_defaults(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "deploy_profile", "split_runtime")
+    monkeypatch.setattr(settings, "runtime_role", "api")
+    monkeypatch.setattr(settings, "storage_backend", "local_fs")
+    monkeypatch.setattr(settings, "selection_result_repository_backend", "postgres_payload")
+    monkeypatch.setattr(settings, "queue_backend", "local")
+    monkeypatch.setattr(settings, "lock_backend", "local")
+    monkeypatch.setattr(settings, "cache_backend", "none")
+    monkeypatch.setattr(settings, "rollout_step", "invalid-current-step")
+    monkeypatch.setattr(settings, "rollout_target_step", "invalid-target-step")
+    _clear_runtime_adapter_caches()
+
+    profile = describe_runtime_profile()
+    rollout = profile["rollout_contract"]
+
+    assert rollout["current_step"] == "worker"
+    assert rollout["target_step"] == "web"
+    assert rollout["transition"]["forward_only"] is True
+    assert rollout["transition"]["next_allowed_step"] == "db"
+
+
 def test_upload_dispatch_mode_switches_with_runtime_profile(monkeypatch) -> None:
     monkeypatch.setattr(settings, "runtime_role", "api")
     monkeypatch.setattr(settings, "deploy_profile", "single_node")

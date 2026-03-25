@@ -34,7 +34,11 @@ from app.db.models import (
     UserProduct,
     UserUploadAsset,
 )
-from app.db.session import SessionLocal, get_db
+from app.db.session import (
+    SessionLocal,
+    allow_phase_24_mobile_state_legacy_fallback,
+    get_db,
+)
 from app.platform.storage_backend import get_runtime_storage
 from app.platform.task_queue import get_runtime_task_queue
 from app.schemas import (
@@ -183,6 +187,10 @@ MOBILE_COMPARE_STAGE_META: dict[str, str] = {
     "finalize": "整理最终结论",
     "done": "对比完成",
 }
+
+
+def _mobile_state_legacy_fallback_allowed() -> bool:
+    return allow_phase_24_mobile_state_legacy_fallback()
 
 
 @router.get("/wiki/products", response_model=MobileWikiProductListResponse)
@@ -1085,6 +1093,14 @@ def reindex_mobile_compare_sessions(
     dry_run: bool = Query(False),
     db: Session = Depends(get_db),
 ):
+    if not _mobile_state_legacy_fallback_allowed():
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "phase-24 PG-only truth active: compare session storage backfill is disabled "
+                "for production profiles."
+            ),
+        )
     _ensure_mobile_compare_index_tables(db)
     result = _backfill_mobile_compare_session_index_from_storage(
         db=db,
@@ -1667,6 +1683,49 @@ def _build_compare_targets_snapshot(raw_targets: list[MobileCompareJobTargetInpu
     return snapshot
 
 
+def _normalize_compare_targets_snapshot(raw_targets: Any) -> list[dict[str, str]]:
+    if not isinstance(raw_targets, list):
+        return []
+
+    normalized_targets: list[MobileCompareJobTargetInput] = []
+    seen: set[str] = set()
+    for raw_target in raw_targets:
+        if isinstance(raw_target, MobileCompareJobTargetInput):
+            candidate = raw_target
+        elif isinstance(raw_target, dict):
+            try:
+                candidate = MobileCompareJobTargetInput.model_validate(raw_target)
+            except Exception:
+                continue
+        else:
+            continue
+
+        source = str(candidate.source or "").strip().lower()
+        if source == "upload_new":
+            upload_id = str(candidate.upload_id or "").strip()
+            if not upload_id:
+                continue
+            key = f"upload:{upload_id}"
+            normalized = MobileCompareJobTargetInput(source="upload_new", upload_id=upload_id)
+        elif source == "history_product":
+            product_id = str(candidate.product_id or "").strip()
+            if not product_id:
+                continue
+            key = f"history:{product_id}"
+            normalized = MobileCompareJobTargetInput(source="history_product", product_id=product_id)
+        else:
+            continue
+
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized_targets.append(normalized)
+        if len(normalized_targets) >= 3:
+            break
+
+    return _build_compare_targets_snapshot(normalized_targets)
+
+
 def _target_identity(target: MobileCompareJobTargetInput) -> str:
     source = str(target.source or "").strip().lower()
     if source == "upload_new":
@@ -2219,6 +2278,20 @@ def _load_mobile_compare_upload_meta(
                 payload = get_runtime_storage().load_json(meta_path)
                 if str(payload.get("owner_type") or "") == owner_type and str(payload.get("owner_id") or "") == owner_id:
                     return payload
+
+    if not _mobile_state_legacy_fallback_allowed():
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "COMPARE_UPLOAD_NOT_FOUND",
+                "detail": (
+                    f"upload_id '{upload_id}' not found in PostgreSQL user state index "
+                    "(phase-24 PG-only truth enforced)."
+                ),
+                "retryable": False,
+                "trace_id": trace_id,
+            },
+        )
 
     rel_path = f"doubao_runs/{upload_id}/mobile_compare_upload_meta.json"
     if not exists_rel_path(rel_path):
@@ -3285,6 +3358,9 @@ def _upsert_mobile_compare_session_index(*, db: Session, payload: dict[str, Any]
     result_json: str | None = None
     error_json: str | None = None
     job_payload_json: str | None = None
+    has_result = "result" in payload
+    has_error = "error" in payload
+    has_job_payload = "job_payload" in payload
     result_value = payload.get("result")
     error_value = payload.get("error")
     job_payload_value = payload.get("job_payload")
@@ -3307,9 +3383,12 @@ def _upsert_mobile_compare_session_index(*, db: Session, payload: dict[str, Any]
     row.pair_total = pair_total
     row.job_version = str(payload.get("job_version") or "").strip() or None
     row.execution_backend = str(payload.get("execution_backend") or "").strip() or None
-    row.job_payload_json = job_payload_json
-    row.result_json = result_json
-    row.error_json = error_json
+    if has_job_payload:
+        row.job_payload_json = job_payload_json
+    if has_result:
+        row.result_json = result_json
+    if has_error:
+        row.error_json = error_json
     row.created_at = str(payload.get("created_at") or row.created_at or now_iso())
     row.updated_at = str(payload.get("updated_at") or now_iso())
     db.add(row)
@@ -3339,6 +3418,7 @@ def _session_payload_from_index_row(row: MobileCompareSessionIndex) -> dict[str,
             parsed = json.loads(row.job_payload_json)
             if isinstance(parsed, dict):
                 payload["job_payload"] = parsed
+                payload["targets_snapshot"] = _normalize_compare_targets_snapshot(parsed.get("targets"))
         except Exception:
             pass
     if row.result_json:
@@ -3394,6 +3474,17 @@ def _get_mobile_compare_session_record(
     owner_type: str,
     owner_id: str,
 ) -> MobileCompareSessionResponse | None:
+    row = db.get(MobileCompareSessionIndex, compare_id)
+    if row is not None:
+        if row.owner_type != owner_type or row.owner_id != owner_id:
+            return None
+        normalized = _normalize_mobile_compare_session_payload(_session_payload_from_index_row(row))
+        if normalized is not None:
+            return normalized
+
+    if not _mobile_state_legacy_fallback_allowed():
+        return None
+
     session_rel = _mobile_compare_session_rel_path(compare_id)
     session_payload = _safe_load_json_dict(session_rel)
     if session_payload is not None:
@@ -3402,14 +3493,6 @@ def _get_mobile_compare_session_record(
             normalized = _normalize_mobile_compare_session_payload(session_payload)
             if normalized is not None:
                 return normalized
-
-    row = db.get(MobileCompareSessionIndex, compare_id)
-    if row is not None:
-        if row.owner_type != owner_type or row.owner_id != owner_id:
-            return None
-        normalized = _normalize_mobile_compare_session_payload(_session_payload_from_index_row(row))
-        if normalized is not None:
-            return normalized
 
     result_rel = _mobile_compare_result_rel_path(compare_id)
     result_container = _safe_load_json_dict(result_rel)

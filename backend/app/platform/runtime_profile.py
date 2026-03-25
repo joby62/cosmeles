@@ -2,7 +2,20 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.db.session import describe_database_engine_contract
+from app.db.init_db import describe_init_db_contract
+from app.db.models import (
+    POSTGRESQL_PHASE_23,
+    POSTGRESQL_PHASE_24,
+    POSTGRESQL_PHASE_25,
+    describe_postgresql_migration_boundary,
+)
+from app.db.session import (
+    describe_database_default_contract,
+    describe_database_engine_contract,
+    describe_phase_23_pg_only_truth_contract,
+    describe_phase_24_mobile_state_pg_only_truth_contract,
+    describe_phase_25_sqlite_closure_contract,
+)
 from app.platform.cache_backend import get_runtime_cache_backend
 from app.platform.lock_backend import get_runtime_lock_backend
 from app.platform.selection_result_repository import get_selection_result_repository
@@ -27,6 +40,12 @@ def describe_runtime_profile() -> dict[str, Any]:
     lock = get_runtime_lock_backend()
     cache = get_runtime_cache_backend()
     database_contract = describe_database_engine_contract()
+    database_default_contract = describe_database_default_contract()
+    phase_23_contract = describe_phase_23_pg_only_truth_contract()
+    phase_24_contract = describe_phase_24_mobile_state_pg_only_truth_contract()
+    phase_25_contract = describe_phase_25_sqlite_closure_contract()
+    migration_boundary = describe_postgresql_migration_boundary()
+    init_contract = describe_init_db_contract()
     deploy_profile = str(settings.deploy_profile or "single_node").strip() or "single_node"
     runtime_role = str(settings.runtime_role or "api").strip() or "api"
     return {
@@ -41,6 +60,18 @@ def describe_runtime_profile() -> dict[str, Any]:
             "cache": cache.backend_name,
         },
         "database_contract": database_contract,
+        "postgresql_migration_contract": {
+            "phase": POSTGRESQL_PHASE_24,
+            "target_boundary": migration_boundary,
+            "engine_session_default_contract": database_default_contract,
+            "init_bootstrap_contract": init_contract,
+            "phase_23_pg_only_truth_contract": phase_23_contract,
+            "phase_24_mobile_state_pg_only_truth_contract": phase_24_contract,
+            "phase_25_sqlite_closure_contract": phase_25_contract,
+            "table_payload_migration_phase_locked": POSTGRESQL_PHASE_23,
+            "mobile_state_migration_phase_locked": POSTGRESQL_PHASE_24,
+            "phase_25_closure_phase_locked": POSTGRESQL_PHASE_25,
+        },
         "rollout_contract": describe_rollout_contract(
             deploy_profile=deploy_profile,
             runtime_role=runtime_role,

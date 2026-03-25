@@ -46,4 +46,10 @@ This folder holds the architecture-owner line and the three worker lanes for the
   - `NOW / DOC_INDEX / TIMELINE`
 - `phase-14` through `phase-20` are already completed historical runtime phases.
 - There is no active runtime phase at the moment.
+- `phase-21` is now a completed PostgreSQL preparation round.
+- `phase-22` is now a completed PostgreSQL production-default contract round.
+- `phase-23` is now a completed PostgreSQL high-concurrency table-group round.
+- `phase-24` is now a completed PostgreSQL mobile-state table-group round.
+- `phase-25` is now a completed PostgreSQL SQLite-closure round.
+- There is no active PostgreSQL migration execution round at the moment.
 - If runtime work resumes, owner must open a new phase folder and new dispatch bundle rather than reviving `phase-20`.

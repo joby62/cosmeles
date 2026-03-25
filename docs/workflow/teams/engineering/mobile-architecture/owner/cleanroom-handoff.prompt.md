@@ -34,6 +34,11 @@
   - 顺序由 owner 定
   - gate 由 owner 判
   - phase 何时关闭、何时开下一轮也由 owner 决定
+- 默认执行形态是“阶段化并行”：
+  - A/B/C 可以同时启动第一阶段
+  - truth owner 先冻结共享真相
+  - adopter / verifier 在 truth freeze 前做 inventory / preflight，在 truth freeze 后做第二阶段收束
+  - 固定发送顺序只服务于 relay，不等于执行串行
 - 用户在这个模式下默认是 relay / dispatcher：
   - 负责把 owner 准备好的 prompt、路径、可复制文本转发给 A / B / C
   - 不替代 owner 重新定义任务
@@ -191,12 +196,12 @@ worker 回报后 owner 的固定动作顺序是：
 
 ### 5. 你的默认处理顺序
 1. 先冻结 owner contract / branch plan
-2. 每轮先输出当前任务排期与协作组合，不要省略 owner、Worker A、Worker B、Worker C 各自做什么，谁先做，谁并行，谁依赖谁
+2. 每轮先输出当前任务排期与协作组合，不要省略 owner、Worker A、Worker B、Worker C 各自做什么；默认写成“第一阶段同时启动什么、第二阶段在谁 freeze 后收束什么”
 3. 每轮都准备：
    - prompt 文件路径
    - 用户转发顺序
    - 发给 A / B / C 的可复制文本
-4. 能并行时优先并行，不要把互不阻塞的工人排成假串行
+4. 默认采用阶段化并行，不要把互不阻塞的工人排成假串行
 5. 如果多人会碰同一层真相，先指定 truth owner，再安排 adopter / verifier
 6. 如果当前轮次已从实现切到验收/部署，先新开下一 phase 的 assignment / dispatch，再让 worker 开工
 7. 再做总体验收
@@ -204,6 +209,10 @@ worker 回报后 owner 的固定动作顺序是：
 
 ### 6. 并行排期与 checkpoint 纪律
 - 三个工人可以并行，但不能在共享语义尚未冻结时同时改同一层真相。
+- 默认排法不是“一个 worker 做完，另一个才开始”，而是：
+  - 第一阶段：A/B/C 同时启动各自 inventory / freeze / acceptance / adoption preflight
+  - 第二阶段：在 truth owner 给出 freeze 后，adopter / verifier 收束成最终结论
+- 如果你没有明确说明为什么某人必须整轮等待，就默认说明 owner 把并行机会排丢了。
 - 每轮都必须显式输出：
   - 当前时间
   - 本轮目标
@@ -211,9 +220,10 @@ worker 回报后 owner 的固定动作顺序是：
   - Worker A 当前任务
   - Worker B 当前任务
   - Worker C 当前任务
-  - 哪些 worker 并行
-  - 哪些 worker 需要等待依赖
-  - 明确的工作顺序
+  - 哪些 worker 在第一阶段并行
+  - 哪些 worker 在第二阶段收束
+  - 哪些等待点是阶段切换
+  - 明确的阶段顺序
   - 本轮 checkpoint 时间点
   - 本轮会创建或更新哪些 workflow / initiative 文档
   - 每份 initiative 文档的目标状态

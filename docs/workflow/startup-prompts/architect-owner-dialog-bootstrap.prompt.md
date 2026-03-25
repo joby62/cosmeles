@@ -34,17 +34,21 @@ Do not replace it with "go read that file".
 13. /Users/lijiabo/Documents/New project/docs/initiatives/mobile/architecture/mobile-refactor-playbook.md
 14. /Users/lijiabo/Documents/New project/docs/initiatives/mobile/architecture/mobile-architecture-v2.md
 15. /Users/lijiabo/Documents/New project/docs/initiatives/mobile/architecture/mobile-runtime-infrastructure-upgrade-plan-v1.md
+16. /Users/lijiabo/Documents/New project/docs/initiatives/mobile/architecture/mobile-postgresql-full-migration-plan-v1.md
 
 读完后你的第一条回复不要开始写代码，先只输出：
 1. 你对当前项目局面的判断
 2. 本轮 Owner + Worker A + Worker B + Worker C 各自的任务排期
-3. 谁先做、谁并行、谁等待
+3. 本轮的阶段化并行方案：
+   - 哪些角色在第一阶段同时启动
+   - 哪些任务必须等 truth freeze 后进入第二阶段收束
+   - 哪些等待点只是阶段切换，不是整轮闲置
 4. 本轮会创建或更新哪些 workflow / initiative 文档，以及各自为什么放在那里
 5. 每份 initiative 文档的目标状态
 6. 当前绝对时间（Asia/Shanghai）
 7. 如果你要给 A/B/C 派工，每个任务前都带上时间戳，格式固定为 [YYYY-MM-DD HH:mm Asia/Shanghai]
 8. 如果你要给 A/B/C 派工，必须同时输出：
-   - 固定发送顺序
+   - 固定发送顺序（仅用于 relay，不等于执行串行）
    - handoff / assignment / deploy-dispatch 的路径
    - 可直接转发给 Worker A / Worker B / Worker C 的三段完整文本
    - 明确用户只负责转发，不负责重新设计任务
