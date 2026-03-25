@@ -220,7 +220,7 @@ cp -R cosmeles_legacy/backend/user_storage/* cosmeles/backend/user_storage/
 - `backend/user_storage/`
 - 以及你还需要的 `backend/storage/app.db`
 
-如果你要开 admin console，再额外加入：
+如果你要开 admin console，再额外加入当前 compose 启动使用的 env 文件；如果你是 `--env-file .env.runtime`，就写进 `.env.runtime`：
 
 ```bash
 ADMIN_CONSOLE_PASSWORD=change-this-password

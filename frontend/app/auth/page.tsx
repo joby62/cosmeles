@@ -83,7 +83,8 @@ export default async function AuthPage({
         <section className="mt-6 rounded-[24px] border border-[#efc0ba] bg-[#fff4f2] px-5 py-4 text-[#7f2b21]">
           <div className="text-[13px] font-semibold">未配置管理员密码</div>
           <p className="mt-2 text-[12px] leading-[1.6]">
-            需要在 `frontend` 容器环境配置 `ADMIN_CONSOLE_PASSWORD`。已在仓库新增 `.env.example`，复制后设置真实密码即可。
+            需要在当前启动 `frontend` 服务所使用的 compose env 文件里配置 `ADMIN_CONSOLE_PASSWORD`。
+            如果你是用 `docker compose --env-file .env.runtime ...` 启动，就应写在 `.env.runtime`，不是只写根目录 `.env`。
           </p>
         </section>
       ) : null}
