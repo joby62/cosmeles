@@ -21,6 +21,10 @@ def api_routes_enabled() -> bool:
     return not is_worker_runtime()
 
 
+def should_initialize_runtime_schema() -> bool:
+    return api_routes_enabled()
+
+
 def upload_ingest_dispatch_mode() -> str:
     # phase-15: split/multi profile should move execution to dedicated worker process.
     profile = normalize_deploy_profile()

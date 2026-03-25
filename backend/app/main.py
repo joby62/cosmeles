@@ -16,7 +16,7 @@ from app.routes.ingest import router as ingest_router
 from app.routes.mobile import router as mobile_router
 from app.routes.products import router as products_router
 from app.settings import settings
-from app.services.runtime_topology import api_routes_enabled
+from app.services.runtime_topology import api_routes_enabled, should_initialize_runtime_schema
 from app.services.runtime_worker import start_runtime_worker_daemon
 
 app = FastAPI(title="Shampoo Picker API", version="0.1.0")
@@ -39,7 +39,8 @@ app.add_middleware(
 # Init DB (create tables) on startup
 @app.on_event("startup")
 def _startup_init_db() -> None:
-    init_db()
+    if should_initialize_runtime_schema():
+        init_db()
     start_runtime_worker_daemon()
 
 

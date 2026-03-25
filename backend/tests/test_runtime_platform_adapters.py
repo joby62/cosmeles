@@ -16,6 +16,7 @@ from app.platform.task_queue import get_runtime_task_queue
 from app.settings import settings
 from app.services.runtime_topology import (
     should_inline_dispatch_product_workbench_job,
+    should_initialize_runtime_schema,
     should_inline_dispatch_upload_job,
 )
 
@@ -209,14 +210,17 @@ def test_upload_dispatch_mode_switches_with_runtime_profile(monkeypatch) -> None
     monkeypatch.setattr(settings, "deploy_profile", "single_node")
     assert should_inline_dispatch_upload_job() is True
     assert should_inline_dispatch_product_workbench_job() is True
+    assert should_initialize_runtime_schema() is True
 
     monkeypatch.setattr(settings, "deploy_profile", "split_runtime")
     assert should_inline_dispatch_upload_job() is False
     assert should_inline_dispatch_product_workbench_job() is False
+    assert should_initialize_runtime_schema() is True
 
     monkeypatch.setattr(settings, "runtime_role", "worker")
     assert should_inline_dispatch_upload_job() is False
     assert should_inline_dispatch_product_workbench_job() is False
+    assert should_initialize_runtime_schema() is False
 
 
 def test_upload_submit_skips_inline_dispatch_when_split_runtime(monkeypatch) -> None:
