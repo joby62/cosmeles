@@ -7,6 +7,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-cosmeles}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - ./backend/storage/postgres:/var/lib/postgresql/data
     ports:
