@@ -3344,6 +3344,21 @@ export type UploadIngestJobCancelResponse = {
   job: UploadIngestJob;
 };
 
+export type UploadIngestJobBatchRetryFailureItem = {
+  job_id: string;
+  detail: string;
+  http_status: number;
+};
+
+export type UploadIngestJobBatchRetryResponse = {
+  status: "ok" | "partial" | "failed" | string;
+  requested: number;
+  retried: number;
+  failed: number;
+  retried_jobs: UploadIngestJob[];
+  failed_items: UploadIngestJobBatchRetryFailureItem[];
+};
+
 // 上传入口（MVP）：支持 image + metaJson，后续直接对接豆包比对流
 export async function ingestProduct(input: IngestInput): Promise<IngestResult> {
   const path = "/api/upload";
@@ -3518,6 +3533,19 @@ export async function retryUploadIngestJob(jobId: string): Promise<UploadIngestJ
   const value = jobId.trim();
   if (!value) throw new Error("jobId is required.");
   return apiFetch<UploadIngestJob>(`/api/upload/jobs/${encodeURIComponent(value)}/retry`, { method: "POST" });
+}
+
+export async function retryUploadIngestJobs(jobIds: string[]): Promise<UploadIngestJobBatchRetryResponse> {
+  const normalized = Array.from(
+    new Set(jobIds.map((item) => String(item || "").trim()).filter(Boolean)),
+  );
+  if (normalized.length === 0) {
+    throw new Error("jobIds is required.");
+  }
+  return apiFetch<UploadIngestJobBatchRetryResponse>("/api/upload/jobs/retry-batch", {
+    method: "POST",
+    body: JSON.stringify({ job_ids: normalized }),
+  });
 }
 
 export async function resumeUploadIngestJob(input: {

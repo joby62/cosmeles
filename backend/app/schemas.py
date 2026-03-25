@@ -417,6 +417,25 @@ class UploadIngestJobCancelResponse(BaseModel):
     job: UploadIngestJobView
 
 
+class UploadIngestJobBatchRetryRequest(BaseModel):
+    job_ids: List[str] = []
+
+
+class UploadIngestJobBatchRetryFailureItem(BaseModel):
+    job_id: str
+    detail: str
+    http_status: int = 500
+
+
+class UploadIngestJobBatchRetryResponse(BaseModel):
+    status: str
+    requested: int = 0
+    retried: int = 0
+    failed: int = 0
+    retried_jobs: List[UploadIngestJobView] = []
+    failed_items: List[UploadIngestJobBatchRetryFailureItem] = []
+
+
 class IngredientLibraryDeleteFailureItem(BaseModel):
     ingredient_id: str
     error: str

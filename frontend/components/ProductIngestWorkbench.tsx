@@ -17,8 +17,10 @@ import {
   ingestProduct,
   listUploadIngestJobs,
   resumeUploadIngestJob,
+  retryUploadIngestJobs,
   retryUploadIngestJob,
   UploadIngestJob,
+  UploadIngestJobBatchRetryResponse,
   UploadIngestJobCancelResponse,
 } from "@/lib/api";
 
@@ -118,6 +120,7 @@ export default function ProductIngestWorkbench() {
   const [images, setImages] = useState<File[]>([]);
   const [pairAsSingleProduct, setPairAsSingleProduct] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [batchRetrying, setBatchRetrying] = useState(false);
   const [previewModal, setPreviewModal] = useState<PreviewModalState>(null);
   const [resumeDrafts, setResumeDrafts] = useState<Record<string, ResumeDraft>>({});
   const [manualResult, setManualResult] = useState<IngestResultLike | null>(null);
@@ -191,6 +194,11 @@ export default function ProductIngestWorkbench() {
     }
     return { stage1: null as string | null, stage2: null as string | null };
   }, [sortedJobs]);
+
+  const retryableFailedJobs = useMemo(
+    () => sortedJobs.filter((job) => (job.status === "failed" || job.status === "cancelled") && job.can_retry),
+    [sortedJobs],
+  );
 
   function updateResumeDraft(jobId: string, patch: Partial<ResumeDraft>) {
     setResumeDrafts((prev) => ({
@@ -267,6 +275,28 @@ export default function ProductIngestWorkbench() {
     }
   }
 
+  async function handleBatchRetryJobs() {
+    const jobIds = retryableFailedJobs.map((job) => job.job_id);
+    if (jobIds.length === 0) return;
+
+    setBatchRetrying(true);
+    setErrorMessage(null);
+    try {
+      const summary = await retryUploadIngestJobs(jobIds);
+      if (summary.retried_jobs[0]) {
+        selectJob(summary.retried_jobs[0]);
+      }
+      await refreshJobs();
+      if (summary.failed_items.length > 0) {
+        setErrorMessage(buildUploadBatchRetrySummary(summary));
+      }
+    } catch (err) {
+      setErrorMessage(formatError(err));
+    } finally {
+      setBatchRetrying(false);
+    }
+  }
+
   return (
     <section
       id="product-ingest-workbench"
@@ -292,7 +322,7 @@ export default function ProductIngestWorkbench() {
 
       <h2 className="mt-3 text-[30px] font-semibold tracking-[-0.02em] text-black/90">产品上传台</h2>
       <p className="mt-2 text-[14px] leading-[1.6] text-black/65">
-        上传先落盘到暂存区，再统一转换 webp/jpg，随后进入 Stage1/Stage2。支持终止任务、补拍续跑、失败重试与刷新恢复。
+        上传先落盘到暂存区，再统一转换 webp/jpg，随后进入 Stage1/Stage2。支持终止任务、补拍续跑、单条/批量失败重试与刷新恢复。
       </p>
 
       <form onSubmit={onSubmit} className="mt-5 space-y-5 rounded-[24px] border border-black/10 bg-white p-5">
@@ -456,6 +486,20 @@ export default function ProductIngestWorkbench() {
           }
           cancelActiveDisabled={!activeJob || !canCancelUploadJob(activeJob) || activeJob.status === "cancelling" || jobLoading}
           cancelActiveLabel={activeJob?.status === "cancelling" ? "取消中..." : "中止当前任务"}
+          toolbarExtra={
+            retryableFailedJobs.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => {
+                  void handleBatchRetryJobs();
+                }}
+                disabled={jobLoading || jobsLoading || batchRetrying}
+                className="inline-flex h-10 items-center justify-center rounded-full border border-[#3151d8]/30 bg-[#eef2ff] px-5 text-[13px] font-semibold text-[#3151d8] disabled:opacity-45"
+              >
+                {batchRetrying ? "批量重试中..." : `批量重试失败任务（${retryableFailedJobs.length}）`}
+              </button>
+            ) : null
+          }
           consoleProps={{
             activeJob,
             activeRunning,
@@ -800,6 +844,14 @@ function buildCreateBatchError(successCount: number, total: number, errors: stri
   const lines = [`任务创建完成：${successCount}/${total} 成功，${errors.length} 失败。`];
   for (const item of errors.slice(0, 3)) {
     lines.push(item);
+  }
+  return lines.join("\n");
+}
+
+function buildUploadBatchRetrySummary(summary: UploadIngestJobBatchRetryResponse): string {
+  const lines = [`批量重试结果：${summary.retried}/${summary.requested} 已重新入队，${summary.failed} 仍失败。`];
+  for (const item of summary.failed_items.slice(0, 3)) {
+    lines.push(`${item.job_id}: ${item.detail}`);
   }
   return lines.join("\n");
 }

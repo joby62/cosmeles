@@ -35,6 +35,8 @@ from app.services.doubao_pipeline_service import DoubaoPipelineService
 from app.services.parser import normalize_doc
 from app.settings import settings
 from app.schemas import (
+    UploadIngestJobBatchRetryRequest,
+    UploadIngestJobBatchRetryResponse,
     UploadIngestJobCancelResponse,
     UploadIngestJobError,
     UploadIngestJobView,
@@ -765,34 +767,90 @@ def retry_upload_ingest_job(job_id: str, db: Session = Depends(get_db)):
     if retry_block is not None:
         raise HTTPException(status_code=retry_block["http_status"], detail=retry_block["detail"])
 
-    now = now_iso()
-    rec.status = "queued"
-    rec.stage = "queued"
-    rec.stage_label = _upload_ingest_job_stage_label("queued")
-    rec.message = _upload_ingest_queue_message(action="重试任务已入队")
-    rec.percent = 3
-    rec.cancel_requested = False
-    rec.resume_requested = False
-    rec.stage1_text = None
-    rec.stage1_reasoning_text = None
-    rec.stage2_text = None
-    rec.stage2_reasoning_text = None
-    rec.missing_fields_json = "[]"
-    rec.required_view = None
-    rec.models_json = None
-    rec.artifacts_json = None
-    rec.image_path = None
-    rec.image_paths_json = "[]"
-    rec.result_json = None
-    rec.error_json = None
-    rec.started_at = None
-    rec.finished_at = None
-    rec.updated_at = now
+    _prepare_upload_ingest_job_for_retry(rec)
     db.add(rec)
     db.commit()
     db.refresh(rec)
     _submit_upload_ingest_job(bind=db.get_bind(), job_id=rec.job_id, resume=False)
     return _to_upload_ingest_job_view(rec)
+
+
+@router.post("/upload/jobs/retry-batch", response_model=UploadIngestJobBatchRetryResponse)
+def retry_upload_ingest_jobs_batch(
+    payload: UploadIngestJobBatchRetryRequest,
+    db: Session = Depends(get_db),
+):
+    _ensure_upload_ingest_job_table(db)
+    job_ids = _normalize_upload_ingest_job_batch_ids(payload.job_ids)
+    if not job_ids:
+        raise HTTPException(status_code=400, detail="job_ids must contain at least one non-empty job id.")
+
+    retried_records: list[UploadIngestJob] = []
+    failed_items: list[dict[str, Any]] = []
+
+    for job_id in job_ids:
+        rec = db.get(UploadIngestJob, job_id)
+        if rec is None:
+            failed_items.append(
+                {
+                    "job_id": job_id,
+                    "detail": f"Upload ingest job '{job_id}' not found.",
+                    "http_status": 404,
+                }
+            )
+            continue
+
+        status = str(rec.status or "").strip().lower()
+        if status not in {"failed", "cancelled"}:
+            failed_items.append(
+                {
+                    "job_id": job_id,
+                    "detail": f"Only failed/cancelled job can retry. current_status={status}.",
+                    "http_status": 409,
+                }
+            )
+            continue
+
+        retry_block = _get_upload_job_retry_block(rec)
+        if retry_block is not None:
+            failed_items.append(
+                {
+                    "job_id": job_id,
+                    "detail": retry_block["detail"],
+                    "http_status": int(retry_block["http_status"]),
+                }
+            )
+            continue
+
+        _prepare_upload_ingest_job_for_retry(rec)
+        db.add(rec)
+        retried_records.append(rec)
+
+    if retried_records:
+        db.commit()
+    else:
+        db.rollback()
+
+    retried_jobs: list[UploadIngestJobView] = []
+    for rec in retried_records:
+        db.refresh(rec)
+        _submit_upload_ingest_job(bind=db.get_bind(), job_id=rec.job_id, resume=False)
+        retried_jobs.append(_to_upload_ingest_job_view(rec))
+
+    response_status = "ok"
+    if failed_items and retried_jobs:
+        response_status = "partial"
+    elif failed_items:
+        response_status = "failed"
+
+    return UploadIngestJobBatchRetryResponse(
+        status=response_status,
+        requested=len(job_ids),
+        retried=len(retried_jobs),
+        failed=len(failed_items),
+        retried_jobs=retried_jobs,
+        failed_items=failed_items,
+    )
 
 
 @router.get("/upload/jobs/{job_id}/preview")
@@ -1832,6 +1890,44 @@ def _get_upload_job_retry_block(rec: UploadIngestJob) -> dict[str, Any] | None:
             "detail": f"[stage=upload_job_retry_prepare] supplement temp image missing: {supplement_temp}. upload temp context lost, cannot retry.",
         }
     return None
+
+
+def _normalize_upload_ingest_job_batch_ids(job_ids: list[str]) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in job_ids or []:
+        value = str(item or "").strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        normalized.append(value)
+    return normalized
+
+
+def _prepare_upload_ingest_job_for_retry(rec: UploadIngestJob) -> None:
+    now = now_iso()
+    rec.status = "queued"
+    rec.stage = "queued"
+    rec.stage_label = _upload_ingest_job_stage_label("queued")
+    rec.message = _upload_ingest_queue_message(action="重试任务已入队")
+    rec.percent = 3
+    rec.cancel_requested = False
+    rec.resume_requested = False
+    rec.stage1_text = None
+    rec.stage1_reasoning_text = None
+    rec.stage2_text = None
+    rec.stage2_reasoning_text = None
+    rec.missing_fields_json = "[]"
+    rec.required_view = None
+    rec.models_json = None
+    rec.artifacts_json = None
+    rec.image_path = None
+    rec.image_paths_json = "[]"
+    rec.result_json = None
+    rec.error_json = None
+    rec.started_at = None
+    rec.finished_at = None
+    rec.updated_at = now
 
 
 def _get_upload_job_resume_block(rec: UploadIngestJob) -> dict[str, Any] | None:
