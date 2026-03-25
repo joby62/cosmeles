@@ -56,6 +56,7 @@ export type DecisionContinuationTarget = {
 };
 
 type StorageLike = Pick<Storage, "getItem">;
+type MutableStorageLike = Pick<Storage, "getItem"> & Partial<Pick<Storage, "removeItem">>;
 
 type DecisionStorageMeta = {
   catalog: DecisionCategoryCatalogItem;
@@ -112,7 +113,7 @@ export function normalizeDecisionCategory(
 }
 
 export function readDecisionResumeItem(
-  storage: StorageLike,
+  storage: MutableStorageLike,
   options?: ReadDecisionResumeOptions,
 ): DecisionResumeItem | null {
   const preferredCategory = resolvePreferredCategory(storage, options?.preferredCategory);
@@ -132,7 +133,7 @@ export function readDecisionResumeItem(
 }
 
 export function readDecisionContinuationTarget(
-  storage: StorageLike,
+  storage: MutableStorageLike,
   options?: ReadDecisionContinuationOptions,
 ): DecisionContinuationTarget {
   const source = String(options?.source || "").trim();
@@ -165,6 +166,15 @@ export function readDecisionContinuationTarget(
   };
 }
 
+export function readDecisionDraftSignals(
+  storage: MutableStorageLike,
+  category: MobileSelectionCategory,
+): Record<string, string> | null {
+  const meta = STORAGE_META[category];
+  const draft = readDraftResumeState(storage, meta);
+  return draft ? { ...draft.answers } : null;
+}
+
 export function appendSourceToPath(path: string, source: string): string {
   const cleanSource = String(source || "").trim();
   if (!cleanSource) return path;
@@ -187,7 +197,7 @@ function resolvePreferredCategory(
 }
 
 function listDecisionResumeCandidates(
-  storage: StorageLike,
+  storage: MutableStorageLike,
   kind: DecisionResumeItem["kind"],
 ): DecisionResumeItem[] {
   return listDecisionCategories()
@@ -199,34 +209,25 @@ function listDecisionResumeCandidates(
 }
 
 function readDraftResumeCandidate(
-  storage: StorageLike,
+  storage: MutableStorageLike,
   meta: DecisionStorageMeta,
 ): DecisionResumeItem | null {
-  const raw = storage.getItem(meta.draftKey);
-  if (!raw) return null;
-
-  try {
-    const parsed = JSON.parse(raw) as Record<string, unknown> | null;
-    if (!parsed || typeof parsed !== "object") return null;
-    const answeredCount = countSequentialAnswers(meta.stepKeys, parsed);
-    if (answeredCount <= 0 || answeredCount >= meta.stepKeys.length) return null;
-    const params = new URLSearchParams();
-    for (let index = 0; index < answeredCount; index += 1) {
-      const key = meta.stepKeys[index];
-      params.set(key, String(parsed[key] || ""));
-    }
-    params.set("step", String(answeredCount + 1));
-    return {
-      kind: "draft",
-      category: meta.catalog.key,
-      labelZh: meta.catalog.labelZh,
-      answeredCount,
-      totalSteps: meta.catalog.questionCount,
-      targetPath: `/m/${meta.catalog.key}/profile?${params.toString()}`,
-    };
-  } catch {
-    return null;
+  const draft = readDraftResumeState(storage, meta);
+  if (!draft) return null;
+  const params = new URLSearchParams();
+  for (let index = 0; index < draft.answeredCount; index += 1) {
+    const key = meta.stepKeys[index];
+    params.set(key, String(draft.answers[key] || ""));
   }
+  params.set("step", String(draft.answeredCount + 1));
+  return {
+    kind: "draft",
+    category: meta.catalog.key,
+    labelZh: meta.catalog.labelZh,
+    answeredCount: draft.answeredCount,
+    totalSteps: meta.catalog.questionCount,
+    targetPath: `/m/${meta.catalog.key}/profile?${params.toString()}`,
+  };
 }
 
 function readResultResumeCandidate(
@@ -253,6 +254,84 @@ function countSequentialAnswers(stepKeys: readonly string[], draft: Record<strin
     answeredCount += 1;
   }
   return answeredCount;
+}
+
+type DraftResumeState = {
+  answeredCount: number;
+  answers: Record<string, string>;
+};
+
+function readDraftResumeState(
+  storage: MutableStorageLike,
+  meta: DecisionStorageMeta,
+): DraftResumeState | null {
+  const raw = storage.getItem(meta.draftKey);
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown> | null;
+    if (!parsed || typeof parsed !== "object") {
+      storage.removeItem?.(meta.draftKey);
+      return null;
+    }
+    const answeredCount = countSequentialAnswers(meta.stepKeys, parsed);
+    if (answeredCount <= 0) {
+      storage.removeItem?.(meta.draftKey);
+      return null;
+    }
+    if (answeredCount >= meta.stepKeys.length) {
+      storage.removeItem?.(meta.draftKey);
+      return null;
+    }
+
+    const answers: Record<string, string> = {};
+    for (let index = 0; index < answeredCount; index += 1) {
+      const key = meta.stepKeys[index];
+      const value = String(parsed[key] || "").trim();
+      if (!value) break;
+      answers[key] = value;
+    }
+
+    const resultAnswers = readResultAnswers(meta, storage);
+    if (resultAnswers && isDraftCoveredByResult(meta.stepKeys, answers, resultAnswers)) {
+      storage.removeItem?.(meta.draftKey);
+      return null;
+    }
+
+    return {
+      answeredCount,
+      answers,
+    };
+  } catch {
+    storage.removeItem?.(meta.draftKey);
+    return null;
+  }
+}
+
+function readResultAnswers(
+  meta: DecisionStorageMeta,
+  storage: StorageLike,
+): Record<string, string> | null {
+  const normalizedQuery = meta.normalizeResultQuery(storage.getItem(meta.lastResultKey));
+  if (!normalizedQuery) return null;
+  const params = new URLSearchParams(normalizedQuery);
+  const answers: Record<string, string> = {};
+  for (const key of meta.stepKeys) {
+    const value = String(params.get(key) || "").trim();
+    if (!value) return null;
+    answers[key] = value;
+  }
+  return answers;
+}
+
+function isDraftCoveredByResult(
+  stepKeys: readonly string[],
+  draftAnswers: Record<string, string>,
+  resultAnswers: Record<string, string>,
+): boolean {
+  const answeredKeys = stepKeys.filter((key) => Boolean(String(draftAnswers[key] || "").trim()));
+  if (answeredKeys.length === 0 || answeredKeys.length >= stepKeys.length) return false;
+  return answeredKeys.every((key) => draftAnswers[key] === resultAnswers[key]);
 }
 
 function getDraftKey(category: MobileSelectionCategory): string {

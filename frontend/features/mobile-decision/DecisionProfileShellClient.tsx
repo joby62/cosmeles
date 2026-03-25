@@ -19,6 +19,7 @@ import {
   resolveDecisionAnalyticsSource,
   resolveDecisionQuestionStep,
 } from "@/features/mobile-decision/decisionQuestionAnalytics";
+import { readDecisionDraftSignals } from "@/domain/mobile/progress/decisionResume";
 
 export default function DecisionProfileShellClient({
   category,
@@ -92,28 +93,21 @@ export default function DecisionProfileShellClient({
     if (typeof window === "undefined" || restoredRef.current) return;
     restoredRef.current = true;
     if (hasAnySignals(stepKeys, signals)) return;
-    const raw = window.localStorage.getItem(config.profileDraftStorageKey);
-    if (!raw) return;
-    try {
-      const restored = normalizeSequentialSignals(
-        stepKeys,
-        JSON.parse(raw) as DecisionShellSignals,
-      );
-      if (!hasAnySignals(stepKeys, restored)) return;
-      if (config.isComplete(restored)) {
-        window.localStorage.removeItem(config.profileDraftStorageKey);
-        return;
-      }
-      const nextIndex = firstUnansweredIndex(stepKeys, restored);
-      const nextParams = config.toSearchParams(restored);
-      applyResultCtaAttribution(nextParams, resultAttribution);
-      applyMobileReturnTo(nextParams, returnTo);
-      nextParams.set("step", String(nextIndex + 1));
-      router.replace(`/m/${config.category}/profile?${nextParams.toString()}`, { scroll: false });
-      window.requestAnimationFrame(() => scrollToStep(nextIndex, "auto"));
-    } catch {
+    const rawDraft = readDecisionDraftSignals(window.localStorage, config.category);
+    if (!rawDraft) return;
+    const restored = normalizeSequentialSignals(stepKeys, rawDraft as DecisionShellSignals);
+    if (!hasAnySignals(stepKeys, restored)) return;
+    if (config.isComplete(restored)) {
       window.localStorage.removeItem(config.profileDraftStorageKey);
+      return;
     }
+    const nextIndex = firstUnansweredIndex(stepKeys, restored);
+    const nextParams = config.toSearchParams(restored);
+    applyResultCtaAttribution(nextParams, resultAttribution);
+    applyMobileReturnTo(nextParams, returnTo);
+    nextParams.set("step", String(nextIndex + 1));
+    router.replace(`/m/${config.category}/profile?${nextParams.toString()}`, { scroll: false });
+    window.requestAnimationFrame(() => scrollToStep(nextIndex, "auto"));
   }, [
     config,
     resultAttribution,
