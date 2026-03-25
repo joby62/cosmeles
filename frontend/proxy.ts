@@ -49,13 +49,18 @@ function passThrough(req: NextRequest): NextResponse {
   return withDeviceIdentity(req, NextResponse.next({ request: { headers } }));
 }
 
+function buildPath(pathname: string, search = ""): string {
+  return `${pathname}${search || ""}`;
+}
+
 function redirectToAdminAuth(req: NextRequest): NextResponse {
-  const url = req.nextUrl.clone();
   const returnTo = `${req.nextUrl.pathname}${req.nextUrl.search}`;
-  url.pathname = "/auth";
-  url.search = "";
-  url.searchParams.set("returnTo", returnTo);
-  return withDeviceIdentity(req, NextResponse.redirect(url, 302));
+  const params = new URLSearchParams();
+  params.set("returnTo", returnTo);
+  return withDeviceIdentity(
+    req,
+    NextResponse.redirect(buildPath("/auth", `?${params.toString()}`), 302),
+  );
 }
 
 export async function proxy(req: NextRequest) {
@@ -96,10 +101,8 @@ export async function proxy(req: NextRequest) {
     return passThrough(req);
   }
 
-  const url = req.nextUrl.clone();
-  url.pathname = pathname === "/" ? "/m" : `/m${pathname}`;
-  url.search = search;
-  return withDeviceIdentity(req, NextResponse.redirect(url, 302));
+  const targetPath = pathname === "/" ? "/m" : `/m${pathname}`;
+  return withDeviceIdentity(req, NextResponse.redirect(buildPath(targetPath, search), 302));
 }
 
 export const config = {

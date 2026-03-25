@@ -18,13 +18,18 @@ function isSecureRequest(req: NextRequest): boolean {
   return forwardedProto.includes("https");
 }
 
-function redirectToAuth(req: NextRequest, errorCode: string, returnTo: string): NextResponse {
-  const url = new URL("/auth", req.url);
-  url.searchParams.set("error", errorCode);
+function buildRelativePath(pathname: string, params?: URLSearchParams): string {
+  const query = params?.toString() || "";
+  return `${pathname}${query ? `?${query}` : ""}`;
+}
+
+function redirectToAuth(errorCode: string, returnTo: string): NextResponse {
+  const params = new URLSearchParams();
+  params.set("error", errorCode);
   if (returnTo) {
-    url.searchParams.set("returnTo", returnTo);
+    params.set("returnTo", returnTo);
   }
-  return NextResponse.redirect(url, 303);
+  return NextResponse.redirect(buildRelativePath("/auth", params), 303);
 }
 
 export async function POST(req: NextRequest) {
@@ -33,25 +38,24 @@ export async function POST(req: NextRequest) {
   const returnTo = normalizeAdminReturnTo(formValue(formData, "returnTo"));
 
   if (!password) {
-    return redirectToAuth(req, "missing-password", returnTo);
+    return redirectToAuth("missing-password", returnTo);
   }
 
   const configuredPassword = getAdminConsolePassword();
   if (!configuredPassword) {
-    return redirectToAuth(req, "config-missing", returnTo);
+    return redirectToAuth("config-missing", returnTo);
   }
 
   if (password !== configuredPassword) {
-    return redirectToAuth(req, "invalid-password", returnTo);
+    return redirectToAuth("invalid-password", returnTo);
   }
 
   const token = await getConfiguredAdminConsoleSessionToken();
   if (!token) {
-    return redirectToAuth(req, "config-missing", returnTo);
+    return redirectToAuth("config-missing", returnTo);
   }
 
-  const nextUrl = new URL(returnTo, req.url);
-  const res = NextResponse.redirect(nextUrl, 303);
+  const res = NextResponse.redirect(returnTo, 303);
   res.cookies.set({
     name: ADMIN_CONSOLE_COOKIE_NAME,
     value: token,
