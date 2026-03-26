@@ -11,6 +11,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.constants import MOBILE_RULES_VERSION, VALID_CATEGORIES
+from app.platform.storage_backend import get_runtime_storage
 from app.db.models import (
     MobileSelectionSession,
     ProductAnalysisIndex,
@@ -1172,7 +1173,7 @@ def _resolve_selection_product_row(
 
 def _row_to_product_card(row: ProductIndex) -> ProductCard:
     preferred_image_rel = preferred_image_rel_path(str(row.image_path or "").strip())
-    image_url = f"/{preferred_image_rel.lstrip('/')}" if preferred_image_rel else None
+    image_url = get_runtime_storage().public_url(preferred_image_rel) if preferred_image_rel else None
     tags: list[str] = []
     raw_tags = str(row.tags_json or "").strip()
     if raw_tags:

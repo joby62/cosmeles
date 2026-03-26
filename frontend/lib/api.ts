@@ -773,6 +773,7 @@ export type ProductDoc = {
   }>;
   evidence: {
     image_path?: string | null;
+    image_url?: string | null;
     doubao_raw?: string | null;
     doubao_vision_text?: string | null;
     doubao_pipeline_mode?: string | null;
@@ -1846,6 +1847,9 @@ function getAssetBaseForPublicUrls(): string {
 
 function joinPublicOrigin(base: string, path: string): string {
   const normalizedPath = normalizePublicImagePath(path);
+  if (normalizedPath.startsWith("http://") || normalizedPath.startsWith("https://")) {
+    return normalizedPath;
+  }
   return base ? `${base}${normalizedPath}` : normalizedPath;
 }
 

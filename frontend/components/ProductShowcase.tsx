@@ -21,7 +21,7 @@ export default function ProductShowcase({
     fromCompareId: string;
   } | null;
 }) {
-  const imageUrl = resolveStoredImageUrl(doc.evidence?.image_path);
+  const imageUrl = resolveStoredImageUrl(doc.evidence?.image_url || doc.evidence?.image_path);
   const models = doc.evidence?.doubao_models || {};
   const artifacts = doc.evidence?.doubao_artifacts || {};
   const pageRoute = `/product/${id}`;

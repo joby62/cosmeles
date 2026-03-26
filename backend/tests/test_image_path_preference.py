@@ -3,8 +3,10 @@ from pathlib import Path
 
 import pytest
 
+from app.platform.storage_backend import get_runtime_storage
 from app.routes import ingest as ingest_routes
 from app.routes import products as products_routes
+from app.settings import settings
 from app.services.storage import preferred_image_rel_path, product_analysis_rel_path
 from backend.tests.support_images import VALID_TEST_IMAGE_BYTES, install_fake_save_image
 
@@ -268,6 +270,14 @@ def _build_wiki_ready_products(client, *, category: str) -> None:
     assert analysis_resp.json()["failed"] == 0
 
 
+def _configure_object_storage_contract(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "storage_backend", "object_storage_contract")
+    monkeypatch.setattr(settings, "asset_public_origin", "https://assets.example.com")
+    monkeypatch.setattr(settings, "asset_object_key_prefix", "mobile-v2")
+    monkeypatch.setattr(settings, "asset_signed_url_enforced", False)
+    get_runtime_storage.cache_clear()
+
+
 def test_preferred_image_rel_path_prefers_webp_then_jpg(test_client):
     _, storage_dir = test_client
     webp_rel = "images/webp/shampoo/pref-test.webp"
@@ -319,6 +329,7 @@ def test_products_and_mobile_wiki_use_webp_then_jpg_fallback(test_client, monkey
     detail = client.get(f"/api/products/{product_id}")
     assert detail.status_code == 200
     assert str(detail.json()["evidence"]["image_path"]).endswith(".webp")
+    assert str(detail.json()["evidence"]["image_url"]).endswith(".webp")
 
     wiki_list = client.get("/api/mobile/wiki/products", params={"category": "shampoo"})
     assert wiki_list.status_code == 200
@@ -343,6 +354,7 @@ def test_products_and_mobile_wiki_use_webp_then_jpg_fallback(test_client, monkey
     detail_fallback = client.get(f"/api/products/{product_id}")
     assert detail_fallback.status_code == 200
     assert str(detail_fallback.json()["evidence"]["image_path"]).endswith(".jpg")
+    assert str(detail_fallback.json()["evidence"]["image_url"]).endswith(".jpg")
 
     wiki_list_fallback = client.get("/api/mobile/wiki/products", params={"category": "shampoo"})
     assert wiki_list_fallback.status_code == 200
@@ -353,6 +365,54 @@ def test_products_and_mobile_wiki_use_webp_then_jpg_fallback(test_client, monkey
     assert wiki_detail_fallback.status_code == 200
     assert str(wiki_detail_fallback.json()["item"]["product"]["image_url"]).endswith(".jpg")
     assert str(wiki_detail_fallback.json()["item"]["doc"]["evidence"]["image_path"]).endswith(".jpg")
+
+
+def test_products_and_mobile_wiki_use_runtime_public_urls_under_object_storage(
+    test_client,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    client, _storage_dir = test_client
+    install_fake_save_image(monkeypatch, ingest_routes)
+    _configure_object_storage_contract(monkeypatch)
+    try:
+        created = _ingest_manual_with_image(client, category="shampoo")
+        product_id = created["id"]
+        _install_fake_wiki_capabilities(
+            monkeypatch,
+            route_plans_by_product_name={
+                "Test Product": {
+                    "category": "shampoo",
+                    "primary_key": "deep-oil-control",
+                    "secondary_key": "moisture-balance",
+                }
+            }
+        )
+        _build_wiki_ready_products(client, category="shampoo")
+
+        products = client.get("/api/products")
+        assert products.status_code == 200
+        product_item = next(item for item in products.json() if item["id"] == product_id)
+        assert product_item["image_url"] == f"https://assets.example.com/mobile-v2/{created['image_path']}"
+
+        detail = client.get(f"/api/products/{product_id}")
+        assert detail.status_code == 200
+        detail_body = detail.json()
+        assert detail_body["evidence"]["image_path"] == created["image_path"]
+        assert detail_body["evidence"]["image_url"] == f"https://assets.example.com/mobile-v2/{created['image_path']}"
+
+        wiki_list = client.get("/api/mobile/wiki/products", params={"category": "shampoo"})
+        assert wiki_list.status_code == 200
+        wiki_item = next(item for item in wiki_list.json()["items"] if item["product"]["id"] == product_id)
+        assert wiki_item["product"]["image_url"] == f"https://assets.example.com/mobile-v2/{created['image_path']}"
+
+        wiki_detail = client.get(f"/api/mobile/wiki/products/{product_id}")
+        assert wiki_detail.status_code == 200
+        wiki_detail_body = wiki_detail.json()
+        assert wiki_detail_body["item"]["product"]["image_url"] == f"https://assets.example.com/mobile-v2/{created['image_path']}"
+        assert wiki_detail_body["item"]["doc"]["evidence"]["image_path"] == created["image_path"]
+        assert wiki_detail_body["item"]["doc"]["evidence"]["image_url"] == f"https://assets.example.com/mobile-v2/{created['image_path']}"
+    finally:
+        get_runtime_storage.cache_clear()
 
 
 def test_mobile_wiki_product_detail_contains_resolved_ingredient_refs(test_client, monkeypatch: pytest.MonkeyPatch):

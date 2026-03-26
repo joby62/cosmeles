@@ -46,6 +46,7 @@ from app.db.models import (
     MobileClientEvent,
 )
 from app.platform.task_queue import get_runtime_task_queue
+from app.platform.storage_backend import get_runtime_storage
 from app.settings import settings
 from app.services.storage import (
     load_json,
@@ -3677,10 +3678,12 @@ def get_product(product_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Product json file is missing.")
     doc = load_json(rec.json_path)
     preferred_image_rel = preferred_image_rel_path(str(rec.image_path or "").strip())
-    if preferred_image_rel and isinstance(doc, dict):
+    preferred_image_url = get_runtime_storage().public_url(preferred_image_rel) if preferred_image_rel else None
+    if isinstance(doc, dict):
         evidence = doc.setdefault("evidence", {})
         if isinstance(evidence, dict):
             evidence["image_path"] = preferred_image_rel
+            evidence["image_url"] = preferred_image_url
     return doc
 
 
@@ -10430,6 +10433,7 @@ def _row_to_card(r: ProductIndex) -> ProductCard:
         tags = []
 
     preferred_image_rel = preferred_image_rel_path(str(r.image_path or "").strip())
+    image_url = get_runtime_storage().public_url(preferred_image_rel) if preferred_image_rel else None
     return ProductCard(
         id=r.id,
         category=r.category,
@@ -10437,6 +10441,6 @@ def _row_to_card(r: ProductIndex) -> ProductCard:
         name=r.name,
         one_sentence=r.one_sentence,
         tags=tags,
-        image_url=f"/{preferred_image_rel}" if preferred_image_rel else None,
+        image_url=image_url,
         created_at=r.created_at,
     )

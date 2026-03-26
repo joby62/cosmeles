@@ -28,6 +28,7 @@ class Ingredient(BaseModel):
 
 class Evidence(BaseModel):
     image_path: Optional[str] = None
+    image_url: Optional[str] = None
     doubao_raw: Optional[str] = None
     doubao_vision_text: Optional[str] = None
     doubao_pipeline_mode: Optional[str] = None
