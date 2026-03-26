@@ -1845,12 +1845,48 @@ function getAssetBaseForPublicUrls(): string {
   return normalizeOrigin(process.env.ASSET_PUBLIC_ORIGIN) || normalizeOrigin(process.env.NEXT_PUBLIC_ASSET_BASE);
 }
 
+const ASSET_OBJECT_KEY_PREFIX = (process.env.ASSET_OBJECT_KEY_PREFIX || "mobile-v2")
+  .trim()
+  .replace(/^\/+|\/+$/g, "");
+const LOCAL_ASSET_PATH_PREFIXES = ASSET_OBJECT_KEY_PREFIX
+  ? [`/${ASSET_OBJECT_KEY_PREFIX}/images/`, `/${ASSET_OBJECT_KEY_PREFIX}/user-images/`]
+  : ["/images/", "/user-images/"];
+
+function resolveLocalAssetFallback(urlOrPath: string): string | null {
+  const candidate = String(urlOrPath || "").trim();
+  if (!candidate) return null;
+
+  const normalizedAssetBase =
+    normalizeOrigin(process.env.NEXT_PUBLIC_ASSET_BASE || "") ||
+    normalizeOrigin(process.env.ASSET_PUBLIC_ORIGIN || "");
+
+  try {
+    const url = new URL(candidate);
+    const assetBase = normalizedAssetBase ? new URL(normalizedAssetBase) : null;
+    const isConfiguredAssetHost = assetBase
+      ? url.protocol === assetBase.protocol && url.host === assetBase.host
+      : false;
+    const isKnownAssetFallbackHost = url.hostname === "assets.yuexuan.xyz";
+    const isLocalAssetPath = LOCAL_ASSET_PATH_PREFIXES.some((prefix) => url.pathname.startsWith(prefix));
+    if ((isConfiguredAssetHost || isKnownAssetFallbackHost) && isLocalAssetPath) {
+      return `${url.pathname}${url.search}${url.hash}`;
+    }
+  } catch {
+    if (LOCAL_ASSET_PATH_PREFIXES.some((prefix) => candidate.startsWith(prefix))) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
 function joinPublicOrigin(base: string, path: string): string {
   const normalizedPath = normalizePublicImagePath(path);
   if (normalizedPath.startsWith("http://") || normalizedPath.startsWith("https://")) {
-    return normalizedPath;
+    return resolveLocalAssetFallback(normalizedPath) || normalizedPath;
   }
-  return base ? `${base}${normalizedPath}` : normalizedPath;
+  const joined = base ? `${base}${normalizedPath}` : normalizedPath;
+  return resolveLocalAssetFallback(joined) || joined;
 }
 
 function resolveServerApiOrigin(): string {
