@@ -75,6 +75,7 @@ export const PRODUCT_MANAGEMENT_FLYOUT_GROUPS: ProductManagementFlyoutGroupDef[]
     titleEn: "Pipeline",
     items: [
       { labelZh: "产品上传台", labelEn: "Upload", href: "/product/pipeline#product-ingest-workbench" },
+      { labelZh: "流水线总控台", labelEn: "Pipeline Runner", href: "/product/pipeline#product-pipeline-batch-runner" },
       { labelZh: "同品归并台", labelEn: "Dedup", href: "/product/pipeline#product-dedup-manager" },
       { labelZh: "成分分析台", labelEn: "Ingredient Build", href: "/product/pipeline#ingredient-library-generator" },
       { labelZh: "产品类型映射台", labelEn: "Route Mapping", href: "/product/pipeline#product-route-mapping-generator" },

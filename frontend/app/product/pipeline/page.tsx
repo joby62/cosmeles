@@ -1,6 +1,7 @@
 import ProductAnalysisGenerator from "@/components/ProductAnalysisGenerator";
 import ProductDedupManager from "@/components/ProductDedupManager";
 import ProductIngestWorkbench from "@/components/ProductIngestWorkbench";
+import ProductPipelineBatchRunner from "@/components/ProductPipelineBatchRunner";
 import MobileSelectionResultGenerator from "@/components/MobileSelectionResultGenerator";
 import ProductManagementShell, {
   ProductManagementStageErrorCard,
@@ -32,6 +33,13 @@ export default async function ProductPipelinePage() {
     >
       <section id="product-ingest-workbench" className="mt-10 scroll-mt-20">
         <ProductIngestWorkbench />
+      </section>
+      <section id="product-pipeline-batch-runner" className="scroll-mt-20">
+        {products ? (
+          <ProductPipelineBatchRunner initialProducts={products} />
+        ) : (
+          <ProductManagementStageErrorCard title="流水线总控台不可用" errors={productError ? [productError] : []} />
+        )}
       </section>
       <section id="product-dedup-manager" className="scroll-mt-20">
         {products ? (
