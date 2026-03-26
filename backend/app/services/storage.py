@@ -872,6 +872,7 @@ def cleanup_orphan_storage(
     *,
     keep_product_ids: set[str],
     keep_image_paths: set[str],
+    keep_tmp_upload_paths: set[str] | None = None,
     min_age_minutes: int = 120,
     dry_run: bool = True,
     max_delete: int = 500,
@@ -932,6 +933,42 @@ def cleanup_orphan_storage(
         deleted_run_dirs.append(rel)
         deleted_run_files += file_count
 
+    tmp_root = _resolve_rel_path("tmp_uploads")
+    normalized_keep_tmp_paths: set[str] = set()
+    for item in keep_tmp_upload_paths or set():
+        value = str(item or "").strip().lstrip("/")
+        if value:
+            normalized_keep_tmp_paths.add(value)
+
+    scanned_tmp_uploads = 0
+    kept_tmp_uploads = 0
+    orphan_tmp_paths: list[str] = []
+    deleted_tmp_paths: list[str] = []
+
+    for path in sorted(tmp_root.rglob("*")):
+        if not path.is_file():
+            continue
+        scanned_tmp_uploads += 1
+        rel = path.resolve().relative_to(base).as_posix()
+        mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+
+        is_referenced_tmp = rel in normalized_keep_tmp_paths
+        is_too_new = mtime >= cutoff
+        if is_referenced_tmp or is_too_new:
+            kept_tmp_uploads += 1
+            continue
+
+        orphan_tmp_paths.append(rel)
+        if dry_run:
+            continue
+        if len(deleted_tmp_paths) >= max_delete:
+            continue
+        try:
+            path.unlink()
+            deleted_tmp_paths.append(rel)
+        except FileNotFoundError:
+            continue
+
     return {
         "status": "ok",
         "dry_run": bool(dry_run),
@@ -946,5 +983,13 @@ def cleanup_orphan_storage(
             "deleted_run_files": deleted_run_files,
             "orphan_run_dirs": orphan_run_dirs[:200],
             "deleted_run_dirs": deleted_run_dirs[:200],
+        },
+        "tmp_uploads": {
+            "scanned_tmp_uploads": scanned_tmp_uploads,
+            "kept_tmp_uploads": kept_tmp_uploads,
+            "orphan_tmp_uploads": len(orphan_tmp_paths),
+            "deleted_tmp_uploads": len(deleted_tmp_paths),
+            "orphan_tmp_paths": orphan_tmp_paths[:200],
+            "deleted_tmp_paths": deleted_tmp_paths[:200],
         },
     }

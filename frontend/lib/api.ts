@@ -79,6 +79,9 @@ export type ProductWorkbenchJobCounters = {
   scanned_runs: number;
   orphan_runs: number;
   deleted_runs: number;
+  scanned_tmp_uploads: number;
+  orphan_tmp_uploads: number;
+  deleted_tmp_uploads: number;
 };
 
 export type ProductWorkbenchJob = {
@@ -722,6 +725,14 @@ export type OrphanStorageCleanupResponse = {
     deleted_run_files: number;
     orphan_run_dirs: string[];
     deleted_run_dirs: string[];
+  };
+  tmp_uploads: {
+    scanned_tmp_uploads: number;
+    kept_tmp_uploads: number;
+    orphan_tmp_uploads: number;
+    deleted_tmp_uploads: number;
+    orphan_tmp_paths: string[];
+    deleted_tmp_paths: string[];
   };
 };
 

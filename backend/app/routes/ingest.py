@@ -707,6 +707,8 @@ def list_upload_ingest_jobs(
         _reconcile_upload_ingest_job_state(db=db, rec=row, now_utc=now_utc)
         if normalized_status and str(row.status or "").strip().lower() != normalized_status:
             continue
+        _maybe_release_upload_job_temp_uploads(db=db, rec=row)
+        row = db.get(UploadIngestJob, str(row.job_id)) or row
         views.append(_to_upload_ingest_job_view(row))
     return views
 
@@ -718,6 +720,8 @@ def get_upload_ingest_job(job_id: str, db: Session = Depends(get_db)):
     if rec is None:
         raise HTTPException(status_code=404, detail=f"Upload ingest job '{job_id}' not found.")
     _reconcile_upload_ingest_job_state(db=db, rec=rec, now_utc=datetime.now(timezone.utc))
+    _maybe_release_upload_job_temp_uploads(db=db, rec=rec)
+    rec = db.get(UploadIngestJob, str(job_id or "").strip()) or rec
     return _to_upload_ingest_job_view(rec)
 
 
@@ -763,15 +767,17 @@ def retry_upload_ingest_job(job_id: str, db: Session = Depends(get_db)):
     if status not in {"failed", "cancelled"}:
         raise HTTPException(status_code=409, detail=f"Only failed/cancelled job can retry. current_status={status}.")
 
-    retry_block = _get_upload_job_retry_block(rec)
+    retry_strategy = _get_upload_job_retry_strategy(rec)
+    retry_block = retry_strategy.get("block")
     if retry_block is not None:
         raise HTTPException(status_code=retry_block["http_status"], detail=retry_block["detail"])
 
-    _prepare_upload_ingest_job_for_retry(rec)
+    resume_mode = retry_strategy.get("mode") == "resume"
+    _prepare_upload_ingest_job_for_retry(rec, resume=resume_mode)
     db.add(rec)
     db.commit()
     db.refresh(rec)
-    _submit_upload_ingest_job(bind=db.get_bind(), job_id=rec.job_id, resume=False)
+    _submit_upload_ingest_job(bind=db.get_bind(), job_id=rec.job_id, resume=resume_mode)
     return _to_upload_ingest_job_view(rec)
 
 
@@ -785,7 +791,7 @@ def retry_upload_ingest_jobs_batch(
     if not job_ids:
         raise HTTPException(status_code=400, detail="job_ids must contain at least one non-empty job id.")
 
-    retried_records: list[UploadIngestJob] = []
+    retried_records: list[tuple[UploadIngestJob, bool]] = []
     failed_items: list[dict[str, Any]] = []
 
     for job_id in job_ids:
@@ -811,7 +817,8 @@ def retry_upload_ingest_jobs_batch(
             )
             continue
 
-        retry_block = _get_upload_job_retry_block(rec)
+        retry_strategy = _get_upload_job_retry_strategy(rec)
+        retry_block = retry_strategy.get("block")
         if retry_block is not None:
             failed_items.append(
                 {
@@ -822,9 +829,10 @@ def retry_upload_ingest_jobs_batch(
             )
             continue
 
-        _prepare_upload_ingest_job_for_retry(rec)
+        resume_mode = retry_strategy.get("mode") == "resume"
+        _prepare_upload_ingest_job_for_retry(rec, resume=resume_mode)
         db.add(rec)
-        retried_records.append(rec)
+        retried_records.append((rec, resume_mode))
 
     if retried_records:
         db.commit()
@@ -832,9 +840,9 @@ def retry_upload_ingest_jobs_batch(
         db.rollback()
 
     retried_jobs: list[UploadIngestJobView] = []
-    for rec in retried_records:
+    for rec, resume_mode in retried_records:
         db.refresh(rec)
-        _submit_upload_ingest_job(bind=db.get_bind(), job_id=rec.job_id, resume=False)
+        _submit_upload_ingest_job(bind=db.get_bind(), job_id=rec.job_id, resume=resume_mode)
         retried_jobs.append(_to_upload_ingest_job_view(rec))
 
     response_status = "ok"
@@ -868,18 +876,18 @@ def preview_upload_ingest_job_image(
     if normalized_slot not in {"primary", "supplement"}:
         raise HTTPException(status_code=400, detail=f"Invalid slot: {slot}. expected primary|supplement.")
 
-    rel_path = str(rec.temp_upload_path or "").strip() if normalized_slot == "primary" else str(rec.supplement_temp_upload_path or "").strip()
+    rel_path = _resolve_upload_job_preview_rel_path(rec, slot=normalized_slot)
     if not rel_path:
-        raise HTTPException(status_code=404, detail=f"[stage=upload_job_preview] {normalized_slot} temp path missing.")
+        raise HTTPException(status_code=404, detail=f"[stage=upload_job_preview] {normalized_slot} preview path missing.")
     if not exists_rel_path(rel_path):
-        raise HTTPException(status_code=404, detail=f"[stage=upload_job_preview] {normalized_slot} temp image missing: {rel_path}")
+        raise HTTPException(status_code=404, detail=f"[stage=upload_job_preview] {normalized_slot} preview image missing: {rel_path}")
 
     try:
         payload = get_runtime_storage().read_bytes(rel_path)
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"[stage=upload_job_preview] failed to read {normalized_slot} temp image: {e}",
+            detail=f"[stage=upload_job_preview] failed to read {normalized_slot} preview image: {e}",
         ) from e
 
     media_type = mimetypes.guess_type(rel_path)[0] or "application/octet-stream"
@@ -1405,6 +1413,13 @@ def _start_upload_ingest_job_flow(*, db: Session, rec: UploadIngestJob) -> None:
         image_paths=stage1_input_paths[:2],
         supplement_image_path=supplement_image_rel,
     )
+    rec = db.get(UploadIngestJob, job_id)
+    if rec is None:
+        return
+    _clear_upload_job_temp_uploads(db=db, rec=rec)
+    rec = db.get(UploadIngestJob, job_id)
+    if rec is None:
+        return
 
     stage1_requirement = _build_upload_job_stage1_requirement(stage1.get("vision_text"))
     pending_missing_fields = _remaining_missing_fields_after_manual_input(
@@ -1503,6 +1518,13 @@ def _resume_upload_ingest_job_flow(*, db: Session, rec: UploadIngestJob) -> None
                 image_paths=combined_paths[:2],
                 supplement_image_path=supplement_image_rel,
             )
+            rec = db.get(UploadIngestJob, job_id)
+            if rec is None:
+                return
+            _clear_upload_job_temp_uploads(db=db, rec=rec)
+            rec = db.get(UploadIngestJob, job_id)
+            if rec is None:
+                return
             stage1_requirement = _build_upload_job_stage1_requirement(stage1.get("vision_text"))
 
     pending_missing_fields = _remaining_missing_fields_after_manual_input(
@@ -1871,25 +1893,8 @@ def _upload_ingest_job_orphan_reason(*, rec: UploadIngestJob, now_utc: datetime)
 
 
 def _get_upload_job_retry_block(rec: UploadIngestJob) -> dict[str, Any] | None:
-    primary_temp = str(rec.temp_upload_path or "").strip()
-    if not primary_temp:
-        return {
-            "http_status": 409,
-            "detail": "[stage=upload_job_retry_prepare] temp_upload_path missing; upload temp context lost, cannot retry.",
-        }
-    if not exists_rel_path(primary_temp):
-        return {
-            "http_status": 404,
-            "detail": f"[stage=upload_job_retry_prepare] primary temp image missing: {primary_temp}. upload temp context lost, cannot retry.",
-        }
-
-    supplement_temp = str(rec.supplement_temp_upload_path or "").strip()
-    if supplement_temp and not exists_rel_path(supplement_temp):
-        return {
-            "http_status": 404,
-            "detail": f"[stage=upload_job_retry_prepare] supplement temp image missing: {supplement_temp}. upload temp context lost, cannot retry.",
-        }
-    return None
+    strategy = _get_upload_job_retry_strategy(rec)
+    return strategy.get("block")
 
 
 def _normalize_upload_ingest_job_batch_ids(job_ids: list[str]) -> list[str]:
@@ -1904,15 +1909,164 @@ def _normalize_upload_ingest_job_batch_ids(job_ids: list[str]) -> list[str]:
     return normalized
 
 
-def _prepare_upload_ingest_job_for_retry(rec: UploadIngestJob) -> None:
+def _upload_job_stage1_context_rel(job_id: str) -> str:
+    return f"doubao_runs/{job_id}/stage1_context.json"
+
+
+def _load_upload_job_stage1_context(rec: UploadIngestJob) -> dict[str, Any] | None:
+    context_rel = _upload_job_stage1_context_rel(str(rec.job_id))
+    if not exists_rel_path(context_rel):
+        return None
+    try:
+        value = get_runtime_storage().load_json(context_rel)
+    except Exception:
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _resolve_upload_job_durable_image_paths(rec: UploadIngestJob) -> list[str]:
+    context = _load_upload_job_stage1_context(rec)
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def append(value: str | None) -> None:
+        item = str(value or "").strip()
+        if not item or item in seen:
+            return
+        seen.add(item)
+        out.append(item)
+
+    if context:
+        context_paths = context.get("image_paths")
+        if isinstance(context_paths, list):
+            for item in context_paths[:2]:
+                append(str(item or "").strip())
+        append(str(context.get("image_path") or "").strip())
+        append(str(context.get("supplement_image_path") or "").strip())
+
+    for item in _safe_json_list(rec.image_paths_json):
+        append(str(item or "").strip())
+    append(str(rec.image_path or "").strip())
+    return out
+
+
+def _resolve_upload_job_preview_rel_path(rec: UploadIngestJob, *, slot: str) -> str | None:
+    normalized_slot = str(slot or "").strip().lower()
+    if normalized_slot == "primary":
+        primary_temp = str(rec.temp_upload_path or "").strip()
+        if primary_temp and exists_rel_path(primary_temp):
+            return primary_temp
+        durable_paths = _resolve_upload_job_durable_image_paths(rec)
+        if durable_paths and exists_rel_path(durable_paths[0]):
+            return durable_paths[0]
+        return None
+
+    supplement_temp = str(rec.supplement_temp_upload_path or "").strip()
+    if supplement_temp and exists_rel_path(supplement_temp):
+        return supplement_temp
+
+    durable_paths = _resolve_upload_job_durable_image_paths(rec)
+    if len(durable_paths) >= 2 and exists_rel_path(durable_paths[1]):
+        return durable_paths[1]
+    return None
+
+
+def _get_upload_job_durable_resume_block(rec: UploadIngestJob, *, action: str) -> dict[str, Any] | None:
+    context_rel = _upload_job_stage1_context_rel(str(rec.job_id))
+    if not exists_rel_path(context_rel):
+        return {
+            "http_status": 404,
+            "detail": f"[stage=upload_job_{action}_prepare] stage1 context missing: {context_rel}. durable upload context lost, cannot {action}.",
+        }
+
+    image_paths = _resolve_upload_job_durable_image_paths(rec)
+    if not image_paths:
+        return {
+            "http_status": 409,
+            "detail": f"[stage=upload_job_{action}_prepare] durable image paths missing; cannot {action} from converted context.",
+        }
+
+    primary_image = image_paths[0]
+    if not exists_rel_path(primary_image):
+        return {
+            "http_status": 404,
+            "detail": f"[stage=upload_job_{action}_prepare] primary converted image missing: {primary_image}. durable upload context lost, cannot {action}.",
+        }
+    return None
+
+
+def _get_upload_job_retry_strategy(rec: UploadIngestJob) -> dict[str, Any]:
+    durable_block = _get_upload_job_durable_resume_block(rec, action="retry")
+    if durable_block is None:
+        return {"mode": "resume", "block": None}
+
+    primary_temp = str(rec.temp_upload_path or "").strip()
+    if not primary_temp:
+        return {"mode": None, "block": durable_block}
+    if not exists_rel_path(primary_temp):
+        return {
+            "mode": None,
+            "block": {
+                "http_status": 404,
+                "detail": f"[stage=upload_job_retry_prepare] primary temp image missing: {primary_temp}. upload temp context lost, cannot retry.",
+            },
+        }
+
+    supplement_temp = str(rec.supplement_temp_upload_path or "").strip()
+    if supplement_temp and not exists_rel_path(supplement_temp):
+        return {
+            "mode": None,
+            "block": {
+                "http_status": 404,
+                "detail": f"[stage=upload_job_retry_prepare] supplement temp image missing: {supplement_temp}. upload temp context lost, cannot retry.",
+            },
+        }
+    return {"mode": "restart", "block": None}
+
+
+def _clear_upload_job_temp_uploads(*, db: Session, rec: UploadIngestJob) -> None:
+    current = db.get(UploadIngestJob, rec.job_id)
+    if current is None:
+        return
+    remove_rel_path(current.temp_upload_path)
+    remove_rel_path(current.supplement_temp_upload_path)
+    current.temp_upload_path = None
+    current.supplement_temp_upload_path = None
+    current.updated_at = now_iso()
+    db.add(current)
+    db.commit()
+    db.refresh(current)
+
+
+def _should_release_upload_job_temp_uploads(rec: UploadIngestJob) -> bool:
+    if not (str(rec.temp_upload_path or "").strip() or str(rec.supplement_temp_upload_path or "").strip()):
+        return False
+    status = str(rec.status or "").strip().lower()
+    if status == "done":
+        return True
+    if status == "waiting_more":
+        return _get_upload_job_durable_resume_block(rec, action="resume") is None
+    if status in {"failed", "cancelled"}:
+        return _get_upload_job_retry_strategy(rec).get("mode") == "resume"
+    return False
+
+
+def _maybe_release_upload_job_temp_uploads(*, db: Session, rec: UploadIngestJob) -> None:
+    if _should_release_upload_job_temp_uploads(rec):
+        _clear_upload_job_temp_uploads(db=db, rec=rec)
+
+
+def _prepare_upload_ingest_job_for_retry(rec: UploadIngestJob, *, resume: bool) -> None:
     now = now_iso()
     rec.status = "queued"
     rec.stage = "queued"
     rec.stage_label = _upload_ingest_job_stage_label("queued")
-    rec.message = _upload_ingest_queue_message(action="重试任务已入队")
+    rec.message = _upload_ingest_queue_message(
+        action="重试任务已入队（从已转存上下文继续）" if resume else "重试任务已入队"
+    )
     rec.percent = 3
     rec.cancel_requested = False
-    rec.resume_requested = False
+    rec.resume_requested = bool(resume)
     rec.stage1_text = None
     rec.stage1_reasoning_text = None
     rec.stage2_text = None
@@ -1931,25 +2085,7 @@ def _prepare_upload_ingest_job_for_retry(rec: UploadIngestJob) -> None:
 
 
 def _get_upload_job_resume_block(rec: UploadIngestJob) -> dict[str, Any] | None:
-    primary_temp = str(rec.temp_upload_path or "").strip()
-    if not primary_temp:
-        return {
-            "http_status": 409,
-            "detail": "[stage=upload_job_resume_prepare] temp_upload_path missing; waiting_more context lost, cannot resume. Please create a new upload job.",
-        }
-    if not exists_rel_path(primary_temp):
-        return {
-            "http_status": 404,
-            "detail": f"[stage=upload_job_resume_prepare] primary temp image missing: {primary_temp}. waiting_more context lost, cannot resume. Please create a new upload job.",
-        }
-
-    context_rel = f"doubao_runs/{rec.job_id}/stage1_context.json"
-    if not exists_rel_path(context_rel):
-        return {
-            "http_status": 404,
-            "detail": f"[stage=upload_job_resume_prepare] stage1 context missing: {context_rel}. waiting_more context lost, cannot resume. Please create a new upload job.",
-        }
-    return None
+    return _get_upload_job_durable_resume_block(rec, action="resume")
 
 
 def _to_upload_ingest_job_view(rec: UploadIngestJob) -> UploadIngestJobView:
@@ -1966,10 +2102,10 @@ def _to_upload_ingest_job_view(rec: UploadIngestJob) -> UploadIngestJobView:
 
     image_paths_raw = _safe_json_list(rec.image_paths_json)
     missing_fields = [str(item or "").strip() for item in _safe_json_list(rec.missing_fields_json) if str(item or "").strip()]
-    primary_temp = str(rec.temp_upload_path or "").strip()
-    supplement_temp = str(rec.supplement_temp_upload_path or "").strip()
-    has_primary_temp = bool(primary_temp and exists_rel_path(primary_temp))
-    has_supplement_temp = bool(supplement_temp and exists_rel_path(supplement_temp))
+    primary_preview_rel = _resolve_upload_job_preview_rel_path(rec, slot="primary")
+    supplement_preview_rel = _resolve_upload_job_preview_rel_path(rec, slot="supplement")
+    has_primary_preview = bool(primary_preview_rel)
+    has_supplement_preview = bool(supplement_preview_rel)
     status = str(rec.status or "queued").strip().lower() or "queued"
     retry_block = _get_upload_job_retry_block(rec) if status in {"failed", "cancelled"} else None
     resume_block = _get_upload_job_resume_block(rec) if status == "waiting_more" else None
@@ -1986,10 +2122,10 @@ def _to_upload_ingest_job_view(rec: UploadIngestJob) -> UploadIngestJobView:
         percent=max(0, min(100, int(rec.percent or 0))),
         image_path=str(rec.image_path or "").strip() or None,
         image_paths=[str(item or "").strip() for item in image_paths_raw if str(item or "").strip()],
-        has_primary_temp_preview=has_primary_temp,
-        has_supplement_temp_preview=has_supplement_temp,
-        temp_preview_url=f"/api/upload/jobs/{rec.job_id}/preview?slot=primary" if has_primary_temp else None,
-        supplement_temp_preview_url=f"/api/upload/jobs/{rec.job_id}/preview?slot=supplement" if has_supplement_temp else None,
+        has_primary_temp_preview=has_primary_preview,
+        has_supplement_temp_preview=has_supplement_preview,
+        temp_preview_url=f"/api/upload/jobs/{rec.job_id}/preview?slot=primary" if has_primary_preview else None,
+        supplement_temp_preview_url=f"/api/upload/jobs/{rec.job_id}/preview?slot=supplement" if has_supplement_preview else None,
         can_retry=bool(status in {"failed", "cancelled"} and retry_block is None),
         can_resume=bool(status == "waiting_more" and resume_block is None),
         artifact_context_lost=bool(artifact_context_detail),

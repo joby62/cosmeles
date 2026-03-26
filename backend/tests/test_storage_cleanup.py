@@ -82,10 +82,13 @@ def test_cleanup_orphan_storage_removes_orphan_images_and_runs(test_client, monk
     orphan_run_dir = Path(storage_dir) / "doubao_runs" / "orphan-run"
     orphan_run_dir.mkdir(parents=True, exist_ok=True)
     (orphan_run_dir / "sample.json").write_text('{"ok":true}', encoding="utf-8")
+    orphan_tmp_upload = Path(storage_dir) / "tmp_uploads" / "orphan-upload.heic"
+    orphan_tmp_upload.write_bytes(b"orphan-heic")
 
     old_ts = time.time() - 3600
     os.utime(orphan_image, (old_ts, old_ts))
     os.utime(orphan_run_dir, (old_ts, old_ts))
+    os.utime(orphan_tmp_upload, (old_ts, old_ts))
 
     dry = client.post(
         "/api/maintenance/storage/orphans/cleanup",
@@ -95,6 +98,7 @@ def test_cleanup_orphan_storage_removes_orphan_images_and_runs(test_client, monk
     dry_body = dry.json()
     assert dry_body["images"]["orphan_images"] >= 1
     assert dry_body["runs"]["orphan_runs"] >= 1
+    assert dry_body["tmp_uploads"]["orphan_tmp_uploads"] >= 1
 
     real = client.post(
         "/api/maintenance/storage/orphans/cleanup",
@@ -104,8 +108,10 @@ def test_cleanup_orphan_storage_removes_orphan_images_and_runs(test_client, monk
     body = real.json()
     assert body["images"]["deleted_images"] >= 1
     assert body["runs"]["deleted_runs"] >= 1
+    assert body["tmp_uploads"]["deleted_tmp_uploads"] >= 1
     assert not orphan_image.exists()
     assert not orphan_run_dir.exists()
+    assert not orphan_tmp_upload.exists()
 
     keep_image_candidates = [
         path for path in (Path(storage_dir) / "images").rglob(f"{keep_id}.*") if path.is_file()

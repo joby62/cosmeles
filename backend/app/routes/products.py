@@ -32,6 +32,7 @@ from app.domain.mobile.decision import load_mobile_decision_category_config
 from app.db.session import get_db, SessionLocal
 from app.db.models import (
     ProductIndex,
+    UploadIngestJob,
     IngredientLibraryIndex,
     IngredientLibraryAlias,
     IngredientLibraryRedirect,
@@ -4275,6 +4276,22 @@ def _cleanup_orphan_storage_impl(
         for rel_path in image_variant_rel_paths(str(image_path or "").strip()):
             keep_image_paths.add(rel_path)
 
+    from app.routes.ingest import _maybe_release_upload_job_temp_uploads
+
+    upload_jobs = db.execute(select(UploadIngestJob)).scalars().all()
+    for job in upload_jobs:
+        _maybe_release_upload_job_temp_uploads(db=db, rec=job)
+
+    keep_tmp_upload_paths: set[str] = set()
+    upload_refs = db.execute(
+        select(UploadIngestJob.temp_upload_path, UploadIngestJob.supplement_temp_upload_path)
+    ).all()
+    for primary_temp, supplement_temp in upload_refs:
+        for rel_path in (primary_temp, supplement_temp):
+            value = str(rel_path or "").strip()
+            if value:
+                keep_tmp_upload_paths.add(value)
+
     if should_cancel and should_cancel():
         raise ProductWorkbenchJobCancelledError("孤儿存储清理在执行前已取消。")
     if event_callback:
@@ -4289,6 +4306,7 @@ def _cleanup_orphan_storage_impl(
     result = cleanup_orphan_storage(
         keep_product_ids=keep_product_ids,
         keep_image_paths=keep_image_paths,
+        keep_tmp_upload_paths=keep_tmp_upload_paths,
         min_age_minutes=payload.min_age_minutes,
         dry_run=payload.dry_run,
         max_delete=payload.max_delete,
@@ -6821,6 +6839,11 @@ def _merge_product_workbench_counters(
             for field in ("scanned_runs", "orphan_runs", "deleted_runs"):
                 if field in runs_raw:
                     set_counter(field, _safe_positive_int(runs_raw.get(field), fallback=0))
+        tmp_raw = payload.get("tmp_uploads")
+        if isinstance(tmp_raw, dict):
+            for field in ("scanned_tmp_uploads", "orphan_tmp_uploads", "deleted_tmp_uploads"):
+                if field in tmp_raw:
+                    set_counter(field, _safe_positive_int(tmp_raw.get(field), fallback=0))
         return
     if job_type == "mobile_invalid_ref_cleanup":
         if "total_invalid" in payload:

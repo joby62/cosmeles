@@ -739,7 +739,7 @@ function renderUploadJobBody({
 
       {job.temp_preview_url || job.supplement_temp_preview_url ? (
         <div className="rounded-xl border border-black/10 bg-black/[0.02] p-2.5">
-          <div className="text-[11px] font-medium text-black/62">暂存区图片（任务成功后自动删除）</div>
+          <div className="text-[11px] font-medium text-black/62">任务图片预览（原始暂存或已转存上下文）</div>
           <div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-4">
             {job.temp_preview_url ? (
               <button

@@ -323,7 +323,7 @@ def test_upload_job_failed_can_retry_from_tmp_with_preview(test_client, monkeypa
     done = _wait_upload_job_status(client, job_id=job_id, expected={"done"})
     assert done["status"] == "done"
     assert done.get("error") is None
-    assert done.get("temp_preview_url") is None
+    assert done.get("temp_preview_url")
 
     tmp_dir = Path(storage_dir) / "tmp_uploads"
     leftovers = list(tmp_dir.glob(f"{job_id}*"))
@@ -364,7 +364,11 @@ def test_upload_job_failed_without_temp_preview_blocks_retry(test_client, monkey
     assert body["status"] == "failed"
     assert body["can_retry"] is False
     assert body["artifact_context_lost"] is True
-    assert body["temp_preview_url"] is None
+    preview_url = str(body.get("temp_preview_url") or "")
+    assert preview_url
+    preview = client.get(preview_url)
+    assert preview.status_code == 200
+    assert preview.content
     assert "[stage=upload_job_retry_prepare]" in str(body.get("artifact_context_detail") or "")
 
     retry = client.post(f"/api/upload/jobs/{job_id}/retry")
@@ -592,6 +596,8 @@ def test_upload_job_waiting_more_can_resume_with_manual_brand(test_client, monke
     assert waiting["can_resume"] is True
     assert waiting["artifact_context_lost"] is False
     assert waiting.get("temp_preview_url")
+    tmp_dir = Path(storage_dir) / "tmp_uploads"
+    assert list(tmp_dir.glob(f"{job_id}*")) == []
 
     resumed = client.post(
         f"/api/upload/jobs/{job_id}/resume",
@@ -604,7 +610,7 @@ def test_upload_job_waiting_more_can_resume_with_manual_brand(test_client, monke
     assert done["brand_override"] == "手动补录品牌"
 
 
-def test_upload_job_waiting_more_without_temp_preview_blocks_resume(test_client, monkeypatch: pytest.MonkeyPatch):
+def test_upload_job_waiting_more_can_resume_from_durable_preview_without_temp_upload(test_client, monkeypatch: pytest.MonkeyPatch):
     client, storage_dir = test_client
     _install_fake_convert(monkeypatch, storage_dir)
 
@@ -668,17 +674,101 @@ def test_upload_job_waiting_more_without_temp_preview_blocks_resume(test_client,
     assert refreshed.status_code == 200
     body = refreshed.json()
     assert body["status"] == "waiting_more"
-    assert body["can_resume"] is False
-    assert body["artifact_context_lost"] is True
-    assert body["temp_preview_url"] is None
-    assert "[stage=upload_job_resume_prepare]" in str(body.get("artifact_context_detail") or "")
+    assert body["can_resume"] is True
+    assert body["artifact_context_lost"] is False
+    preview_url = str(body.get("temp_preview_url") or "")
+    assert preview_url
+
+    preview = client.get(preview_url)
+    assert preview.status_code == 200
+    assert preview.content
 
     resumed = client.post(
         f"/api/upload/jobs/{job_id}/resume",
         data={"brand": "手动补录品牌"},
     )
-    assert resumed.status_code == 404
-    assert "[stage=upload_job_resume_prepare]" in str(resumed.json().get("detail") or "")
+    assert resumed.status_code == 200
+
+    done = _wait_upload_job_status(client, job_id=job_id, expected={"done"})
+    assert done["status"] == "done"
+
+
+def test_upload_job_failed_after_stage1_can_retry_from_durable_context(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, storage_dir = test_client
+    _install_fake_convert(monkeypatch, storage_dir)
+    stage2_attempts = {"count": 0}
+
+    def fake_stage1(image_rel: str, trace_id: str, image_paths=None, model_tier=None, event_callback=None):
+        _ = image_rel
+        _ = trace_id
+        _ = image_paths
+        _ = model_tier
+        _ = event_callback
+        return {
+            "vision_text": "【品牌】测试品牌\n【产品名】测试产品\n【成分表原文】水、甘油",
+            "model": "doubao-stage1-mini",
+            "artifact": f"doubao_runs/{trace_id}/stage1_vision.json",
+        }
+
+    def fake_stage2(*, trace_id: str, category: str | None, brand: str | None, name: str | None, model_tier: str | None, db, event_callback=None):
+        _ = category
+        _ = brand
+        _ = name
+        _ = model_tier
+        _ = db
+        _ = event_callback
+        stage2_attempts["count"] += 1
+        if stage2_attempts["count"] == 1:
+            raise RuntimeError("stage2 synthetic failure after durable context")
+        return {
+            "id": trace_id,
+            "status": "ok",
+            "mode": "doubao_two_stage",
+            "category": "shampoo",
+            "image_path": f"images/webp/tmp/{trace_id}.webp",
+            "json_path": f"products/{trace_id}.json",
+            "doubao": {
+                "models": {"vision": "doubao-stage1-mini", "struct": "doubao-stage2-mini"},
+                "struct_text": "{\"ok\":true}",
+                "vision_text": "【品牌】测试品牌",
+                "artifacts": {
+                    "vision": f"doubao_runs/{trace_id}/stage1_vision.json",
+                    "struct": f"doubao_runs/{trace_id}/stage2_struct.json",
+                    "context": f"doubao_runs/{trace_id}/stage1_context.json",
+                },
+            },
+        }
+
+    monkeypatch.setattr(ingest_routes, "_invoke_stage1_analyzer", fake_stage1)
+    monkeypatch.setattr(ingest_routes, "_finalize_stage2", fake_stage2)
+
+    created = client.post(
+        "/api/upload/jobs",
+        files={"image": ("sample-durable-retry.heic", VALID_TEST_IMAGE_BYTES, "image/heic")},
+    )
+    assert created.status_code == 200
+    job_id = created.json()["job_id"]
+
+    failed = _wait_upload_job_status(client, job_id=job_id, expected={"failed"})
+    assert failed["status"] == "failed"
+    assert failed["can_retry"] is True
+    assert failed["artifact_context_lost"] is False
+    preview_url = str(failed.get("temp_preview_url") or "")
+    assert preview_url
+
+    tmp_dir = Path(storage_dir) / "tmp_uploads"
+    assert list(tmp_dir.glob(f"{job_id}*")) == []
+
+    preview = client.get(preview_url)
+    assert preview.status_code == 200
+    assert preview.content
+
+    retried = client.post(f"/api/upload/jobs/{job_id}/retry")
+    assert retried.status_code == 200
+    assert retried.json()["status"] in {"queued", "running"}
+
+    done = _wait_upload_job_status(client, job_id=job_id, expected={"done"})
+    assert done["status"] == "done"
 
 
 def test_upload_job_can_cancel_running(test_client, monkeypatch: pytest.MonkeyPatch):

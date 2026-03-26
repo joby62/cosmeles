@@ -179,6 +179,9 @@ class ProductWorkbenchJobCounters(BaseModel):
     scanned_runs: int = 0
     orphan_runs: int = 0
     deleted_runs: int = 0
+    scanned_tmp_uploads: int = 0
+    orphan_tmp_uploads: int = 0
+    deleted_tmp_uploads: int = 0
 
 
 class ProductWorkbenchJobView(BaseModel):
@@ -922,6 +925,15 @@ class OrphanRunsCleanupResult(BaseModel):
     deleted_run_dirs: List[str] = []
 
 
+class OrphanTmpUploadsCleanupResult(BaseModel):
+    scanned_tmp_uploads: int = 0
+    kept_tmp_uploads: int = 0
+    orphan_tmp_uploads: int = 0
+    deleted_tmp_uploads: int = 0
+    orphan_tmp_paths: List[str] = []
+    deleted_tmp_paths: List[str] = []
+
+
 class OrphanStorageCleanupResponse(BaseModel):
     status: str
     dry_run: bool
@@ -929,6 +941,7 @@ class OrphanStorageCleanupResponse(BaseModel):
     max_delete: int
     images: OrphanImageCleanupResult
     runs: OrphanRunsCleanupResult
+    tmp_uploads: OrphanTmpUploadsCleanupResult
 
 
 class MobileInvalidProductRefCleanupRequest(BaseModel):

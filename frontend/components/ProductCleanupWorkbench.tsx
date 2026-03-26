@@ -561,7 +561,7 @@ function categoryLabel(category?: string | null): string {
 
 function buildOrphanCountersText(job: ProductWorkbenchJob | null): string | null {
   if (!job) return null;
-  return `images 扫描 ${job.counters.scanned_images} · orphan ${job.counters.orphan_images} · 删除 ${job.counters.deleted_images} · runs 扫描 ${job.counters.scanned_runs} · orphan ${job.counters.orphan_runs} · 删除 ${job.counters.deleted_runs}`;
+  return `images 扫描 ${job.counters.scanned_images} · orphan ${job.counters.orphan_images} · 删除 ${job.counters.deleted_images} · runs 扫描 ${job.counters.scanned_runs} · orphan ${job.counters.orphan_runs} · 删除 ${job.counters.deleted_runs} · tmp_uploads 扫描 ${job.counters.scanned_tmp_uploads} · orphan ${job.counters.orphan_tmp_uploads} · 删除 ${job.counters.deleted_tmp_uploads}`;
 }
 
 function buildMobileRefCountersText(job: ProductWorkbenchJob | null): string | null {
@@ -578,6 +578,7 @@ function parseOrphanCleanupResult(value: Record<string, unknown> | undefined): O
   if (!value || typeof value !== "object") return null;
   const images = isRecord(value.images) ? value.images : ({} as Record<string, unknown>);
   const runs = isRecord(value.runs) ? value.runs : ({} as Record<string, unknown>);
+  const tmpUploads = isRecord(value.tmp_uploads) ? value.tmp_uploads : ({} as Record<string, unknown>);
   const status = String(value.status || "").trim();
   if (!status) return null;
   return {
@@ -601,6 +602,14 @@ function parseOrphanCleanupResult(value: Record<string, unknown> | undefined): O
       deleted_run_files: Number(runs.deleted_run_files || 0),
       orphan_run_dirs: Array.isArray(runs.orphan_run_dirs) ? runs.orphan_run_dirs.map(String) : [],
       deleted_run_dirs: Array.isArray(runs.deleted_run_dirs) ? runs.deleted_run_dirs.map(String) : [],
+    },
+    tmp_uploads: {
+      scanned_tmp_uploads: Number(tmpUploads.scanned_tmp_uploads || 0),
+      kept_tmp_uploads: Number(tmpUploads.kept_tmp_uploads || 0),
+      orphan_tmp_uploads: Number(tmpUploads.orphan_tmp_uploads || 0),
+      deleted_tmp_uploads: Number(tmpUploads.deleted_tmp_uploads || 0),
+      orphan_tmp_paths: Array.isArray(tmpUploads.orphan_tmp_paths) ? tmpUploads.orphan_tmp_paths.map(String) : [],
+      deleted_tmp_paths: Array.isArray(tmpUploads.deleted_tmp_paths) ? tmpUploads.deleted_tmp_paths.map(String) : [],
     },
   };
 }
@@ -654,6 +663,7 @@ function buildOrphanCleanupPrettyText(result: OrphanStorageCleanupResponse): str
   lines.push(`安全窗口: ${result.min_age_minutes} 分钟`);
   lines.push(`images: scanned=${result.images.scanned_images}, orphan=${result.images.orphan_images}, deleted=${result.images.deleted_images}`);
   lines.push(`runs: scanned=${result.runs.scanned_runs}, orphan=${result.runs.orphan_runs}, deleted=${result.runs.deleted_runs}`);
+  lines.push(`tmp_uploads: scanned=${result.tmp_uploads.scanned_tmp_uploads}, orphan=${result.tmp_uploads.orphan_tmp_uploads}, deleted=${result.tmp_uploads.deleted_tmp_uploads}`);
   if (result.images.orphan_paths.length > 0) {
     lines.push("");
     lines.push("orphan 图片样本:");
@@ -665,6 +675,13 @@ function buildOrphanCleanupPrettyText(result: OrphanStorageCleanupResponse): str
     lines.push("");
     lines.push("orphan runs 样本:");
     for (const path of result.runs.orphan_run_dirs.slice(0, 8)) {
+      lines.push(`- ${path}`);
+    }
+  }
+  if (result.tmp_uploads.orphan_tmp_paths.length > 0) {
+    lines.push("");
+    lines.push("orphan tmp_uploads 样本:");
+    for (const path of result.tmp_uploads.orphan_tmp_paths.slice(0, 8)) {
       lines.push(`- ${path}`);
     }
   }
