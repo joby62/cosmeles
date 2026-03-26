@@ -10,6 +10,13 @@ const ASSET_PUBLIC_ORIGIN = (process.env.ASSET_PUBLIC_ORIGIN || process.env.NEXT
   .trim()
   .replace(/\/$/, "");
 const NEXT_COMPRESS = (process.env.NEXT_COMPRESS || "").trim().toLowerCase();
+const FALLBACK_IMAGE_REMOTE_ORIGINS = [
+  "https://assets.yuexuan.xyz",
+  "https://yuexuan.xyz",
+  "http://127.0.0.1:8000",
+  "http://localhost:8000",
+  "http://api:8000",
+] as const;
 
 function parseRemotePattern(origin: string):
   | {
@@ -33,7 +40,34 @@ function parseRemotePattern(origin: string):
   }
 }
 
-const assetRemotePattern = parseRemotePattern(ASSET_PUBLIC_ORIGIN);
+function collectRemotePatterns(origins: readonly string[]) {
+  const seen = new Set<string>();
+  const patterns: Array<{
+    protocol: "http" | "https";
+    hostname: string;
+    port?: string;
+  }> = [];
+
+  for (const origin of origins) {
+    const pattern = parseRemotePattern(origin);
+    if (!pattern) continue;
+    const key = `${pattern.protocol}:${pattern.hostname}:${pattern.port || ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    patterns.push(pattern);
+  }
+
+  return patterns;
+}
+
+// `next/image` remotePatterns is frozen at build time. Keep production asset hosts
+// in a fallback list so a missed build arg does not 400 every remote product image.
+const imageRemotePatterns = collectRemotePatterns([
+  ASSET_PUBLIC_ORIGIN,
+  process.env.NEXT_PUBLIC_ASSET_BASE || "",
+  process.env.API_PUBLIC_ORIGIN || "",
+  ...FALLBACK_IMAGE_REMOTE_ORIGINS,
+]);
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
@@ -43,9 +77,9 @@ const nextConfig: NextConfig = {
     // Allow frontend modules to import repo-level shared contracts and decision catalogs.
     externalDir: true,
   },
-  images: assetRemotePattern
+  images: imageRemotePatterns.length > 0
     ? {
-        remotePatterns: [assetRemotePattern],
+        remotePatterns: imageRemotePatterns,
       }
     : undefined,
 
