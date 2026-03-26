@@ -9,6 +9,9 @@ import { buildExternalUrl } from "@/lib/requestOrigin";
 const MOBILE_DEVICE_COOKIE = "mx_device_id";
 const MOBILE_DEVICE_HEADER = "x-mobile-device-id";
 const MOBILE_DEVICE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365 * 2;
+const ASSET_OBJECT_KEY_PREFIX = (process.env.ASSET_OBJECT_KEY_PREFIX || "mobile-v2")
+  .trim()
+  .replace(/^\/+|\/+$/g, "");
 
 function isMobileUA(ua: string) {
   return /Android|webOS|iPhone|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
@@ -67,6 +70,10 @@ function redirectToAdminAuth(req: NextRequest): NextResponse {
 export async function proxy(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
   const hasFileExt = /\.[a-zA-Z0-9]+$/.test(pathname);
+  const isPrefixedAssetPath = ASSET_OBJECT_KEY_PREFIX
+    ? pathname.startsWith(`/${ASSET_OBJECT_KEY_PREFIX}/images`) ||
+      pathname.startsWith(`/${ASSET_OBJECT_KEY_PREFIX}/user-images`)
+    : false;
 
   if (
     hasFileExt ||
@@ -74,6 +81,7 @@ export async function proxy(req: NextRequest) {
     pathname.startsWith("/api") ||
     pathname.startsWith("/images") ||
     pathname.startsWith("/user-images") ||
+    isPrefixedAssetPath ||
     pathname.startsWith("/brand") ||
     pathname.startsWith("/favicon") ||
     pathname.startsWith("/robots") ||

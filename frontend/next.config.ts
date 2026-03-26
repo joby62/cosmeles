@@ -9,6 +9,9 @@ const INTERNAL_API_BASE =
 const ASSET_PUBLIC_ORIGIN = (process.env.ASSET_PUBLIC_ORIGIN || process.env.NEXT_PUBLIC_ASSET_BASE || "")
   .trim()
   .replace(/\/$/, "");
+const ASSET_OBJECT_KEY_PREFIX = (process.env.ASSET_OBJECT_KEY_PREFIX || "mobile-v2")
+  .trim()
+  .replace(/^\/+|\/+$/g, "");
 const NEXT_COMPRESS = (process.env.NEXT_COMPRESS || "").trim().toLowerCase();
 const FALLBACK_IMAGE_REMOTE_ORIGINS = [
   "https://assets.yuexuan.xyz",
@@ -89,15 +92,23 @@ const nextConfig: NextConfig = {
         source: "/api/:path*",
         destination: `${INTERNAL_API_BASE}/api/:path*`,
       },
+      {
+        source: "/images/:path*",
+        destination: `${INTERNAL_API_BASE}/images/:path*`,
+      },
+      {
+        source: "/user-images/:path*",
+        destination: `${INTERNAL_API_BASE}/user-images/:path*`,
+      },
     ];
-    if (!ASSET_PUBLIC_ORIGIN) {
+    if (ASSET_OBJECT_KEY_PREFIX) {
       rewrites.push(
         {
-          source: "/images/:path*",
+          source: `/${ASSET_OBJECT_KEY_PREFIX}/images/:path*`,
           destination: `${INTERNAL_API_BASE}/images/:path*`,
         },
         {
-          source: "/user-images/:path*",
+          source: `/${ASSET_OBJECT_KEY_PREFIX}/user-images/:path*`,
           destination: `${INTERNAL_API_BASE}/user-images/:path*`,
         },
       );
