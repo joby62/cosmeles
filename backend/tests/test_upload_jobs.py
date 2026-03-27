@@ -539,6 +539,83 @@ def test_upload_jobs_batch_retry_reports_partial_failures(test_client, monkeypat
     assert still_failed.json()["status"] == "failed"
 
 
+def test_upload_jobs_batch_retry_can_resume_durable_failed_jobs(test_client, monkeypatch: pytest.MonkeyPatch):
+    client, storage_dir = test_client
+    _install_fake_convert(monkeypatch, storage_dir)
+    stage2_attempts: dict[str, int] = {}
+
+    def fake_stage1(image_rel: str, trace_id: str, image_paths=None, model_tier=None, event_callback=None):
+        _ = image_rel
+        _ = image_paths
+        _ = model_tier
+        _ = event_callback
+        return {
+            "vision_text": "【品牌】测试品牌\n【产品名】测试产品\n【成分表原文】水、甘油",
+            "model": "doubao-stage1-mini",
+            "artifact": f"doubao_runs/{trace_id}/stage1_vision.json",
+        }
+
+    def fake_stage2(*, trace_id: str, category: str | None, brand: str | None, name: str | None, model_tier: str | None, db, event_callback=None):
+        _ = category
+        _ = brand
+        _ = name
+        _ = model_tier
+        _ = db
+        _ = event_callback
+        stage2_attempts[trace_id] = stage2_attempts.get(trace_id, 0) + 1
+        if stage2_attempts[trace_id] == 1:
+            raise RuntimeError("stage2 synthetic failure for durable batch retry")
+        return {
+            "id": trace_id,
+            "status": "ok",
+            "mode": "doubao_two_stage",
+            "category": "shampoo",
+            "image_path": f"images/webp/tmp/{trace_id}.webp",
+            "json_path": f"products/{trace_id}.json",
+            "doubao": {
+                "models": {"vision": "doubao-stage1-mini", "struct": "doubao-stage2-mini"},
+                "struct_text": "{\"ok\":true}",
+                "vision_text": "【品牌】测试品牌",
+                "artifacts": {
+                    "vision": f"doubao_runs/{trace_id}/stage1_vision.json",
+                    "struct": f"doubao_runs/{trace_id}/stage2_struct.json",
+                    "context": f"doubao_runs/{trace_id}/stage1_context.json",
+                },
+            },
+        }
+
+    monkeypatch.setattr(ingest_routes, "_invoke_stage1_analyzer", fake_stage1)
+    monkeypatch.setattr(ingest_routes, "_finalize_stage2", fake_stage2)
+
+    job_ids: list[str] = []
+    for suffix in ("durable-a", "durable-b"):
+        created = client.post(
+            "/api/upload/jobs",
+            files={"image": (f"{suffix}.heic", VALID_TEST_IMAGE_BYTES, "image/heic")},
+        )
+        assert created.status_code == 200
+        job_ids.append(created.json()["job_id"])
+
+    tmp_dir = Path(storage_dir) / "tmp_uploads"
+    for job_id in job_ids:
+        failed = _wait_upload_job_status(client, job_id=job_id, expected={"failed"})
+        assert failed["can_retry"] is True
+        assert failed["artifact_context_lost"] is False
+        assert list(tmp_dir.glob(f"{job_id}*")) == []
+
+    retried = client.post("/api/upload/jobs/retry-batch", json={"job_ids": job_ids})
+    assert retried.status_code == 200
+    body = retried.json()
+    assert body["status"] == "ok"
+    assert body["requested"] == 2
+    assert body["retried"] == 2
+    assert body["failed"] == 0
+
+    for job_id in job_ids:
+        done = _wait_upload_job_status(client, job_id=job_id, expected={"done"})
+        assert done["status"] == "done"
+
+
 def test_upload_job_waiting_more_can_resume_with_manual_brand(test_client, monkeypatch: pytest.MonkeyPatch):
     client, storage_dir = test_client
     _install_fake_convert(monkeypatch, storage_dir)

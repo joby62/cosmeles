@@ -121,6 +121,7 @@ export default function ProductIngestWorkbench() {
   const [pairAsSingleProduct, setPairAsSingleProduct] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [batchRetrying, setBatchRetrying] = useState(false);
+  const [batchRetryNotice, setBatchRetryNotice] = useState<string | null>(null);
   const [previewModal, setPreviewModal] = useState<PreviewModalState>(null);
   const [resumeDrafts, setResumeDrafts] = useState<Record<string, ResumeDraft>>({});
   const [manualResult, setManualResult] = useState<IngestResultLike | null>(null);
@@ -215,6 +216,7 @@ export default function ProductIngestWorkbench() {
     if (!canSubmit) return;
 
     setErrorMessage(null);
+    setBatchRetryNotice(null);
 
     if (source === "doubao" && !useJsonOverride) {
       setManualResult(null);
@@ -262,6 +264,7 @@ export default function ProductIngestWorkbench() {
 
   async function handleResumeJob(job: UploadIngestJob) {
     if (!resumeJob) return;
+    setBatchRetryNotice(null);
     const draft = resumeDrafts[job.job_id] || EMPTY_DRAFT;
     const resumed = await resumeJob({
       jobId: job.job_id,
@@ -281,12 +284,17 @@ export default function ProductIngestWorkbench() {
 
     setBatchRetrying(true);
     setErrorMessage(null);
+    setBatchRetryNotice(null);
     try {
+      const hadActiveRunning = activeRunning;
       const summary = await retryUploadIngestJobs(jobIds);
-      if (summary.retried_jobs[0]) {
+      await refreshJobs();
+      if (!hadActiveRunning && summary.retried_jobs[0]) {
         selectJob(summary.retried_jobs[0]);
       }
-      await refreshJobs();
+      if (summary.retried > 0) {
+        setBatchRetryNotice(buildUploadBatchRetryNotice(summary, { preserveActiveRunning: hadActiveRunning }));
+      }
       if (summary.failed_items.length > 0) {
         setErrorMessage(buildUploadBatchRetrySummary(summary));
       }
@@ -469,6 +477,8 @@ export default function ProductIngestWorkbench() {
             {submitting || jobLoading ? "提交中..." : "上传到后端"}
           </button>
         </div>
+
+        {batchRetryNotice ? <div className="text-[13px] text-[#3151d8]">{batchRetryNotice}</div> : null}
 
         <WorkbenchTaskSection
           errorMessage={errorMessage}
@@ -854,6 +864,16 @@ function buildUploadBatchRetrySummary(summary: UploadIngestJobBatchRetryResponse
     lines.push(`${item.job_id}: ${item.detail}`);
   }
   return lines.join("\n");
+}
+
+function buildUploadBatchRetryNotice(
+  summary: UploadIngestJobBatchRetryResponse,
+  options?: { preserveActiveRunning?: boolean },
+): string {
+  if (options?.preserveActiveRunning) {
+    return `已将 ${summary.retried}/${summary.requested} 个失败任务重新入队。当前任务会继续执行，其余任务会在当前任务后按队列继续。`;
+  }
+  return `已将 ${summary.retried}/${summary.requested} 个失败任务重新入队。`;
 }
 
 function buildIngestResultSummary(result: IngestResultLike): string {
